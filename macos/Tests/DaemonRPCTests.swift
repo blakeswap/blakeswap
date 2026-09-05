@@ -36,7 +36,7 @@ final class DaemonRPCTests: XCTestCase {
                 if let alice = try? await status("alice"), let bob = try? await status("bob"),
                    alice.network == "regtest", bob.network == "regtest", alice.addresses.count == 2, bob.addresses.count == 2 { ready = true; break }
             }
-            try await Task.sleep(for: .milliseconds(250))
+            try await Task.sleep(nanoseconds: 250_000_000)
         }
         XCTAssertTrue(ready, "Fixture wallets did not connect")
         guard ready else { return }
@@ -50,7 +50,7 @@ final class DaemonRPCTests: XCTestCase {
         var delivered = false
         for _ in 0..<80 {
             if try await status("bob").orders.contains(where: { $0.id == offer.id }) { delivered = true; break }
-            try await Task.sleep(for: .milliseconds(250))
+            try await Task.sleep(nanoseconds: 250_000_000)
         }
         XCTAssertTrue(delivered, "Offer not delivered through the external local relay")
         guard delivered else { return }
@@ -76,7 +76,7 @@ final class DaemonRPCTests: XCTestCase {
                 _ = try await call("alice", "regtest.mine", ["blocks": 2])
                 mined.formUnion(ids)
             }
-            try await Task.sleep(for: .milliseconds(500))
+            try await Task.sleep(nanoseconds: 500_000_000)
         }
         XCTFail("Native gRPC trade did not settle")
     }

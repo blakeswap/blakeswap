@@ -8,4 +8,4 @@ fi
 bin/Blakeswap.app/Contents/Resources/blakeswap desktop --data-dir "$BLAKESWAP_SWIFT_TEST_ROOT" > "$BLAKESWAP_SWIFT_TEST_ROOT/swift-daemon.log" 2>&1 &
 daemon_pid=$!
 trap 'kill -TERM "$daemon_pid" 2>/dev/null || true; wait "$daemon_pid" || true' EXIT
-swift test --package-path macos --scratch-path .cache/swift-build --cache-path .cache/swift-cache -c release --filter DaemonRPCTests
+swift test --package-path macos --scratch-path .cache/swift-build --cache-path .cache/swift-cache -c release

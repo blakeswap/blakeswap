@@ -95,3 +95,21 @@ responses, durable node-wallet readiness, cancellation and lock release, and
 relevant preimage observation with a large unrelated mempool. Native XCTest
 regressions cover mismatched networks, older Settings revisions and invalidated
 profile/Settings generations. Status and Settings now publish together.
+
+The repeated native release test exposed a Swift runtime abort at the generic
+`Task.sleep(for:)` specialization, reproduced twice with the same binary. This
+matches [Swift issue 86204](https://github.com/swiftlang/swift/issues/86204).
+The app poll loop and native tests use the non-generic nanosecond sleep overload;
+its cancellation semantics and polling intervals are unchanged. The native test
+script also runs the snapshot regressions alongside the real gRPC trade.
+
+With that workaround, all four native release tests passed and a new gRPC trade
+completed in 13.65 seconds. Independent RPC checks confirmed both claim inputs
+consume their exact funding outpoints, both outputs are spent, both claims have
+two confirmations, and the test asserts zero watchtower bounty:
+
+```
+swap: 409afdb5372494e11db91007c8139635ed5ba6b19f0a68d042ff199f45a678a4
+long Blake2b claim: b5a0c58e58c5e2f67f2e15955f3694276f4c5dd7656b15ee88adc1a204d91611
+short BTC claim: 8664251b76c1f79cd0e2039557887097d86f433a041f807f8ceffdaaf4a882c5
+```

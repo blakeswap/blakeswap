@@ -15,7 +15,9 @@ struct BlakeswapApp: App {
                     NSApp.activate(ignoringOtherApps: true)
                     while !Task.isCancelled {
                         await model.refresh()
-                        try? await Task.sleep(for: .seconds(1.5))
+                        // Avoid the cross-module generic Clock specialization crash:
+                        // https://github.com/swiftlang/swift/issues/86204
+                        try? await Task.sleep(nanoseconds: 1_500_000_000)
                     }
                 }
         }
