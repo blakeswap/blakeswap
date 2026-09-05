@@ -1,0 +1,10 @@
+.cache/
+.local/
+bin/
+.build/
+.DS_Store
+*.app/
+coverage.out
+*.prof
+__pycache__/
+*.py[cod]
