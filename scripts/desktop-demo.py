@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-"""Explicit developer fixture for the desktop app. Nodes/relay remain external.
+"""Developer fixture for the desktop app.
 
-prepare starts separate regtest services and writes isolated Settings; it never
+prepare starts regtest services and writes isolated Settings; it never
 installs or changes the normal desktop wallet. Launch the app with the printed
 --data-dir. trade uses the app-owned daemon's gRPC API and real test coins.
 """

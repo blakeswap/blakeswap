@@ -101,9 +101,8 @@ See [Risks](RISKS.md) for the trust and liveness assumptions that remain necessa
 | Network identity | Fork v2 header hash fixture from upstream, checkpoint/hash tampering, cross-network signed offer/mailbox rejection and key derivation separation |
 
 The Electrum fixture is test-only Go code. It forwards broadcasts to actual
-regtest consensus nodes and constructs inclusion proofs from their blocks. It
-is not a bundled indexer or an independent consensus implementation. Real public
-endpoint reads are separately opt-in:
+regtest consensus nodes and constructs inclusion proofs from their blocks. Real
+public endpoint reads are separately opt-in:
 
 ```sh
 BLAKESWAP_LIVE_READS=1 sh scripts/go.sh test -count=1 -run TestPublishedElectrumServices -v ./internal/chain
@@ -118,7 +117,7 @@ run independent mining suites against the same datadirs concurrently.
 
 The DMG checks include signature/resource sealing, disk-image checksums, relocated
 app launch without repository dependencies, and process-tree inspection for exactly
-one app-owned Go helper and no bundled chain executables. GUI shutdown and parent
+one app-owned Go helper. GUI shutdown and parent
 death must remove the helper/runtime while external fixtures remain alive.
 
 The GitHub Go validation workflow runs vet, unit/IPC lifecycle tests, race checks,

@@ -178,9 +178,12 @@ func (m *Manager) writeSettings(ctx context.Context, next *pb.Settings) (*pb.Set
 			return nil, status.Error(codes.InvalidArgument, "wallet IDs and order cannot be changed")
 		}
 	}
-	// Release any bootstrap vault before inspecting its persisted obligations.
-	// The worker owns separate maps and never takes m.mu.
-	m.stopOpening()
+	runtimeChanged := next.ActiveNetwork != m.settings.ActiveNetwork || !proto.Equal(environment(next, next.ActiveNetwork), environment(m.settings, m.settings.ActiveNetwork))
+	// Release bootstrap vaults before changing their runtime or checking obligations.
+	// Display-name edits need no engine restart or bootstrap cancellation.
+	if runtimeChanged {
+		m.stopOpening()
+	}
 	if next.ActiveNetwork != m.settings.ActiveNetwork {
 		for _, wallet := range m.settings.Wallets {
 			profile := wallet.Id
@@ -202,8 +205,10 @@ func (m *Manager) writeSettings(ctx context.Context, next *pb.Settings) (*pb.Set
 		return nil, err
 	}
 	m.settings = saved
-	m.restart = true
-	m.lastError = "Connecting"
+	if runtimeChanged {
+		m.restart = true
+		m.lastError = "Connecting"
+	}
 	m.publishView()
 	return proto.Clone(saved).(*pb.Settings), nil
 }
@@ -264,7 +269,14 @@ func (m *Manager) stopOpening() {
 // Settings changes and application shutdown cancel it and wait for vault release.
 func (m *Manager) connect(ctx context.Context) {
 	if m.opening == nil {
-		worker := &Manager{root: m.root, settings: proto.Clone(m.settings).(*pb.Settings), engines: map[string]*daemon.Engine{}, configs: map[string]daemon.Config{}}
+		pending := proto.Clone(m.settings).(*pb.Settings)
+		pending.Wallets = nil
+		for _, profile := range m.settings.Wallets {
+			if m.engines[profile.Id] == nil {
+				pending.Wallets = append(pending.Wallets, proto.Clone(profile).(*pb.WalletProfile))
+			}
+		}
+		worker := &Manager{root: m.root, settings: pending, engines: map[string]*daemon.Engine{}, configs: map[string]daemon.Config{}}
 		openingCtx, cancel := context.WithCancel(ctx)
 		job := &networkOpening{cancel: cancel, done: make(chan networkResult, 1)}
 		m.opening = job
@@ -280,8 +292,12 @@ func (m *Manager) connect(ctx context.Context) {
 			result.manager.closeNetwork()
 			m.lastError = result.err.Error()
 		} else {
-			m.engines = result.manager.engines
-			m.configs = result.manager.configs
+			for id, engine := range result.manager.engines {
+				m.engines[id] = engine
+			}
+			for id, config := range result.manager.configs {
+				m.configs[id] = config
+			}
 			m.lastError = ""
 		}
 	default:
@@ -300,10 +316,10 @@ func (m *Manager) run(ctx context.Context) error {
 			m.configs = map[string]daemon.Config{}
 			m.restart = false
 		}
-		if len(m.engines) == 0 {
+		if len(m.engines) < len(m.settings.Wallets) || m.opening != nil {
 			m.connect(ctx)
 		}
-		if len(m.engines) > 0 {
+		if len(m.engines) == len(m.settings.Wallets) && m.opening == nil {
 			m.lastError = ""
 		}
 		// Each wallet gets the whole cycle budget. A slow provider for one wallet

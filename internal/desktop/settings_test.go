@@ -286,3 +286,18 @@ func TestWalletIDsCannotBeChangedOrDeletedBySettings(t *testing.T) {
 		}
 	}
 }
+
+func TestRenameAndInactiveSettingsDoNotRestartWallets(t *testing.T) {
+	m := &Manager{root: t.TempDir(), settings: Defaults()}
+	next := proto.Clone(m.settings).(*pb.Settings)
+	next.Wallets[0].Name = "Savings"
+	saved, err := m.writeSettings(context.Background(), next)
+	if err != nil || m.restart || saved.Wallets[0].Name != "Savings" {
+		t.Fatal("rename reconnected wallet", err)
+	}
+	next = proto.Clone(saved).(*pb.Settings)
+	environment(next, "regtest").PublicWatchtower = true
+	if _, err := m.writeSettings(context.Background(), next); err != nil || m.restart {
+		t.Fatal("inactive network settings reconnected active wallet", err)
+	}
+}

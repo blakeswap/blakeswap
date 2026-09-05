@@ -21,4 +21,4 @@ for path in app.rglob('*'):
             found.append(str(path.relative_to(app)))
 expected = ['Contents/MacOS/Blakeswap', 'Contents/Resources/blakeswap']
 if sorted(found) != expected: raise SystemExit(f'Unexpected executables: {found}')
-print('Verified bundle: app icon, native UI and Go daemon; no chain nodes or indexers')
+print('Verified bundle: app icon, native UI and Go daemon')

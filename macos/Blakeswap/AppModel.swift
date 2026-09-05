@@ -52,13 +52,16 @@ final class AppModel: ObservableObject {
             if acceptSnapshot(next, settings: nextSettings, profile: selected, generation: expected) { connectionError = nil }
         } catch { if selected == profile && expected == generation { connectionError = error.localizedDescription } }
     }
-    func loadSettings() async {
+    @discardableResult
+    func loadSettings() async -> AppSettings? {
         let selected = profile, expected = generation
         do {
             let raw = try await DaemonRPC.call(root: root, profile: selected, method: "settings.get")
             let next = try AppSettings(serializedBytes: raw)
+            guard selected == profile, expected == generation, next.revision >= (settings?.revision ?? 0) else { return nil }
             acceptSnapshot(status, settings: next, profile: selected, generation: expected)
-        } catch { if selected == profile && expected == generation { notice = error.localizedDescription } }
+            return next
+        } catch { if selected == profile && expected == generation { notice = error.localizedDescription }; return nil }
     }
     func saveSettings(_ draft: AppSettings) async {
         guard !busy else { return }; busy = true; invalidateSnapshot()

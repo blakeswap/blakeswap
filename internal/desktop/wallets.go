@@ -97,7 +97,8 @@ func (m *Manager) createWallet(ctx context.Context, request *pb.CreateWalletRequ
 	if err := saveSettings(m.root, saved); err != nil {
 		return nil, err
 	}
-	m.settings, m.restart, m.lastError = saved, true, "Connecting"
+	m.settings = saved
+	// The run loop bootstraps missing profiles without stopping active wallets.
 	committed = true
 	m.publishView()
 	return proto.Clone(saved).(*pb.Settings), nil

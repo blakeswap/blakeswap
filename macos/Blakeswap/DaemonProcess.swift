@@ -34,7 +34,7 @@ final class DaemonProcess {
         stopping = true
         guard let process = child else { return }
         if process.isRunning { process.terminate() }
-        // Only wait on our owned child. It owns wallet state and never starts external chain nodes.
+        // Wait for the owned helper to release wallet state.
         await Task.detached { process.waitUntilExit() }.value
         try? log?.close(); log = nil; child = nil
     }

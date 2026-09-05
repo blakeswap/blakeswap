@@ -43,6 +43,8 @@ final class DaemonRPCTests: XCTestCase {
         let original = try await status("alice")
         let settings = try AppSettings(serializedBytes: await call("alice", "settings.get"))
         var created = try AppSettings(serializedBytes: await call("alice", "wallet.create", ["name": "Savings", "revision": settings.revision]))
+        let duringCreation = try await status("alice")
+        XCTAssertEqual(duringCreation.addresses, original.addresses, "Creating a wallet interrupted the existing wallet")
         let walletID = try XCTUnwrap(created.wallets.last?.id)
         XCTAssertNotEqual(walletID, "alice")
         var added: DaemonStatus?
@@ -62,6 +64,8 @@ final class DaemonRPCTests: XCTestCase {
         }
         created.wallets[created.wallets.count - 1].name = "Long-term savings"
         let savedRaw = try await DaemonRPC.call(root: root, profile: walletID, method: "settings.update", payload: created.jsonUTF8Data())
+        let duringRename = try await status(walletID)
+        XCTAssertEqual(duringRename.addresses, newWallet.addresses, "Renaming unnecessarily reconnected the wallet")
         let renamed = try AppSettings(serializedBytes: savedRaw)
         XCTAssertEqual(renamed.wallets.last?.id, walletID)
         XCTAssertEqual(renamed.wallets.last?.name, "Long-term savings")

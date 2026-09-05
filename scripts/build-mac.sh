@@ -19,7 +19,6 @@ for bundle in "$swift_bin"/*.bundle; do
 done
 cp -R docs "$resources/docs"
 cp README.md "$resources/docs/README.md"
-cp -R licenses/. "$resources/licenses/"
 # Include notices for every resolved Swift dependency and Go module.
 python3 scripts/bundle-licenses.py "$resources/licenses"
 cat > "$app_path/Contents/Info.plist" <<'PLIST'

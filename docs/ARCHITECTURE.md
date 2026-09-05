@@ -11,15 +11,14 @@
 | Bitcoin Core node | BTC consensus, mempool, blocks, RPC, watch-only address observations | Faucet keys for regtest only; trader wallets imported as address descriptors with private keys disabled |
 | Bitcoin Blake2b node | Actual fork consensus and unified signatures, v2 block headers, mempool and RPC | Same watch-only separation; a distinct chain/datadir |
 
-The desktop owns a Go helper with one network-selected wallet engine (two
-independent profiles for the regtest demonstration). The CLI can instead run
+The desktop owns a Go helper with an independent engine for each saved wallet on
+the selected network. Settings creates wallets and edits their display names. The CLI can instead run
 independent trader and tower daemons. Every wallet engine also accepts and advances watchtower jobs alongside its own swaps. Public listing is opt-in; a shared npub supports encrypted private discovery. Each connects to external chain services and
 one or more Nostr relays. The maker serializes reservations of its own offers;
 there is no authoritative matching database or service holding user funds.
 
-The app bundles no chain nodes, indexers, or relays. The full-node components in
-the table are optional user-operated external backends or explicit test fixtures.
-By default the wallet uses public Electrum servers.
+By default wallets connect to public Electrum servers. Settings also accepts
+user-operated full-node RPC backends.
 
 ## Private local API
 

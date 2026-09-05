@@ -149,9 +149,8 @@ struct SettingsView: View {
                 }
                 watchtowerSettings
             }
-            if editing == "regtest" { Text("Regtest requires separately running BTC and Blake2b nodes. The app does not start or stop them.").font(.caption).foregroundStyle(.secondary) }
             HStack {
-                Button("Reload") { Task { await model.loadSettings() } }.disabled(model.busy)
+                Button("Reload") { Task { if let saved = await model.loadSettings() { draft = saved; editing = saved.activeNetwork; checks = [:] } } }.disabled(model.busy)
                 Spacer()
                 Button("Save settings") {
                     var saved = draft
