@@ -11,31 +11,30 @@
 | Bitcoin Core node | BTC consensus, mempool, blocks, RPC, watch-only address observations | Faucet keys for regtest only; trader wallets imported as address descriptors with private keys disabled |
 | Bitcoin Blake2b node | Actual fork consensus and unified signatures, v2 block headers, mempool and RPC | Same watch-only separation; a distinct chain/datadir |
 
-```mermaid
-flowchart LR
-  MA[Native macOS app] -->|private Unix socket| A[Alice Go daemon]
-  MA -->|profile switch| B[Bob Go daemon]
-  A <-->|signed offers and encrypted mail| R1[Nostr relay A]
-  B <-->|signed offers and encrypted mail| R1
-  A <-->|redundant delivery| R2[Nostr relay B]
-  B <-->|redundant delivery| R2
-  W[Watchtower] <-->|encrypted jobs and receipts| R1
-  W <--> R2
-  A --> BTC[Bitcoin Core regtest]
-  A --> BL[Bitcoin Blake2b regtest]
-  B --> BTC
-  B --> BL
-  W --> BTC
-  W --> BL
-```
+The desktop owns a Go helper with one network-selected wallet engine (two
+independent profiles for the regtest demonstration). The CLI can instead run
+independent trader and tower daemons. Each connects to external chain services and
+one or more Nostr relays. The maker serializes reservations of its own offers;
+there is no authoritative matching database or service holding user funds.
 
-The two trader daemons are independent. The GUI's profile switch is a convenient local demonstration of two users; it does not merge their wallets. Two local relays demonstrate redundant transport. There is no authoritative matching database: a maker serializes reservations of its own offers, and clients independently verify contracts and chain state.
+The app bundles no chain nodes, indexers, or relays. The full-node components in
+the table are optional user-operated external backends or explicit test fixtures.
+By default the wallet uses public Electrum servers.
 
 ## Private local API
 
-The GUI exchanges one JSON request/response per Unix-domain socket connection. Socket permissions are `0600`; data directories are created with `0700`. The wallet has no HTTP listener, browser-origin API, or remote signing endpoint. The relay has its own loopback WebSocket listener, with no wallet methods. API implementation and exact methods are described in [Operations](OPERATIONS.md).
+The SwiftUI client uses generated SwiftProtobuf messages and gRPC Swift 2 over a
+private Unix socket. The daemon also serves an authenticated loopback HTTP gateway
+from the same protobuf service with generated OpenAPI documentation. File-based
+startup bearer credentials protect both transports; browser Origins and foreign
+Hosts are rejected. See [API](API.md) for the exact contract and limits and
+[Packaging](PACKAGING.md) for process ownership and shutdown.
 
-The daemon serializes API mutations and swap advancement with a mutex. This keeps offer reservation and wallet input selection atomic within one process. The encrypted bbolt database excludes concurrent writers. Network and RPC calls are bounded by timeouts; a failed durable write permanently stops transaction execution in that process.
+Wallet mutations and protocol advancement are serialized. Immutable public
+status/Settings snapshots remain readable during slow external IO. Settings use a
+revision-based compare-and-swap update and persist atomically. Network changes
+are blocked while local offers or swaps remain active, even if the current node
+is unreachable. Connection changes preserve wallet state and immutable swap terms.
 
 ## Key derivation and persistence
 
@@ -45,17 +44,32 @@ A 256-bit entropy BIP-39 mnemonic produces one BIP-32 master key. All child deri
 m / 83696968' / branch' / context[0]' / ... / context[7]'
 ```
 
-Branch `0` is BTC, `1` is Blake2b, and `2` is the application's Nostr identity. The context is SHA256 of `blakeswap/v1/` plus a purpose string; its eight big-endian words have their high bit cleared before hardened derivation. This leaves 248 bits of context separation. Current purposes are `deposit`, `swap/<random 256-bit swap ID>`, and `nostr-identity`.
+Branch `0` is BTC, `1` is Blake2b, and `2` is the application's Nostr identity. The context is SHA256 of `blakeswap/v1/` plus a purpose string; its eight big-endian words have their high bit cleared before hardened derivation. This leaves 248 bits of context separation. Current purposes are `deposit`, `swap/<random 256-bit swap ID>`, and `nostr-identity`. Mainnet and testnet prefix each purpose with `<network>/`; regtest retains the original purposes for recovery compatibility. A desktop profile shares one encrypted master mnemonic across its isolated network databases, while addresses, Nostr identities, and swap keys differ by network.
 
 Each chain gets distinct deposit and per-swap keys. No extended public keys are disclosed. The current wallet uses a stable deposit/change address per chain, which has privacy costs. It does not claim to be a standard external wallet path or allocate a registered coin type.
 
 Snapshots include the mnemonic, preimages, accepted immutable terms, raw signed transactions, tower jobs, receipts, inbox deduplication records, and the outbox. They are JSON encoded, encrypted with AES-256-GCM using fresh random nonces, and committed atomically by bbolt. A random 32-byte salt and scrypt (`N=32768, r=8, p=1`) derive the key from the vault password. Authenticated associated data binds the state format. Backups copy the consistent encrypted database.
 
-The local launcher creates a random password in a separate `0600` file. This is a regtest convenience, not Keychain-backed production storage. Someone who obtains both files can decrypt the wallet. See [Risks](RISKS.md).
+Both the desktop and local launcher create a random password in a separate `0600` file. This is not Keychain-backed storage. Someone who obtains both files can decrypt the wallet. See [Risks](RISKS.md).
 
 ## Chain boundary
 
-Every daemon requires both endpoints to be explicit loopback HTTP addresses. Startup rejects anything except initialized regtest. It checks BTC's 80-byte header and Blake2b's 164-byte v2 header, and requires Blake2b deployment active at height 1. The application domain identifies the rule set, since the regtest chains share a genesis hash.
+Both chain backends support real transactions on mainnet, Testnet4, and regtest.
+RPC accepts explicit loopback HTTP or HTTPS, authenticates from a local cookie
+file, requires wallet/transaction-index support, and checks genesis, network name,
+header format, and active Blake2b deployment. Electrum uses TLS for public servers
+or plaintext only on literal loopback, with CA validation or an explicit certificate
+pin. It checks genesis, the fork checkpoint/rule set, header format and individual
+proof of work, raw transaction IDs/outputs, and merkle inclusion. It queries script
+history for relevant confirmed and mempool spends, and detects changed headers
+during observations. It does not validate the full difficulty/chainwork history:
+canonicality, completeness, and availability remain trust in the configured
+operator. [Risks](RISKS.md) details the difference from a user-controlled full node.
+
+BTC funding additionally requires bounded ancestry to a mature, post-fork BTC
+coinbase that differs from the Blake2b coinbase at the same BIP-34 height. The
+check runs before own BTC funding and before accepting counterparty BTC funding.
+Separate derivation paths alone are not replay protection.
 
 Go constructs and signs native SegWit funding and spend transactions locally. Nodes receive signed transactions and watch-only address descriptors. BTC signatures use BIP-143 `SIGHASH_ALL`; Blake2b signatures use `SIGHASH_ALL|UNIFIED` (`0x21`). The fork signer is tested against upstream vectors and the actual fork node.
 
@@ -63,9 +77,9 @@ Confirmed funding is checked by outpoint, amount, exact script, and minimum conf
 
 ## Nostr boundary
 
-Public offers use experimental addressable kind `38481` with `d=<offer ID>` and `t=blakeswap-regtest-v1`. This is not a registered general-purpose event kind or NIP-69 fiat order. Private application rumors use kind `10481`, encrypted inside a NIP-59 seal (`13`) and persistent gift wrap (`1059`) using NIP-44 v2. Outer keys are freshly generated and timestamps are randomized up to two days into the past.
+Public offers use experimental addressable kind `38481` with `d=<offer ID>` and `t=blakeswap-<network>-v1`. This is not a registered general-purpose event kind or NIP-69 fiat order. Private application rumors use kind `10481`, encrypted inside a NIP-59 seal (`13`) and persistent gift wrap (`1059`) using NIP-44 v2. Outer keys are freshly generated and timestamps are randomized up to two days into the past.
 
-Every layer checks event ID, signature, kind, recipient, and author binding. The recipient refuses a rumor whose author differs from the seal's signer. Relays see recipients and traffic timing, and may retain ciphertext indefinitely; this is not perfect anonymity or forward secrecy.
+Private envelopes also bind the selected network namespace. Every layer checks event ID, signature, kind, recipient, and author binding. The recipient refuses a rumor whose author differs from the seal's signer. Relays see recipients and traffic timing, and may retain ciphertext indefinitely; this is not perfect anonymity or forward secrecy.
 
 Event IDs use a small bounds-checked NIP-01 canonical serializer with known-event and independent Unicode/escaping fixtures. The pinned Nostr library's optimized serializer fails Go's pointer-check instrumentation, so the application does not call that serializer or its event-signing wrapper. It continues using the library's NIP-44 encryption and btcec's Schnorr primitives; runtime race/pointer checks stay enabled.
 

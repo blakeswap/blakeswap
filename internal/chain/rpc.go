@@ -1,4 +1,4 @@
-// Package chain talks only to explicitly configured local regtest full nodes.
+// Package chain provides full-node and Electrum chain observations.
 package chain
 
 import (
@@ -39,22 +39,26 @@ func (id ID) Domain() string {
 }
 
 type RPC struct {
-	ID     ID
-	URL    string
-	Cookie string
-	Wallet string
-	client *http.Client
+	ID      ID
+	Network Network
+	URL     string
+	Cookie  string
+	Wallet  string
+	client  *http.Client
 }
 
 func New(id ID, endpoint, cookie string) (*RPC, error) {
+	return NewFor(Regtest, id, endpoint, cookie)
+}
+func NewFor(network Network, id ID, endpoint, cookie string) (*RPC, error) {
 	u, e := url.Parse(endpoint)
 	if e != nil {
 		return nil, e
 	}
-	if !id.Valid() || u.Scheme != "http" || u.User != nil || (u.Hostname() != "127.0.0.1" && u.Hostname() != "::1") {
-		return nil, errors.New("only explicit loopback regtest RPC endpoints are supported")
+	if !id.Valid() || !network.Valid() || u.User != nil || u.RawQuery != "" || u.Fragment != "" || (u.Scheme != "https" && (u.Scheme != "http" || (u.Hostname() != "127.0.0.1" && u.Hostname() != "::1"))) {
+		return nil, errors.New("RPC requires HTTPS or explicit loopback HTTP; credentials belong in a cookie file")
 	}
-	return &RPC{ID: id, URL: strings.TrimRight(endpoint, "/"), Cookie: cookie, client: &http.Client{Timeout: 15 * time.Second}}, nil
+	return &RPC{ID: id, Network: network.Normalized(), URL: strings.TrimRight(endpoint, "/"), Cookie: cookie, client: &http.Client{Timeout: 15 * time.Second}}, nil
 }
 func (r *RPC) WithWallet(name string) *RPC { c := *r; c.Wallet = name; return &c }
 
@@ -65,6 +69,18 @@ type RPCError struct {
 
 func (e *RPCError) Error() string { return fmt.Sprintf("RPC %d: %s", e.Code, e.Message) }
 func (r *RPC) Call(ctx context.Context, method string, out any, params ...any) error {
+	return r.call(ctx, r.client, method, out, params...)
+}
+
+// Wallet history operations can take hours. Their caller owns cancellation;
+// ordinary observations retain the short HTTP timeout.
+func (r *RPC) historyCall(ctx context.Context, method string, out any, params ...any) error {
+	client := *r.client
+	client.Timeout = 0
+	return r.call(ctx, &client, method, out, params...)
+}
+
+func (r *RPC) call(ctx context.Context, client *http.Client, method string, out any, params ...any) error {
 	if params == nil {
 		params = []any{}
 	}
@@ -90,7 +106,7 @@ func (r *RPC) Call(ctx context.Context, method string, out any, params ...any) e
 	}
 	req.SetBasicAuth(user, pass)
 	req.Header.Set("Content-Type", "application/json")
-	resp, err := r.client.Do(req)
+	resp, err := client.Do(req)
 	if err != nil {
 		return err
 	}
@@ -126,8 +142,15 @@ func (r *RPC) Check(ctx context.Context) error {
 	if e := r.Call(ctx, "getblockchaininfo", &info); e != nil {
 		return e
 	}
-	if info.Chain != "regtest" || info.Blocks < 2 {
-		return errors.New("refusing non-regtest or uninitialized chain")
+	if info.Chain != r.Network.NodeName() || info.Blocks < int(r.Network.ForkHeight())+1 {
+		return errors.New("wrong network or chain has not passed Blake2b activation")
+	}
+	var genesis string
+	if err := r.Call(ctx, "getblockhash", &genesis, 0); err != nil {
+		return err
+	}
+	if genesis != r.Network.Genesis() {
+		return errors.New("wrong chain genesis")
 	}
 	var header string
 	if e := r.Call(ctx, "getblockheader", &header, info.BestBlockHash, false); e != nil {
@@ -147,8 +170,17 @@ func (r *RPC) Check(ctx context.Context) error {
 		if e := json.Unmarshal(dep["blake2b"], &fork); e != nil {
 			return e
 		}
-		if !fork.Active || fork.Height != 1 {
-			return errors.New("wrong Blake2b regtest activation")
+		if r.Network == Mainnet {
+			var hash string
+			if err := r.Call(ctx, "getblockhash", &hash, r.Network.ForkHeight()); err != nil {
+				return err
+			}
+			if hash != "0000000000000050c1e5f69672f459293be14f46e5a494e7a8c8541396f18eeb" {
+				return errors.New("Blake2b checkpoint mismatch")
+			}
+		}
+		if !fork.Active || fork.Height != int(r.Network.ForkHeight()) {
+			return errors.New("wrong Blake2b activation")
 		}
 	}
 	if len(header) != expected {
@@ -229,6 +261,7 @@ func (r *RPC) Output(ctx context.Context, txid string, vout uint32) (*TxOut, err
 }
 
 type Transaction struct {
+	Height        uint32 `json:"height"`
 	Hex           string `json:"hex"`
 	TxID          string `json:"txid"`
 	Confirmations int    `json:"confirmations"`
@@ -238,11 +271,18 @@ type Transaction struct {
 func (r *RPC) Transaction(ctx context.Context, id string) (Transaction, error) {
 	var t Transaction
 	e := r.Call(ctx, "getrawtransaction", &t, id, true)
+	if e == nil && t.BlockHash != "" {
+		var h struct{ Height uint32 }
+		if err := r.Call(ctx, "getblockheader", &h, t.BlockHash); err != nil {
+			return t, err
+		}
+		t.Height = h.Height
+	}
 	return t, e
 }
 
 // Observe imports addresses into a watch-only node wallet. No spending key crosses RPC.
-func (r *RPC) Observe(ctx context.Context, name string, addresses []string) (*RPC, error) {
+func (r *RPC) Observe(ctx context.Context, name string, addresses []string) (Backend, error) {
 	w := r.WithWallet(name)
 	var loaded []string
 	if e := r.Call(ctx, "listwallets", &loaded); e != nil {
@@ -267,7 +307,7 @@ func (r *RPC) Observe(ctx context.Context, name string, addresses []string) (*RP
 		}
 		var e error
 		if exists {
-			e = r.Call(ctx, "loadwallet", nil, name)
+			e = r.historyCall(ctx, "loadwallet", nil, name)
 		} else {
 			e = r.Call(ctx, "createwallet", nil, name, true, true, "", false, true)
 		}
@@ -275,24 +315,71 @@ func (r *RPC) Observe(ctx context.Context, name string, addresses []string) (*RP
 			return nil, e
 		}
 	}
+	var info struct{ Scanning json.RawMessage }
+	if err := w.Call(ctx, "getwalletinfo", &info); err != nil {
+		return nil, err
+	}
+	if string(info.Scanning) != "false" {
+		return nil, errors.New("RPC wallet history is synchronizing; waiting for the node rescan")
+	}
+	var descriptors struct {
+		Descriptors []struct {
+			Desc      string
+			Timestamp int64
+		}
+	}
+	if err := w.Call(ctx, "listdescriptors", &descriptors); err != nil {
+		return nil, err
+	}
+	known := map[string]bool{}
+	for _, d := range descriptors.Descriptors {
+		known[d.Desc] = d.Timestamp >= 0 && d.Timestamp <= 1 // Core normalizes timestamp zero to one.
+	}
+	// Descriptor presence alone cannot prove that its initial rescan succeeded.
+	// Record readiness in the same node wallet only after the complete response.
+	const readyLabel = "blakeswap-history-ready-v1"
 	var imports []any
+	var pending []string
 	for _, addr := range addresses {
 		var d struct{ Descriptor string }
 		if e := r.Call(ctx, "getdescriptorinfo", &d, "addr("+addr+")"); e != nil {
 			return nil, e
 		}
+		var address struct{ Labels []string }
+		if err := w.Call(ctx, "getaddressinfo", &address, addr); err != nil {
+			return nil, err
+		}
+		ready := false
+		for _, label := range address.Labels {
+			ready = ready || label == readyLabel
+		}
+		if known[d.Descriptor] && ready {
+			continue
+		}
 		imports = append(imports, map[string]any{"desc": d.Descriptor, "timestamp": 0})
+		pending = append(pending, addr)
+	}
+	if len(imports) == 0 {
+		return w, nil
 	}
 	var result []struct {
 		Success bool
 		Error   *RPCError
 	}
-	if e := w.Call(ctx, "importdescriptors", &result, imports); e != nil {
+	if e := w.historyCall(ctx, "importdescriptors", &result, imports); e != nil {
 		return nil, e
+	}
+	if len(result) != len(imports) {
+		return nil, errors.New("incomplete descriptor import response")
 	}
 	for _, r := range result {
 		if !r.Success {
 			return nil, fmt.Errorf("import failed: %v", r.Error)
+		}
+	}
+	for _, addr := range pending {
+		if err := w.Call(ctx, "setlabel", nil, addr, readyLabel); err != nil {
+			return nil, err
 		}
 	}
 	return w, nil

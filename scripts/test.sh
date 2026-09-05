@@ -11,5 +11,6 @@ env -u BLAKESWAP_REGTEST sh scripts/go.sh test ./internal/contract -run '^$' -fu
 env -u BLAKESWAP_REGTEST sh scripts/go.sh test ./internal/transport -run '^$' -fuzz '^FuzzUnwrap$' -fuzztime=10s -parallel=2
 # One package at a time: integration tests intentionally manipulate shared nodes.
 BLAKESWAP_REGTEST="$PWD" sh scripts/go.sh test -p=1 -count=1 -coverprofile=.local/test-results/coverage.out ./...
+BLAKESWAP_TEST_ELECTRUM=1 BLAKESWAP_REGTEST="$PWD" sh scripts/go.sh test -count=1 -run TestRealAsyncSwapRecoveryAndBounties ./internal/daemon
 sh scripts/build-mac.sh
 printf 'All local verification passed. Coverage: .local/test-results/coverage.out\n'

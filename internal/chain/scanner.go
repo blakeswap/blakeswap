@@ -7,6 +7,7 @@ import (
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
 	"github.com/btcsuite/btcd/wire"
 	"sort"
+	"strconv"
 	"strings"
 )
 
@@ -32,7 +33,11 @@ func parseRaw(raw string) (*wire.MsgTx, error) {
 		return nil, e
 	}
 	tx := wire.NewMsgTx(2)
-	e = tx.Deserialize(strings.NewReader(string(b)))
+	reader := strings.NewReader(string(b))
+	e = tx.Deserialize(reader)
+	if e == nil && reader.Len() != 0 {
+		return nil, fmt.Errorf("trailing transaction bytes")
+	}
 	return tx, e
 }
 func (s *Scanner) Scan(ctx context.Context, start uint32, outpoints []string) (map[string]Observation, error) {
@@ -108,18 +113,43 @@ func (s *Scanner) Scan(ctx context.Context, start uint32, outpoints []string) (m
 		obs.Confirmations = int(height - obs.Height + 1)
 		result[key] = obs
 	}
-	var pool []string
-	if e = s.RPC.Call(ctx, "getrawmempool", &pool); e != nil {
+	var queries []map[string]any
+	for _, op := range outpoints {
+		txid, index, ok := strings.Cut(op, ":")
+		vout, err := strconv.ParseUint(index, 10, 32)
+		if !ok || err != nil {
+			return nil, fmt.Errorf("invalid watched outpoint %q", op)
+		}
+		queries = append(queries, map[string]any{"txid": txid, "vout": uint32(vout)})
+	}
+	var spenders []struct {
+		TxID         string
+		Vout         uint32
+		SpendingTxID string
+	}
+	if e = s.RPC.Call(ctx, "gettxspendingprevout", &spenders, queries); e != nil {
 		return nil, e
 	}
-	for _, id := range pool {
+	seen := map[string]bool{}
+	for _, spender := range spenders {
+		id := spender.SpendingTxID
+		if id == "" || seen[id] || !set[OutpointKey(spender.TxID, spender.Vout)] {
+			continue
+		}
+		seen[id] = true
 		raw, e := s.RPC.Transaction(ctx, id)
 		if e != nil {
-			continue
+			if TransactionNotFound(e) {
+				continue
+			} // Evicted between the two calls.
+			return nil, e
 		}
 		tx, e := parseRaw(raw.Hex)
 		if e != nil {
 			return nil, e
+		}
+		if tx.TxHash().String() != id {
+			return nil, fmt.Errorf("mempool spender transaction ID mismatch")
 		}
 		for _, in := range tx.TxIn {
 			key := OutpointKey(in.PreviousOutPoint.Hash.String(), in.PreviousOutPoint.Index)

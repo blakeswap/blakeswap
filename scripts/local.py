@@ -3,7 +3,7 @@
 import argparse, base64, json, os, pathlib, subprocess, time, urllib.request
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
-NODES = {"btc": ("29.1", 19443), "blake": ("29.4.1.knots20260508", 29443)}
+NODES = {"btc": ("29.1", int(os.environ.get("BLAKESWAP_BTC_RPC_PORT", "19443"))), "blake": ("29.4.1.knots20260508", int(os.environ.get("BLAKESWAP_BLAKE_RPC_PORT", "29443")))}
 
 def rpc(chain, method, *params, wallet=False):
     _, port = NODES[chain]
@@ -26,7 +26,9 @@ def start(chain):
     except (OSError, RuntimeError):
         exe = ROOT / ".cache" / "nodes" / chain / f"bitcoin-{version}" / "bin" / "bitcoind"
         args = [str(exe), f"-datadir={data}", "-regtest", "-server", "-daemonwait", "-listen=0", "-connect=0", "-dnsseed=0", "-discover=0", "-natpmp=0", "-txindex=1", "-fallbackfee=0.00002", "-rpcbind=127.0.0.1", "-rpcallowip=127.0.0.1", f"-rpcport={port}"]
-        if chain == "blake": args += ["-testactivationheight=blake2b@1"]
+        if chain == "blake":
+            args += ["-testactivationheight=blake2b@1"]
+            if os.environ.get("BLAKESWAP_RDTS") == "1": args += ["-rdtsexpiry=4102444800"]
         subprocess.run(args, check=True)
     loaded = rpc(chain, "listwallets")
     if "faucet" not in loaded:

@@ -27,20 +27,21 @@ const RevealBlocks uint32 = 24
 const RefundGrace uint32 = 6
 
 type Offer struct {
-	ID          string   `json:"id"`
-	Maker       string   `json:"maker"`
-	Sell        chain.ID `json:"sell"`
-	SellAmount  int64    `json:"sell_amount"`
-	BuyAmount   int64    `json:"buy_amount"`
-	TowerBPS    int64    `json:"tower_bps"`
-	Expires     int64    `json:"expires"`
-	Status      string   `json:"status"`
-	Reservation string   `json:"reservation,omitempty"`
+	Network     chain.Network `json:"network,omitempty"`
+	ID          string        `json:"id"`
+	Maker       string        `json:"maker"`
+	Sell        chain.ID      `json:"sell"`
+	SellAmount  int64         `json:"sell_amount"`
+	BuyAmount   int64         `json:"buy_amount"`
+	TowerBPS    int64         `json:"tower_bps"`
+	Expires     int64         `json:"expires"`
+	Status      string        `json:"status"`
+	Reservation string        `json:"reservation,omitempty"`
 }
 
 func (o Offer) Validate(now int64) error {
-	if !Hex32(o.ID) || !Hex32(o.Maker) || !o.Sell.Valid() || o.SellAmount < 100000 || o.BuyAmount < 100000 || o.SellAmount > 10000000000 || o.BuyAmount > 10000000000 {
-		return errors.New("invalid order bounds (regtest v1: 100,000 to 10 billion sats per leg)")
+	if !o.Network.Valid() || !Hex32(o.ID) || !Hex32(o.Maker) || !o.Sell.Valid() || o.SellAmount < 100000 || o.BuyAmount < 100000 || o.SellAmount > 10000000000 || o.BuyAmount > 10000000000 {
+		return errors.New("invalid order bounds (v1: 100,000 to 10 billion sats per leg)")
 	}
 	if o.TowerBPS < 0 || o.TowerBPS > 1000 {
 		return errors.New("tower quote out of bounds")
@@ -66,11 +67,14 @@ func DecodeOffer(event nostr.Event, now int64) (Offer, error) {
 	if e := transport.Valid(event); e != nil {
 		return o, e
 	}
-	if event.Kind != transport.OfferKind || transport.Tag(event, "t") != transport.Namespace {
+	if event.Kind != transport.OfferKind {
 		return o, errors.New("wrong order namespace")
 	}
 	if e := json.Unmarshal([]byte(event.Content), &o); e != nil {
 		return o, e
+	}
+	if transport.Tag(event, "t") != o.Network.Namespace() {
+		return o, errors.New("wrong order network")
 	}
 	if o.Maker != event.PubKey.Hex() || o.ID != transport.Tag(event, "d") {
 		return o, errors.New("order signature binding mismatch")
@@ -122,6 +126,7 @@ func (r Request) Validate(now int64) (Offer, error) {
 }
 
 type Terms struct {
+	StartHeights map[chain.ID]uint32 `json:"start_heights,omitempty"`
 	Version      int                 `json:"version"`
 	Request      Request             `json:"request"`
 	MakerKeys    map[chain.ID]string `json:"maker_keys"`
@@ -135,15 +140,36 @@ type Terms struct {
 }
 
 func NewTerms(r Request, makerKeys map[chain.ID]string, heights map[chain.ID]uint32, tower string, scripts map[chain.ID]string) (Terms, error) {
+	return NewTermsWithClocks(r, makerKeys, heights, heights, tower, scripts)
+}
+func NewTermsWithClocks(r Request, makerKeys map[chain.ID]string, heights, clocks map[chain.ID]uint32, tower string, scripts map[chain.ID]string) (Terms, error) {
 	o, e := r.Validate(time.Now().Unix())
 	if e != nil {
 		return Terms{}, e
 	}
+	scale := o.Network.HorizonScale()
 	longID := o.Sell.Other()
 	shortID := o.Sell
-	terms := Terms{Version: 1, Request: r, MakerKeys: makerKeys, Takeover: heights[longID] + TakeoverBlocks, RevealBefore: heights[longID] + RevealBlocks, Tower: tower, TowerScripts: scripts, Domains: map[chain.ID]string{chain.BTC: chain.BTC.Domain(), chain.Blake: chain.Blake.Domain()}}
-	terms.Long = contract.HTLC{Chain: longID, Hash: r.Hash, ClaimKey: makerKeys[longID], RefundKey: r.Keys[longID], RefundHeight: heights[longID] + LongBlocks, Amount: o.BuyAmount}
-	terms.Short = contract.HTLC{Chain: shortID, Hash: r.Hash, ClaimKey: r.Keys[shortID], RefundKey: makerKeys[shortID], RefundHeight: heights[shortID] + ShortBlocks, Amount: o.SellAmount}
+	terms := Terms{Version: 1, Request: r, MakerKeys: makerKeys, Takeover: heights[longID] + TakeoverBlocks*scale, RevealBefore: heights[longID] + RevealBlocks*scale, Tower: tower, TowerScripts: scripts, Domains: map[chain.ID]string{chain.BTC: o.Network.Domain(chain.BTC), chain.Blake: o.Network.Domain(chain.Blake)}}
+	terms.Long = contract.HTLC{Chain: longID, Hash: r.Hash, ClaimKey: makerKeys[longID], RefundKey: r.Keys[longID], RefundHeight: heights[longID] + LongBlocks*scale, Amount: o.BuyAmount}
+	terms.Short = contract.HTLC{Chain: shortID, Hash: r.Hash, ClaimKey: r.Keys[shortID], RefundKey: makerKeys[shortID], RefundHeight: heights[shortID] + ShortBlocks*scale, Amount: o.SellAmount}
+	if o.Network.Normalized() != chain.Regtest {
+		if err := publicClocks(clocks); err != nil {
+			return Terms{}, err
+		}
+		start := clocks[chain.BTC]
+		if clocks[chain.Blake] > start {
+			start = clocks[chain.Blake]
+		}
+		if uint64(start)+uint64(LongSeconds) > 4000000000 {
+			return Terms{}, errors.New("deadline overflow")
+		}
+		terms.Long.RefundHeight = start + LongSeconds
+		terms.Short.RefundHeight = start + ShortSeconds
+		terms.Takeover = start + TakeoverSeconds
+		terms.RevealBefore = start + RevealSeconds
+		terms.StartHeights = map[chain.ID]uint32{chain.BTC: heights[chain.BTC], chain.Blake: heights[chain.Blake]}
+	}
 	return terms, terms.Validate()
 }
 func (t Terms) Validate() error {
@@ -156,7 +182,7 @@ func (t Terms) Validate() error {
 		return errors.New("invalid terms")
 	}
 	for _, id := range []chain.ID{chain.BTC, chain.Blake} {
-		if !ValidKey(t.MakerKeys[id]) || !ValidKey(t.Request.Keys[id]) || t.Domains[id] != id.Domain() {
+		if !ValidKey(t.MakerKeys[id]) || !ValidKey(t.Request.Keys[id]) || t.Domains[id] != o.Network.Domain(id) {
 			return errors.New("key/domain mismatch")
 		}
 		if o.TowerBPS > 0 {
@@ -175,7 +201,26 @@ func (t Terms) Validate() error {
 	if _, e = t.Short.Script(); e != nil {
 		return e
 	}
-	if t.Long.RefundHeight < LongBlocks || t.Short.RefundHeight < ShortBlocks || t.Takeover != t.Long.RefundHeight-LongBlocks+TakeoverBlocks || t.RevealBefore != t.Long.RefundHeight-LongBlocks+RevealBlocks {
+	if o.Network.Normalized() != chain.Regtest {
+		if t.Long.RefundHeight < TimeLockThreshold+LongSeconds || t.Short.RefundHeight < TimeLockThreshold+ShortSeconds {
+			return errors.New("public swaps require time-based CLTV")
+		}
+		start := t.Long.RefundHeight - LongSeconds
+		if t.Short.RefundHeight != start+ShortSeconds || t.Takeover != start+TakeoverSeconds || t.RevealBefore != start+RevealSeconds {
+			return errors.New("invalid public deadline schedule")
+		}
+		for _, id := range []chain.ID{chain.BTC, chain.Blake} {
+			if t.StartHeights[id] < o.Network.ForkHeight() {
+				return errors.New("invalid scan start height")
+			}
+		}
+		return nil
+	}
+	if t.Long.RefundHeight >= TimeLockThreshold || t.Short.RefundHeight >= TimeLockThreshold {
+		return errors.New("regtest uses block-height deadlines")
+	}
+	scale := o.Network.HorizonScale()
+	if t.Long.RefundHeight < LongBlocks*scale || t.Short.RefundHeight < ShortBlocks*scale || t.Takeover != t.Long.RefundHeight-LongBlocks*scale+TakeoverBlocks*scale || t.RevealBefore != t.Long.RefundHeight-LongBlocks*scale+RevealBlocks*scale {
 		return errors.New("invalid deadline schedule")
 	}
 	return nil
@@ -184,9 +229,13 @@ func (t Terms) Validate() error {
 // Phase checks use each chain's own height, never compare cross-chain heights.
 // The 2:1 horizon assumes similar progress; divergent chain rates remain a risk.
 func (t Terms) Gate(phase string, heights map[chain.ID]uint32) error {
+	if t.Offer().Network.Normalized() != chain.Regtest {
+		return t.timeGate(phase, heights)
+	}
 	if heights[t.Long.Chain] == 0 || heights[t.Short.Chain] == 0 {
 		return errors.New("both chain heights are required")
 	}
+	scale := t.Offer().Network.HorizonScale()
 	lh, sh := heights[t.Long.Chain], heights[t.Short.Chain]
 	if lh >= t.Long.RefundHeight || sh >= t.Short.RefundHeight {
 		return errors.New("refund horizon reached")
@@ -194,15 +243,15 @@ func (t Terms) Gate(phase string, heights map[chain.ID]uint32) error {
 	longLeft, shortLeft := t.Long.RefundHeight-lh, t.Short.RefundHeight-sh
 	switch phase {
 	case "fund-long":
-		if longLeft < 84 || shortLeft < 40 {
+		if longLeft < 84*scale || shortLeft < 40*scale {
 			return errors.New("acceptance too old to fund")
 		}
 	case "fund-short":
-		if longLeft < 64 || shortLeft < 32 || lh+8 > t.RevealBefore {
+		if longLeft < 64*scale || shortLeft < 32*scale || lh+8*scale > t.RevealBefore {
 			return errors.New("insufficient funding safety margin")
 		}
 	case "reveal":
-		if longLeft < 48 || shortLeft < 16 || lh >= t.RevealBefore {
+		if longLeft < 48*scale || shortLeft < 16*scale || lh >= t.RevealBefore {
 			return errors.New("secret reveal cutoff reached; wait for refunds")
 		}
 	default:

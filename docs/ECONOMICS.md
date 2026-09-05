@@ -54,6 +54,6 @@ The local tower caps stored jobs at 1,000 and the relay caps records. These are 
 
 ## Fee escalation
 
-The signed rescue ladder uses 2,000, 6,000, and 20,000 sats of mining fee. All variants pay the same bounty and destination, changing only the owner's net payout and the resulting transaction ID/signature. The tower retries every five seconds and moves to the next tier after three attempts, then stays at the cap. This is a deterministic regtest policy, not a live fee estimator.
+The signed rescue ladder uses 2,000, 6,000, and 20,000 sats of mining fee. All variants pay the same bounty and destination, changing only the owner's net payout and the resulting transaction ID/signature. The tower retries every five seconds and moves to the next tier after three attempts, then stays at the cap. This fixed policy is also used on public networks; it is not a live fee estimator. Own claims/refunds currently retry the base variant, while the tower advances its pre-signed ladder. High fees can therefore stall funding, self-settlement, or rescue. The UI does not promise the configured fees will confirm.
 
 The provider cannot exceed the cap. Consequently it also cannot guarantee rescue during arbitrary fee spikes, censorship, or transaction pinning. An economically meaningful production quote would need calibrated deadlines and fee allowances, explicit privacy terms, and a credible availability model; those are not solved by adding a percentage output.

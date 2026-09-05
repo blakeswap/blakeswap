@@ -19,7 +19,13 @@ func (e *Engine) makeJob(s *Swap, c contract.HTLC, kind string, observe *contrac
 	if err != nil {
 		return protocol.Job{}, err
 	}
-	job := protocol.Job{SwapID: s.ID, Owner: e.identity.Public().Hex(), TermsHash: protocol.Digest(s.Terms), Kind: kind, Target: c, Observe: observe, ScanFrom: 1, Lock: lock, BPS: s.Terms.Offer().TowerBPS, Payout: hex.EncodeToString(e.scripts[c.Chain]), TowerScript: hex.EncodeToString(towerScript)}
+	job := protocol.Job{Network: e.Config.Network, SwapID: s.ID, Owner: e.identity.Public().Hex(), TermsHash: protocol.Digest(s.Terms), Kind: kind, Target: c, Observe: observe, ScanFrom: 1, Lock: lock, BPS: s.Terms.Offer().TowerBPS, Payout: hex.EncodeToString(e.scripts[c.Chain]), TowerScript: hex.EncodeToString(towerScript)}
+	if e.Config.Network != chain.Regtest {
+		job.ScanFrom = s.Terms.StartHeights[c.Chain]
+		if observe != nil {
+			job.ObserveScanFrom = s.Terms.StartHeights[observe.Chain]
+		}
+	}
 	job.ID = protocol.Digest([]string{s.ID, job.Owner, kind, string(c.Chain), c.TxID})
 	for _, fee := range protocol.RescueFees {
 		tx, err := contract.Spend(c, key, e.scripts[c.Chain], fee, kind == "refund", lock, towerScript, protocol.Bounty(c.Amount, job.BPS), nil)
@@ -43,7 +49,7 @@ func (e *Engine) prepare(s *Swap, own contract.HTLC) error {
 		s.SelfRefunds = append(s.SelfRefunds, contract.Hex(tx))
 	}
 	if s.Terms.Offer().TowerBPS > 0 {
-		refund, err := e.makeJob(s, own, "refund", nil, own.RefundHeight+protocol.RefundGrace)
+		refund, err := e.makeJob(s, own, "refund", nil, own.RefundHeight+protocol.RefundDelay(e.Config.Network))
 		if err != nil {
 			return err
 		}
@@ -97,8 +103,7 @@ func (e *Engine) advanceSwap(ctx context.Context, s *Swap, all map[chain.ID]map[
 		}
 		_, err = e.nodes[fundingChain].Transaction(ctx, tx.TxHash().String())
 		if err != nil {
-			var rpcError *chain.RPCError
-			if !errors.As(err, &rpcError) || rpcError.Code != -5 {
+			if !chain.TransactionNotFound(err) {
 				return err
 			}
 			if err = e.save(); err != nil {
@@ -140,7 +145,7 @@ func (e *Engine) advanceSwap(ctx context.Context, s *Swap, all map[chain.ID]map[
 	}
 	for _, job := range s.Jobs {
 		obs, ok := observation(all, job.Target)
-		if ok && obs.Confirmations >= protocol.Confirmations {
+		if ok && obs.Confirmations >= e.Config.Network.Confirmations() {
 			for _, raw := range job.Templates {
 				tx, err := contract.Parse(raw)
 				if err != nil {
@@ -154,7 +159,7 @@ func (e *Engine) advanceSwap(ctx context.Context, s *Swap, all map[chain.ID]map[
 			}
 		}
 	}
-	if longSpent && shortSpent && longObs.Confirmations >= protocol.Confirmations && shortObs.Confirmations >= protocol.Confirmations {
+	if longSpent && shortSpent && longObs.Confirmations >= e.Config.Network.Confirmations() && shortObs.Confirmations >= e.Config.Network.Confirmations() {
 		_, lc := contract.ExtractSecret(s.Long, longObs.Tx)
 		_, sc := contract.ExtractSecret(s.Short, shortObs.Tx)
 		if lc && sc {
@@ -190,13 +195,13 @@ func (e *Engine) advanceSwap(ctx context.Context, s *Swap, all map[chain.ID]map[
 		ownSpent, incomingSpent = shortSpent, longSpent
 		ownObs, incomingObs = shortObs, longObs
 	}
-	if ownSpent && ownObs.Confirmations >= protocol.Confirmations {
+	if ownSpent && ownObs.Confirmations >= e.Config.Network.Confirmations() {
 		if _, claimed := contract.ExtractSecret(own, ownObs.Tx); !claimed && (incoming.TxID == "" || !incomingSpent) {
 			s.Stage = "refunded"
 			return nil
 		}
 	}
-	if own.TxID == "" && incomingSpent && incomingObs.Confirmations >= protocol.Confirmations {
+	if own.TxID == "" && incomingSpent && incomingObs.Confirmations >= e.Config.Network.Confirmations() {
 		if _, claimed := contract.ExtractSecret(incoming, incomingObs.Tx); !claimed {
 			s.Stage = "aborted; counterparty refunded"
 			return nil
@@ -205,7 +210,7 @@ func (e *Engine) advanceSwap(ctx context.Context, s *Swap, all map[chain.ID]map[
 	s.Stage = "awaiting chain confirmations"
 	// Construct and durably store funding/refunds before publishing any spend.
 	if s.Role == "taker" && s.LongFunding == "" {
-		if err := s.Terms.Gate("fund-long", e.heights); err != nil {
+		if err := e.gate(s.Terms, "fund-long"); err != nil {
 			s.Stage = "expired before funding"
 			return err
 		}
@@ -229,7 +234,7 @@ func (e *Engine) advanceSwap(ctx context.Context, s *Swap, all map[chain.ID]map[
 			s.Stage = "awaiting taker funding"
 			return nil
 		}
-		if err = s.Terms.Gate("fund-short", e.heights); err != nil {
+		if err = e.gate(s.Terms, "fund-short"); err != nil {
 			s.Stage = "expired before maker funding"
 			return err
 		}
@@ -273,7 +278,7 @@ func (e *Engine) advanceSwap(ctx context.Context, s *Swap, all map[chain.ID]map[
 			peer = s.Request.Taker
 			id = s.Short.Chain
 		}
-		if err := s.Terms.Gate(phase, e.heights); err != nil {
+		if err := e.gate(s.Terms, phase); err != nil {
 			return err
 		}
 		if s.Role == "maker" {
@@ -316,7 +321,7 @@ func (e *Engine) advanceSwap(ctx context.Context, s *Swap, all map[chain.ID]map[
 			return err
 		}
 		if longReady && shortReady {
-			if err = s.Terms.Gate("reveal", e.heights); err != nil {
+			if err = e.gate(s.Terms, "reveal"); err != nil {
 				revealError = err
 				s.Stage = "awaiting refund deadline"
 			} else {
@@ -358,7 +363,7 @@ func (e *Engine) advanceSwap(ctx context.Context, s *Swap, all map[chain.ID]map[
 			return err
 		}
 	}
-	if s.SelfClaim != "" && (!incomingSpent || incomingObs.Confirmations < protocol.Confirmations) {
+	if s.SelfClaim != "" && (!incomingSpent || incomingObs.Confirmations < e.Config.Network.Confirmations()) {
 		s.Stage = "claiming"
 		if err := e.save(); err != nil {
 			return err
@@ -367,10 +372,10 @@ func (e *Engine) advanceSwap(ctx context.Context, s *Swap, all map[chain.ID]map[
 			return err
 		}
 	}
-	if incomingSpent && incomingObs.Confirmations >= protocol.Confirmations {
+	if incomingSpent && incomingObs.Confirmations >= e.Config.Network.Confirmations() {
 		s.Stage = "awaiting counterparty claim"
 	}
-	if !ownSpent && own.TxID != "" && e.heights[own.Chain] >= own.RefundHeight && len(s.SelfRefunds) > 0 {
+	if !ownSpent && own.TxID != "" && e.eligible(own.Chain, own.RefundHeight) && len(s.SelfRefunds) > 0 {
 		if incomingSpent {
 			if _, claimed := contract.ExtractSecret(incoming, incomingObs.Tx); claimed {
 				s.Stage = "awaiting counterparty claim"
@@ -406,13 +411,13 @@ func (e *Engine) advanceTower(ctx context.Context, all map[chain.ID]map[string]c
 				}
 			}
 		}
-		if e.heights[job.Target.Chain] < job.Lock || (job.Kind == "claim" && state.Secret == "") {
+		if !e.eligible(job.Target.Chain, job.Lock) || (job.Kind == "claim" && state.Secret == "") {
 			continue
 		}
 		if time.Now().Unix()-state.LastAttempt < 5 {
 			continue
 		}
-		if job.Kind == "claim" && e.heights[job.Target.Chain] >= job.Target.RefundHeight {
+		if job.Kind == "claim" && e.clocks[job.Target.Chain] >= job.Target.RefundHeight {
 			state.Error = "refund now eligible; competing claim remains valid"
 		}
 		index := state.Attempt / 3
@@ -444,4 +449,22 @@ func (e *Engine) advanceTower(ctx context.Context, all map[chain.ID]map[string]c
 		}
 	}
 	return nil
+}
+
+func (e *Engine) eligible(id chain.ID, lock uint32) bool {
+	if lock >= protocol.TimeLockThreshold {
+		return e.clocks[id] > lock
+	}
+	return e.heights[id] >= lock
+}
+
+func (e *Engine) gate(t *protocol.Terms, phase string) error {
+	if e.Config.Network != chain.Regtest {
+		for _, id := range []chain.ID{chain.BTC, chain.Blake} {
+			if t.StartHeights[id] > e.heights[id] {
+				return errors.New("swap scan start is above current chain tip")
+			}
+		}
+	}
+	return t.Gate(phase, e.clocks)
 }

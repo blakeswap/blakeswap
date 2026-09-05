@@ -31,18 +31,23 @@ type Engine struct {
 	vault     *storage.Vault
 	keys      *wallet.Keys
 	identity  nostr.SecretKey
-	nodes     map[chain.ID]*chain.RPC
-	watch     map[chain.ID]*chain.RPC
-	scanners  map[chain.ID]*chain.Scanner
+	nodes     map[chain.ID]chain.Backend
+	watch     map[chain.ID]chain.Backend
+	scanners  map[chain.ID]chain.SpendScanner
 	addresses map[chain.ID]string
 	scripts   map[chain.ID][]byte
 	heights   map[chain.ID]uint32
+	clocks    map[chain.ID]uint32
 	balances  map[chain.ID]int64
 	lastError string
 	fatal     error
 }
 
 func Open(ctx context.Context, c Config) (*Engine, error) {
+	c.Network = c.Network.Normalized()
+	if !c.Network.Valid() {
+		return nil, errors.New("invalid network")
+	}
 	if c.Mode != "trader" && c.Mode != "tower" {
 		return nil, errors.New("mode must be trader or tower")
 	}
@@ -58,28 +63,41 @@ func Open(ctx context.Context, c Config) (*Engine, error) {
 	if e != nil {
 		return nil, e
 	}
-	en := &Engine{Config: c, vault: v, nodes: map[chain.ID]*chain.RPC{}, watch: map[chain.ID]*chain.RPC{}, scanners: map[chain.ID]*chain.Scanner{}, addresses: map[chain.ID]string{}, scripts: map[chain.ID][]byte{}, heights: map[chain.ID]uint32{}, balances: map[chain.ID]int64{}}
-	fail := func(err error) (*Engine, error) { v.Close(); return nil, err }
+	en := &Engine{Config: c, vault: v, nodes: map[chain.ID]chain.Backend{}, watch: map[chain.ID]chain.Backend{}, scanners: map[chain.ID]chain.SpendScanner{}, addresses: map[chain.ID]string{}, scripts: map[chain.ID][]byte{}, heights: map[chain.ID]uint32{}, clocks: map[chain.ID]uint32{}, balances: map[chain.ID]int64{}}
+	fail := func(err error) (*Engine, error) { en.Close(); return nil, err }
 	if _, e = v.Load(&en.s); e != nil {
 		return fail(e)
 	}
 	if en.s.Version == 0 {
-		m, e := wallet.NewMnemonic()
+		m := c.InitialMnemonic
+		var e error
+		if m == "" {
+			m, e = wallet.NewMnemonic()
+		} else {
+			_, e = wallet.FromMnemonic(m)
+		}
 		if e != nil {
 			return fail(e)
 		}
-		en.s = State{Version: 1, Mnemonic: m, Offers: map[string]nostr.Event{}, Book: map[string]nostr.Event{}, Swaps: map[string]*Swap{}, Outbox: map[string]*Delivery{}, Seen: map[string]string{}, TowerJobs: map[string]*TowerJob{}}
+		en.s = State{Version: 1, Network: c.Network, Mnemonic: m, Offers: map[string]nostr.Event{}, Book: map[string]nostr.Event{}, Swaps: map[string]*Swap{}, Outbox: map[string]*Delivery{}, Seen: map[string]string{}, TowerJobs: map[string]*TowerJob{}}
 		if e = v.Save(en.s); e != nil {
 			return fail(e)
 		}
 	}
+	if c.InitialMnemonic != "" && c.InitialMnemonic != en.s.Mnemonic {
+		return fail(errors.New("wallet seed differs from this profile"))
+	}
 	if en.s.Version != 1 {
 		return fail(errors.New("unsupported state version"))
+	}
+	if en.s.Network.Normalized() != c.Network {
+		return fail(errors.New("state belongs to a different network; use its own data directory"))
 	}
 	en.keys, e = wallet.FromMnemonic(en.s.Mnemonic)
 	if e != nil {
 		return fail(e)
 	}
+	en.keys.SetNetwork(c.Network)
 	key, e := en.keys.Derive(2, "nostr-identity")
 	if e != nil {
 		return fail(e)
@@ -90,20 +108,33 @@ func Open(ctx context.Context, c Config) (*Engine, error) {
 		if !ok {
 			return fail(errors.New("both chains required"))
 		}
-		r, e := chain.New(id, cfg.URL, cfg.Cookie)
+		var r chain.Backend
+		var e error
+		if cfg.Kind == "electrum" {
+			r, e = chain.NewElectrum(c.Network, id, cfg.URL, cfg.CertificateSHA256)
+		} else if cfg.Kind == "rpc" || cfg.Kind == "" {
+			r, e = chain.NewFor(c.Network, id, cfg.URL, cfg.Cookie)
+		} else {
+			e = errors.New("unknown node backend")
+		}
 		if e != nil {
 			return fail(e)
 		}
+		en.nodes[id] = r
 		if e = r.Check(ctx); e != nil {
 			return fail(e)
 		}
 		en.nodes[id] = r
-		en.scanners[id] = &chain.Scanner{RPC: r}
+		if rpc, ok := r.(*chain.RPC); ok {
+			en.scanners[id] = &chain.Scanner{RPC: rpc}
+		} else {
+			en.scanners[id] = r.(chain.SpendScanner)
+		}
 		key, e := en.keys.Spending(id, "deposit")
 		if e != nil {
 			return fail(e)
 		}
-		addr, script, e := wallet.Address(key.PubKey())
+		addr, script, e := wallet.AddressFor(c.Network, key.PubKey())
 		if e != nil {
 			return fail(e)
 		}
@@ -130,7 +161,12 @@ func Open(ctx context.Context, c Config) (*Engine, error) {
 	}
 	return en, nil
 }
-func (e *Engine) Close() error { return e.vault.Close() }
+func (e *Engine) Close() error {
+	for _, r := range e.nodes {
+		_ = r.Close()
+	}
+	return e.vault.Close()
+}
 func (e *Engine) save() error {
 	if e.fatal != nil {
 		return e.fatal
@@ -148,13 +184,21 @@ func (e *Engine) refresh(ctx context.Context) error {
 			return err
 		}
 		e.heights[id] = h
+		e.clocks[id] = h
+		if e.Config.Network != chain.Regtest {
+			stamp, err := e.nodes[id].MedianTime(ctx)
+			if err != nil {
+				return err
+			}
+			e.clocks[id] = stamp
+		}
 		coins, err := e.watch[id].Unspent(ctx, []string{e.addresses[id]})
 		if err != nil {
 			return err
 		}
 		var balance int64
 		for _, coin := range coins {
-			if coin.Confirmations >= protocol.Confirmations {
+			if coin.Confirmations >= e.Config.Network.Confirmations() {
 				balance += int64(coin.Amount)
 			}
 		}
@@ -195,7 +239,7 @@ func (e *Engine) Tick(ctx context.Context) error {
 		return nil
 	}
 	e.lastError = ""
-	filters := []nostr.Filter{{Kinds: []nostr.Kind{transport.OfferKind}, Tags: nostr.TagMap{"t": {transport.Namespace}}}, {Kinds: []nostr.Kind{1059}, Tags: nostr.TagMap{"p": {e.identity.Public().Hex()}}}}
+	filters := []nostr.Filter{{Kinds: []nostr.Kind{transport.OfferKind}, Tags: nostr.TagMap{"t": {e.Config.Network.Namespace()}}}, {Kinds: []nostr.Kind{1059}, Tags: nostr.TagMap{"p": {e.identity.Public().Hex()}}}}
 	for _, url := range e.Config.Relays {
 		events, err := transport.Pull(ctx, url, filters...)
 		if err != nil {
@@ -245,7 +289,7 @@ func (e *Engine) Tick(ctx context.Context) error {
 }
 func (e *Engine) ingestOffer(event nostr.Event) {
 	o, err := protocol.DecodeOffer(event, time.Now().Unix())
-	if err != nil {
+	if err != nil || o.Network.Normalized() != e.Config.Network {
 		return
 	}
 	key := o.Maker + ":" + o.ID
@@ -268,7 +312,7 @@ func (e *Engine) queue(to, typ, swapID string, body any) error {
 		return err
 	}
 	m := transport.Message{Version: 1, ID: id, Type: typ, SwapID: swapID, Body: raw}
-	event, err := transport.Wrap(e.identity, pub, m)
+	event, err := transport.WrapFor(e.Config.Network.Namespace(), e.identity, pub, m)
 	if err != nil {
 		return err
 	}
@@ -305,7 +349,7 @@ func (e *Engine) flush(ctx context.Context) error {
 	return e.save()
 }
 func (e *Engine) receive(event nostr.Event) error {
-	from, m, err := transport.Unwrap(e.identity, event)
+	from, m, err := transport.UnwrapFor(e.Config.Network.Namespace(), e.identity, event)
 	if err != nil {
 		return err
 	}
@@ -355,7 +399,7 @@ func (e *Engine) publishOffer(o protocol.Offer) error {
 		at = e.s.EventTime + 1
 	}
 	e.s.EventTime = at
-	event := nostr.Event{Kind: transport.OfferKind, CreatedAt: at, Tags: nostr.Tags{{"d", o.ID}, {"t", transport.Namespace}, {"expiration", strconv.FormatInt(o.Expires, 10)}}, Content: string(raw)}
+	event := nostr.Event{Kind: transport.OfferKind, CreatedAt: at, Tags: nostr.Tags{{"d", o.ID}, {"t", e.Config.Network.Namespace()}, {"expiration", strconv.FormatInt(o.Expires, 10)}}, Content: string(raw)}
 	if err = transport.Sign(&event, e.identity); err != nil {
 		return err
 	}
@@ -410,14 +454,14 @@ func (e *Engine) fund(ctx context.Context, c contract.HTLC) (*wire.MsgTx, error)
 	var selected []chain.UTXO
 	var total int64
 	for _, coin := range coins {
-		if coin.Confirmations < protocol.Confirmations || reserved[chain.OutpointKey(coin.TxID, coin.Vout)] {
+		if coin.Confirmations < e.Config.Network.Confirmations() || reserved[chain.OutpointKey(coin.TxID, coin.Vout)] {
 			continue
 		}
 		out, err := e.nodes[c.Chain].Output(ctx, coin.TxID, coin.Vout)
 		if err != nil {
 			return nil, err
 		}
-		if out == nil || out.Value != coin.Amount || out.Script.Hex != coin.Script || out.Confirmations < protocol.Confirmations {
+		if out == nil || out.Value != coin.Amount || out.Script.Hex != coin.Script || out.Confirmations < e.Config.Network.Confirmations() {
 			continue
 		}
 		selected = append(selected, coin)
@@ -431,7 +475,16 @@ func (e *Engine) fund(ctx context.Context, c contract.HTLC) (*wire.MsgTx, error)
 	if err != nil {
 		return nil, err
 	}
-	return contract.Fund(c, selected, key, protocol.FundingFee)
+	tx, err := contract.Fund(c, selected, key, protocol.FundingFee)
+	if err != nil {
+		return nil, err
+	}
+	if c.Chain == chain.BTC {
+		if err = chain.ProveBTCExclusive(ctx, e.Config.Network, e.nodes[chain.BTC], e.nodes[chain.Blake], tx); err != nil {
+			return nil, err
+		}
+	}
+	return tx, nil
 }
 func (e *Engine) broadcast(ctx context.Context, id chain.ID, raw string) error {
 	tx, err := contract.Parse(raw)
@@ -466,7 +519,23 @@ func (e *Engine) funded(ctx context.Context, c contract.HTLC) (bool, error) {
 	if int64(out.Value) != c.Amount || out.Script.Hex != hex.EncodeToString(pk) {
 		return false, errors.New("on-chain funding output differs from agreed HTLC")
 	}
-	return out.Confirmations >= protocol.Confirmations, nil
+	if out.Confirmations < e.Config.Network.Confirmations() {
+		return false, nil
+	}
+	if c.Chain == chain.BTC {
+		t, err := e.nodes[chain.BTC].Transaction(ctx, c.TxID)
+		if err != nil {
+			return false, err
+		}
+		tx, err := contract.Parse(t.Hex)
+		if err != nil {
+			return false, err
+		}
+		if err = chain.ProveBTCExclusive(ctx, e.Config.Network, e.nodes[chain.BTC], e.nodes[chain.Blake], tx); err != nil {
+			return false, err
+		}
+	}
+	return true, nil
 }
 func (e *Engine) scan(ctx context.Context) (map[chain.ID]map[string]chain.Observation, error) {
 	points := map[chain.ID][]string{}
@@ -484,13 +553,22 @@ func (e *Engine) scan(ctx context.Context) (map[chain.ID]map[string]chain.Observ
 		if s.Terms == nil {
 			continue
 		}
-		add(s.Long, s.Terms.Long.RefundHeight-protocol.LongBlocks)
-		add(s.Short, s.Terms.Short.RefundHeight-protocol.ShortBlocks)
+		if s.Terms.Offer().Network.Normalized() == chain.Regtest {
+			add(s.Long, s.Terms.Long.RefundHeight-protocol.LongBlocks)
+			add(s.Short, s.Terms.Short.RefundHeight-protocol.ShortBlocks)
+		} else {
+			add(s.Long, s.Terms.StartHeights[s.Long.Chain])
+			add(s.Short, s.Terms.StartHeights[s.Short.Chain])
+		}
 	}
 	for _, j := range e.s.TowerJobs {
 		add(j.Job.Target, j.Job.ScanFrom)
 		if j.Job.Observe != nil {
-			add(*j.Job.Observe, j.Job.ScanFrom)
+			start := j.Job.ObserveScanFrom
+			if start == 0 {
+				start = j.Job.ScanFrom
+			}
+			add(*j.Job.Observe, start)
 		}
 	}
 	out := map[chain.ID]map[string]chain.Observation{}

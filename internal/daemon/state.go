@@ -10,8 +10,10 @@ import (
 )
 
 type NodeConfig struct {
-	URL    string `json:"url"`
-	Cookie string `json:"cookie"`
+	Kind              string `json:"kind"`
+	CertificateSHA256 string `json:"certificate_sha256"`
+	URL               string `json:"url"`
+	Cookie            string `json:"cookie"`
 }
 type TowerConfig struct {
 	PubKey  string              `json:"pubkey"`
@@ -19,14 +21,16 @@ type TowerConfig struct {
 	BPS     int64               `json:"bps"`
 }
 type Config struct {
-	Name         string                  `json:"name"`
-	Mode         string                  `json:"mode"`
-	DataDir      string                  `json:"data_dir"`
-	PasswordFile string                  `json:"password_file"`
-	Socket       string                  `json:"socket"`
-	Relays       []string                `json:"relays"`
-	Nodes        map[chain.ID]NodeConfig `json:"nodes"`
-	Tower        TowerConfig             `json:"tower"`
+	InitialMnemonic string                  `json:"-"`
+	Network         chain.Network           `json:"network"`
+	Name            string                  `json:"name"`
+	Mode            string                  `json:"mode"`
+	DataDir         string                  `json:"data_dir"`
+	PasswordFile    string                  `json:"password_file"`
+	Socket          string                  `json:"socket"`
+	Relays          []string                `json:"relays"`
+	Nodes           map[chain.ID]NodeConfig `json:"nodes"`
+	Tower           TowerConfig             `json:"tower"`
 }
 type Delivery struct {
 	Event       nostr.Event `json:"event"`
@@ -73,6 +77,7 @@ type TowerJob struct {
 	Error       string       `json:"error,omitempty"`
 }
 type State struct {
+	Network   chain.Network          `json:"network,omitempty"`
 	Version   int                    `json:"version"`
 	Mnemonic  string                 `json:"mnemonic"`
 	Paused    bool                   `json:"paused"`
@@ -104,6 +109,7 @@ type PublicSwap struct {
 	RevealBefore       uint32             `json:"reveal_before"`
 }
 type Status struct {
+	Network         chain.Network       `json:"network"`
 	Name            string              `json:"name"`
 	Mode            string              `json:"mode"`
 	PubKey          string              `json:"pubkey"`

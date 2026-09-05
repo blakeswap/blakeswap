@@ -5,7 +5,9 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
+	"github.com/blakeswap/blakeswap/internal/api"
 	"github.com/blakeswap/blakeswap/internal/daemon"
+	"github.com/blakeswap/blakeswap/internal/desktop"
 	"github.com/blakeswap/blakeswap/internal/relay"
 	"log"
 	"net"
@@ -29,6 +31,12 @@ func run() error {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 	switch os.Args[1] {
+	case "desktop":
+		f := flag.NewFlagSet("desktop", flag.ExitOnError)
+		root := f.String("data-dir", "", "application data directory")
+		parent := f.Int("parent-pid", 0, "owning GUI process ID")
+		_ = f.Parse(os.Args[2:])
+		return desktop.Run(ctx, *root, *parent)
 	case "daemon":
 		f := flag.NewFlagSet("daemon", flag.ExitOnError)
 		path := f.String("config", "", "config JSON")
@@ -47,12 +55,12 @@ func run() error {
 		}
 		defer engine.Close()
 		log.Printf("%s %s ready: %s", cfg.Name, cfg.Mode, cfg.Socket)
-		errc := make(chan error, 2)
-		go func() { errc <- engine.Serve(ctx) }()
-		go func() { errc <- engine.Run(ctx) }()
-		err = <-errc
-		stop()
-		<-errc
+		server, err := api.Listen(ctx, cfg.Socket, &api.Service{Command: engine.Command})
+		if err != nil {
+			return err
+		}
+		defer server.Close()
+		err = engine.Run(ctx)
 		if err == context.Canceled {
 			return nil
 		}
@@ -85,7 +93,7 @@ func run() error {
 		method := f.String("method", "status", "local method")
 		params := f.String("params", "{}", "JSON parameters")
 		_ = f.Parse(os.Args[2:])
-		result, err := daemon.Call(ctx, *socket, daemon.Request{Method: *method, Params: json.RawMessage(*params)})
+		result, err := api.Call(ctx, *socket, daemon.Request{Method: *method, Params: json.RawMessage(*params)})
 		if err != nil {
 			return err
 		}

@@ -10,19 +10,21 @@ import (
 )
 
 type Job struct {
-	ID          string         `json:"id"`
-	SwapID      string         `json:"swap_id"`
-	Owner       string         `json:"owner"`
-	TermsHash   string         `json:"terms_hash"`
-	Kind        string         `json:"kind"`
-	Target      contract.HTLC  `json:"target"`
-	Observe     *contract.HTLC `json:"observe,omitempty"`
-	ScanFrom    uint32         `json:"scan_from"`
-	Lock        uint32         `json:"lock"`
-	BPS         int64          `json:"bps"`
-	Payout      string         `json:"payout"`
-	TowerScript string         `json:"tower_script"`
-	Templates   []string       `json:"templates"`
+	Network         chain.Network  `json:"network,omitempty"`
+	ObserveScanFrom uint32         `json:"observe_scan_from,omitempty"`
+	ID              string         `json:"id"`
+	SwapID          string         `json:"swap_id"`
+	Owner           string         `json:"owner"`
+	TermsHash       string         `json:"terms_hash"`
+	Kind            string         `json:"kind"`
+	Target          contract.HTLC  `json:"target"`
+	Observe         *contract.HTLC `json:"observe,omitempty"`
+	ScanFrom        uint32         `json:"scan_from"`
+	Lock            uint32         `json:"lock"`
+	BPS             int64          `json:"bps"`
+	Payout          string         `json:"payout"`
+	TowerScript     string         `json:"tower_script"`
+	Templates       []string       `json:"templates"`
 }
 type Receipt struct {
 	JobID  string `json:"job_id"`
@@ -30,15 +32,20 @@ type Receipt struct {
 }
 
 func (j Job) Validate(towerScripts map[chain.ID]string, bps int64) error {
-	if !Hex32(j.ID) || !Hex32(j.SwapID) || !Hex32(j.Owner) || !Hex32(j.TermsHash) || !Hex32(j.Target.TxID) || j.Target.Vout != 0 || j.ScanFrom < 1 || j.BPS != bps || bps <= 0 || bps > 1000 || j.TowerScript != towerScripts[j.Target.Chain] {
+	if !j.Network.Valid() || !Hex32(j.ID) || !Hex32(j.SwapID) || !Hex32(j.Owner) || !Hex32(j.TermsHash) || !Hex32(j.Target.TxID) || j.Target.Vout != 0 || j.ScanFrom < 1 || j.BPS != bps || bps <= 0 || bps > 1000 || j.TowerScript != towerScripts[j.Target.Chain] {
 		return errors.New("invalid tower job identity/quote")
+	}
+	if j.Network.Normalized() != chain.Regtest {
+		if j.ScanFrom < j.Network.ForkHeight() || j.Target.RefundHeight < TimeLockThreshold || j.Lock < TimeLockThreshold || (j.Observe != nil && (j.Observe.RefundHeight < TimeLockThreshold || j.ObserveScanFrom < j.Network.ForkHeight())) {
+			return errors.New("invalid public tower timing")
+		}
 	}
 	refund := j.Kind == "refund"
 	if !refund && j.Kind != "claim" {
 		return errors.New("invalid tower job kind")
 	}
 	if refund {
-		if j.Lock != j.Target.RefundHeight+RefundGrace || j.Observe != nil {
+		if j.Lock != j.Target.RefundHeight+RefundDelay(j.Network) || j.Observe != nil {
 			return errors.New("refund grace mismatch")
 		}
 	} else {

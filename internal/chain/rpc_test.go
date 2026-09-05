@@ -24,7 +24,7 @@ func TestExactAmounts(t *testing.T) {
 	}
 }
 func TestRPCRejectsExternal(t *testing.T) {
-	for _, u := range []string{"http://example.com:8332", "https://127.0.0.1:19443", "http://localhost:19443", "http://name:pass@127.0.0.1"} {
+	for _, u := range []string{"http://example.com:8332", "http://localhost:19443", "http://name:pass@127.0.0.1"} {
 		if _, e := New(BTC, u, "unused"); e == nil {
 			t.Fatal("accepted", u)
 		}

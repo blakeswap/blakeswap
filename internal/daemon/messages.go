@@ -43,6 +43,9 @@ func (e *Engine) handle(from string, m transport.Message) error {
 		if err := json.Unmarshal(m.Body, &job); err != nil {
 			return err
 		}
+		if job.Network.Normalized() != e.Config.Network {
+			return errors.New("tower job network mismatch")
+		}
 		if job.Owner != from || m.SwapID != job.SwapID {
 			return errors.New("job sender mismatch")
 		}
@@ -76,6 +79,9 @@ func (e *Engine) handle(from string, m transport.Message) error {
 		if err != nil {
 			return err
 		}
+		if o.Network.Normalized() != e.Config.Network {
+			return errors.New("request network mismatch")
+		}
 		if from != request.Taker || request.ID != m.SwapID || o.Maker != e.identity.Public().Hex() {
 			return errors.New("request party mismatch")
 		}
@@ -99,7 +105,7 @@ func (e *Engine) handle(from string, m transport.Message) error {
 		if err != nil {
 			return err
 		}
-		terms, err := protocol.NewTerms(request, keys, e.heights, e.Config.Tower.PubKey, e.Config.Tower.Scripts)
+		terms, err := protocol.NewTermsWithClocks(request, keys, e.heights, e.clocks, e.Config.Tower.PubKey, e.Config.Tower.Scripts)
 		if err != nil {
 			return err
 		}

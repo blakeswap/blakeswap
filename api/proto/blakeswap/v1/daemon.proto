@@ -1,0 +1,101 @@
+syntax = "proto3";
+package blakeswap.v1;
+option go_package = "github.com/blakeswap/blakeswap/api/gen/blakeswap/v1;blakeswapv1";
+
+import "google/api/annotations.proto";
+import "google/protobuf/empty.proto";
+import "protoc-gen-openapiv2/options/annotations.proto";
+
+option (grpc.gateway.protoc_gen_openapiv2.options.openapiv2_swagger) = {
+ info: { title: "Blakeswap daemon API" version: "1.0" description: "Local wallet API. All amounts are integer satoshis. Protobuf JSON represents int64 as decimal strings. Bearer credentials are read from a private runtime file. HTTP binds only to loopback; gRPC binds to a private Unix socket." }
+ schemes: HTTP
+ consumes: "application/json"
+ produces: "application/json"
+ security_definitions: { security: { key: "Bearer" value: { type: TYPE_API_KEY in: IN_HEADER name: "Authorization" description: "Bearer <runtime token>" } } }
+ security: { security_requirement: { key: "Bearer" value: {} } }
+};
+
+service DaemonService {
+ rpc GetStatus(google.protobuf.Empty) returns (Status) { option (google.api.http) = { get: "/v1/status" }; }
+ rpc SetPaused(SetPausedRequest) returns (Status) { option (google.api.http) = { put: "/v1/pause" body: "*" }; }
+ rpc CreateOffer(CreateOfferRequest) returns (Offer) { option (google.api.http) = { post: "/v1/offers" body: "*" }; }
+ rpc CancelOffer(CancelOfferRequest) returns (Offer) { option (google.api.http) = { delete: "/v1/offers/{id}" }; }
+ rpc TakeOffer(TakeOfferRequest) returns (TakeOfferResponse) { option (google.api.http) = { post: "/v1/swaps" body: "*" }; }
+ rpc Mine(MineRequest) returns (google.protobuf.Empty) { option (google.api.http) = { post: "/v1/regtest/mine" body: "*" }; }
+ rpc Faucet(FaucetRequest) returns (FaucetResponse) { option (google.api.http) = { post: "/v1/regtest/faucet" body: "*" }; }
+ rpc GetRecovery(google.protobuf.Empty) returns (Recovery) { option (google.api.http) = { post: "/v1/wallet/recovery" body: "*" }; }
+ rpc BackupWallet(google.protobuf.Empty) returns (Backup) { option (google.api.http) = { post: "/v1/wallet/backup" body: "*" }; }
+ rpc GetSettings(google.protobuf.Empty) returns (Settings) { option (google.api.http) = { get: "/v1/settings" }; }
+ rpc UpdateSettings(Settings) returns (Settings) { option (google.api.http) = { put: "/v1/settings" body: "*" }; }
+ rpc CheckNode(CheckNodeRequest) returns (CheckNodeResponse) { option (google.api.http) = { post: "/v1/settings/check-node" body: "*" }; }
+}
+message SetPausedRequest { bool paused = 1; string expected_network = 2; }
+message CreateOfferRequest {
+ string sell = 1; // btc or blake.
+ string expected_network = 6; // Must match the active desktop network.
+ int64 sell_amount = 2;
+ int64 buy_amount = 3;
+ int64 tower_bps = 4;
+ int64 expires = 5; // Unix seconds; zero means 24 hours.
+}
+message CancelOfferRequest { string id = 1; string expected_network = 2; }
+message TakeOfferRequest { string maker = 1; string id = 2; string expected_network = 3; }
+message TakeOfferResponse { string id = 1; }
+message MineRequest { string chain = 1; uint32 blocks = 2; string expected_network = 3; }
+message FaucetRequest { string chain = 1; int64 amount = 2; string expected_network = 3; }
+message FaucetResponse { string txid = 1; }
+message Recovery { string mnemonic = 1; string warning = 2; }
+message Backup { string path = 1; }
+message Offer {
+ string id = 1; string maker = 2; string sell = 3;
+ int64 sell_amount = 4; int64 buy_amount = 5; int64 tower_bps = 6;
+ int64 expires = 7; string status = 8; string reservation = 9; string network = 10;
+}
+message HTLC {
+ string chain = 1; string hash = 2; string claim_key = 3; string refund_key = 4;
+ // Legacy JSON alias; block height on regtest, median-time Unix timestamp on public networks.
+ uint32 refund_locktime = 5 [json_name = "refund_height"];
+ int64 amount = 6; string txid = 7; uint32 vout = 8;
+}
+message Swap {
+ string id = 1; string role = 2; string stage = 3; string error = 4;
+ HTLC long = 5; HTLC short = 6; string long_spend = 7; string short_spend = 8;
+ int32 long_confirmations = 9; int32 short_confirmations = 10; int64 tower_paid = 11;
+ map<string,int64> tower_payments = 12;
+ bool tower_ready = 13; bool tower_enabled = 14; bool secret_revealed = 15;
+ uint32 takeover = 16; uint32 reveal_before = 17;
+}
+message Tower { string pubkey = 1; map<string,string> scripts = 2; int64 bps = 3; }
+message TowerJob {
+ string id = 1; string swap_id = 2; string kind = 3; string chain = 4;
+ uint32 eligible_height = 5; string broadcast = 6; int32 confirmations = 7;
+ bool secret_observed = 8; string error = 9;
+}
+message Status {
+ string name = 1; string mode = 2; string pubkey = 3;
+ map<string,string> addresses = 4; map<string,int64> balances = 5;
+ map<string,uint32> heights = 6; bool paused = 7;
+ repeated Offer orders = 8; repeated Swap swaps = 9; repeated TowerJob tower_jobs = 10;
+ int32 pending_messages = 11; string last_error = 12; Tower tower = 13;
+ string network = 14;
+}
+message Node {
+ string kind = 1; // electrum or rpc; all chain backends are external.
+ string url = 2; // ssl://host:port or tcp://loopback:port for Electrum; HTTPS/loopback HTTP for RPC.
+ string cookie = 3; // Absolute path to an RPC cookie file. The API never returns its contents.
+ string certificate_sha256 = 4; // Optional explicit SHA256 of the Electrum server's DER certificate.
+}
+message Environment {
+ string network = 1; // regtest, testnet (Testnet4), or mainnet.
+ map<string,Node> nodes = 2; // Exactly btc and blake.
+ repeated string relays = 3;
+ Tower tower = 4;
+ reserved 5;
+}
+message Settings {
+ string active_network = 1;
+ repeated Environment environments = 2;
+ uint64 revision = 3; // Compare-and-swap revision: stale updates are rejected.
+}
+message CheckNodeRequest { string network = 1; string chain = 2; Node node = 3; }
+message CheckNodeResponse { uint32 height = 1; string trust = 2; }

@@ -2,40 +2,67 @@
 
 A native macOS client and Go daemon for asynchronous, noncustodial Bitcoin ↔ Bitcoin Blake2b atomic swaps. Signed offers and encrypted swap messages travel through Nostr relays. Optional watchtowers can execute delayed, pre-signed rescues and earn a percentage only when their rescue transaction confirms.
 
-**This implementation is deliberately restricted to local regtest.** It uses actual Bitcoin Core and Bitcoin Blake2b/Knots binaries, including the Blake2b fork's active consensus rules and unified signatures. It cannot connect the wallet to mainnet. There is no token, DAO, treasury, custody server, or upfront watchtower fee.
+The app supports mainnet, Testnet4, and regtest. Mainnet starts with public Electrum
+servers; Settings accepts your own Electrum or full-node RPC endpoints per chain
+and environment. No chain node, indexer, or relay is bundled or launched by the
+app. The native client connects directly to the Go daemon using protobuf/gRPC; an
+authenticated grpc-gateway HTTP API and OpenAPI description are also provided.
+There is no token, DAO, treasury, custody server, or upfront watchtower fee.
 
-## Run locally
+The protocol is experimental and has not received an independent security audit.
+Electrum operators are a trust dependency for chain observations. BTC-side funding
+must prove conservative chain-exclusive ancestry, and public-network timing/fees
+have explicit limitations. Read [Risks](docs/RISKS.md) before considering real funds.
 
-Repository: [blakeswap/blakeswap](https://github.com/blakeswap/blakeswap). The Go module and internal import prefix are `github.com/blakeswap/blakeswap`.
+## Build and install
 
-Requirements: Apple Silicon Mac, Xcode with command line tools, Go 1.24+ with automatic toolchain downloads, and Python 3.10.12+. The scripts pin Go 1.26.8, Bitcoin Core 29.1, Bitcoin Knots 29.4.1.knots20260508, and Go module versions. Initial downloads need internet access; the running demonstration uses loopback only.
+Repository and Go module: `github.com/blakeswap/blakeswap`.
+Requires macOS 15+, Xcode/Swift 6 tooling, Go toolchain downloads, and Python 3.
 
 ```sh
 git clone https://github.com/blakeswap/blakeswap.git
 cd blakeswap
-python3 scripts/bootstrap.py
-python3 scripts/dev.py up
-sh scripts/build-mac.sh
-open bin/Blakeswap.app
+sh scripts/build-dmg.sh
 ```
 
-The startup command builds the daemon, starts both regtest nodes, activates Blake2b at height 1, mines mature faucet funds, starts two persistent Nostr relays, and starts independent Alice, Bob, and tower daemons. Each trader receives test coins on both chains. Existing wallets and pending swaps survive restarts.
+Open `bin/Blakeswap-0.2.0-arm64.dmg`, drag the app into Applications, and open it.
+The app owns one bundled Go daemon: launch starts it, quit stops it, and parent-death
+monitoring stops it after a force quit. External nodes/indexers remain independent.
+The default build is ad-hoc signed; [Packaging](docs/PACKAGING.md) describes Developer
+ID signing, notarization, the data layout, and a separate local regtest demonstration.
 
-In the app:
+Settings selects the active network, node endpoints, Nostr relays, and optional
+tower quote. Public BTC and Blake2b mainnet defaults have been checked against live
+chain data. No verified public Blake2b Testnet4 indexer was found; configure your
+own endpoint for that chain. The application does not substitute a Bitcoin server
+or silently change networks. [Operations](docs/OPERATIONS.md) lists the defaults and
+trust assumptions.
 
-1. Select **Alice · maker**, choose **Create offer**, and publish the default offer.
-2. Switch to **Bob · taker** and choose **Take offer**.
-3. Wait for the first funding transaction, then click **Mine 2 blocks on both chains**.
-4. Wait for the maker's funding transaction, then mine two more blocks.
-5. Once both claims appear, mine two more blocks. Both legs show **Completed**.
+## Desktop regtest demonstration
 
-The default example exchanges 0.01 BTC for 0.02 BLAKE. “BLAKE” is this application's display label for Bitcoin Blake2b. The demonstration tower quotes 50 basis points (0.50%); it earns nothing when the owner claims first. These are configurable example terms, not a recommendation or a protocol-mandated market rate.
+```sh
+sh scripts/build-mac.sh
+python3 scripts/desktop-demo.py prepare
+open bin/Blakeswap.app --args --data-dir "$PWD/.local/desktop-demo"
+python3 scripts/desktop-demo.py trade
+```
 
-Closing the GUI leaves daemons running. **Pause** stops a daemon's trading, mailbox processing, and rescue actions; it does not pause blockchain deadlines. A stopped maker can later accept an unfunded request. After funding, either the wallet daemon or its armed tower must act within the available margins.
+This explicit developer harness starts **separate** regtest nodes and a relay, and
+configures an isolated app data directory to connect to them. It does not change
+the normal desktop wallet or add those services to the app bundle. The trade
+exchanges 1,000,000 BTC sats for 2,000,000 BLAKE sats using the app-owned daemon.
+Alternatively use Alice's Create offer, Bob's Take offer, and the regtest mining
+controls in the native UI. “BLAKE” is this app's label for Bitcoin Blake2b.
+
+Closing the app stops its daemon; chain deadlines continue. A maker must return to
+accept and fund a new swap, but both participants need not be online simultaneously.
+An armed external watchtower can claim/refund only its pre-authorized jobs. It
+cannot negotiate or perform a taker's first secret revelation.
 
 ## Command-line demonstration
 
 ```sh
+python3 scripts/dev.py up
 python3 scripts/dev.py trade
 python3 scripts/dev.py status
 python3 scripts/dev.py call alice wallet.backup
@@ -43,7 +70,7 @@ python3 scripts/dev.py down
 python3 scripts/local.py stop-nodes
 ```
 
-`trade` uses the same daemon API as the GUI and writes a transaction-level result to `.local/successful-trade.json`. It mines only when transactions are waiting. `down` stops application processes; the separate `stop-nodes` command stops the full nodes. Startup is idempotent and preserves data.
+This separate CLI harness runs independent daemons. `trade` uses the same typed gRPC API as the GUI and writes a transaction-level result to `.local/successful-trade.json`. It mines only when transactions are waiting. `down` stops application processes; the separate `stop-nodes` command stops the full nodes. Startup is idempotent and preserves data.
 
 Wallet addresses, daemon identities, heights, signed offers, transaction IDs, and current settlement status are available from `status`. Mnemonics and private preimages are omitted. Recovery phrases require the explicit `wallet.recovery` command or the corresponding Wallet screen button.
 
@@ -63,7 +90,9 @@ See [the invariant matrix and test limits](docs/TESTING.md). “Comprehensive”
 - [Exact protocol, transactions, messages, and state transitions](docs/PROTOCOL.md)
 - [Watchtower economics and fee calculation](docs/ECONOMICS.md)
 - [Limitations, risks, and recovery assumptions](docs/RISKS.md)
-- [Local operation, configuration, API, and backups](docs/OPERATIONS.md)
+- [Network settings, endpoints, operation, and backups](docs/OPERATIONS.md)
+- [Protobuf, gRPC, HTTP gateway, and OpenAPI](docs/API.md)
+- [Native app lifecycle, DMG, signing, and installation](docs/PACKAGING.md)
 - [Test coverage and reproducible verification](docs/TESTING.md)
 - [Completed local demonstration and transaction evidence](docs/VERIFICATION.md)
 

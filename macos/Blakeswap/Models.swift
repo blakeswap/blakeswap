@@ -1,42 +1,18 @@
 import Foundation
+import SwiftProtobuf
 
-struct Order: Decodable, Identifiable {
-    let id: String
-    let maker: String
-    let sell: String
-    let sellAmount: Int64
-    let buyAmount: Int64
-    let towerBps: Int64
-    let expires: Int64
-    let status: String
+typealias Order = Blakeswap_V1_Offer
+typealias HTLC = Blakeswap_V1_HTLC
+typealias Swap = Blakeswap_V1_Swap
+typealias DaemonStatus = Blakeswap_V1_Status
+typealias AppSettings = Blakeswap_V1_Settings
+typealias EnvironmentSettings = Blakeswap_V1_Environment
+typealias NodeSettings = Blakeswap_V1_Node
+
+extension Blakeswap_V1_Offer: Identifiable {
     var buy: String { sell == "btc" ? "blake" : "btc" }
 }
-
-struct HTLC: Decodable {
-    let chain: String
-    let amount: Int64
-    let refundHeight: UInt32
-    let txid: String?
-}
-
-struct Swap: Decodable, Identifiable {
-    let id: String
-    let role: String
-    let stage: String
-    let error: String?
-    let long: HTLC
-    let short: HTLC
-    let longSpend: String?
-    let shortSpend: String?
-    let longConfirmations: Int
-    let shortConfirmations: Int
-    let towerPaid: Int64
-    let towerPayments: [String: Int64]
-    let towerReady: Bool
-    let towerEnabled: Bool
-    let secretRevealed: Bool
-    let takeover: UInt32
-    let revealBefore: UInt32
+extension Blakeswap_V1_Swap: Identifiable {
     var feeLabel: String {
         let payments = towerPayments.keys.sorted().compactMap { chain -> String? in
             guard let amount = towerPayments[chain], amount > 0 else { return nil }
@@ -45,34 +21,15 @@ struct Swap: Decodable, Identifiable {
         return payments.isEmpty ? "0 sats" : payments.joined(separator: " + ")
     }
 }
-
-struct TowerQuote: Decodable {
-    let pubkey: String
-    let bps: Int64
-}
-
-struct DaemonStatus: Decodable {
-    let name: String
-    let mode: String
-    let pubkey: String
-    let addresses: [String: String]
-    let balances: [String: Int64]
-    let heights: [String: UInt32]
-    let paused: Bool
-    let orders: [Order]
-    let swaps: [Swap]
-    let pendingMessages: Int
-    let lastError: String
-    let tower: TowerQuote
-}
-
-func units(_ sats: Int64) -> String {
-    "\(sats / 100_000_000).\(String(format: "%08lld", sats % 100_000_000))"
-}
+extension Blakeswap_V1_Environment: Identifiable { var id: String { network } }
+func units(_ sats: Int64) -> String { "\(sats / 100_000_000).\(String(format: "%08lld", sats % 100_000_000))" }
 func symbol(_ chain: String) -> String { chain == "btc" ? "BTC" : "BLAKE" }
 func percentage(_ bps: Int64) -> String { String(format: "%.2f%%", Double(bps) / 100) }
-
 enum RPCError: LocalizedError {
     case message(String)
     var errorDescription: String? { if case .message(let message) = self { return message }; return nil }
+}
+
+func locktimeLabel(_ value: UInt32) -> String {
+    value < 500_000_000 ? "Block #\(value)" : Date(timeIntervalSince1970: TimeInterval(value)).formatted(date: .abbreviated, time: .shortened)
 }
