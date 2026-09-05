@@ -34,6 +34,9 @@ struct BlakeswapApp: App {
 
 private let mint = Color(red: 0.39, green: 0.88, blue: 0.72)
 private let panel = Color(red: 0.10, green: 0.12, blue: 0.15)
+// Share the packaged Dock artwork instead of maintaining a second brand mark.
+private let appIcon = Bundle.main.url(forResource: "AppIcon", withExtension: "icns")
+    .flatMap { NSImage(contentsOf: $0) } ?? NSImage(size: .zero)
 
 private struct MintButton: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
@@ -92,7 +95,9 @@ struct ContentView: View {
     private var sidebar: some View {
         VStack(alignment: .leading, spacing: 28) {
             HStack(spacing: 10) {
-                Image(systemName: "arrow.left.arrow.right").font(.title3.bold()).foregroundStyle(.black).frame(width: 34, height: 34).background(mint, in: RoundedRectangle(cornerRadius: 10))
+                Image(nsImage: appIcon).resizable().interpolation(.high).scaledToFit()
+                    .frame(width: 34, height: 34).clipShape(RoundedRectangle(cornerRadius: 8))
+                    .accessibilityHidden(true)
                 Text("blakeswap").font(.system(size: 22, weight: .semibold, design: .rounded)).lineLimit(1).fixedSize()
             }.padding(.top, 14)
             VStack(alignment: .leading, spacing: 9) {
