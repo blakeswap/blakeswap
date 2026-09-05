@@ -6,9 +6,13 @@ A native macOS client and Go daemon for asynchronous, noncustodial Bitcoin ↔ B
 
 ## Run locally
 
+Repository: [blakeswap/blakeswap](https://github.com/blakeswap/blakeswap). The Go module and internal import prefix are `github.com/blakeswap/blakeswap`.
+
 Requirements: Apple Silicon Mac, Xcode with command line tools, Go 1.24+ with automatic toolchain downloads, and Python 3.10.12+. The scripts pin Go 1.26.8, Bitcoin Core 29.1, Bitcoin Knots 29.4.1.knots20260508, and Go module versions. Initial downloads need internet access; the running demonstration uses loopback only.
 
 ```sh
+git clone https://github.com/blakeswap/blakeswap.git
+cd blakeswap
 python3 scripts/bootstrap.py
 python3 scripts/dev.py up
 sh scripts/build-mac.sh

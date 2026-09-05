@@ -1,14 +1,14 @@
 package daemon
 
 import (
-	"blakeswap/internal/chain"
-	"blakeswap/internal/contract"
-	"blakeswap/internal/protocol"
-	"blakeswap/internal/relay"
-	"blakeswap/internal/transport"
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/blakeswap/blakeswap/internal/chain"
+	"github.com/blakeswap/blakeswap/internal/contract"
+	"github.com/blakeswap/blakeswap/internal/protocol"
+	"github.com/blakeswap/blakeswap/internal/relay"
+	"github.com/blakeswap/blakeswap/internal/transport"
 	"net/http/httptest"
 	"os"
 	"path/filepath"

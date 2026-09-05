@@ -1,12 +1,12 @@
 package main
 
 import (
-	"blakeswap/internal/daemon"
-	"blakeswap/internal/relay"
 	"context"
 	"encoding/json"
 	"flag"
 	"fmt"
+	"github.com/blakeswap/blakeswap/internal/daemon"
+	"github.com/blakeswap/blakeswap/internal/relay"
 	"log"
 	"net"
 	"net/http"

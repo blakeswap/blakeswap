@@ -1,11 +1,11 @@
 package protocol
 
 import (
-	"blakeswap/internal/chain"
-	"blakeswap/internal/transport"
 	"encoding/hex"
 	"encoding/json"
 	"fiatjaf.com/nostr"
+	"github.com/blakeswap/blakeswap/internal/chain"
+	"github.com/blakeswap/blakeswap/internal/transport"
 	"github.com/btcsuite/btcd/btcec/v2"
 	"testing"
 	"time"

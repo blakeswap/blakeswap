@@ -1,10 +1,10 @@
 package wallet
 
 import (
-	"blakeswap/internal/chain"
 	"crypto/sha256"
 	"encoding/binary"
 	"errors"
+	"github.com/blakeswap/blakeswap/internal/chain"
 	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/btcsuite/btcd/btcutil"
 	"github.com/btcsuite/btcd/btcutil/hdkeychain"

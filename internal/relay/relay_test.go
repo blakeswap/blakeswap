@@ -1,10 +1,10 @@
 package relay
 
 import (
-	"blakeswap/internal/transport"
 	"context"
 	"encoding/json"
 	"fiatjaf.com/nostr"
+	"github.com/blakeswap/blakeswap/internal/transport"
 	"net/http/httptest"
 	"path/filepath"
 	"strings"

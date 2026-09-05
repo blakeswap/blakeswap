@@ -1,12 +1,6 @@
 package daemon
 
 import (
-	"blakeswap/internal/chain"
-	"blakeswap/internal/contract"
-	"blakeswap/internal/protocol"
-	"blakeswap/internal/storage"
-	"blakeswap/internal/transport"
-	"blakeswap/internal/wallet"
 	"bytes"
 	"context"
 	"encoding/hex"
@@ -14,6 +8,12 @@ import (
 	"errors"
 	"fiatjaf.com/nostr"
 	"fmt"
+	"github.com/blakeswap/blakeswap/internal/chain"
+	"github.com/blakeswap/blakeswap/internal/contract"
+	"github.com/blakeswap/blakeswap/internal/protocol"
+	"github.com/blakeswap/blakeswap/internal/storage"
+	"github.com/blakeswap/blakeswap/internal/transport"
+	"github.com/blakeswap/blakeswap/internal/wallet"
 	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/btcsuite/btcd/wire"
 	"os"

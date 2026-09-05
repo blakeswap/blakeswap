@@ -1,4 +1,4 @@
-module blakeswap
+module github.com/blakeswap/blakeswap
 
 go 1.25
 

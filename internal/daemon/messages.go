@@ -1,12 +1,12 @@
 package daemon
 
 import (
-	"blakeswap/internal/contract"
-	"blakeswap/internal/protocol"
-	"blakeswap/internal/transport"
 	"bytes"
 	"encoding/json"
 	"errors"
+	"github.com/blakeswap/blakeswap/internal/contract"
+	"github.com/blakeswap/blakeswap/internal/protocol"
+	"github.com/blakeswap/blakeswap/internal/transport"
 	"time"
 )
 

@@ -2,12 +2,12 @@
 package relay
 
 import (
-	"blakeswap/internal/transport"
 	"context"
 	"encoding/json"
 	"errors"
 	"fiatjaf.com/nostr"
 	"fmt"
+	"github.com/blakeswap/blakeswap/internal/transport"
 	"github.com/coder/websocket"
 	"github.com/coder/websocket/wsjson"
 	bolt "go.etcd.io/bbolt"

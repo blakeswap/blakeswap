@@ -2,15 +2,15 @@
 package protocol
 
 import (
-	"blakeswap/internal/chain"
-	"blakeswap/internal/contract"
-	"blakeswap/internal/transport"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fiatjaf.com/nostr"
 	"fmt"
+	"github.com/blakeswap/blakeswap/internal/chain"
+	"github.com/blakeswap/blakeswap/internal/contract"
+	"github.com/blakeswap/blakeswap/internal/transport"
 	"github.com/btcsuite/btcd/btcec/v2"
 	"time"
 )

@@ -1,12 +1,12 @@
 package protocol
 
 import (
-	"blakeswap/internal/chain"
-	"blakeswap/internal/contract"
 	"bytes"
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"github.com/blakeswap/blakeswap/internal/chain"
+	"github.com/blakeswap/blakeswap/internal/contract"
 )
 
 type Job struct {

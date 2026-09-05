@@ -1,10 +1,10 @@
 package daemon
 
 import (
-	"blakeswap/internal/protocol"
-	"blakeswap/internal/transport"
 	"encoding/json"
 	"fiatjaf.com/nostr"
+	"github.com/blakeswap/blakeswap/internal/protocol"
+	"github.com/blakeswap/blakeswap/internal/transport"
 	"strings"
 	"testing"
 )

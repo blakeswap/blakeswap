@@ -1,11 +1,11 @@
 package contract
 
 import (
-	"blakeswap/internal/chain"
-	"blakeswap/internal/wallet"
 	"context"
 	"encoding/hex"
 	"fmt"
+	"github.com/blakeswap/blakeswap/internal/chain"
+	"github.com/blakeswap/blakeswap/internal/wallet"
 	"github.com/btcsuite/btcd/wire"
 	"os"
 	"path/filepath"

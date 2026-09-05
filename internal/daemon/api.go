@@ -1,9 +1,6 @@
 package daemon
 
 import (
-	"blakeswap/internal/chain"
-	"blakeswap/internal/protocol"
-	"blakeswap/internal/transport"
 	"bufio"
 	"context"
 	"crypto/sha256"
@@ -11,6 +8,9 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/blakeswap/blakeswap/internal/chain"
+	"github.com/blakeswap/blakeswap/internal/protocol"
+	"github.com/blakeswap/blakeswap/internal/transport"
 	"net"
 	"os"
 	"path/filepath"

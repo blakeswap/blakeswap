@@ -1,8 +1,8 @@
 package wallet
 
 import (
-	"blakeswap/internal/chain"
 	"bytes"
+	"github.com/blakeswap/blakeswap/internal/chain"
 	"testing"
 )
 

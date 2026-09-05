@@ -2,11 +2,11 @@
 package daemon
 
 import (
-	"blakeswap/internal/chain"
-	"blakeswap/internal/contract"
-	"blakeswap/internal/protocol"
 	"encoding/json"
 	"fiatjaf.com/nostr"
+	"github.com/blakeswap/blakeswap/internal/chain"
+	"github.com/blakeswap/blakeswap/internal/contract"
+	"github.com/blakeswap/blakeswap/internal/protocol"
 )
 
 type NodeConfig struct {
