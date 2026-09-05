@@ -77,8 +77,12 @@ short BTC claim: 7160c4c5d4cf8d63048ede5882ea668f6dd9b2b3da2f4a54f43b3fd84036fd2
 ```
 
 Public Electrum checks verified real BTC mainnet, Blake2b mainnet, and BTC Testnet4
-headers/coinbase inclusion without broadcasting. Public relay REQ/EOSE checks
-succeeded for nos.lol, relay.primal.net, and relay.ditto.pub. Availability failures
+headers/coinbase inclusion without broadcasting. Public relay checks using the
+actual combined orderbook/mailbox filters and disposable identities succeeded for
+nos.lol, relay.primal.net, and relay.ditto.pub. Ditto requires NIP-42 authentication
+for mailbox reads; the daemon's challenge/acknowledgment/retry flow passed that
+live check. The earlier impossible-event-ID probe did not exercise this policy.
+Availability failures
 removed dmrelay.com, relay.damus.io, and relay.nostr.band from the candidate defaults.
 No public Blake2b Testnet4 server was verified. No real-money swap, public order,
 public encrypted message, Developer ID signature or Apple notarization was part

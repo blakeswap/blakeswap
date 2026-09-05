@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"github.com/coder/websocket"
 	"github.com/coder/websocket/wsjson"
+	"strings"
 	"time"
 )
 
@@ -47,6 +48,17 @@ func Publish(ctx context.Context, url string, event nostr.Event) error {
 	}
 }
 func Pull(ctx context.Context, url string, filters ...nostr.Filter) ([]nostr.Event, error) {
+	return pull(ctx, url, nil, filters...)
+}
+
+// PullAs authenticates only when a relay requires it to read this identity's
+// mailbox. The key signs a relay-bound NIP-42 challenge, never relay-supplied
+// event contents. Publishing gift wraps remains anonymous.
+func PullAs(ctx context.Context, url string, identity nostr.SecretKey, filters ...nostr.Filter) ([]nostr.Event, error) {
+	return pull(ctx, url, &identity, filters...)
+}
+
+func pull(ctx context.Context, url string, identity *nostr.SecretKey, filters ...nostr.Filter) ([]nostr.Event, error) {
 	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
 	c, _, e := websocket.Dial(ctx, url, nil)
@@ -63,6 +75,8 @@ func Pull(ctx context.Context, url string, filters ...nostr.Filter) ([]nostr.Eve
 		return nil, e
 	}
 	var events []nostr.Event
+	var challenge, authID string
+	authAttempted := false
 	for {
 		var reply []json.RawMessage
 		if e = wsjson.Read(ctx, c, &reply); e != nil {
@@ -74,6 +88,34 @@ func Pull(ctx context.Context, url string, filters ...nostr.Filter) ([]nostr.Eve
 		var kind, sub string
 		_ = json.Unmarshal(reply[0], &kind)
 		_ = json.Unmarshal(reply[1], &sub)
+		if kind == "AUTH" {
+			if len(reply) != 2 || sub == "" || len(sub) > 4096 {
+				return nil, errors.New("invalid relay authentication challenge")
+			}
+			challenge = sub
+			continue
+		}
+		if kind == "OK" && authID != "" && sub == authID {
+			var ok bool
+			var reason string
+			if len(reply) != 4 || json.Unmarshal(reply[2], &ok) != nil || json.Unmarshal(reply[3], &reason) != nil {
+				return nil, errors.New("malformed relay authentication acknowledgment")
+			}
+			if !ok {
+				return nil, fmt.Errorf("relay authentication rejected: %s", reason)
+			}
+			authID = ""
+			// CLOSED ended the original subscription. Retry only after the
+			// matching positive AUTH acknowledgment, with no partial history.
+			events = nil
+			if e = wsjson.Write(ctx, c, req); e != nil {
+				return nil, e
+			}
+			continue
+		}
+		if authID != "" {
+			continue
+		}
 		if sub != "sync" {
 			continue
 		}
@@ -105,10 +147,26 @@ func Pull(ctx context.Context, url string, filters ...nostr.Filter) ([]nostr.Eve
 		case "EOSE":
 			return events, nil
 		case "CLOSED":
-			if len(reply) < 3 {
+			var reason string
+			if len(reply) != 3 || json.Unmarshal(reply[2], &reason) != nil {
 				return nil, errors.New("relay closed subscription")
 			}
-			return nil, fmt.Errorf("relay refused subscription: %s", string(reply[2:][0]))
+			if strings.HasPrefix(reason, "auth-required:") && identity != nil && !authAttempted {
+				if challenge == "" {
+					return nil, errors.New("relay requires authentication but sent no challenge")
+				}
+				auth := nostr.Event{Kind: 22242, CreatedAt: nostr.Now(), Tags: nostr.Tags{{"relay", url}, {"challenge", challenge}}}
+				if e = Sign(&auth, *identity); e != nil {
+					return nil, e
+				}
+				authAttempted = true
+				authID = auth.ID.Hex()
+				if e = wsjson.Write(ctx, c, []any{"AUTH", auth}); e != nil {
+					return nil, e
+				}
+				continue
+			}
+			return nil, fmt.Errorf("relay refused subscription: %s", reason)
 		}
 	}
 }

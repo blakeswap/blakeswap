@@ -41,11 +41,19 @@ loopback. Electrs/Fulcrum must support the actual chain's headers and history;
 pointing the Blake2b setting at ordinary Bitcoin Electrum is rejected.
 
 Default Nostr relays are `wss://nos.lol`, `wss://relay.primal.net`, and `wss://relay.ditto.pub`. They are public
-services used by the [nak](https://github.com/fiatjaf/nak), [Primal](https://github.com/PrimalHQ), and [Ditto](https://gitlab.com/soapbox-pub/ditto) ecosystems. Read-only WebSocket REQ/EOSE checks passed for all three; this does not guarantee future write admission.
+services used by the [nak](https://github.com/fiatjaf/nak), [Primal](https://github.com/PrimalHQ), and [Ditto](https://gitlab.com/soapbox-pub/ditto) ecosystems. Read-only checks of the actual orderbook and mailbox subscriptions passed for all three, including NIP-42 authentication for Ditto's mailbox reads; this does not guarantee future write admission.
 Configure one to three shared relays per environment; public connections require
 WSS and local test relays may use loopback WS. Public relay retention/admission
 is not guaranteed by availability checks. Relay settings do not grant a relay
 custody, chain validation authority, or orderbook consensus.
+
+Settings saved by an early development build may still contain the unavailable
+`wss://dmrelay.com`. Replace that entry with `wss://relay.ditto.pub` in each affected
+environment and save. Defaults do not overwrite previously saved custom settings.
+Relay errors include the failing endpoint. An `auth-required:` read rejection is
+retried after the daemon authenticates its Nostr identity; a relay that still
+rejects the authenticated identity needs different admission permissions or must
+be replaced in Settings. The daemon continues checking the other configured relays.
 
 For full-node RPC, choose `rpc`, enter an explicit loopback HTTP or remote HTTPS
 URL, and an absolute local cookie file path (`username:password`). Credentials are

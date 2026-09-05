@@ -46,6 +46,7 @@ Without `BLAKESWAP_REGTEST`, real-node cases explicitly skip; a passing unit run
 | N02 | Private content is encrypted for the intended recipient | NIP-44 vectors, wrap/unwrap roundtrip, wrong-recipient failure, one-time outer identities, ciphertext plaintext check |
 | N03 | Rumor author must match seal author | Adversarial correctly encrypted envelope with mismatched inner author is rejected |
 | N04 | Relay history survives restart and old orders do not resurrect | Persistent relay restart; new cancellation plus stale re-publication; deterministic same-time ID tie test |
+| N05 | Relay mailbox authentication binds the identity, challenge and URL | Local WebSocket handshake tests cover required and unsolicited authentication, missing challenges, rejected/malformed/unrelated acknowledgments, partial history discard, and bounded retry; opt-in public reads exercise actual orderbook/mailbox filters with disposable identities |
 | N05 | Message duplicates are idempotent and IDs cannot change meaning | Actual daemon receives same gift wrap twice, reserves once, rejects different signed contents under same application ID |
 | N06 | Relay acknowledgment is distinct from recipient processing acknowledgment | Durable outbox survives restart; forged application ack cannot clear delivery; authenticated intended-recipient ack clears it |
 | K01 | Chain, swap, and messaging keys are separate and recoverable | Hardened derivation separation and repeat mnemonic recovery tests |

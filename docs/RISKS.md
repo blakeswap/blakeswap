@@ -48,6 +48,12 @@ The current mailbox sync replays retained history with a 10,000-event bound. The
 
 NIP-44/59 encryption does not provide forward secrecy. A later identity-key compromise can expose stored historical ciphertext. Relays still see recipient tags, connection addresses, sizes, and timing. Public offers identify their maker; blockchain scripts/amounts and shared hashlocks can link the two legs. Stable deposit/change addresses make wallet activity linkable. This is not an anonymity system.
 
+For relays requiring NIP-42 authentication to read mailboxes, the daemon proves
+control of its network-specific Nostr identity to that configured relay. The relay
+can associate that identity with the connection; authentication neither reveals
+the secret key nor grants spending authority. The daemon does not authenticate
+gift-wrap writes, so providers requiring authenticated publication are unsupported.
+
 ## Wallet and local-machine risks
 
 The wallet is a hot software signer. Malware or another process running as the same user may read its memory, access its socket, or read both the vault and its local password file. File permissions and encryption protect different boundaries; they do not defend a compromised user account. The desktop and test launcher store passwords in files rather than macOS Keychain, and the app has no hardware-wallet or biometric signing policy.

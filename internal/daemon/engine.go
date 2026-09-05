@@ -241,9 +241,9 @@ func (e *Engine) Tick(ctx context.Context) error {
 	e.lastError = ""
 	filters := []nostr.Filter{{Kinds: []nostr.Kind{transport.OfferKind}, Tags: nostr.TagMap{"t": {e.Config.Network.Namespace()}}}, {Kinds: []nostr.Kind{1059}, Tags: nostr.TagMap{"p": {e.identity.Public().Hex()}}}}
 	for _, url := range e.Config.Relays {
-		events, err := transport.Pull(ctx, url, filters...)
+		events, err := transport.PullAs(ctx, url, e.identity, filters...)
 		if err != nil {
-			e.lastError = err.Error()
+			e.lastError = fmt.Sprintf("relay %s: %v", url, err)
 			continue
 		}
 		sort.Slice(events, func(i, j int) bool { return events[i].CreatedAt < events[j].CreatedAt })
@@ -337,7 +337,7 @@ func (e *Engine) flush(ctx context.Context) error {
 		all := true
 		for _, url := range e.Config.Relays {
 			if err := transport.Publish(ctx, url, d.Event); err != nil {
-				e.lastError = err.Error()
+				e.lastError = fmt.Sprintf("relay %s: %v", url, err)
 				all = false
 			}
 		}
