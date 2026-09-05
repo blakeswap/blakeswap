@@ -3,6 +3,8 @@ package desktop
 import (
 	"context"
 	"encoding/json"
+	"fiatjaf.com/nostr"
+	"fiatjaf.com/nostr/nip19"
 	pb "github.com/blakeswap/blakeswap/api/gen/blakeswap/v1"
 	"github.com/blakeswap/blakeswap/internal/chain"
 	"github.com/blakeswap/blakeswap/internal/daemon"
@@ -184,4 +186,42 @@ func TestSettingsCancelsBootstrapBeforeInspectingStoredObligations(t *testing.T)
 		t.Fatal(err)
 	}
 	_ = reopened.Close()
+}
+
+func TestWatchtowerPrivacyAndFavoritesPersistPerNetwork(t *testing.T) {
+	settings := Defaults()
+	for _, env := range settings.Environments {
+		if env.PublicWatchtower {
+			t.Fatal("watchtower public by default")
+		}
+	}
+	key := nostr.Generate().Public()
+	env := environment(settings, "mainnet")
+	env.PublicWatchtower = true
+	env.FavoriteWatchtowers = []string{key.Hex()}
+	if err := validate(settings); err != nil {
+		t.Fatal(err)
+	}
+	if env.FavoriteWatchtowers[0] != nip19.EncodeNpub(key) {
+		t.Fatal("favorite not normalized to npub")
+	}
+	root := t.TempDir()
+	if err := saveSettings(root, settings); err != nil {
+		t.Fatal(err)
+	}
+	loaded, err := loadSettings(root)
+	if err != nil || !proto.Equal(loaded, settings) {
+		t.Fatal("watchtower preferences not persisted", err)
+	}
+	if environment(loaded, "regtest").PublicWatchtower || len(environment(loaded, "regtest").FavoriteWatchtowers) != 0 {
+		t.Fatal("preferences crossed networks")
+	}
+	env.FavoriteWatchtowers = append(env.FavoriteWatchtowers, key.Hex())
+	if validate(settings) == nil {
+		t.Fatal("duplicate favorite identity accepted")
+	}
+	env.FavoriteWatchtowers = []string{"not-an-npub"}
+	if validate(settings) == nil {
+		t.Fatal("invalid favorite accepted")
+	}
 }

@@ -40,6 +40,16 @@ final class DaemonRPCTests: XCTestCase {
         }
         XCTAssertTrue(ready, "Fixture wallets did not connect")
         guard ready else { return }
+        do {
+            _ = try await call("alice", "offer.create", ["sell": "btc", "sell_amount": 1, "buy_amount": 1])
+            XCTFail("Invalid offer accepted")
+        } catch {
+            XCTAssertTrue(error.localizedDescription.contains("invalid order bounds"), "Backend error was hidden: \(error.localizedDescription)")
+        }
+        let initial = try await status("alice")
+        XCTAssertTrue(initial.ownWatchtower.npub.hasPrefix("npub1"))
+        XCTAssertFalse(initial.ownWatchtower.public)
+        XCTAssertEqual(initial.ownWatchtower.scripts.count, 2)
         for profile in ["alice", "bob"] {
             for chain in ["btc", "blake"] {
                 _ = try await call(profile, "regtest.faucet", ["chain": chain, "amount": 100_000_000])

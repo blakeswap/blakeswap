@@ -89,7 +89,7 @@ func (r *Relay) put(event nostr.Event) error {
 	if e := transport.Valid(event); e != nil {
 		return e
 	}
-	if event.Kind != transport.OfferKind && event.Kind != 1059 && event.Kind != 10050 {
+	if event.Kind != transport.TowerKind && event.Kind != transport.OfferKind && event.Kind != 1059 && event.Kind != 10050 {
 		return errors.New("unsupported event kind")
 	}
 	if len(event.String()) > transport.MaxEventSize || event.CreatedAt > nostr.Now()+600 || expired(event) {

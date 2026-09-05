@@ -31,7 +31,7 @@ enum DaemonRPC {
     }
     static func call(root: String, profile: String, method: String, payload: Data) async throws -> Data {
         let endpoint = try endpoint(root: root, profile: profile)
-        return try await withGRPCClient(transport: .http2NIOPosix(target: .unixDomainSocket(path: endpoint.socket), transportSecurity: .plaintext)) { client in
+        do { return try await withGRPCClient(transport: .http2NIOPosix(target: .unixDomainSocket(path: endpoint.socket), transportSecurity: .plaintext)) { client in
             let service = Blakeswap_V1_DaemonService.Client(wrapping: client)
             let metadata: Metadata = ["authorization": "Bearer \(endpoint.token)"]
             var options = CallOptions.defaults
@@ -42,6 +42,10 @@ enum DaemonRPC {
             case "status":
                 let request = try Google_Protobuf_Empty(jsonUTF8Data: payload)
                 let response = try await service.getStatus(request, metadata: metadata, options: options)
+                return try response.serializedData()
+            case "tower.resolve":
+                let request = try Blakeswap_V1_ResolveWatchtowerRequest(jsonUTF8Data: payload)
+                let response = try await service.resolveWatchtower(request, metadata: metadata, options: options)
                 return try response.serializedData()
             case "pause":
                 let request = try Blakeswap_V1_SetPausedRequest(jsonUTF8Data: payload)
@@ -89,6 +93,9 @@ enum DaemonRPC {
                 return try response.serializedData()
             default: throw RPCError.message("Unknown daemon action.")
             }
+        }
+        } catch let error as GRPCCore.RPCError {
+            throw RPCError.message(error.message.isEmpty ? "The wallet request failed (\(error.code))." : error.message)
         }
     }
 }

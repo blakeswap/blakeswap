@@ -359,7 +359,7 @@ func (m *Manager) config(profile string, env *pb.Environment) (daemon.Config, er
 	if err != nil {
 		return daemon.Config{}, err
 	}
-	c := daemon.Config{Name: profile, Mode: "trader", Network: chain.Network(env.Network), InitialMnemonic: mnemonic, DataDir: filepath.Join(walletDir, env.Network), PasswordFile: password, Relays: append([]string(nil), env.Relays...), Nodes: map[chain.ID]daemon.NodeConfig{}}
+	c := daemon.Config{PublicWatchtower: env.PublicWatchtower, FavoriteWatchtowers: append([]string(nil), env.FavoriteWatchtowers...), Name: profile, Mode: "trader", Network: chain.Network(env.Network), InitialMnemonic: mnemonic, DataDir: filepath.Join(walletDir, env.Network), PasswordFile: password, Relays: append([]string(nil), env.Relays...), Nodes: map[chain.ID]daemon.NodeConfig{}}
 	for _, id := range []chain.ID{chain.BTC, chain.Blake} {
 		n := env.Nodes[string(id)]
 		if n == nil || n.Url == "" {

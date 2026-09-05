@@ -50,6 +50,7 @@ private struct MintButton: ButtonStyle {
 struct ContentView: View {
     @EnvironmentObject private var model: AppModel
     @State private var showOffer = false
+    @State private var orderFilter: OrderFilter = .all
     var body: some View {
         HStack(spacing: 0) {
             sidebar
@@ -61,9 +62,8 @@ struct ContentView: View {
                     VStack(alignment: .leading, spacing: 24) {
                         if let error = model.connectionError {
                             VStack(alignment: .leading, spacing: 12) {
-                                Label("Local daemon disconnected", systemImage: "network.slash").font(.headline)
+                                Label("Reconnecting to your wallet", systemImage: "network.slash").font(.headline)
                                 Text(error).foregroundStyle(.secondary)
-                                Button("Restart daemon") { model.start() }.buttonStyle(.borderedProminent).tint(mint)
                             }.padding(24).frame(maxWidth: .infinity, alignment: .leading).background(panel, in: RoundedRectangle(cornerRadius: 16))
                         }
                         if model.page == "Settings", let settings = model.settings { SettingsView(settings: settings).id(settings.revision) }
@@ -133,11 +133,7 @@ struct ContentView: View {
             }
             Spacer()
             if model.busy { ProgressView().controlSize(.small).padding(.trailing, 8) }
-            if let status = model.status {
-                Label(status.paused ? "Trading paused" : "Daemon online", systemImage: status.paused ? "pause.circle" : "circle.fill")
-                    .font(.caption).foregroundStyle(status.paused ? .orange : mint)
-                Button(status.paused ? "Resume" : "Pause") { Task { await model.command("pause", ["paused": !status.paused]) } }.disabled(model.busy)
-            }
+
         }.padding(.horizontal, 30).padding(.vertical, 24)
     }
     private var footer: some View {
@@ -163,34 +159,44 @@ struct ContentView: View {
         }.padding(22).frame(maxWidth: .infinity, alignment: .leading).background(panel, in: RoundedRectangle(cornerRadius: 14))
     }
     private func market(_ status: DaemonStatus) -> some View {
-        VStack(alignment: .leading, spacing: 26) {
+        let orders = orderFilter.orders(in: status)
+        return VStack(alignment: .leading, spacing: 26) {
             HStack(spacing: 16) { balanceCard("btc", status); balanceCard("blake", status) }
             HStack {
                 VStack(alignment: .leading, spacing: 5) {
                     Text("Orderbook").font(.title3.weight(.semibold))
                 }
                 Spacer()
-                Button { showOffer = true } label: { Label("Create offer", systemImage: "plus") }.buttonStyle(MintButton()).disabled(model.busy).accessibilityIdentifier("create-offer")
+                Button { showOffer = true } label: { Label("Create offer", systemImage: "plus") }.buttonStyle(MintButton()).disabled(model.busy || !["btc", "blake"].contains(where: status.canSell)).accessibilityIdentifier("create-offer")
             }
-            if status.orders.isEmpty {
-                ContentUnavailableView("No offers yet", systemImage: "arrow.left.arrow.right")
+            Picker("Show orders", selection: $orderFilter) {
+                ForEach(OrderFilter.allCases, id: \.self) { Text($0.rawValue).tag($0) }
+            }.pickerStyle(.segmented).accessibilityIdentifier("order-filter")
+            if !["btc", "blake"].contains(where: status.canSell) {
+                Text("Deposit BTC or BLAKE and wait for confirmation to create an offer. The sell balance must cover the amount and funding fee.").font(.callout).foregroundStyle(.secondary)
+            }
+            if orders.isEmpty {
+                ContentUnavailableView("No matching open orders", systemImage: "arrow.left.arrow.right")
                     .frame(maxWidth: .infinity).padding(28).background(panel.opacity(0.5), in: RoundedRectangle(cornerRadius: 14))
             } else {
                 VStack(spacing: 0) {
-                    HStack { Text("MAKER SELLS").frame(maxWidth: .infinity, alignment: .leading); Text("MAKER RECEIVES").frame(maxWidth: .infinity, alignment: .leading); Text("FALLBACK FEE").frame(width: 112, alignment: .leading); Text("STATUS").frame(width: 124, alignment: .leading) }
+                    HStack { Text("MAKER SELLS").frame(maxWidth: .infinity, alignment: .leading); Text("MAKER RECEIVES").frame(maxWidth: .infinity, alignment: .leading); Text("WATCHTOWER").frame(width: 160, alignment: .leading); Text("STATUS").frame(width: 124, alignment: .leading) }
                         .font(.system(size: 10, weight: .semibold)).tracking(1.2).foregroundStyle(.secondary).padding(18)
-                    ForEach(status.orders) { order in
+                    ForEach(orders, id: \.bookID) { order in
                         Divider().opacity(0.4)
                         HStack(spacing: 10) {
                             VStack(alignment: .leading, spacing: 6) { Text("\(units(order.sellAmount)) \(symbol(order.sell))").font(.system(.body, design: .monospaced)); Text(order.maker == status.pubkey ? "Your offer" : "Maker \(order.maker.prefix(10))…").font(.caption).foregroundStyle(.secondary) }.frame(maxWidth: .infinity, alignment: .leading)
                             Text("\(units(order.buyAmount)) \(symbol(order.buy))").font(.system(.body, design: .monospaced)).frame(maxWidth: .infinity, alignment: .leading)
-                            VStack(alignment: .leading, spacing: 5) { Text(percentage(order.towerBps)); Text("only if used").font(.caption2).foregroundStyle(.secondary) }.frame(width: 112, alignment: .leading)
+                            VStack(alignment: .leading, spacing: 5) {
+                                Text(order.towerBps > 0 ? "\(percentage(order.towerBps)) only if used" : "No protection")
+                                if order.hasTower { Text(String(order.tower.npub.prefix(18)) + "…").font(.caption2.monospaced()).foregroundStyle(.secondary).help(order.tower.npub).textSelection(.enabled) }
+                            }.frame(width: 160, alignment: .leading)
                             Group {
                                 if order.status == "open" {
                                     if order.maker == status.pubkey { Button("Cancel") { Task { await model.command("offer.cancel", ["id": order.id]) } } }
                                     else { Button("Take offer") { Task { await model.command("swap.take", ["maker": order.maker, "id": order.id]) } }.tint(mint).accessibilityIdentifier("take-offer-\(order.id)") }
                                 } else { Text(order.status.capitalized).foregroundStyle(order.status == "filled" ? mint : .secondary).font(.caption) }
-                            }.frame(width: 124, alignment: .leading).disabled(model.busy || status.paused)
+                            }.frame(width: 124, alignment: .leading).disabled(model.busy)
                         }.padding(18)
                     }
                 }.background(panel.opacity(0.6), in: RoundedRectangle(cornerRadius: 14))
@@ -251,7 +257,7 @@ struct ContentView: View {
             VStack(alignment: .leading, spacing: 14) {
                 Text("Recovery & protection").font(.headline)
                 HStack { Button("Reveal recovery phrase") { Task { await model.command("wallet.recovery") } }; Button("Save encrypted state backup") { Task { await model.command("wallet.backup") } } }.disabled(model.busy)
-                Text("Watchtower quote: \(percentage(status.tower.bps)) of the rescued local-chain output. No upfront fee. Mining fees are separate.").font(.caption).foregroundStyle(.secondary)
+                Text("Choose a favorite watchtower when creating an offer. Its rescue fee is paid only when used; mining fees are separate.").font(.caption).foregroundStyle(.secondary)
             }.padding(24).background(panel, in: RoundedRectangle(cornerRadius: 14))
         }
     }
@@ -264,29 +270,58 @@ struct OfferSheet: View {
     @State private var sellAmount = "1000000"
     @State private var buyAmount = "2000000"
     @State private var protection = false
+    @State private var towerID = ""
     @State private var validation: String?
+    private var favorites: [String] { model.settings?.environments.first(where: { $0.network == model.network })?.favoriteWatchtowers ?? [] }
+    private var towers: [Blakeswap_V1_Tower] {
+        (model.status?.watchtowers ?? []).filter { favorites.contains($0.npub) && $0.expires > Int64(Date().timeIntervalSince1970) }
+    }
+    private var selectedTower: Blakeswap_V1_Tower? { towers.first { $0.pubkey == towerID } }
+    private var formError: String? {
+        guard let status = model.status else { return "Waiting for your wallet balance." }
+        if let error = status.offerValidation(sell: sell, sellAmount: sellAmount, buyAmount: buyAmount) { return error }
+        if protection && selectedTower == nil { return "Select an available favorite watchtower. Add favorites in Settings." }
+        return nil
+    }
     var body: some View {
-        VStack(alignment: .leading, spacing: 24) {
+        VStack(alignment: .leading, spacing: 20) {
             Text("Create an offer").font(.title.bold())
             Form {
-                Picker("You sell", selection: $sell) { Text("Bitcoin (BTC)").tag("btc"); Text("Bitcoin Blake2b (BLAKE)").tag("blake") }
+                Picker("You sell", selection: $sell) {
+                    Text("Bitcoin (BTC)").tag("btc").disabled(!(model.status?.canSell("btc") ?? false))
+                    Text("Bitcoin Blake2b (BLAKE)").tag("blake").disabled(!(model.status?.canSell("blake") ?? false))
+                }
+                Text("Available: \(model.status?.balances[sell] ?? 0) \(symbol(sell)) sats · Funding fee: \(model.status?.offerFundingFee ?? 2_000) sats").font(.caption).foregroundStyle(.secondary)
                 TextField("Sell amount (sats)", text: $sellAmount).accessibilityIdentifier("sell-amount")
                 TextField("Receive amount (sats)", text: $buyAmount).accessibilityIdentifier("buy-amount")
-                Toggle("Delayed watchtower protection", isOn: $protection).disabled(model.status?.tower.pubkey.isEmpty ?? true)
+                Toggle("Delayed watchtower protection", isOn: $protection)
+                if protection {
+                    Picker("Favorite watchtower", selection: $towerID) {
+                        Text("Select a watchtower").tag("")
+                        ForEach(towers) { tower in Text(tower.label).tag(tower.pubkey) }
+                    }.accessibilityIdentifier("offer-watchtower")
+                    if let tower = selectedTower { Text(tower.npub).font(.caption.monospaced()).textSelection(.enabled) }
+                    if towers.isEmpty { Text("Add a public watchtower to favorites in Settings. Its announcement must be available on your relays.").font(.caption).foregroundStyle(.secondary) }
+                }
             }.formStyle(.grouped)
-            Text(protection ? "The tower earns \(percentage(model.status?.tower.bps ?? 50)) only when its delayed rescue transaction confirms. Claim yourself first to avoid that fee." : "Your daemon must respond before the refund deadlines. This offer will have no tower protection.")
+            Text(protection ? "The tower earns \(percentage(selectedTower?.bps ?? 0)) only when its delayed rescue transaction confirms. Claim yourself first to avoid that fee." : "Keep the app open to respond before the refund deadlines. This offer will have no tower protection.")
                 .font(.callout).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
             Text("Publishing authorizes your daemon to reserve this offer and fund the agreed swap after verifying the taker's confirmed contract. Expires in 24 hours.")
                 .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
-            if let validation { Text(validation).foregroundStyle(.orange).font(.caption) }
+            if let error = formError ?? validation { Text(error).foregroundStyle(.orange).font(.caption) }
             HStack {
                 Button("Cancel") { dismiss() }.keyboardShortcut(.cancelAction)
                 Spacer()
                 Button("Publish offer") {
-                    guard let a = Int64(sellAmount), let b = Int64(buyAmount), a >= 100_000, b >= 100_000 else { validation = "Enter whole satoshi amounts of at least 100,000."; return }
-                    Task { if await model.command("offer.create", ["sell": sell, "sell_amount": a, "buy_amount": b, "tower_bps": protection ? (model.status?.tower.bps ?? 0) : 0]) { dismiss() } else { validation = model.notice } }
-                }.buttonStyle(MintButton()).keyboardShortcut(.defaultAction).disabled(model.busy).accessibilityIdentifier("publish-offer")
+                    guard formError == nil, let a = Int64(sellAmount), let b = Int64(buyAmount) else { return }
+                    let tower = protection ? selectedTower : nil
+                    Task { if await model.command("offer.create", ["sell": sell, "sell_amount": a, "buy_amount": b, "tower_bps": tower?.bps ?? 0, "tower_pubkey": tower?.pubkey ?? ""]) { dismiss() } else { validation = model.notice } }
+                }.buttonStyle(MintButton()).keyboardShortcut(.defaultAction).disabled(model.busy || formError != nil).accessibilityIdentifier("publish-offer")
             }
-        }.padding(32).frame(width: 510)
+        }.padding(32).frame(width: 540)
+        .task {
+            if !(model.status?.canSell(sell) ?? false), model.status?.canSell("blake") == true { sell = "blake" }
+            towerID = towers.first?.pubkey ?? ""
+        }
     }
 }

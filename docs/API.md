@@ -43,8 +43,9 @@ account that can read those files.
 | RPC | HTTP | Purpose |
 | --- | --- | --- |
 | GetStatus | GET `/v1/status` | Public wallet identity, network, balances, chain heights, offers, swaps, delivery state, errors |
-| SetPaused | PUT `/v1/pause` | Pause/resume protocol advancement; deadlines continue |
-| CreateOffer | POST `/v1/offers` | Exact chain/amount pair, optional expiry and tower basis points |
+| SetPaused | PUT `/v1/pause` | Compatibility endpoint: pausing is rejected; resume clears legacy state |
+| ResolveWatchtower | POST `/v1/watchtowers/resolve` | Request an encrypted signed quote by npub or hex public key |
+| CreateOffer | POST `/v1/offers` | Exact chain/amount pair, optional expiry, tower basis points and discovered `tower_pubkey` |
 | CancelOffer | DELETE `/v1/offers/{id}` | Cancel an unreserved local offer |
 | TakeOffer | POST `/v1/swaps` | Request a signed maker offer by maker key and ID |
 | GetRecovery | POST `/v1/wallet/recovery` | Explicit sensitive recovery phrase request |
@@ -67,7 +68,7 @@ accepts the historical `refund_height` JSON alias for domain-state compatibility
 the value is a regtest height or a public-network Unix timestamp, as specified by
 the associated network. The wire field number is stable.
 
-Wallet mutations (create/cancel/take, pause, faucet, mine) carry an
+Wallet mutations (create/cancel/take, watchtower lookup, pause, faucet, mine) carry an
 `expected_network` field. The desktop rejects missing or mismatched values, so a
 stale client cannot transact on a newly selected network. Native clients bind the
 network shown in their status; the CLI snapshots it before dispatch unless the
@@ -112,3 +113,12 @@ together whenever the schema changes. Never reuse deleted protobuf field numbers
 The native client publishes wallet status and Settings as one snapshot only when
 network and profile match. Profile changes and Settings saves invalidate earlier
 responses, and older Settings revisions cannot overwrite a newer selection.
+
+Status includes `funding_fee`, `own_watchtower` (including the copyable npub), and
+`watchtowers` with verified payout scripts, fee, expiry, visibility and signed
+announcement. Public-directory clients filter on `public`; private quotes can
+still be selected by favorite identity. Each Settings environment has
+`public_watchtower` (false by default) and `favorite_watchtowers` (npubs).
+CreateOffer rechecks the confirmed sell balance against principal plus funding
+fee and rejects expired discovery quotes. Protected offers retain the provider's
+signed quote so settings edits cannot redirect negotiated rescue payouts.

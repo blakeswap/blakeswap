@@ -31,8 +31,10 @@ monitoring stops it after a force quit. External nodes/indexers remain independe
 The default build is ad-hoc signed; [Packaging](docs/PACKAGING.md) describes Developer
 ID signing, notarization, the data layout, and a separate local regtest demonstration.
 
-Settings selects the active network, node endpoints, Nostr relays, and optional
-tower quote. Public BTC and Blake2b mainnet defaults have been checked against live
+Settings selects the active network, node endpoints, Nostr relays, and watchtower favorites. Every wallet serves watchtower jobs while the app is
+open; public listing is off by default and can be enabled in Settings. Copy your
+npub to share privately, or discover public providers and save favorites. Payout
+scripts and fee quotes are generated and signed by each provider. Public BTC and Blake2b mainnet defaults have been checked against live
 chain data. No verified public Blake2b Testnet4 indexer was found; configure your
 own endpoint for that chain. The application does not substitute a Bitcoin server
 or silently change networks. [Operations](docs/OPERATIONS.md) lists the defaults and

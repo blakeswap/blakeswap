@@ -34,6 +34,19 @@ internal enum Blakeswap_V1_DaemonService: Sendable {
                 type: .unary
             )
         }
+        /// Namespace for "ResolveWatchtower" metadata.
+        internal enum ResolveWatchtower: Sendable {
+            /// Request type for "ResolveWatchtower".
+            internal typealias Input = Blakeswap_V1_ResolveWatchtowerRequest
+            /// Response type for "ResolveWatchtower".
+            internal typealias Output = SwiftProtobuf.Google_Protobuf_Empty
+            /// Descriptor for "ResolveWatchtower".
+            internal static let descriptor = GRPCCore.MethodDescriptor(
+                service: GRPCCore.ServiceDescriptor(fullyQualifiedService: "blakeswap.v1.DaemonService"),
+                method: "ResolveWatchtower",
+                type: .unary
+            )
+        }
         /// Namespace for "SetPaused" metadata.
         internal enum SetPaused: Sendable {
             /// Request type for "SetPaused".
@@ -180,6 +193,7 @@ internal enum Blakeswap_V1_DaemonService: Sendable {
         /// Descriptors for all methods in the "blakeswap.v1.DaemonService" service.
         internal static let descriptors: [GRPCCore.MethodDescriptor] = [
             GetStatus.descriptor,
+            ResolveWatchtower.descriptor,
             SetPaused.descriptor,
             CreateOffer.descriptor,
             CancelOffer.descriptor,
@@ -227,6 +241,25 @@ extension Blakeswap_V1_DaemonService {
             deserializer: some GRPCCore.MessageDeserializer<Blakeswap_V1_Status>,
             options: GRPCCore.CallOptions,
             onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Blakeswap_V1_Status>) async throws -> Result
+        ) async throws -> Result where Result: Sendable
+
+        /// Call the "ResolveWatchtower" method.
+        ///
+        /// - Parameters:
+        ///   - request: A request containing a single `Blakeswap_V1_ResolveWatchtowerRequest` message.
+        ///   - serializer: A serializer for `Blakeswap_V1_ResolveWatchtowerRequest` messages.
+        ///   - deserializer: A deserializer for `SwiftProtobuf.Google_Protobuf_Empty` messages.
+        ///   - options: Options to apply to this RPC.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
+        /// - Returns: The result of `handleResponse`.
+        func resolveWatchtower<Result>(
+            request: GRPCCore.ClientRequest<Blakeswap_V1_ResolveWatchtowerRequest>,
+            serializer: some GRPCCore.MessageSerializer<Blakeswap_V1_ResolveWatchtowerRequest>,
+            deserializer: some GRPCCore.MessageDeserializer<SwiftProtobuf.Google_Protobuf_Empty>,
+            options: GRPCCore.CallOptions,
+            onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<SwiftProtobuf.Google_Protobuf_Empty>) async throws -> Result
         ) async throws -> Result where Result: Sendable
 
         /// Call the "SetPaused" method.
@@ -478,6 +511,36 @@ extension Blakeswap_V1_DaemonService {
             try await self.client.unary(
                 request: request,
                 descriptor: Blakeswap_V1_DaemonService.Method.GetStatus.descriptor,
+                serializer: serializer,
+                deserializer: deserializer,
+                options: options,
+                onResponse: handleResponse
+            )
+        }
+
+        /// Call the "ResolveWatchtower" method.
+        ///
+        /// - Parameters:
+        ///   - request: A request containing a single `Blakeswap_V1_ResolveWatchtowerRequest` message.
+        ///   - serializer: A serializer for `Blakeswap_V1_ResolveWatchtowerRequest` messages.
+        ///   - deserializer: A deserializer for `SwiftProtobuf.Google_Protobuf_Empty` messages.
+        ///   - options: Options to apply to this RPC.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
+        /// - Returns: The result of `handleResponse`.
+        internal func resolveWatchtower<Result>(
+            request: GRPCCore.ClientRequest<Blakeswap_V1_ResolveWatchtowerRequest>,
+            serializer: some GRPCCore.MessageSerializer<Blakeswap_V1_ResolveWatchtowerRequest>,
+            deserializer: some GRPCCore.MessageDeserializer<SwiftProtobuf.Google_Protobuf_Empty>,
+            options: GRPCCore.CallOptions = .defaults,
+            onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<SwiftProtobuf.Google_Protobuf_Empty>) async throws -> Result = { response in
+                try response.message
+            }
+        ) async throws -> Result where Result: Sendable {
+            try await self.client.unary(
+                request: request,
+                descriptor: Blakeswap_V1_DaemonService.Method.ResolveWatchtower.descriptor,
                 serializer: serializer,
                 deserializer: deserializer,
                 options: options,
@@ -845,6 +908,31 @@ extension Blakeswap_V1_DaemonService.ClientProtocol {
         )
     }
 
+    /// Call the "ResolveWatchtower" method.
+    ///
+    /// - Parameters:
+    ///   - request: A request containing a single `Blakeswap_V1_ResolveWatchtowerRequest` message.
+    ///   - options: Options to apply to this RPC.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
+    /// - Returns: The result of `handleResponse`.
+    internal func resolveWatchtower<Result>(
+        request: GRPCCore.ClientRequest<Blakeswap_V1_ResolveWatchtowerRequest>,
+        options: GRPCCore.CallOptions = .defaults,
+        onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<SwiftProtobuf.Google_Protobuf_Empty>) async throws -> Result = { response in
+            try response.message
+        }
+    ) async throws -> Result where Result: Sendable {
+        try await self.resolveWatchtower(
+            request: request,
+            serializer: GRPCProtobuf.ProtobufSerializer<Blakeswap_V1_ResolveWatchtowerRequest>(),
+            deserializer: GRPCProtobuf.ProtobufDeserializer<SwiftProtobuf.Google_Protobuf_Empty>(),
+            options: options,
+            onResponse: handleResponse
+        )
+    }
+
     /// Call the "SetPaused" method.
     ///
     /// - Parameters:
@@ -1147,6 +1235,35 @@ extension Blakeswap_V1_DaemonService.ClientProtocol {
             metadata: metadata
         )
         return try await self.getStatus(
+            request: request,
+            options: options,
+            onResponse: handleResponse
+        )
+    }
+
+    /// Call the "ResolveWatchtower" method.
+    ///
+    /// - Parameters:
+    ///   - message: request message to send.
+    ///   - metadata: Additional metadata to send, defaults to empty.
+    ///   - options: Options to apply to this RPC, defaults to `.defaults`.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
+    /// - Returns: The result of `handleResponse`.
+    internal func resolveWatchtower<Result>(
+        _ message: Blakeswap_V1_ResolveWatchtowerRequest,
+        metadata: GRPCCore.Metadata = [:],
+        options: GRPCCore.CallOptions = .defaults,
+        onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<SwiftProtobuf.Google_Protobuf_Empty>) async throws -> Result = { response in
+            try response.message
+        }
+    ) async throws -> Result where Result: Sendable {
+        let request = GRPCCore.ClientRequest<Blakeswap_V1_ResolveWatchtowerRequest>(
+            message: message,
+            metadata: metadata
+        )
+        return try await self.resolveWatchtower(
             request: request,
             options: options,
             onResponse: handleResponse

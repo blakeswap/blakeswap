@@ -38,11 +38,11 @@ The two contracts share `H` but have different keys and assets:
 
 ## Authenticated terms
 
-The request contains a random swap ID, the original signed open-offer event, taker Nostr identity, `H`, and two taker per-swap compressed public keys. The maker verifies the request, its own current open offer, available funds, and configured tower quote. It reserves the entire offer exactly once, derives its keys, and sends immutable accepted terms.
+The request contains a random swap ID, the original signed open-offer event, taker Nostr identity, `H`, and two taker per-swap compressed public keys. The maker verifies the request, its own current open offer, available funds, and the selected provider-signed tower quote. It reserves the entire offer exactly once, derives its keys, and sends immutable accepted terms.
 
 Terms include the full request, both contracts before funding, both maker keys, both application chain domains, both refund locktimes, the long-chain reveal cutoff/tower takeover locktime, and selected tower identity/payout scripts. JSON structs are serialized deterministically by Go and SHA256 hashed to bind subsequent messages. There are no floating-point amounts or prices: all amounts and basis points are integers. An implementation in another language must reproduce this serialization or negotiate a future canonical encoding version.
 
-The taker checks that acceptance preserves its exact request, the signed maker offer, keys, amounts, hash, domains, and locally configured tower quote. A changed contract requires a new negotiation, not reinterpretation of a signature already handed out.
+The taker checks that acceptance preserves its exact request, the signed maker offer, keys, amounts, hash, domains, and the provider-signed tower quote pinned in the offer (or the locally configured quote for legacy offers). A changed contract requires a new negotiation, not reinterpretation of a signature already handed out.
 
 ## Regtest deadline policy
 
@@ -156,7 +156,7 @@ Refund rescue jobs similarly spend the party's own HTLC after the refund thresho
 
 Public offers use addressable kind `38481`. Latest `created_at` wins within `(kind, author, d)`, with the lexicographically lower event ID breaking equal-time ties. Status changes publish `reserved`, `cancelled`, or `filled`. Local expiry is enforced even if a relay retains an old event. A relay deletion request is never treated as revoking an on-chain capability.
 
-Private messages use a versioned application envelope with stable message ID, type, swap ID, and JSON body. Current types are `request`, `accepted`, `rejected`, `long-funded`, `short-funded`, `tower-job`, `tower-receipt`, and `ack`. They are unsigned inner rumors, authenticated by their signed encrypted seal, inside encrypted signed gift wraps.
+Private messages use a versioned application envelope with stable message ID, type, swap ID, and JSON body. Current types are `request`, `accepted`, `rejected`, `long-funded`, `short-funded`, `tower-job`, `tower-receipt`, `tower-query`, `tower-quote`, and `ack`. They are unsigned inner rumors, authenticated by their signed encrypted seal, inside encrypted signed gift wraps.
 
 Mailbox reads support [NIP-42 relay authentication](https://github.com/nostr-protocol/nips/blob/master/42.md). If a configured relay rejects a subscription with `auth-required:`, the daemon signs a kind `22242` authentication event with its network-specific Nostr identity. The event binds the configured relay URL, the connection's challenge, and the current time. Only a matching successful authentication acknowledgment permits one subscription retry. Unsolicited challenges alone do not trigger authentication; rejected or missing acknowledgments do not count as successful reads. This authentication proves control of the recipient identity without sharing its secret key. Gift-wrap publishing remains unauthenticated to avoid linking the sender's identity to its outgoing encrypted envelopes; relays requiring authenticated writes are currently unsupported.
 

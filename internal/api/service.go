@@ -64,6 +64,10 @@ func (s *Service) GetStatus(ctx context.Context, in *emptypb.Empty) (*pb.Status,
 	err := s.command(ctx, "status", in, out)
 	return out, err
 }
+func (s *Service) ResolveWatchtower(ctx context.Context, in *pb.ResolveWatchtowerRequest) (*emptypb.Empty, error) {
+	out := &emptypb.Empty{}
+	return out, s.command(ctx, "tower.resolve", in, out)
+}
 func (s *Service) SetPaused(ctx context.Context, in *pb.SetPausedRequest) (*pb.Status, error) {
 	out := &pb.Status{}
 	err := s.command(ctx, "pause", in, out)

@@ -8,8 +8,10 @@ import (
 	"os"
 	"path/filepath"
 
+	"fiatjaf.com/nostr/nip19"
 	pb "github.com/blakeswap/blakeswap/api/gen/blakeswap/v1"
 	"github.com/blakeswap/blakeswap/internal/chain"
+	"github.com/blakeswap/blakeswap/internal/protocol"
 	"google.golang.org/protobuf/encoding/protojson"
 )
 
@@ -82,6 +84,22 @@ func validate(s *pb.Settings) error {
 			if u.Scheme != "wss" && (u.Scheme != "ws" || (u.Hostname() != "127.0.0.1" && u.Hostname() != "::1")) {
 				return errors.New("relays require WSS or loopback WS")
 			}
+		}
+		if len(env.FavoriteWatchtowers) > 100 {
+			return errors.New("at most 100 favorite watchtowers per network")
+		}
+		favorites := map[string]bool{}
+		for i, value := range env.FavoriteWatchtowers {
+			pub, err := protocol.PublicKey(value)
+			if err != nil {
+				return err
+			}
+			npub := nip19.EncodeNpub(pub)
+			if favorites[npub] {
+				return errors.New("duplicate favorite watchtower")
+			}
+			favorites[npub] = true
+			env.FavoriteWatchtowers[i] = npub
 		}
 		if env.Tower != nil && (env.Tower.Bps < 0 || env.Tower.Bps > 1000) {
 			return errors.New("invalid tower rate")

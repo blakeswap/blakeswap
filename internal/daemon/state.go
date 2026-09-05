@@ -15,24 +15,23 @@ type NodeConfig struct {
 	URL               string `json:"url"`
 	Cookie            string `json:"cookie"`
 }
-type TowerConfig struct {
-	PubKey  string              `json:"pubkey"`
-	Scripts map[chain.ID]string `json:"scripts"`
-	BPS     int64               `json:"bps"`
-}
+type TowerConfig = protocol.Tower
 type Config struct {
-	InitialMnemonic string                  `json:"-"`
-	Network         chain.Network           `json:"network"`
-	Name            string                  `json:"name"`
-	Mode            string                  `json:"mode"`
-	DataDir         string                  `json:"data_dir"`
-	PasswordFile    string                  `json:"password_file"`
-	Socket          string                  `json:"socket"`
-	Relays          []string                `json:"relays"`
-	Nodes           map[chain.ID]NodeConfig `json:"nodes"`
-	Tower           TowerConfig             `json:"tower"`
+	PublicWatchtower    bool                    `json:"public_watchtower"`
+	FavoriteWatchtowers []string                `json:"favorite_watchtowers,omitempty"`
+	InitialMnemonic     string                  `json:"-"`
+	Network             chain.Network           `json:"network"`
+	Name                string                  `json:"name"`
+	Mode                string                  `json:"mode"`
+	DataDir             string                  `json:"data_dir"`
+	PasswordFile        string                  `json:"password_file"`
+	Socket              string                  `json:"socket"`
+	Relays              []string                `json:"relays"`
+	Nodes               map[chain.ID]NodeConfig `json:"nodes"`
+	Tower               TowerConfig             `json:"tower"`
 }
 type Delivery struct {
+	Type        string      `json:"type,omitempty"`
 	Event       nostr.Event `json:"event"`
 	To          string      `json:"to"`
 	MessageID   string      `json:"message_id"`
@@ -77,17 +76,19 @@ type TowerJob struct {
 	Error       string       `json:"error,omitempty"`
 }
 type State struct {
-	Network   chain.Network          `json:"network,omitempty"`
-	Version   int                    `json:"version"`
-	Mnemonic  string                 `json:"mnemonic"`
-	Paused    bool                   `json:"paused"`
-	Offers    map[string]nostr.Event `json:"offers"`
-	Book      map[string]nostr.Event `json:"book"`
-	Swaps     map[string]*Swap       `json:"swaps"`
-	Outbox    map[string]*Delivery   `json:"outbox"`
-	Seen      map[string]string      `json:"seen"`
-	TowerJobs map[string]*TowerJob   `json:"tower_jobs"`
-	EventTime nostr.Timestamp        `json:"event_time"`
+	TowerPublic bool                   `json:"tower_public,omitempty"`
+	Towers      map[string]nostr.Event `json:"towers,omitempty"`
+	Network     chain.Network          `json:"network,omitempty"`
+	Version     int                    `json:"version"`
+	Mnemonic    string                 `json:"mnemonic"`
+	Paused      bool                   `json:"paused"`
+	Offers      map[string]nostr.Event `json:"offers"`
+	Book        map[string]nostr.Event `json:"book"`
+	Swaps       map[string]*Swap       `json:"swaps"`
+	Outbox      map[string]*Delivery   `json:"outbox"`
+	Seen        map[string]string      `json:"seen"`
+	TowerJobs   map[string]*TowerJob   `json:"tower_jobs"`
+	EventTime   nostr.Timestamp        `json:"event_time"`
 }
 type PublicSwap struct {
 	ID                 string             `json:"id"`
@@ -109,6 +110,9 @@ type PublicSwap struct {
 	RevealBefore       uint32             `json:"reveal_before"`
 }
 type Status struct {
+	OwnWatchtower   protocol.Tower      `json:"own_watchtower"`
+	Watchtowers     []protocol.Tower    `json:"watchtowers"`
+	FundingFee      int64               `json:"funding_fee"`
 	Network         chain.Network       `json:"network"`
 	Name            string              `json:"name"`
 	Mode            string              `json:"mode"`

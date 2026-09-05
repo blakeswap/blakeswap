@@ -24,6 +24,58 @@ const (
 	_ = protoimpl.EnforceVersion(protoimpl.MaxVersion - 20)
 )
 
+type ResolveWatchtowerRequest struct {
+	state           protoimpl.MessageState `protogen:"open.v1"`
+	Pubkey          string                 `protobuf:"bytes,1,opt,name=pubkey,proto3" json:"pubkey,omitempty"`
+	ExpectedNetwork string                 `protobuf:"bytes,2,opt,name=expected_network,json=expectedNetwork,proto3" json:"expected_network,omitempty"`
+	unknownFields   protoimpl.UnknownFields
+	sizeCache       protoimpl.SizeCache
+}
+
+func (x *ResolveWatchtowerRequest) Reset() {
+	*x = ResolveWatchtowerRequest{}
+	mi := &file_blakeswap_v1_daemon_proto_msgTypes[0]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ResolveWatchtowerRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ResolveWatchtowerRequest) ProtoMessage() {}
+
+func (x *ResolveWatchtowerRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_blakeswap_v1_daemon_proto_msgTypes[0]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ResolveWatchtowerRequest.ProtoReflect.Descriptor instead.
+func (*ResolveWatchtowerRequest) Descriptor() ([]byte, []int) {
+	return file_blakeswap_v1_daemon_proto_rawDescGZIP(), []int{0}
+}
+
+func (x *ResolveWatchtowerRequest) GetPubkey() string {
+	if x != nil {
+		return x.Pubkey
+	}
+	return ""
+}
+
+func (x *ResolveWatchtowerRequest) GetExpectedNetwork() string {
+	if x != nil {
+		return x.ExpectedNetwork
+	}
+	return ""
+}
+
 type SetPausedRequest struct {
 	state           protoimpl.MessageState `protogen:"open.v1"`
 	Paused          bool                   `protobuf:"varint,1,opt,name=paused,proto3" json:"paused,omitempty"`
@@ -34,7 +86,7 @@ type SetPausedRequest struct {
 
 func (x *SetPausedRequest) Reset() {
 	*x = SetPausedRequest{}
-	mi := &file_blakeswap_v1_daemon_proto_msgTypes[0]
+	mi := &file_blakeswap_v1_daemon_proto_msgTypes[1]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -46,7 +98,7 @@ func (x *SetPausedRequest) String() string {
 func (*SetPausedRequest) ProtoMessage() {}
 
 func (x *SetPausedRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_blakeswap_v1_daemon_proto_msgTypes[0]
+	mi := &file_blakeswap_v1_daemon_proto_msgTypes[1]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -59,7 +111,7 @@ func (x *SetPausedRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SetPausedRequest.ProtoReflect.Descriptor instead.
 func (*SetPausedRequest) Descriptor() ([]byte, []int) {
-	return file_blakeswap_v1_daemon_proto_rawDescGZIP(), []int{0}
+	return file_blakeswap_v1_daemon_proto_rawDescGZIP(), []int{1}
 }
 
 func (x *SetPausedRequest) GetPaused() bool {
@@ -78,6 +130,7 @@ func (x *SetPausedRequest) GetExpectedNetwork() string {
 
 type CreateOfferRequest struct {
 	state           protoimpl.MessageState `protogen:"open.v1"`
+	TowerPubkey     string                 `protobuf:"bytes,7,opt,name=tower_pubkey,json=towerPubkey,proto3" json:"tower_pubkey,omitempty"`             // Selected discovered provider; ignored when protection is off.
 	Sell            string                 `protobuf:"bytes,1,opt,name=sell,proto3" json:"sell,omitempty"`                                              // btc or blake.
 	ExpectedNetwork string                 `protobuf:"bytes,6,opt,name=expected_network,json=expectedNetwork,proto3" json:"expected_network,omitempty"` // Must match the active desktop network.
 	SellAmount      int64                  `protobuf:"varint,2,opt,name=sell_amount,json=sellAmount,proto3" json:"sell_amount,omitempty"`
@@ -90,7 +143,7 @@ type CreateOfferRequest struct {
 
 func (x *CreateOfferRequest) Reset() {
 	*x = CreateOfferRequest{}
-	mi := &file_blakeswap_v1_daemon_proto_msgTypes[1]
+	mi := &file_blakeswap_v1_daemon_proto_msgTypes[2]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -102,7 +155,7 @@ func (x *CreateOfferRequest) String() string {
 func (*CreateOfferRequest) ProtoMessage() {}
 
 func (x *CreateOfferRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_blakeswap_v1_daemon_proto_msgTypes[1]
+	mi := &file_blakeswap_v1_daemon_proto_msgTypes[2]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -115,7 +168,14 @@ func (x *CreateOfferRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CreateOfferRequest.ProtoReflect.Descriptor instead.
 func (*CreateOfferRequest) Descriptor() ([]byte, []int) {
-	return file_blakeswap_v1_daemon_proto_rawDescGZIP(), []int{1}
+	return file_blakeswap_v1_daemon_proto_rawDescGZIP(), []int{2}
+}
+
+func (x *CreateOfferRequest) GetTowerPubkey() string {
+	if x != nil {
+		return x.TowerPubkey
+	}
+	return ""
 }
 
 func (x *CreateOfferRequest) GetSell() string {
@@ -170,7 +230,7 @@ type CancelOfferRequest struct {
 
 func (x *CancelOfferRequest) Reset() {
 	*x = CancelOfferRequest{}
-	mi := &file_blakeswap_v1_daemon_proto_msgTypes[2]
+	mi := &file_blakeswap_v1_daemon_proto_msgTypes[3]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -182,7 +242,7 @@ func (x *CancelOfferRequest) String() string {
 func (*CancelOfferRequest) ProtoMessage() {}
 
 func (x *CancelOfferRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_blakeswap_v1_daemon_proto_msgTypes[2]
+	mi := &file_blakeswap_v1_daemon_proto_msgTypes[3]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -195,7 +255,7 @@ func (x *CancelOfferRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CancelOfferRequest.ProtoReflect.Descriptor instead.
 func (*CancelOfferRequest) Descriptor() ([]byte, []int) {
-	return file_blakeswap_v1_daemon_proto_rawDescGZIP(), []int{2}
+	return file_blakeswap_v1_daemon_proto_rawDescGZIP(), []int{3}
 }
 
 func (x *CancelOfferRequest) GetId() string {
@@ -223,7 +283,7 @@ type TakeOfferRequest struct {
 
 func (x *TakeOfferRequest) Reset() {
 	*x = TakeOfferRequest{}
-	mi := &file_blakeswap_v1_daemon_proto_msgTypes[3]
+	mi := &file_blakeswap_v1_daemon_proto_msgTypes[4]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -235,7 +295,7 @@ func (x *TakeOfferRequest) String() string {
 func (*TakeOfferRequest) ProtoMessage() {}
 
 func (x *TakeOfferRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_blakeswap_v1_daemon_proto_msgTypes[3]
+	mi := &file_blakeswap_v1_daemon_proto_msgTypes[4]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -248,7 +308,7 @@ func (x *TakeOfferRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TakeOfferRequest.ProtoReflect.Descriptor instead.
 func (*TakeOfferRequest) Descriptor() ([]byte, []int) {
-	return file_blakeswap_v1_daemon_proto_rawDescGZIP(), []int{3}
+	return file_blakeswap_v1_daemon_proto_rawDescGZIP(), []int{4}
 }
 
 func (x *TakeOfferRequest) GetMaker() string {
@@ -281,7 +341,7 @@ type TakeOfferResponse struct {
 
 func (x *TakeOfferResponse) Reset() {
 	*x = TakeOfferResponse{}
-	mi := &file_blakeswap_v1_daemon_proto_msgTypes[4]
+	mi := &file_blakeswap_v1_daemon_proto_msgTypes[5]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -293,7 +353,7 @@ func (x *TakeOfferResponse) String() string {
 func (*TakeOfferResponse) ProtoMessage() {}
 
 func (x *TakeOfferResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_blakeswap_v1_daemon_proto_msgTypes[4]
+	mi := &file_blakeswap_v1_daemon_proto_msgTypes[5]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -306,7 +366,7 @@ func (x *TakeOfferResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TakeOfferResponse.ProtoReflect.Descriptor instead.
 func (*TakeOfferResponse) Descriptor() ([]byte, []int) {
-	return file_blakeswap_v1_daemon_proto_rawDescGZIP(), []int{4}
+	return file_blakeswap_v1_daemon_proto_rawDescGZIP(), []int{5}
 }
 
 func (x *TakeOfferResponse) GetId() string {
@@ -327,7 +387,7 @@ type MineRequest struct {
 
 func (x *MineRequest) Reset() {
 	*x = MineRequest{}
-	mi := &file_blakeswap_v1_daemon_proto_msgTypes[5]
+	mi := &file_blakeswap_v1_daemon_proto_msgTypes[6]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -339,7 +399,7 @@ func (x *MineRequest) String() string {
 func (*MineRequest) ProtoMessage() {}
 
 func (x *MineRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_blakeswap_v1_daemon_proto_msgTypes[5]
+	mi := &file_blakeswap_v1_daemon_proto_msgTypes[6]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -352,7 +412,7 @@ func (x *MineRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use MineRequest.ProtoReflect.Descriptor instead.
 func (*MineRequest) Descriptor() ([]byte, []int) {
-	return file_blakeswap_v1_daemon_proto_rawDescGZIP(), []int{5}
+	return file_blakeswap_v1_daemon_proto_rawDescGZIP(), []int{6}
 }
 
 func (x *MineRequest) GetChain() string {
@@ -387,7 +447,7 @@ type FaucetRequest struct {
 
 func (x *FaucetRequest) Reset() {
 	*x = FaucetRequest{}
-	mi := &file_blakeswap_v1_daemon_proto_msgTypes[6]
+	mi := &file_blakeswap_v1_daemon_proto_msgTypes[7]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -399,7 +459,7 @@ func (x *FaucetRequest) String() string {
 func (*FaucetRequest) ProtoMessage() {}
 
 func (x *FaucetRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_blakeswap_v1_daemon_proto_msgTypes[6]
+	mi := &file_blakeswap_v1_daemon_proto_msgTypes[7]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -412,7 +472,7 @@ func (x *FaucetRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use FaucetRequest.ProtoReflect.Descriptor instead.
 func (*FaucetRequest) Descriptor() ([]byte, []int) {
-	return file_blakeswap_v1_daemon_proto_rawDescGZIP(), []int{6}
+	return file_blakeswap_v1_daemon_proto_rawDescGZIP(), []int{7}
 }
 
 func (x *FaucetRequest) GetChain() string {
@@ -445,7 +505,7 @@ type FaucetResponse struct {
 
 func (x *FaucetResponse) Reset() {
 	*x = FaucetResponse{}
-	mi := &file_blakeswap_v1_daemon_proto_msgTypes[7]
+	mi := &file_blakeswap_v1_daemon_proto_msgTypes[8]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -457,7 +517,7 @@ func (x *FaucetResponse) String() string {
 func (*FaucetResponse) ProtoMessage() {}
 
 func (x *FaucetResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_blakeswap_v1_daemon_proto_msgTypes[7]
+	mi := &file_blakeswap_v1_daemon_proto_msgTypes[8]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -470,7 +530,7 @@ func (x *FaucetResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use FaucetResponse.ProtoReflect.Descriptor instead.
 func (*FaucetResponse) Descriptor() ([]byte, []int) {
-	return file_blakeswap_v1_daemon_proto_rawDescGZIP(), []int{7}
+	return file_blakeswap_v1_daemon_proto_rawDescGZIP(), []int{8}
 }
 
 func (x *FaucetResponse) GetTxid() string {
@@ -490,7 +550,7 @@ type Recovery struct {
 
 func (x *Recovery) Reset() {
 	*x = Recovery{}
-	mi := &file_blakeswap_v1_daemon_proto_msgTypes[8]
+	mi := &file_blakeswap_v1_daemon_proto_msgTypes[9]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -502,7 +562,7 @@ func (x *Recovery) String() string {
 func (*Recovery) ProtoMessage() {}
 
 func (x *Recovery) ProtoReflect() protoreflect.Message {
-	mi := &file_blakeswap_v1_daemon_proto_msgTypes[8]
+	mi := &file_blakeswap_v1_daemon_proto_msgTypes[9]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -515,7 +575,7 @@ func (x *Recovery) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Recovery.ProtoReflect.Descriptor instead.
 func (*Recovery) Descriptor() ([]byte, []int) {
-	return file_blakeswap_v1_daemon_proto_rawDescGZIP(), []int{8}
+	return file_blakeswap_v1_daemon_proto_rawDescGZIP(), []int{9}
 }
 
 func (x *Recovery) GetMnemonic() string {
@@ -541,7 +601,7 @@ type Backup struct {
 
 func (x *Backup) Reset() {
 	*x = Backup{}
-	mi := &file_blakeswap_v1_daemon_proto_msgTypes[9]
+	mi := &file_blakeswap_v1_daemon_proto_msgTypes[10]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -553,7 +613,7 @@ func (x *Backup) String() string {
 func (*Backup) ProtoMessage() {}
 
 func (x *Backup) ProtoReflect() protoreflect.Message {
-	mi := &file_blakeswap_v1_daemon_proto_msgTypes[9]
+	mi := &file_blakeswap_v1_daemon_proto_msgTypes[10]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -566,7 +626,7 @@ func (x *Backup) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Backup.ProtoReflect.Descriptor instead.
 func (*Backup) Descriptor() ([]byte, []int) {
-	return file_blakeswap_v1_daemon_proto_rawDescGZIP(), []int{9}
+	return file_blakeswap_v1_daemon_proto_rawDescGZIP(), []int{10}
 }
 
 func (x *Backup) GetPath() string {
@@ -588,13 +648,14 @@ type Offer struct {
 	Status        string                 `protobuf:"bytes,8,opt,name=status,proto3" json:"status,omitempty"`
 	Reservation   string                 `protobuf:"bytes,9,opt,name=reservation,proto3" json:"reservation,omitempty"`
 	Network       string                 `protobuf:"bytes,10,opt,name=network,proto3" json:"network,omitempty"`
+	Tower         *Tower                 `protobuf:"bytes,11,opt,name=tower,proto3" json:"tower,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
 func (x *Offer) Reset() {
 	*x = Offer{}
-	mi := &file_blakeswap_v1_daemon_proto_msgTypes[10]
+	mi := &file_blakeswap_v1_daemon_proto_msgTypes[11]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -606,7 +667,7 @@ func (x *Offer) String() string {
 func (*Offer) ProtoMessage() {}
 
 func (x *Offer) ProtoReflect() protoreflect.Message {
-	mi := &file_blakeswap_v1_daemon_proto_msgTypes[10]
+	mi := &file_blakeswap_v1_daemon_proto_msgTypes[11]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -619,7 +680,7 @@ func (x *Offer) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Offer.ProtoReflect.Descriptor instead.
 func (*Offer) Descriptor() ([]byte, []int) {
-	return file_blakeswap_v1_daemon_proto_rawDescGZIP(), []int{10}
+	return file_blakeswap_v1_daemon_proto_rawDescGZIP(), []int{11}
 }
 
 func (x *Offer) GetId() string {
@@ -692,6 +753,13 @@ func (x *Offer) GetNetwork() string {
 	return ""
 }
 
+func (x *Offer) GetTower() *Tower {
+	if x != nil {
+		return x.Tower
+	}
+	return nil
+}
+
 type HTLC struct {
 	state     protoimpl.MessageState `protogen:"open.v1"`
 	Chain     string                 `protobuf:"bytes,1,opt,name=chain,proto3" json:"chain,omitempty"`
@@ -709,7 +777,7 @@ type HTLC struct {
 
 func (x *HTLC) Reset() {
 	*x = HTLC{}
-	mi := &file_blakeswap_v1_daemon_proto_msgTypes[11]
+	mi := &file_blakeswap_v1_daemon_proto_msgTypes[12]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -721,7 +789,7 @@ func (x *HTLC) String() string {
 func (*HTLC) ProtoMessage() {}
 
 func (x *HTLC) ProtoReflect() protoreflect.Message {
-	mi := &file_blakeswap_v1_daemon_proto_msgTypes[11]
+	mi := &file_blakeswap_v1_daemon_proto_msgTypes[12]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -734,7 +802,7 @@ func (x *HTLC) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use HTLC.ProtoReflect.Descriptor instead.
 func (*HTLC) Descriptor() ([]byte, []int) {
-	return file_blakeswap_v1_daemon_proto_rawDescGZIP(), []int{11}
+	return file_blakeswap_v1_daemon_proto_rawDescGZIP(), []int{12}
 }
 
 func (x *HTLC) GetChain() string {
@@ -818,7 +886,7 @@ type Swap struct {
 
 func (x *Swap) Reset() {
 	*x = Swap{}
-	mi := &file_blakeswap_v1_daemon_proto_msgTypes[12]
+	mi := &file_blakeswap_v1_daemon_proto_msgTypes[13]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -830,7 +898,7 @@ func (x *Swap) String() string {
 func (*Swap) ProtoMessage() {}
 
 func (x *Swap) ProtoReflect() protoreflect.Message {
-	mi := &file_blakeswap_v1_daemon_proto_msgTypes[12]
+	mi := &file_blakeswap_v1_daemon_proto_msgTypes[13]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -843,7 +911,7 @@ func (x *Swap) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Swap.ProtoReflect.Descriptor instead.
 func (*Swap) Descriptor() ([]byte, []int) {
-	return file_blakeswap_v1_daemon_proto_rawDescGZIP(), []int{12}
+	return file_blakeswap_v1_daemon_proto_rawDescGZIP(), []int{13}
 }
 
 func (x *Swap) GetId() string {
@@ -970,13 +1038,19 @@ type Tower struct {
 	Pubkey        string                 `protobuf:"bytes,1,opt,name=pubkey,proto3" json:"pubkey,omitempty"`
 	Scripts       map[string]string      `protobuf:"bytes,2,rep,name=scripts,proto3" json:"scripts,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
 	Bps           int64                  `protobuf:"varint,3,opt,name=bps,proto3" json:"bps,omitempty"`
+	Npub          string                 `protobuf:"bytes,4,opt,name=npub,proto3" json:"npub,omitempty"`
+	Name          string                 `protobuf:"bytes,5,opt,name=name,proto3" json:"name,omitempty"`
+	Network       string                 `protobuf:"bytes,6,opt,name=network,proto3" json:"network,omitempty"`
+	Expires       int64                  `protobuf:"varint,7,opt,name=expires,proto3" json:"expires,omitempty"`
+	Public        bool                   `protobuf:"varint,9,opt,name=public,proto3" json:"public,omitempty"` // Opt-in public directory listing.
+	Event         string                 `protobuf:"bytes,8,opt,name=event,proto3" json:"event,omitempty"`    // Signed provider announcement pinned to a protected offer.
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
 func (x *Tower) Reset() {
 	*x = Tower{}
-	mi := &file_blakeswap_v1_daemon_proto_msgTypes[13]
+	mi := &file_blakeswap_v1_daemon_proto_msgTypes[14]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -988,7 +1062,7 @@ func (x *Tower) String() string {
 func (*Tower) ProtoMessage() {}
 
 func (x *Tower) ProtoReflect() protoreflect.Message {
-	mi := &file_blakeswap_v1_daemon_proto_msgTypes[13]
+	mi := &file_blakeswap_v1_daemon_proto_msgTypes[14]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1001,7 +1075,7 @@ func (x *Tower) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Tower.ProtoReflect.Descriptor instead.
 func (*Tower) Descriptor() ([]byte, []int) {
-	return file_blakeswap_v1_daemon_proto_rawDescGZIP(), []int{13}
+	return file_blakeswap_v1_daemon_proto_rawDescGZIP(), []int{14}
 }
 
 func (x *Tower) GetPubkey() string {
@@ -1025,6 +1099,48 @@ func (x *Tower) GetBps() int64 {
 	return 0
 }
 
+func (x *Tower) GetNpub() string {
+	if x != nil {
+		return x.Npub
+	}
+	return ""
+}
+
+func (x *Tower) GetName() string {
+	if x != nil {
+		return x.Name
+	}
+	return ""
+}
+
+func (x *Tower) GetNetwork() string {
+	if x != nil {
+		return x.Network
+	}
+	return ""
+}
+
+func (x *Tower) GetExpires() int64 {
+	if x != nil {
+		return x.Expires
+	}
+	return 0
+}
+
+func (x *Tower) GetPublic() bool {
+	if x != nil {
+		return x.Public
+	}
+	return false
+}
+
+func (x *Tower) GetEvent() string {
+	if x != nil {
+		return x.Event
+	}
+	return ""
+}
+
 type TowerJob struct {
 	state          protoimpl.MessageState `protogen:"open.v1"`
 	Id             string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
@@ -1042,7 +1158,7 @@ type TowerJob struct {
 
 func (x *TowerJob) Reset() {
 	*x = TowerJob{}
-	mi := &file_blakeswap_v1_daemon_proto_msgTypes[14]
+	mi := &file_blakeswap_v1_daemon_proto_msgTypes[15]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1054,7 +1170,7 @@ func (x *TowerJob) String() string {
 func (*TowerJob) ProtoMessage() {}
 
 func (x *TowerJob) ProtoReflect() protoreflect.Message {
-	mi := &file_blakeswap_v1_daemon_proto_msgTypes[14]
+	mi := &file_blakeswap_v1_daemon_proto_msgTypes[15]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1067,7 +1183,7 @@ func (x *TowerJob) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TowerJob.ProtoReflect.Descriptor instead.
 func (*TowerJob) Descriptor() ([]byte, []int) {
-	return file_blakeswap_v1_daemon_proto_rawDescGZIP(), []int{14}
+	return file_blakeswap_v1_daemon_proto_rawDescGZIP(), []int{15}
 }
 
 func (x *TowerJob) GetId() string {
@@ -1149,13 +1265,16 @@ type Status struct {
 	LastError       string                 `protobuf:"bytes,12,opt,name=last_error,json=lastError,proto3" json:"last_error,omitempty"`
 	Tower           *Tower                 `protobuf:"bytes,13,opt,name=tower,proto3" json:"tower,omitempty"`
 	Network         string                 `protobuf:"bytes,14,opt,name=network,proto3" json:"network,omitempty"`
+	OwnWatchtower   *Tower                 `protobuf:"bytes,15,opt,name=own_watchtower,json=ownWatchtower,proto3" json:"own_watchtower,omitempty"`
+	Watchtowers     []*Tower               `protobuf:"bytes,16,rep,name=watchtowers,proto3" json:"watchtowers,omitempty"`
+	FundingFee      int64                  `protobuf:"varint,17,opt,name=funding_fee,json=fundingFee,proto3" json:"funding_fee,omitempty"`
 	unknownFields   protoimpl.UnknownFields
 	sizeCache       protoimpl.SizeCache
 }
 
 func (x *Status) Reset() {
 	*x = Status{}
-	mi := &file_blakeswap_v1_daemon_proto_msgTypes[15]
+	mi := &file_blakeswap_v1_daemon_proto_msgTypes[16]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1167,7 +1286,7 @@ func (x *Status) String() string {
 func (*Status) ProtoMessage() {}
 
 func (x *Status) ProtoReflect() protoreflect.Message {
-	mi := &file_blakeswap_v1_daemon_proto_msgTypes[15]
+	mi := &file_blakeswap_v1_daemon_proto_msgTypes[16]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1180,7 +1299,7 @@ func (x *Status) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Status.ProtoReflect.Descriptor instead.
 func (*Status) Descriptor() ([]byte, []int) {
-	return file_blakeswap_v1_daemon_proto_rawDescGZIP(), []int{15}
+	return file_blakeswap_v1_daemon_proto_rawDescGZIP(), []int{16}
 }
 
 func (x *Status) GetName() string {
@@ -1281,6 +1400,27 @@ func (x *Status) GetNetwork() string {
 	return ""
 }
 
+func (x *Status) GetOwnWatchtower() *Tower {
+	if x != nil {
+		return x.OwnWatchtower
+	}
+	return nil
+}
+
+func (x *Status) GetWatchtowers() []*Tower {
+	if x != nil {
+		return x.Watchtowers
+	}
+	return nil
+}
+
+func (x *Status) GetFundingFee() int64 {
+	if x != nil {
+		return x.FundingFee
+	}
+	return 0
+}
+
 type Node struct {
 	state             protoimpl.MessageState `protogen:"open.v1"`
 	Kind              string                 `protobuf:"bytes,1,opt,name=kind,proto3" json:"kind,omitempty"`                                                    // electrum or rpc; all chain backends are external.
@@ -1293,7 +1433,7 @@ type Node struct {
 
 func (x *Node) Reset() {
 	*x = Node{}
-	mi := &file_blakeswap_v1_daemon_proto_msgTypes[16]
+	mi := &file_blakeswap_v1_daemon_proto_msgTypes[17]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1305,7 +1445,7 @@ func (x *Node) String() string {
 func (*Node) ProtoMessage() {}
 
 func (x *Node) ProtoReflect() protoreflect.Message {
-	mi := &file_blakeswap_v1_daemon_proto_msgTypes[16]
+	mi := &file_blakeswap_v1_daemon_proto_msgTypes[17]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1318,7 +1458,7 @@ func (x *Node) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Node.ProtoReflect.Descriptor instead.
 func (*Node) Descriptor() ([]byte, []int) {
-	return file_blakeswap_v1_daemon_proto_rawDescGZIP(), []int{16}
+	return file_blakeswap_v1_daemon_proto_rawDescGZIP(), []int{17}
 }
 
 func (x *Node) GetKind() string {
@@ -1350,18 +1490,20 @@ func (x *Node) GetCertificateSha256() string {
 }
 
 type Environment struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Network       string                 `protobuf:"bytes,1,opt,name=network,proto3" json:"network,omitempty"`                                                                       // regtest, testnet (Testnet4), or mainnet.
-	Nodes         map[string]*Node       `protobuf:"bytes,2,rep,name=nodes,proto3" json:"nodes,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"` // Exactly btc and blake.
-	Relays        []string               `protobuf:"bytes,3,rep,name=relays,proto3" json:"relays,omitempty"`
-	Tower         *Tower                 `protobuf:"bytes,4,opt,name=tower,proto3" json:"tower,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	state               protoimpl.MessageState `protogen:"open.v1"`
+	Network             string                 `protobuf:"bytes,1,opt,name=network,proto3" json:"network,omitempty"`                                                                       // regtest, testnet (Testnet4), or mainnet.
+	Nodes               map[string]*Node       `protobuf:"bytes,2,rep,name=nodes,proto3" json:"nodes,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"` // Exactly btc and blake.
+	Relays              []string               `protobuf:"bytes,3,rep,name=relays,proto3" json:"relays,omitempty"`
+	Tower               *Tower                 `protobuf:"bytes,4,opt,name=tower,proto3" json:"tower,omitempty"`
+	PublicWatchtower    bool                   `protobuf:"varint,7,opt,name=public_watchtower,json=publicWatchtower,proto3" json:"public_watchtower,omitempty"`         // Off by default; private npub lookup remains available.
+	FavoriteWatchtowers []string               `protobuf:"bytes,6,rep,name=favorite_watchtowers,json=favoriteWatchtowers,proto3" json:"favorite_watchtowers,omitempty"` // Provider npubs, scoped to this network.
+	unknownFields       protoimpl.UnknownFields
+	sizeCache           protoimpl.SizeCache
 }
 
 func (x *Environment) Reset() {
 	*x = Environment{}
-	mi := &file_blakeswap_v1_daemon_proto_msgTypes[17]
+	mi := &file_blakeswap_v1_daemon_proto_msgTypes[18]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1373,7 +1515,7 @@ func (x *Environment) String() string {
 func (*Environment) ProtoMessage() {}
 
 func (x *Environment) ProtoReflect() protoreflect.Message {
-	mi := &file_blakeswap_v1_daemon_proto_msgTypes[17]
+	mi := &file_blakeswap_v1_daemon_proto_msgTypes[18]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1386,7 +1528,7 @@ func (x *Environment) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Environment.ProtoReflect.Descriptor instead.
 func (*Environment) Descriptor() ([]byte, []int) {
-	return file_blakeswap_v1_daemon_proto_rawDescGZIP(), []int{17}
+	return file_blakeswap_v1_daemon_proto_rawDescGZIP(), []int{18}
 }
 
 func (x *Environment) GetNetwork() string {
@@ -1417,6 +1559,20 @@ func (x *Environment) GetTower() *Tower {
 	return nil
 }
 
+func (x *Environment) GetPublicWatchtower() bool {
+	if x != nil {
+		return x.PublicWatchtower
+	}
+	return false
+}
+
+func (x *Environment) GetFavoriteWatchtowers() []string {
+	if x != nil {
+		return x.FavoriteWatchtowers
+	}
+	return nil
+}
+
 type Settings struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	ActiveNetwork string                 `protobuf:"bytes,1,opt,name=active_network,json=activeNetwork,proto3" json:"active_network,omitempty"`
@@ -1428,7 +1584,7 @@ type Settings struct {
 
 func (x *Settings) Reset() {
 	*x = Settings{}
-	mi := &file_blakeswap_v1_daemon_proto_msgTypes[18]
+	mi := &file_blakeswap_v1_daemon_proto_msgTypes[19]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1440,7 +1596,7 @@ func (x *Settings) String() string {
 func (*Settings) ProtoMessage() {}
 
 func (x *Settings) ProtoReflect() protoreflect.Message {
-	mi := &file_blakeswap_v1_daemon_proto_msgTypes[18]
+	mi := &file_blakeswap_v1_daemon_proto_msgTypes[19]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1453,7 +1609,7 @@ func (x *Settings) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Settings.ProtoReflect.Descriptor instead.
 func (*Settings) Descriptor() ([]byte, []int) {
-	return file_blakeswap_v1_daemon_proto_rawDescGZIP(), []int{18}
+	return file_blakeswap_v1_daemon_proto_rawDescGZIP(), []int{19}
 }
 
 func (x *Settings) GetActiveNetwork() string {
@@ -1488,7 +1644,7 @@ type CheckNodeRequest struct {
 
 func (x *CheckNodeRequest) Reset() {
 	*x = CheckNodeRequest{}
-	mi := &file_blakeswap_v1_daemon_proto_msgTypes[19]
+	mi := &file_blakeswap_v1_daemon_proto_msgTypes[20]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1500,7 +1656,7 @@ func (x *CheckNodeRequest) String() string {
 func (*CheckNodeRequest) ProtoMessage() {}
 
 func (x *CheckNodeRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_blakeswap_v1_daemon_proto_msgTypes[19]
+	mi := &file_blakeswap_v1_daemon_proto_msgTypes[20]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1513,7 +1669,7 @@ func (x *CheckNodeRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CheckNodeRequest.ProtoReflect.Descriptor instead.
 func (*CheckNodeRequest) Descriptor() ([]byte, []int) {
-	return file_blakeswap_v1_daemon_proto_rawDescGZIP(), []int{19}
+	return file_blakeswap_v1_daemon_proto_rawDescGZIP(), []int{20}
 }
 
 func (x *CheckNodeRequest) GetNetwork() string {
@@ -1547,7 +1703,7 @@ type CheckNodeResponse struct {
 
 func (x *CheckNodeResponse) Reset() {
 	*x = CheckNodeResponse{}
-	mi := &file_blakeswap_v1_daemon_proto_msgTypes[20]
+	mi := &file_blakeswap_v1_daemon_proto_msgTypes[21]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1559,7 +1715,7 @@ func (x *CheckNodeResponse) String() string {
 func (*CheckNodeResponse) ProtoMessage() {}
 
 func (x *CheckNodeResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_blakeswap_v1_daemon_proto_msgTypes[20]
+	mi := &file_blakeswap_v1_daemon_proto_msgTypes[21]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1572,7 +1728,7 @@ func (x *CheckNodeResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CheckNodeResponse.ProtoReflect.Descriptor instead.
 func (*CheckNodeResponse) Descriptor() ([]byte, []int) {
-	return file_blakeswap_v1_daemon_proto_rawDescGZIP(), []int{20}
+	return file_blakeswap_v1_daemon_proto_rawDescGZIP(), []int{21}
 }
 
 func (x *CheckNodeResponse) GetHeight() uint32 {
@@ -1593,11 +1749,15 @@ var File_blakeswap_v1_daemon_proto protoreflect.FileDescriptor
 
 const file_blakeswap_v1_daemon_proto_rawDesc = "" +
 	"\n" +
-	"\x19blakeswap/v1/daemon.proto\x12\fblakeswap.v1\x1a\x1cgoogle/api/annotations.proto\x1a\x1bgoogle/protobuf/empty.proto\x1a.protoc-gen-openapiv2/options/annotations.proto\"U\n" +
+	"\x19blakeswap/v1/daemon.proto\x12\fblakeswap.v1\x1a\x1cgoogle/api/annotations.proto\x1a\x1bgoogle/protobuf/empty.proto\x1a.protoc-gen-openapiv2/options/annotations.proto\"]\n" +
+	"\x18ResolveWatchtowerRequest\x12\x16\n" +
+	"\x06pubkey\x18\x01 \x01(\tR\x06pubkey\x12)\n" +
+	"\x10expected_network\x18\x02 \x01(\tR\x0fexpectedNetwork\"U\n" +
 	"\x10SetPausedRequest\x12\x16\n" +
 	"\x06paused\x18\x01 \x01(\bR\x06paused\x12)\n" +
-	"\x10expected_network\x18\x02 \x01(\tR\x0fexpectedNetwork\"\xca\x01\n" +
-	"\x12CreateOfferRequest\x12\x12\n" +
+	"\x10expected_network\x18\x02 \x01(\tR\x0fexpectedNetwork\"\xed\x01\n" +
+	"\x12CreateOfferRequest\x12!\n" +
+	"\ftower_pubkey\x18\a \x01(\tR\vtowerPubkey\x12\x12\n" +
 	"\x04sell\x18\x01 \x01(\tR\x04sell\x12)\n" +
 	"\x10expected_network\x18\x06 \x01(\tR\x0fexpectedNetwork\x12\x1f\n" +
 	"\vsell_amount\x18\x02 \x01(\x03R\n" +
@@ -1629,7 +1789,7 @@ const file_blakeswap_v1_daemon_proto_rawDesc = "" +
 	"\bmnemonic\x18\x01 \x01(\tR\bmnemonic\x12\x18\n" +
 	"\awarning\x18\x02 \x01(\tR\awarning\"\x1c\n" +
 	"\x06Backup\x12\x12\n" +
-	"\x04path\x18\x01 \x01(\tR\x04path\"\x8c\x02\n" +
+	"\x04path\x18\x01 \x01(\tR\x04path\"\xb7\x02\n" +
 	"\x05Offer\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x14\n" +
 	"\x05maker\x18\x02 \x01(\tR\x05maker\x12\x12\n" +
@@ -1643,7 +1803,8 @@ const file_blakeswap_v1_daemon_proto_rawDesc = "" +
 	"\x06status\x18\b \x01(\tR\x06status\x12 \n" +
 	"\vreservation\x18\t \x01(\tR\vreservation\x12\x18\n" +
 	"\anetwork\x18\n" +
-	" \x01(\tR\anetwork\"\xd4\x01\n" +
+	" \x01(\tR\anetwork\x12)\n" +
+	"\x05tower\x18\v \x01(\v2\x13.blakeswap.v1.TowerR\x05tower\"\xd4\x01\n" +
 	"\x04HTLC\x12\x14\n" +
 	"\x05chain\x18\x01 \x01(\tR\x05chain\x12\x12\n" +
 	"\x04hash\x18\x02 \x01(\tR\x04hash\x12\x1b\n" +
@@ -1679,11 +1840,17 @@ const file_blakeswap_v1_daemon_proto_rawDesc = "" +
 	"\rreveal_before\x18\x11 \x01(\rR\frevealBefore\x1a@\n" +
 	"\x12TowerPaymentsEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
-	"\x05value\x18\x02 \x01(\x03R\x05value:\x028\x01\"\xa9\x01\n" +
+	"\x05value\x18\x02 \x01(\x03R\x05value:\x028\x01\"\xb3\x02\n" +
 	"\x05Tower\x12\x16\n" +
 	"\x06pubkey\x18\x01 \x01(\tR\x06pubkey\x12:\n" +
 	"\ascripts\x18\x02 \x03(\v2 .blakeswap.v1.Tower.ScriptsEntryR\ascripts\x12\x10\n" +
-	"\x03bps\x18\x03 \x01(\x03R\x03bps\x1a:\n" +
+	"\x03bps\x18\x03 \x01(\x03R\x03bps\x12\x12\n" +
+	"\x04npub\x18\x04 \x01(\tR\x04npub\x12\x12\n" +
+	"\x04name\x18\x05 \x01(\tR\x04name\x12\x18\n" +
+	"\anetwork\x18\x06 \x01(\tR\anetwork\x12\x18\n" +
+	"\aexpires\x18\a \x01(\x03R\aexpires\x12\x16\n" +
+	"\x06public\x18\t \x01(\bR\x06public\x12\x14\n" +
+	"\x05event\x18\b \x01(\tR\x05event\x1a:\n" +
 	"\fScriptsEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
 	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"\x89\x02\n" +
@@ -1696,7 +1863,7 @@ const file_blakeswap_v1_daemon_proto_rawDesc = "" +
 	"\tbroadcast\x18\x06 \x01(\tR\tbroadcast\x12$\n" +
 	"\rconfirmations\x18\a \x01(\x05R\rconfirmations\x12'\n" +
 	"\x0fsecret_observed\x18\b \x01(\bR\x0esecretObserved\x12\x14\n" +
-	"\x05error\x18\t \x01(\tR\x05error\"\xf4\x05\n" +
+	"\x05error\x18\t \x01(\tR\x05error\"\x88\a\n" +
 	"\x06Status\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12\x12\n" +
 	"\x04mode\x18\x02 \x01(\tR\x04mode\x12\x16\n" +
@@ -1714,7 +1881,11 @@ const file_blakeswap_v1_daemon_proto_rawDesc = "" +
 	"\n" +
 	"last_error\x18\f \x01(\tR\tlastError\x12)\n" +
 	"\x05tower\x18\r \x01(\v2\x13.blakeswap.v1.TowerR\x05tower\x12\x18\n" +
-	"\anetwork\x18\x0e \x01(\tR\anetwork\x1a<\n" +
+	"\anetwork\x18\x0e \x01(\tR\anetwork\x12:\n" +
+	"\x0eown_watchtower\x18\x0f \x01(\v2\x13.blakeswap.v1.TowerR\rownWatchtower\x125\n" +
+	"\vwatchtowers\x18\x10 \x03(\v2\x13.blakeswap.v1.TowerR\vwatchtowers\x12\x1f\n" +
+	"\vfunding_fee\x18\x11 \x01(\x03R\n" +
+	"fundingFee\x1a<\n" +
 	"\x0eAddressesEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
 	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\x1a;\n" +
@@ -1728,12 +1899,14 @@ const file_blakeswap_v1_daemon_proto_rawDesc = "" +
 	"\x04kind\x18\x01 \x01(\tR\x04kind\x12\x10\n" +
 	"\x03url\x18\x02 \x01(\tR\x03url\x12\x16\n" +
 	"\x06cookie\x18\x03 \x01(\tR\x06cookie\x12-\n" +
-	"\x12certificate_sha256\x18\x04 \x01(\tR\x11certificateSha256\"\xfa\x01\n" +
+	"\x12certificate_sha256\x18\x04 \x01(\tR\x11certificateSha256\"\xda\x02\n" +
 	"\vEnvironment\x12\x18\n" +
 	"\anetwork\x18\x01 \x01(\tR\anetwork\x12:\n" +
 	"\x05nodes\x18\x02 \x03(\v2$.blakeswap.v1.Environment.NodesEntryR\x05nodes\x12\x16\n" +
 	"\x06relays\x18\x03 \x03(\tR\x06relays\x12)\n" +
-	"\x05tower\x18\x04 \x01(\v2\x13.blakeswap.v1.TowerR\x05tower\x1aL\n" +
+	"\x05tower\x18\x04 \x01(\v2\x13.blakeswap.v1.TowerR\x05tower\x12+\n" +
+	"\x11public_watchtower\x18\a \x01(\bR\x10publicWatchtower\x121\n" +
+	"\x14favorite_watchtowers\x18\x06 \x03(\tR\x13favoriteWatchtowers\x1aL\n" +
 	"\n" +
 	"NodesEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12(\n" +
@@ -1748,10 +1921,11 @@ const file_blakeswap_v1_daemon_proto_rawDesc = "" +
 	"\x04node\x18\x03 \x01(\v2\x12.blakeswap.v1.NodeR\x04node\"A\n" +
 	"\x11CheckNodeResponse\x12\x16\n" +
 	"\x06height\x18\x01 \x01(\rR\x06height\x12\x14\n" +
-	"\x05trust\x18\x02 \x01(\tR\x05trust2\xf0\b\n" +
+	"\x05trust\x18\x02 \x01(\tR\x05trust2\xe9\t\n" +
 	"\rDaemonService\x12M\n" +
 	"\tGetStatus\x12\x16.google.protobuf.Empty\x1a\x14.blakeswap.v1.Status\"\x12\x82\xd3\xe4\x93\x02\f\x12\n" +
-	"/v1/status\x12W\n" +
+	"/v1/status\x12w\n" +
+	"\x11ResolveWatchtower\x12&.blakeswap.v1.ResolveWatchtowerRequest\x1a\x16.google.protobuf.Empty\"\"\x82\xd3\xe4\x93\x02\x1c:\x01*\"\x17/v1/watchtowers/resolve\x12W\n" +
 	"\tSetPaused\x12\x1e.blakeswap.v1.SetPausedRequest\x1a\x14.blakeswap.v1.Status\"\x14\x82\xd3\xe4\x93\x02\x0e:\x01*\x1a\t/v1/pause\x12[\n" +
 	"\vCreateOffer\x12 .blakeswap.v1.CreateOfferRequest\x1a\x13.blakeswap.v1.Offer\"\x15\x82\xd3\xe4\x93\x02\x0f:\x01*\"\n" +
 	"/v1/offers\x12]\n" +
@@ -1783,83 +1957,89 @@ func file_blakeswap_v1_daemon_proto_rawDescGZIP() []byte {
 	return file_blakeswap_v1_daemon_proto_rawDescData
 }
 
-var file_blakeswap_v1_daemon_proto_msgTypes = make([]protoimpl.MessageInfo, 27)
+var file_blakeswap_v1_daemon_proto_msgTypes = make([]protoimpl.MessageInfo, 28)
 var file_blakeswap_v1_daemon_proto_goTypes = []any{
-	(*SetPausedRequest)(nil),   // 0: blakeswap.v1.SetPausedRequest
-	(*CreateOfferRequest)(nil), // 1: blakeswap.v1.CreateOfferRequest
-	(*CancelOfferRequest)(nil), // 2: blakeswap.v1.CancelOfferRequest
-	(*TakeOfferRequest)(nil),   // 3: blakeswap.v1.TakeOfferRequest
-	(*TakeOfferResponse)(nil),  // 4: blakeswap.v1.TakeOfferResponse
-	(*MineRequest)(nil),        // 5: blakeswap.v1.MineRequest
-	(*FaucetRequest)(nil),      // 6: blakeswap.v1.FaucetRequest
-	(*FaucetResponse)(nil),     // 7: blakeswap.v1.FaucetResponse
-	(*Recovery)(nil),           // 8: blakeswap.v1.Recovery
-	(*Backup)(nil),             // 9: blakeswap.v1.Backup
-	(*Offer)(nil),              // 10: blakeswap.v1.Offer
-	(*HTLC)(nil),               // 11: blakeswap.v1.HTLC
-	(*Swap)(nil),               // 12: blakeswap.v1.Swap
-	(*Tower)(nil),              // 13: blakeswap.v1.Tower
-	(*TowerJob)(nil),           // 14: blakeswap.v1.TowerJob
-	(*Status)(nil),             // 15: blakeswap.v1.Status
-	(*Node)(nil),               // 16: blakeswap.v1.Node
-	(*Environment)(nil),        // 17: blakeswap.v1.Environment
-	(*Settings)(nil),           // 18: blakeswap.v1.Settings
-	(*CheckNodeRequest)(nil),   // 19: blakeswap.v1.CheckNodeRequest
-	(*CheckNodeResponse)(nil),  // 20: blakeswap.v1.CheckNodeResponse
-	nil,                        // 21: blakeswap.v1.Swap.TowerPaymentsEntry
-	nil,                        // 22: blakeswap.v1.Tower.ScriptsEntry
-	nil,                        // 23: blakeswap.v1.Status.AddressesEntry
-	nil,                        // 24: blakeswap.v1.Status.BalancesEntry
-	nil,                        // 25: blakeswap.v1.Status.HeightsEntry
-	nil,                        // 26: blakeswap.v1.Environment.NodesEntry
-	(*emptypb.Empty)(nil),      // 27: google.protobuf.Empty
+	(*ResolveWatchtowerRequest)(nil), // 0: blakeswap.v1.ResolveWatchtowerRequest
+	(*SetPausedRequest)(nil),         // 1: blakeswap.v1.SetPausedRequest
+	(*CreateOfferRequest)(nil),       // 2: blakeswap.v1.CreateOfferRequest
+	(*CancelOfferRequest)(nil),       // 3: blakeswap.v1.CancelOfferRequest
+	(*TakeOfferRequest)(nil),         // 4: blakeswap.v1.TakeOfferRequest
+	(*TakeOfferResponse)(nil),        // 5: blakeswap.v1.TakeOfferResponse
+	(*MineRequest)(nil),              // 6: blakeswap.v1.MineRequest
+	(*FaucetRequest)(nil),            // 7: blakeswap.v1.FaucetRequest
+	(*FaucetResponse)(nil),           // 8: blakeswap.v1.FaucetResponse
+	(*Recovery)(nil),                 // 9: blakeswap.v1.Recovery
+	(*Backup)(nil),                   // 10: blakeswap.v1.Backup
+	(*Offer)(nil),                    // 11: blakeswap.v1.Offer
+	(*HTLC)(nil),                     // 12: blakeswap.v1.HTLC
+	(*Swap)(nil),                     // 13: blakeswap.v1.Swap
+	(*Tower)(nil),                    // 14: blakeswap.v1.Tower
+	(*TowerJob)(nil),                 // 15: blakeswap.v1.TowerJob
+	(*Status)(nil),                   // 16: blakeswap.v1.Status
+	(*Node)(nil),                     // 17: blakeswap.v1.Node
+	(*Environment)(nil),              // 18: blakeswap.v1.Environment
+	(*Settings)(nil),                 // 19: blakeswap.v1.Settings
+	(*CheckNodeRequest)(nil),         // 20: blakeswap.v1.CheckNodeRequest
+	(*CheckNodeResponse)(nil),        // 21: blakeswap.v1.CheckNodeResponse
+	nil,                              // 22: blakeswap.v1.Swap.TowerPaymentsEntry
+	nil,                              // 23: blakeswap.v1.Tower.ScriptsEntry
+	nil,                              // 24: blakeswap.v1.Status.AddressesEntry
+	nil,                              // 25: blakeswap.v1.Status.BalancesEntry
+	nil,                              // 26: blakeswap.v1.Status.HeightsEntry
+	nil,                              // 27: blakeswap.v1.Environment.NodesEntry
+	(*emptypb.Empty)(nil),            // 28: google.protobuf.Empty
 }
 var file_blakeswap_v1_daemon_proto_depIdxs = []int32{
-	11, // 0: blakeswap.v1.Swap.long:type_name -> blakeswap.v1.HTLC
-	11, // 1: blakeswap.v1.Swap.short:type_name -> blakeswap.v1.HTLC
-	21, // 2: blakeswap.v1.Swap.tower_payments:type_name -> blakeswap.v1.Swap.TowerPaymentsEntry
-	22, // 3: blakeswap.v1.Tower.scripts:type_name -> blakeswap.v1.Tower.ScriptsEntry
-	23, // 4: blakeswap.v1.Status.addresses:type_name -> blakeswap.v1.Status.AddressesEntry
-	24, // 5: blakeswap.v1.Status.balances:type_name -> blakeswap.v1.Status.BalancesEntry
-	25, // 6: blakeswap.v1.Status.heights:type_name -> blakeswap.v1.Status.HeightsEntry
-	10, // 7: blakeswap.v1.Status.orders:type_name -> blakeswap.v1.Offer
-	12, // 8: blakeswap.v1.Status.swaps:type_name -> blakeswap.v1.Swap
-	14, // 9: blakeswap.v1.Status.tower_jobs:type_name -> blakeswap.v1.TowerJob
-	13, // 10: blakeswap.v1.Status.tower:type_name -> blakeswap.v1.Tower
-	26, // 11: blakeswap.v1.Environment.nodes:type_name -> blakeswap.v1.Environment.NodesEntry
-	13, // 12: blakeswap.v1.Environment.tower:type_name -> blakeswap.v1.Tower
-	17, // 13: blakeswap.v1.Settings.environments:type_name -> blakeswap.v1.Environment
-	16, // 14: blakeswap.v1.CheckNodeRequest.node:type_name -> blakeswap.v1.Node
-	16, // 15: blakeswap.v1.Environment.NodesEntry.value:type_name -> blakeswap.v1.Node
-	27, // 16: blakeswap.v1.DaemonService.GetStatus:input_type -> google.protobuf.Empty
-	0,  // 17: blakeswap.v1.DaemonService.SetPaused:input_type -> blakeswap.v1.SetPausedRequest
-	1,  // 18: blakeswap.v1.DaemonService.CreateOffer:input_type -> blakeswap.v1.CreateOfferRequest
-	2,  // 19: blakeswap.v1.DaemonService.CancelOffer:input_type -> blakeswap.v1.CancelOfferRequest
-	3,  // 20: blakeswap.v1.DaemonService.TakeOffer:input_type -> blakeswap.v1.TakeOfferRequest
-	5,  // 21: blakeswap.v1.DaemonService.Mine:input_type -> blakeswap.v1.MineRequest
-	6,  // 22: blakeswap.v1.DaemonService.Faucet:input_type -> blakeswap.v1.FaucetRequest
-	27, // 23: blakeswap.v1.DaemonService.GetRecovery:input_type -> google.protobuf.Empty
-	27, // 24: blakeswap.v1.DaemonService.BackupWallet:input_type -> google.protobuf.Empty
-	27, // 25: blakeswap.v1.DaemonService.GetSettings:input_type -> google.protobuf.Empty
-	18, // 26: blakeswap.v1.DaemonService.UpdateSettings:input_type -> blakeswap.v1.Settings
-	19, // 27: blakeswap.v1.DaemonService.CheckNode:input_type -> blakeswap.v1.CheckNodeRequest
-	15, // 28: blakeswap.v1.DaemonService.GetStatus:output_type -> blakeswap.v1.Status
-	15, // 29: blakeswap.v1.DaemonService.SetPaused:output_type -> blakeswap.v1.Status
-	10, // 30: blakeswap.v1.DaemonService.CreateOffer:output_type -> blakeswap.v1.Offer
-	10, // 31: blakeswap.v1.DaemonService.CancelOffer:output_type -> blakeswap.v1.Offer
-	4,  // 32: blakeswap.v1.DaemonService.TakeOffer:output_type -> blakeswap.v1.TakeOfferResponse
-	27, // 33: blakeswap.v1.DaemonService.Mine:output_type -> google.protobuf.Empty
-	7,  // 34: blakeswap.v1.DaemonService.Faucet:output_type -> blakeswap.v1.FaucetResponse
-	8,  // 35: blakeswap.v1.DaemonService.GetRecovery:output_type -> blakeswap.v1.Recovery
-	9,  // 36: blakeswap.v1.DaemonService.BackupWallet:output_type -> blakeswap.v1.Backup
-	18, // 37: blakeswap.v1.DaemonService.GetSettings:output_type -> blakeswap.v1.Settings
-	18, // 38: blakeswap.v1.DaemonService.UpdateSettings:output_type -> blakeswap.v1.Settings
-	20, // 39: blakeswap.v1.DaemonService.CheckNode:output_type -> blakeswap.v1.CheckNodeResponse
-	28, // [28:40] is the sub-list for method output_type
-	16, // [16:28] is the sub-list for method input_type
-	16, // [16:16] is the sub-list for extension type_name
-	16, // [16:16] is the sub-list for extension extendee
-	0,  // [0:16] is the sub-list for field type_name
+	14, // 0: blakeswap.v1.Offer.tower:type_name -> blakeswap.v1.Tower
+	12, // 1: blakeswap.v1.Swap.long:type_name -> blakeswap.v1.HTLC
+	12, // 2: blakeswap.v1.Swap.short:type_name -> blakeswap.v1.HTLC
+	22, // 3: blakeswap.v1.Swap.tower_payments:type_name -> blakeswap.v1.Swap.TowerPaymentsEntry
+	23, // 4: blakeswap.v1.Tower.scripts:type_name -> blakeswap.v1.Tower.ScriptsEntry
+	24, // 5: blakeswap.v1.Status.addresses:type_name -> blakeswap.v1.Status.AddressesEntry
+	25, // 6: blakeswap.v1.Status.balances:type_name -> blakeswap.v1.Status.BalancesEntry
+	26, // 7: blakeswap.v1.Status.heights:type_name -> blakeswap.v1.Status.HeightsEntry
+	11, // 8: blakeswap.v1.Status.orders:type_name -> blakeswap.v1.Offer
+	13, // 9: blakeswap.v1.Status.swaps:type_name -> blakeswap.v1.Swap
+	15, // 10: blakeswap.v1.Status.tower_jobs:type_name -> blakeswap.v1.TowerJob
+	14, // 11: blakeswap.v1.Status.tower:type_name -> blakeswap.v1.Tower
+	14, // 12: blakeswap.v1.Status.own_watchtower:type_name -> blakeswap.v1.Tower
+	14, // 13: blakeswap.v1.Status.watchtowers:type_name -> blakeswap.v1.Tower
+	27, // 14: blakeswap.v1.Environment.nodes:type_name -> blakeswap.v1.Environment.NodesEntry
+	14, // 15: blakeswap.v1.Environment.tower:type_name -> blakeswap.v1.Tower
+	18, // 16: blakeswap.v1.Settings.environments:type_name -> blakeswap.v1.Environment
+	17, // 17: blakeswap.v1.CheckNodeRequest.node:type_name -> blakeswap.v1.Node
+	17, // 18: blakeswap.v1.Environment.NodesEntry.value:type_name -> blakeswap.v1.Node
+	28, // 19: blakeswap.v1.DaemonService.GetStatus:input_type -> google.protobuf.Empty
+	0,  // 20: blakeswap.v1.DaemonService.ResolveWatchtower:input_type -> blakeswap.v1.ResolveWatchtowerRequest
+	1,  // 21: blakeswap.v1.DaemonService.SetPaused:input_type -> blakeswap.v1.SetPausedRequest
+	2,  // 22: blakeswap.v1.DaemonService.CreateOffer:input_type -> blakeswap.v1.CreateOfferRequest
+	3,  // 23: blakeswap.v1.DaemonService.CancelOffer:input_type -> blakeswap.v1.CancelOfferRequest
+	4,  // 24: blakeswap.v1.DaemonService.TakeOffer:input_type -> blakeswap.v1.TakeOfferRequest
+	6,  // 25: blakeswap.v1.DaemonService.Mine:input_type -> blakeswap.v1.MineRequest
+	7,  // 26: blakeswap.v1.DaemonService.Faucet:input_type -> blakeswap.v1.FaucetRequest
+	28, // 27: blakeswap.v1.DaemonService.GetRecovery:input_type -> google.protobuf.Empty
+	28, // 28: blakeswap.v1.DaemonService.BackupWallet:input_type -> google.protobuf.Empty
+	28, // 29: blakeswap.v1.DaemonService.GetSettings:input_type -> google.protobuf.Empty
+	19, // 30: blakeswap.v1.DaemonService.UpdateSettings:input_type -> blakeswap.v1.Settings
+	20, // 31: blakeswap.v1.DaemonService.CheckNode:input_type -> blakeswap.v1.CheckNodeRequest
+	16, // 32: blakeswap.v1.DaemonService.GetStatus:output_type -> blakeswap.v1.Status
+	28, // 33: blakeswap.v1.DaemonService.ResolveWatchtower:output_type -> google.protobuf.Empty
+	16, // 34: blakeswap.v1.DaemonService.SetPaused:output_type -> blakeswap.v1.Status
+	11, // 35: blakeswap.v1.DaemonService.CreateOffer:output_type -> blakeswap.v1.Offer
+	11, // 36: blakeswap.v1.DaemonService.CancelOffer:output_type -> blakeswap.v1.Offer
+	5,  // 37: blakeswap.v1.DaemonService.TakeOffer:output_type -> blakeswap.v1.TakeOfferResponse
+	28, // 38: blakeswap.v1.DaemonService.Mine:output_type -> google.protobuf.Empty
+	8,  // 39: blakeswap.v1.DaemonService.Faucet:output_type -> blakeswap.v1.FaucetResponse
+	9,  // 40: blakeswap.v1.DaemonService.GetRecovery:output_type -> blakeswap.v1.Recovery
+	10, // 41: blakeswap.v1.DaemonService.BackupWallet:output_type -> blakeswap.v1.Backup
+	19, // 42: blakeswap.v1.DaemonService.GetSettings:output_type -> blakeswap.v1.Settings
+	19, // 43: blakeswap.v1.DaemonService.UpdateSettings:output_type -> blakeswap.v1.Settings
+	21, // 44: blakeswap.v1.DaemonService.CheckNode:output_type -> blakeswap.v1.CheckNodeResponse
+	32, // [32:45] is the sub-list for method output_type
+	19, // [19:32] is the sub-list for method input_type
+	19, // [19:19] is the sub-list for extension type_name
+	19, // [19:19] is the sub-list for extension extendee
+	0,  // [0:19] is the sub-list for field type_name
 }
 
 func init() { file_blakeswap_v1_daemon_proto_init() }
@@ -1873,7 +2053,7 @@ func file_blakeswap_v1_daemon_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_blakeswap_v1_daemon_proto_rawDesc), len(file_blakeswap_v1_daemon_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   27,
+			NumMessages:   28,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

@@ -42,7 +42,7 @@ final class AppModel: ObservableObject {
     func start() { do { try DaemonProcess.shared.start() } catch { connectionError = error.localizedDescription } }
     func refresh() async {
         guard !refreshing else { return }; refreshing = true; defer { refreshing = false }
-        if let failure = DaemonProcess.shared.failure { connectionError = failure; return }
+        start() // Idempotent while running; restarts an exited helper automatically.
         let selected = profile, expected = generation
         do {
             let raw = try await DaemonRPC.call(root: root, profile: selected, method: "status")
@@ -84,7 +84,7 @@ final class AppModel: ObservableObject {
         defer { busy = false }
         do {
             var bound = params
-            if ["offer.create", "offer.cancel", "swap.take", "pause", "regtest.mine", "regtest.faucet"].contains(method) {
+            if ["tower.resolve", "offer.create", "offer.cancel", "swap.take", "pause", "regtest.mine", "regtest.faucet"].contains(method) {
                 bound["expected_network"] = status?.network ?? network
             }
             let raw = try await DaemonRPC.call(root: root, profile: selected, method: method, params: bound)
@@ -97,6 +97,7 @@ final class AppModel: ObservableObject {
                 }
                 if method == "swap.take" { page = "Swaps" }
                 if method == "offer.create" { notice = "Offer queued." }
+                if method == "tower.resolve" { notice = "Private watchtower lookup queued. Waiting for its signed quote." }
             }
             await refresh(); return true
         } catch { notice = error.localizedDescription; return false }

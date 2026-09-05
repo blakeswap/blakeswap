@@ -141,3 +141,19 @@ Run the native snapshot regressions without chain services:
 ```sh
 swift test --package-path macos --scratch-path .cache/swift-build --cache-path .cache/swift-cache -c release --filter AppModelTests
 ```
+
+## Market and watchtower regressions
+
+Native tests cover fee-inclusive sell balances, zero/unknown balances, amount
+bounds, all/own/other open-order filters, and automatic helper restart with no
+relaunch during shutdown. The native gRPC trade also checks that backend error
+messages reach the UI and that generated watchtower scripts/npub are exposed with
+public listing off by default.
+
+Go tests cover provider signature, identity/network/expiry/payout/visibility
+binding, encrypted private npub lookup without a public event, public opt-in and
+withdrawal ordering, per-network favorite persistence and normalization, and
+pause rejection. `TestRealDiscoveredTraderWatchtowerAndOfferBalance` uses actual
+BTC/Blake2b transactions: it rejects unfunded offers, pins a privately discovered
+quote, receives a durable job receipt from a trading wallet, reopens that wallet
+from disk, and confirms its delayed refund rescue.

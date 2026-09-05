@@ -14,6 +14,7 @@ import (
 )
 
 const OfferKind nostr.Kind = 38481 // Experimental, namespaced; not NIP-69 fiat orders.
+const TowerKind nostr.Kind = 38482 // Experimental, network-scoped watchtower announcements.
 const RumorKind nostr.Kind = 10481
 const Namespace = "blakeswap-regtest-v1"
 const MaxEventSize = 65536

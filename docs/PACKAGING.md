@@ -15,6 +15,10 @@ testnet have one trading wallet. Regtest additionally exposes Alice/Bob as a
 local demonstration of independent participants; their encrypted master seeds
 remain separate.
 
+There is no pause control. The client restarts an unexpectedly exited helper while
+the app remains open, and old persisted pause flags are cleared on reopen.
+Watchtower service runs alongside trading, with public listing off by default.
+
 Quitting, including closing the last window, sends SIGTERM to the owned helper
 and waits for it to release its vaults and API endpoints. The helper independently
 checks its parent PID every 300 ms and cancels on parent death, so force-killing

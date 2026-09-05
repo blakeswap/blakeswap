@@ -93,6 +93,8 @@ func Open(ctx context.Context, c Config) (*Engine, error) {
 	if en.s.Network.Normalized() != c.Network {
 		return fail(errors.New("state belongs to a different network; use its own data directory"))
 	}
+	// An old pause flag must never suppress trading or rescue work after reopen.
+	en.s.Paused = false
 	en.keys, e = wallet.FromMnemonic(en.s.Mnemonic)
 	if e != nil {
 		return fail(e)
@@ -235,11 +237,14 @@ func (e *Engine) Tick(ctx context.Context) error {
 	if err := e.refresh(ctx); err != nil {
 		return err
 	}
-	if e.s.Paused {
-		return nil
+	if err := e.advertiseTower(); err != nil {
+		return err
+	}
+	if err := e.refreshFavoriteTowers(); err != nil {
+		return err
 	}
 	e.lastError = ""
-	filters := []nostr.Filter{{Kinds: []nostr.Kind{transport.OfferKind}, Tags: nostr.TagMap{"t": {e.Config.Network.Namespace()}}}, {Kinds: []nostr.Kind{1059}, Tags: nostr.TagMap{"p": {e.identity.Public().Hex()}}}}
+	filters := []nostr.Filter{{Kinds: []nostr.Kind{transport.TowerKind}, Tags: nostr.TagMap{"t": {e.Config.Network.Namespace()}}}, {Kinds: []nostr.Kind{transport.OfferKind}, Tags: nostr.TagMap{"t": {e.Config.Network.Namespace()}}}, {Kinds: []nostr.Kind{1059}, Tags: nostr.TagMap{"p": {e.identity.Public().Hex()}}}}
 	for _, url := range e.Config.Relays {
 		events, err := transport.PullAs(ctx, url, e.identity, filters...)
 		if err != nil {
@@ -248,6 +253,10 @@ func (e *Engine) Tick(ctx context.Context) error {
 		}
 		sort.Slice(events, func(i, j int) bool { return events[i].CreatedAt < events[j].CreatedAt })
 		for _, event := range events {
+			if event.Kind == transport.TowerKind {
+				e.ingestTower(event)
+				continue
+			}
 			if event.Kind == transport.OfferKind {
 				e.ingestOffer(event)
 				continue
@@ -261,9 +270,10 @@ func (e *Engine) Tick(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	if e.Config.Mode == "tower" {
-		err = e.advanceTower(ctx, observations)
-	} else {
+	if err = e.advanceTower(ctx, observations); err != nil {
+		return err
+	}
+	if e.Config.Mode == "trader" {
 		ids := make([]string, 0, len(e.s.Swaps))
 		for id := range e.s.Swaps {
 			ids = append(ids, id)
@@ -316,7 +326,7 @@ func (e *Engine) queue(to, typ, swapID string, body any) error {
 	if err != nil {
 		return err
 	}
-	e.s.Outbox[id] = &Delivery{Event: event, To: to, MessageID: id, Digest: protocol.Digest(m), IsAck: typ == "ack"}
+	e.s.Outbox[id] = &Delivery{Type: typ, Event: event, To: to, MessageID: id, Digest: protocol.Digest(m), IsAck: typ == "ack"}
 	return nil
 }
 func (e *Engine) queueEvent(event nostr.Event) {
