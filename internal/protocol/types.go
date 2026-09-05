@@ -27,6 +27,7 @@ const RevealBlocks uint32 = 24
 const RefundGrace uint32 = 6
 
 type Offer struct {
+	Tower       *Tower        `json:"tower,omitempty"`
 	Network     chain.Network `json:"network,omitempty"`
 	ID          string        `json:"id"`
 	Maker       string        `json:"maker"`
@@ -45,6 +46,14 @@ func (o Offer) Validate(now int64) error {
 	}
 	if o.TowerBPS < 0 || o.TowerBPS > 1000 {
 		return errors.New("tower quote out of bounds")
+	}
+	if o.Tower != nil {
+		if o.TowerBPS == 0 || o.TowerBPS != o.Tower.BPS || o.Tower.PubKey == o.Maker || o.Tower.Network != o.Network.Normalized() {
+			return errors.New("invalid selected watchtower")
+		}
+		if err := o.Tower.Verify(); err != nil {
+			return err
+		}
 	}
 	if o.TowerBPS > 0 {
 		for _, n := range []int64{o.SellAmount, o.BuyAmount} {
@@ -177,6 +186,9 @@ func (t Terms) Validate() error {
 	o, e := t.Request.Validate(int64(t.Request.OfferEvent.CreatedAt))
 	if e != nil {
 		return e
+	}
+	if o.Tower != nil && (t.Tower != o.Tower.PubKey || Digest(t.TowerScripts) != Digest(o.Tower.Scripts) || t.Request.Taker == t.Tower) {
+		return errors.New("terms changed the selected watchtower")
 	}
 	if t.Version != 1 || !Hex32(t.Request.ID) || !Hex32(t.Request.Taker) || !Hex32(t.Request.Hash) || len(t.MakerKeys) != 2 || len(t.Request.Keys) != 2 {
 		return errors.New("invalid terms")

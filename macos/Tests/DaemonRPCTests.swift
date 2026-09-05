@@ -40,6 +40,52 @@ final class DaemonRPCTests: XCTestCase {
         }
         XCTAssertTrue(ready, "Fixture wallets did not connect")
         guard ready else { return }
+        let original = try await status("alice")
+        let settings = try AppSettings(serializedBytes: await call("alice", "settings.get"))
+        var created = try AppSettings(serializedBytes: await call("alice", "wallet.create", ["name": "Savings", "revision": settings.revision]))
+        let duringCreation = try await status("alice")
+        XCTAssertEqual(duringCreation.addresses, original.addresses, "Creating a wallet interrupted the existing wallet")
+        let walletID = try XCTUnwrap(created.wallets.last?.id)
+        XCTAssertNotEqual(walletID, "alice")
+        var added: DaemonStatus?
+        for _ in 0..<80 {
+            if let value = try? await status(walletID), value.addresses.count == 2 { added = value; break }
+            try await Task.sleep(nanoseconds: 250_000_000)
+        }
+        let newWallet = try XCTUnwrap(added, "New wallet did not connect")
+        XCTAssertNotEqual(newWallet.pubkey, original.pubkey)
+        for chain in ["btc", "blake"] {
+            XCTAssertNotEqual(newWallet.addresses[chain], original.addresses[chain])
+            XCTAssertEqual(newWallet.balances[chain], 0)
+            do {
+                _ = try await call(walletID, "offer.create", ["sell": chain, "sell_amount": 100_000, "buy_amount": 100_000])
+                XCTFail("Empty new wallet created a sell offer")
+            } catch { XCTAssertTrue(error.localizedDescription.contains("balance"), error.localizedDescription) }
+        }
+        created.wallets[created.wallets.count - 1].name = "Long-term savings"
+        let savedRaw = try await DaemonRPC.call(root: root, profile: walletID, method: "settings.update", payload: created.jsonUTF8Data())
+        let duringRename = try await status(walletID)
+        XCTAssertEqual(duringRename.addresses, newWallet.addresses, "Renaming unnecessarily reconnected the wallet")
+        let renamed = try AppSettings(serializedBytes: savedRaw)
+        XCTAssertEqual(renamed.wallets.last?.id, walletID)
+        XCTAssertEqual(renamed.wallets.last?.name, "Long-term savings")
+        var reconnected: DaemonStatus?
+        for _ in 0..<80 {
+            if let value = try? await status(walletID), value.addresses.count == 2 { reconnected = value; break }
+            try await Task.sleep(nanoseconds: 250_000_000)
+        }
+        XCTAssertEqual(reconnected?.addresses, newWallet.addresses)
+        XCTAssertEqual(reconnected?.pubkey, newWallet.pubkey)
+        do {
+            _ = try await call("alice", "offer.create", ["sell": "btc", "sell_amount": 1, "buy_amount": 1])
+            XCTFail("Invalid offer accepted")
+        } catch {
+            XCTAssertTrue(error.localizedDescription.contains("invalid order bounds"), "Backend error was hidden: \(error.localizedDescription)")
+        }
+        let initial = try await status("alice")
+        XCTAssertTrue(initial.ownWatchtower.npub.hasPrefix("npub1"))
+        XCTAssertFalse(initial.ownWatchtower.public)
+        XCTAssertEqual(initial.ownWatchtower.scripts.count, 2)
         for profile in ["alice", "bob"] {
             for chain in ["btc", "blake"] {
                 _ = try await call(profile, "regtest.faucet", ["chain": chain, "amount": 100_000_000])

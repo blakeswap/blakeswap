@@ -49,7 +49,7 @@ func (j Job) Validate(towerScripts map[chain.ID]string, bps int64) error {
 			return errors.New("refund grace mismatch")
 		}
 	} else {
-		if j.Target.RefundHeight < 32 || j.Lock >= j.Target.RefundHeight-16 || j.Observe == nil || j.Observe.Chain != j.Target.Chain.Other() || j.Observe.Hash != j.Target.Hash || !Hex32(j.Observe.TxID) {
+		if j.Target.RefundHeight < 32 || j.Lock >= j.Target.RefundHeight-16 || j.Observe == nil || j.Observe.Chain != j.Target.Chain.Other() || j.Observe.Hash != j.Target.Hash || !Hex32(j.Observe.TxID) || j.Observe.Vout != 0 {
 			return errors.New("invalid claim observation/rescue margin")
 		}
 		if _, e := j.Observe.Script(); e != nil {

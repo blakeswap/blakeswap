@@ -11,15 +11,14 @@
 | Bitcoin Core node | BTC consensus, mempool, blocks, RPC, watch-only address observations | Faucet keys for regtest only; trader wallets imported as address descriptors with private keys disabled |
 | Bitcoin Blake2b node | Actual fork consensus and unified signatures, v2 block headers, mempool and RPC | Same watch-only separation; a distinct chain/datadir |
 
-The desktop owns a Go helper with one network-selected wallet engine (two
-independent profiles for the regtest demonstration). The CLI can instead run
-independent trader and tower daemons. Each connects to external chain services and
+The desktop owns a Go helper with an independent engine for each saved wallet on
+the selected network. Settings creates wallets and edits their display names. The CLI can instead run
+independent trader and tower daemons. Every wallet engine also accepts and advances watchtower jobs alongside its own swaps. Public listing is opt-in; a shared npub supports encrypted private discovery. Each connects to external chain services and
 one or more Nostr relays. The maker serializes reservations of its own offers;
 there is no authoritative matching database or service holding user funds.
 
-The app bundles no chain nodes, indexers, or relays. The full-node components in
-the table are optional user-operated external backends or explicit test fixtures.
-By default the wallet uses public Electrum servers.
+By default wallets connect to public Electrum servers. Settings also accepts
+user-operated full-node RPC backends.
 
 ## Private local API
 
@@ -84,3 +83,21 @@ Private envelopes also bind the selected network namespace. Every layer checks e
 Event IDs use a small bounds-checked NIP-01 canonical serializer with known-event and independent Unicode/escaping fixtures. The pinned Nostr library's optimized serializer fails Go's pointer-check instrumentation, so the application does not call that serializer or its event-signing wrapper. It continues using the library's NIP-44 encryption and btcec's Schnorr primitives; runtime race/pointer checks stay enabled.
 
 The local configuration explicitly names one to three relays used by all parties. Dynamic NIP-17/NIP-65/NIP-10050 relay discovery and Tor routing are not implemented. The daemon replays persistent history on synchronization, deduplicates by authenticated sender and application message ID, and acknowledges processing separately from relay storage. Public ordering follows NIP-01 timestamp and ID tie rules, not a global sequence supplied by any relay.
+
+Watchtower announcements use experimental addressable kind `38482`, with both
+`d` and `t` bound to the network namespace. Provider signatures bind its identity,
+npub, generated P2WPKH scripts, basis-point fee, expiry and public-listing flag.
+Public announcements refresh every fifteen minutes and expire after an hour.
+An opt-out replaces the old public event with a signed `public=false` event.
+Unlisted providers answer `tower-query` with an encrypted `tower-quote`, carrying
+the same signed proof without posting an announcement. Protected offers pin the
+proof and terms must preserve it. Directory cache and favorites are bounded and
+network-scoped; stale quotes cannot authorize new offers.
+
+Discovery queries and replies expire after fifteen minutes and use a bounded
+replay cache separate from durable swap acknowledgements. Discovery failures do
+not abort settlement. Remote watchtower jobs use separate scanner cursors and a
+bounded scan budget after local swap advancement. New registrations must fit the
+current funding horizon. Never-seen, explicitly absent funding transactions retire
+after the contract's refund grace; observed funding remains an obligation until
+settled. Indexer errors never count as proof that a transaction is absent.

@@ -20,18 +20,20 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	DaemonService_GetStatus_FullMethodName      = "/blakeswap.v1.DaemonService/GetStatus"
-	DaemonService_SetPaused_FullMethodName      = "/blakeswap.v1.DaemonService/SetPaused"
-	DaemonService_CreateOffer_FullMethodName    = "/blakeswap.v1.DaemonService/CreateOffer"
-	DaemonService_CancelOffer_FullMethodName    = "/blakeswap.v1.DaemonService/CancelOffer"
-	DaemonService_TakeOffer_FullMethodName      = "/blakeswap.v1.DaemonService/TakeOffer"
-	DaemonService_Mine_FullMethodName           = "/blakeswap.v1.DaemonService/Mine"
-	DaemonService_Faucet_FullMethodName         = "/blakeswap.v1.DaemonService/Faucet"
-	DaemonService_GetRecovery_FullMethodName    = "/blakeswap.v1.DaemonService/GetRecovery"
-	DaemonService_BackupWallet_FullMethodName   = "/blakeswap.v1.DaemonService/BackupWallet"
-	DaemonService_GetSettings_FullMethodName    = "/blakeswap.v1.DaemonService/GetSettings"
-	DaemonService_UpdateSettings_FullMethodName = "/blakeswap.v1.DaemonService/UpdateSettings"
-	DaemonService_CheckNode_FullMethodName      = "/blakeswap.v1.DaemonService/CheckNode"
+	DaemonService_GetStatus_FullMethodName         = "/blakeswap.v1.DaemonService/GetStatus"
+	DaemonService_ResolveWatchtower_FullMethodName = "/blakeswap.v1.DaemonService/ResolveWatchtower"
+	DaemonService_SetPaused_FullMethodName         = "/blakeswap.v1.DaemonService/SetPaused"
+	DaemonService_CreateOffer_FullMethodName       = "/blakeswap.v1.DaemonService/CreateOffer"
+	DaemonService_CancelOffer_FullMethodName       = "/blakeswap.v1.DaemonService/CancelOffer"
+	DaemonService_TakeOffer_FullMethodName         = "/blakeswap.v1.DaemonService/TakeOffer"
+	DaemonService_Mine_FullMethodName              = "/blakeswap.v1.DaemonService/Mine"
+	DaemonService_Faucet_FullMethodName            = "/blakeswap.v1.DaemonService/Faucet"
+	DaemonService_GetRecovery_FullMethodName       = "/blakeswap.v1.DaemonService/GetRecovery"
+	DaemonService_BackupWallet_FullMethodName      = "/blakeswap.v1.DaemonService/BackupWallet"
+	DaemonService_CreateWallet_FullMethodName      = "/blakeswap.v1.DaemonService/CreateWallet"
+	DaemonService_GetSettings_FullMethodName       = "/blakeswap.v1.DaemonService/GetSettings"
+	DaemonService_UpdateSettings_FullMethodName    = "/blakeswap.v1.DaemonService/UpdateSettings"
+	DaemonService_CheckNode_FullMethodName         = "/blakeswap.v1.DaemonService/CheckNode"
 )
 
 // DaemonServiceClient is the client API for DaemonService service.
@@ -39,6 +41,7 @@ const (
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
 type DaemonServiceClient interface {
 	GetStatus(ctx context.Context, in *emptypb.Empty, opts ...grpc.CallOption) (*Status, error)
+	ResolveWatchtower(ctx context.Context, in *ResolveWatchtowerRequest, opts ...grpc.CallOption) (*emptypb.Empty, error)
 	SetPaused(ctx context.Context, in *SetPausedRequest, opts ...grpc.CallOption) (*Status, error)
 	CreateOffer(ctx context.Context, in *CreateOfferRequest, opts ...grpc.CallOption) (*Offer, error)
 	CancelOffer(ctx context.Context, in *CancelOfferRequest, opts ...grpc.CallOption) (*Offer, error)
@@ -47,6 +50,7 @@ type DaemonServiceClient interface {
 	Faucet(ctx context.Context, in *FaucetRequest, opts ...grpc.CallOption) (*FaucetResponse, error)
 	GetRecovery(ctx context.Context, in *emptypb.Empty, opts ...grpc.CallOption) (*Recovery, error)
 	BackupWallet(ctx context.Context, in *emptypb.Empty, opts ...grpc.CallOption) (*Backup, error)
+	CreateWallet(ctx context.Context, in *CreateWalletRequest, opts ...grpc.CallOption) (*Settings, error)
 	GetSettings(ctx context.Context, in *emptypb.Empty, opts ...grpc.CallOption) (*Settings, error)
 	UpdateSettings(ctx context.Context, in *Settings, opts ...grpc.CallOption) (*Settings, error)
 	CheckNode(ctx context.Context, in *CheckNodeRequest, opts ...grpc.CallOption) (*CheckNodeResponse, error)
@@ -64,6 +68,16 @@ func (c *daemonServiceClient) GetStatus(ctx context.Context, in *emptypb.Empty, 
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(Status)
 	err := c.cc.Invoke(ctx, DaemonService_GetStatus_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *daemonServiceClient) ResolveWatchtower(ctx context.Context, in *ResolveWatchtowerRequest, opts ...grpc.CallOption) (*emptypb.Empty, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(emptypb.Empty)
+	err := c.cc.Invoke(ctx, DaemonService_ResolveWatchtower_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -150,6 +164,16 @@ func (c *daemonServiceClient) BackupWallet(ctx context.Context, in *emptypb.Empt
 	return out, nil
 }
 
+func (c *daemonServiceClient) CreateWallet(ctx context.Context, in *CreateWalletRequest, opts ...grpc.CallOption) (*Settings, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(Settings)
+	err := c.cc.Invoke(ctx, DaemonService_CreateWallet_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *daemonServiceClient) GetSettings(ctx context.Context, in *emptypb.Empty, opts ...grpc.CallOption) (*Settings, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(Settings)
@@ -185,6 +209,7 @@ func (c *daemonServiceClient) CheckNode(ctx context.Context, in *CheckNodeReques
 // for forward compatibility.
 type DaemonServiceServer interface {
 	GetStatus(context.Context, *emptypb.Empty) (*Status, error)
+	ResolveWatchtower(context.Context, *ResolveWatchtowerRequest) (*emptypb.Empty, error)
 	SetPaused(context.Context, *SetPausedRequest) (*Status, error)
 	CreateOffer(context.Context, *CreateOfferRequest) (*Offer, error)
 	CancelOffer(context.Context, *CancelOfferRequest) (*Offer, error)
@@ -193,6 +218,7 @@ type DaemonServiceServer interface {
 	Faucet(context.Context, *FaucetRequest) (*FaucetResponse, error)
 	GetRecovery(context.Context, *emptypb.Empty) (*Recovery, error)
 	BackupWallet(context.Context, *emptypb.Empty) (*Backup, error)
+	CreateWallet(context.Context, *CreateWalletRequest) (*Settings, error)
 	GetSettings(context.Context, *emptypb.Empty) (*Settings, error)
 	UpdateSettings(context.Context, *Settings) (*Settings, error)
 	CheckNode(context.Context, *CheckNodeRequest) (*CheckNodeResponse, error)
@@ -208,6 +234,9 @@ type UnimplementedDaemonServiceServer struct{}
 
 func (UnimplementedDaemonServiceServer) GetStatus(context.Context, *emptypb.Empty) (*Status, error) {
 	return nil, status.Error(codes.Unimplemented, "method GetStatus not implemented")
+}
+func (UnimplementedDaemonServiceServer) ResolveWatchtower(context.Context, *ResolveWatchtowerRequest) (*emptypb.Empty, error) {
+	return nil, status.Error(codes.Unimplemented, "method ResolveWatchtower not implemented")
 }
 func (UnimplementedDaemonServiceServer) SetPaused(context.Context, *SetPausedRequest) (*Status, error) {
 	return nil, status.Error(codes.Unimplemented, "method SetPaused not implemented")
@@ -232,6 +261,9 @@ func (UnimplementedDaemonServiceServer) GetRecovery(context.Context, *emptypb.Em
 }
 func (UnimplementedDaemonServiceServer) BackupWallet(context.Context, *emptypb.Empty) (*Backup, error) {
 	return nil, status.Error(codes.Unimplemented, "method BackupWallet not implemented")
+}
+func (UnimplementedDaemonServiceServer) CreateWallet(context.Context, *CreateWalletRequest) (*Settings, error) {
+	return nil, status.Error(codes.Unimplemented, "method CreateWallet not implemented")
 }
 func (UnimplementedDaemonServiceServer) GetSettings(context.Context, *emptypb.Empty) (*Settings, error) {
 	return nil, status.Error(codes.Unimplemented, "method GetSettings not implemented")
@@ -277,6 +309,24 @@ func _DaemonService_GetStatus_Handler(srv interface{}, ctx context.Context, dec 
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(DaemonServiceServer).GetStatus(ctx, req.(*emptypb.Empty))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _DaemonService_ResolveWatchtower_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ResolveWatchtowerRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DaemonServiceServer).ResolveWatchtower(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: DaemonService_ResolveWatchtower_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DaemonServiceServer).ResolveWatchtower(ctx, req.(*ResolveWatchtowerRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -425,6 +475,24 @@ func _DaemonService_BackupWallet_Handler(srv interface{}, ctx context.Context, d
 	return interceptor(ctx, in, info, handler)
 }
 
+func _DaemonService_CreateWallet_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(CreateWalletRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DaemonServiceServer).CreateWallet(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: DaemonService_CreateWallet_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DaemonServiceServer).CreateWallet(ctx, req.(*CreateWalletRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _DaemonService_GetSettings_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(emptypb.Empty)
 	if err := dec(in); err != nil {
@@ -491,6 +559,10 @@ var DaemonService_ServiceDesc = grpc.ServiceDesc{
 			Handler:    _DaemonService_GetStatus_Handler,
 		},
 		{
+			MethodName: "ResolveWatchtower",
+			Handler:    _DaemonService_ResolveWatchtower_Handler,
+		},
+		{
 			MethodName: "SetPaused",
 			Handler:    _DaemonService_SetPaused_Handler,
 		},
@@ -521,6 +593,10 @@ var DaemonService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "BackupWallet",
 			Handler:    _DaemonService_BackupWallet_Handler,
+		},
+		{
+			MethodName: "CreateWallet",
+			Handler:    _DaemonService_CreateWallet_Handler,
 		},
 		{
 			MethodName: "GetSettings",

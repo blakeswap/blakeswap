@@ -66,10 +66,21 @@ folders; update them for your own datadirs. No automatic node discovery or node
 process ownership is implied.
 
 The **Check connection** action reads chain identity/height and displays the
-observation trust model. It does not fund an address or post a Nostr offer. Tower
-configuration is optional: enter an external provider's Nostr public key, its
-P2WPKH payout scripts for both chains, and agreed basis-point quote. Protected
-funding requires its durable receipts. No public tower is silently selected.
+observation trust model. It does not fund an address or post a Nostr offer. Every wallet also serves watchtower jobs while open, at a 50 basis-point (0.50%)
+rescue fee. Public listing is **off by default**. Settings exposes a network-specific
+npub with Copy and a **Show my watchtower in the public list** toggle. Save settings
+to apply it. Opting out publishes a signed withdrawal when previously public;
+relays may retain historical announcements.
+
+Add a provider from the public list or use **Look up & add** with a shared npub.
+Private lookups and replies use encrypted Nostr mailboxes, so unlisted providers
+remain usable. Save favorites, then select one when enabling delayed protection
+in Create offer. The provider generates and signs both payout scripts and its fee;
+no script hex entry is needed. Both parties use the selected quote pinned in the
+signed offer. A taker can inspect the provider npub in the orderbook. Protected
+funding still requires durable receipts. Discovery and private lookup require a
+shared relay and a reachable provider; announcements expire after one hour and
+refresh every fifteen minutes. Listing does not prove reliability.
 
 ## Explicit developer fixtures
 
@@ -89,7 +100,7 @@ The node archives are fetched over HTTPS and checked against the upstream SHA256
 python3 scripts/bootstrap.py             # pinned node downloads, cached
 python3 scripts/local.py nodes            # start and initialize both nodes
 python3 scripts/dev.py up                 # build/start all services and seed demo balances
-sh scripts/build-mac.sh                   # build app only; starts no nodes
+sh scripts/build-mac.sh                   # build the macOS app
 
 python3 scripts/dev.py status
 python3 scripts/dev.py down               # stop app processes, preserve data/nodes
@@ -105,7 +116,7 @@ bin/blakeswap daemon --config .local/alice/config.json
 bin/blakeswap call --socket "$PWD/.local/alice/daemon.sock" --method status
 ```
 
-Config contains `network` (empty preserves legacy regtest), `name`, `mode` (`trader` or `tower`), absolute data/password/socket paths, one to three relay URLs, both nodes (`kind`: `rpc` or `electrum`, `url`, RPC `cookie`, optional `certificate_sha256`), and selected tower public identity, payout scripts, and basis-point quote. The tower's status returns its public quote and derived payout scripts for trader configuration. Do not change tower identity or scripts mid-swap: accepted terms and signed templates intentionally retain their original commitment.
+Config contains `network` (empty preserves legacy regtest), `name`, `mode` (`trader` or `tower`), absolute data/password/socket paths, one to three relay URLs, both nodes (`kind`: `rpc` or `electrum`, `url`, RPC `cookie`, optional `certificate_sha256`), and selected tower public identity, payout scripts, and basis-point quote. All modes serve watchtower jobs; `tower` disables trading and may set its serving rate through `tower.bps`. `public_watchtower` opts into listing (default false), and `favorite_watchtowers` stores npubs for private quote refresh. Status returns `own_watchtower` and authenticated discovered `watchtowers`. Legacy configured trader quotes remain supported for older CLI offers. Do not change tower identity or scripts mid-swap: accepted terms and signed templates intentionally retain their original commitment.
 
 ## Local API
 
@@ -124,7 +135,7 @@ Restoring stale snapshots is not generally safe automatic recovery. Previously s
 
 ## Troubleshooting
 
-**Daemon disconnected:** for the desktop, use Restart daemon and inspect the app data directory's `desktop.log`; for the separate CLI fixture, use `python3 scripts/dev.py up` and inspect `.local/<name>.log`. Check Settings and the configured endpoint before changing networks. A locked desktop does not stop the daemon; a sleeping/offline machine can stop timely responses.
+**Daemon disconnected:** the desktop reconnects automatically; inspect the app data directory's `desktop.log`; for the separate CLI fixture, use `python3 scripts/dev.py up` and inspect `.local/<name>.log`. Check Settings and the configured endpoint before changing networks. A locked desktop does not stop the daemon; a sleeping/offline machine can stop timely responses.
 
 **Insufficient balance:** on regtest RPC, use the test faucet from Wallet, then mine two blocks. On public networks, wait for confirmations and ensure BTC inputs meet replay-ancestry requirements. Confirmed balance excludes unconfirmed change and locked HTLCs. Multiple open offers can overstate available inventory; reservation is serialized and funding still verifies actual unspent coins.
 
@@ -146,9 +157,9 @@ it). The daemon imports only public deposit-address descriptors. Initial imports
 scan historical blocks from timestamp zero, preserving deposits when restoring a
 wallet or moving from Electrum to RPC. This can take hours on mainnet. Desktop
 bootstrap runs independently of the short trading cycles; status and Settings
-remain available, and trading stays unavailable until both wallets are ready.
-Changing Settings or quitting cancels the bootstrap request and releases local
-wallet locks. It does not stop or abort the user's external node.
+remain available. Each wallet becomes ready after both chain histories synchronize;
+existing wallets keep running while a new wallet initializes. Changing the active
+network or its connections, or quitting, cancels bootstrap and releases wallet locks.
 
 After a complete successful import response, the daemon records the
 `blakeswap-history-ready-v1` address label in that node's watch-only wallet. On

@@ -20,6 +20,7 @@ type Service struct {
 	pb.UnimplementedDaemonServiceServer
 	Command       func(context.Context, daemon.Request) (any, error)
 	ReadSettings  func(context.Context) (*pb.Settings, error)
+	NewWallet     func(context.Context, *pb.CreateWalletRequest) (*pb.Settings, error)
 	WriteSettings func(context.Context, *pb.Settings) (*pb.Settings, error)
 }
 
@@ -64,6 +65,10 @@ func (s *Service) GetStatus(ctx context.Context, in *emptypb.Empty) (*pb.Status,
 	err := s.command(ctx, "status", in, out)
 	return out, err
 }
+func (s *Service) ResolveWatchtower(ctx context.Context, in *pb.ResolveWatchtowerRequest) (*emptypb.Empty, error) {
+	out := &emptypb.Empty{}
+	return out, s.command(ctx, "tower.resolve", in, out)
+}
 func (s *Service) SetPaused(ctx context.Context, in *pb.SetPausedRequest) (*pb.Status, error) {
 	out := &pb.Status{}
 	err := s.command(ctx, "pause", in, out)
@@ -103,6 +108,16 @@ func (s *Service) BackupWallet(ctx context.Context, in *emptypb.Empty) (*pb.Back
 	out := &pb.Backup{}
 	err := s.command(ctx, "wallet.backup", in, out)
 	return out, err
+}
+func (s *Service) CreateWallet(ctx context.Context, in *pb.CreateWalletRequest) (*pb.Settings, error) {
+	if s.NewWallet == nil {
+		return nil, status.Error(codes.Unimplemented, "wallets are managed by the desktop app")
+	}
+	v, err := s.NewWallet(ctx, in)
+	if err != nil {
+		return nil, rpcError(err)
+	}
+	return v, nil
 }
 func (s *Service) GetSettings(ctx context.Context, _ *emptypb.Empty) (*pb.Settings, error) {
 	if s.ReadSettings == nil {

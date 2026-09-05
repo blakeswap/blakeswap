@@ -38,6 +38,10 @@ func Call(ctx context.Context, socket string, req daemon.Request) (json.RawMessa
 		p := &emptypb.Empty{}
 		in = p
 		invoke = func() (proto.Message, error) { return client.GetStatus(ctx, p) }
+	case "tower.resolve":
+		p := &pb.ResolveWatchtowerRequest{}
+		in = p
+		invoke = func() (proto.Message, error) { return client.ResolveWatchtower(ctx, p) }
 	case "pause":
 		p := &pb.SetPausedRequest{}
 		in = p
@@ -70,6 +74,10 @@ func Call(ctx context.Context, socket string, req daemon.Request) (json.RawMessa
 		p := &emptypb.Empty{}
 		in = p
 		invoke = func() (proto.Message, error) { return client.BackupWallet(ctx, p) }
+	case "wallet.create":
+		p := &pb.CreateWalletRequest{}
+		in = p
+		invoke = func() (proto.Message, error) { return client.CreateWallet(ctx, p) }
 	case "settings.get":
 		p := &emptypb.Empty{}
 		in = p

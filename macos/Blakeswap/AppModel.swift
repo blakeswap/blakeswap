@@ -36,13 +36,13 @@ final class AppModel: ObservableObject {
         }
         let matching = next?.network == nextSettings.activeNetwork && next?.name == selected
         snapshot = Snapshot(status: matching ? next : nil, settings: nextSettings)
-        if nextSettings.activeNetwork != "regtest" && profile != "alice" { selectProfile("alice") }
+        if !nextSettings.wallets.isEmpty, !nextSettings.wallets.contains(where: { $0.id == profile }) { selectProfile(nextSettings.wallets[0].id) }
         return matching
     }
     func start() { do { try DaemonProcess.shared.start() } catch { connectionError = error.localizedDescription } }
     func refresh() async {
         guard !refreshing else { return }; refreshing = true; defer { refreshing = false }
-        if let failure = DaemonProcess.shared.failure { connectionError = failure; return }
+        start() // Idempotent while running; restarts an exited helper automatically.
         let selected = profile, expected = generation
         do {
             let raw = try await DaemonRPC.call(root: root, profile: selected, method: "status")
@@ -52,13 +52,16 @@ final class AppModel: ObservableObject {
             if acceptSnapshot(next, settings: nextSettings, profile: selected, generation: expected) { connectionError = nil }
         } catch { if selected == profile && expected == generation { connectionError = error.localizedDescription } }
     }
-    func loadSettings() async {
+    @discardableResult
+    func loadSettings() async -> AppSettings? {
         let selected = profile, expected = generation
         do {
             let raw = try await DaemonRPC.call(root: root, profile: selected, method: "settings.get")
             let next = try AppSettings(serializedBytes: raw)
+            guard selected == profile, expected == generation, next.revision >= (settings?.revision ?? 0) else { return nil }
             acceptSnapshot(status, settings: next, profile: selected, generation: expected)
-        } catch { if selected == profile && expected == generation { notice = error.localizedDescription } }
+            return next
+        } catch { if selected == profile && expected == generation { notice = error.localizedDescription }; return nil }
     }
     func saveSettings(_ draft: AppSettings) async {
         guard !busy else { return }; busy = true; invalidateSnapshot()
@@ -68,6 +71,21 @@ final class AppModel: ObservableObject {
             let next = try AppSettings(serializedBytes: raw)
             acceptSnapshot(nil, settings: next, profile: profile, generation: generation)
             notice = "Settings saved. Connecting."
+        } catch { notice = error.localizedDescription }
+    }
+    func createWallet(name: String) async {
+        guard !busy, let current = settings else { return }
+        busy = true; invalidateSnapshot()
+        defer { busy = false }
+        do {
+            var request = Blakeswap_V1_CreateWalletRequest()
+            request.name = name.trimmingCharacters(in: .whitespacesAndNewlines)
+            request.revision = current.revision
+            let raw = try await DaemonRPC.call(root: root, profile: profile, method: "wallet.create", payload: request.jsonUTF8Data())
+            let next = try AppSettings(serializedBytes: raw)
+            acceptSnapshot(nil, settings: next, profile: profile, generation: generation)
+            if let created = next.wallets.last { selectProfile(created.id) }
+            notice = "Wallet created. Connecting."
         } catch { notice = error.localizedDescription }
     }
     func checkNode(network: String, chain: String, node: NodeSettings) async -> String {
@@ -84,7 +102,7 @@ final class AppModel: ObservableObject {
         defer { busy = false }
         do {
             var bound = params
-            if ["offer.create", "offer.cancel", "swap.take", "pause", "regtest.mine", "regtest.faucet"].contains(method) {
+            if ["tower.resolve", "offer.create", "offer.cancel", "swap.take", "pause", "regtest.mine", "regtest.faucet"].contains(method) {
                 bound["expected_network"] = status?.network ?? network
             }
             let raw = try await DaemonRPC.call(root: root, profile: selected, method: method, params: bound)
@@ -97,6 +115,7 @@ final class AppModel: ObservableObject {
                 }
                 if method == "swap.take" { page = "Swaps" }
                 if method == "offer.create" { notice = "Offer queued." }
+                if method == "tower.resolve" { notice = "Private watchtower lookup queued. Waiting for its signed quote." }
             }
             await refresh(); return true
         } catch { notice = error.localizedDescription; return false }

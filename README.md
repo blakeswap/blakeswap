@@ -4,8 +4,7 @@ A native macOS client and Go daemon for asynchronous, noncustodial Bitcoin ↔ B
 
 The app supports mainnet, Testnet4, and regtest. Mainnet starts with public Electrum
 servers; Settings accepts your own Electrum or full-node RPC endpoints per chain
-and environment. No chain node, indexer, or relay is bundled or launched by the
-app. The native client connects directly to the Go daemon using protobuf/gRPC; an
+and environment. The native client connects directly to the Go daemon using protobuf/gRPC; an
 authenticated grpc-gateway HTTP API and OpenAPI description are also provided.
 There is no token, DAO, treasury, custody server, or upfront watchtower fee.
 
@@ -27,12 +26,14 @@ sh scripts/build-dmg.sh
 
 Open `bin/Blakeswap-0.2.0-arm64.dmg`, drag the app into Applications, and open it.
 The app owns one bundled Go daemon: launch starts it, quit stops it, and parent-death
-monitoring stops it after a force quit. External nodes/indexers remain independent.
+monitoring stops it after a force quit.
 The default build is ad-hoc signed; [Packaging](docs/PACKAGING.md) describes Developer
 ID signing, notarization, the data layout, and a separate local regtest demonstration.
 
-Settings selects the active network, node endpoints, Nostr relays, and optional
-tower quote. Public BTC and Blake2b mainnet defaults have been checked against live
+Settings selects the active network, node endpoints, Nostr relays, and watchtower favorites. Every wallet serves watchtower jobs while the app is
+open; public listing is off by default and can be enabled in Settings. Copy your
+npub to share privately, or discover public providers and save favorites. Payout
+scripts and fee quotes are generated and signed by each provider. Public BTC and Blake2b mainnet defaults have been checked against live
 chain data. No verified public Blake2b Testnet4 indexer was found; configure your
 own endpoint for that chain. The application does not substitute a Bitcoin server
 or silently change networks. [Operations](docs/OPERATIONS.md) lists the defaults and
@@ -47,7 +48,7 @@ open bin/Blakeswap.app --args --data-dir "$PWD/.local/desktop-demo"
 python3 scripts/desktop-demo.py trade
 ```
 
-This explicit developer harness starts **separate** regtest nodes and a relay, and
+This developer harness starts regtest nodes and a relay, and
 configures an isolated app data directory to connect to them. It does not change
 the normal desktop wallet or add those services to the app bundle. The trade
 exchanges 1,000,000 BTC sats for 2,000,000 BLAKE sats using the app-owned daemon.
@@ -97,3 +98,10 @@ See [the invariant matrix and test limits](docs/TESTING.md). “Comprehensive”
 - [Completed local demonstration and transaction evidence](docs/VERIFICATION.md)
 
 Source lives in `internal/` and `cmd/blakeswap/`; native SwiftUI source lives in `macos/Blakeswap/`. Build products, downloaded binaries, regtest data, credentials, and wallet state remain in ignored directories.
+
+Wallets can be created and renamed in Settings. New installations start with one
+wallet; existing Alice/Bob vaults are preserved. The selector lists saved wallets
+on every network, and all wallets continue trading and serving watchtower jobs
+while the app is open. Names are labels: renaming does not change keys, addresses,
+or balances. Public watchtower listing is off by default; its per-network toggle
+opts all of the app's wallets into that network's public directory.

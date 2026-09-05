@@ -10,10 +10,12 @@ import (
 	"fiatjaf.com/nostr/nip44"
 	"fmt"
 	"github.com/btcsuite/btcd/btcec/v2/schnorr"
+	"strconv"
 	"time"
 )
 
 const OfferKind nostr.Kind = 38481 // Experimental, namespaced; not NIP-69 fiat orders.
+const TowerKind nostr.Kind = 38482 // Experimental, network-scoped watchtower announcements.
 const RumorKind nostr.Kind = 10481
 const Namespace = "blakeswap-regtest-v1"
 const MaxEventSize = 65536
@@ -83,6 +85,14 @@ func Wrap(sk nostr.SecretKey, to nostr.PubKey, m Message) (nostr.Event, error) {
 	return WrapFor(Namespace, sk, to, m)
 }
 func WrapFor(namespace string, sk nostr.SecretKey, to nostr.PubKey, m Message) (nostr.Event, error) {
+	return wrapFor(namespace, sk, to, m, 0)
+}
+
+// Expiring discovery envelopes cannot occupy the durable swap mailbox forever.
+func WrapExpiringFor(namespace string, sk nostr.SecretKey, to nostr.PubKey, m Message, expires int64) (nostr.Event, error) {
+	return wrapFor(namespace, sk, to, m, expires)
+}
+func wrapFor(namespace string, sk nostr.SecretKey, to nostr.PubKey, m Message, expires int64) (nostr.Event, error) {
 	raw, e := json.Marshal(m)
 	if e != nil {
 		return nostr.Event{}, e
@@ -103,6 +113,9 @@ func WrapFor(namespace string, sk nostr.SecretKey, to nostr.PubKey, m Message) (
 		return nostr.Event{}, e
 	}
 	outer := nostr.Event{Kind: 1059, CreatedAt: randomPast(), Tags: nostr.Tags{{"p", to.Hex()}}, Content: content}
+	if expires > 0 {
+		outer.Tags = append(outer.Tags, nostr.Tag{"expiration", strconv.FormatInt(expires, 10)})
+	}
 	if e = Sign(&outer, ephemeral); e != nil {
 		return nostr.Event{}, e
 	}

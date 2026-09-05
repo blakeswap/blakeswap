@@ -4,22 +4,24 @@
 
 Blakeswap targets macOS 15 or later using SwiftUI, SwiftProtobuf, and gRPC Swift 2.
 The app bundle contains one native UI executable and the Go `blakeswap` helper,
-plus documentation and dependency license/privacy resources. **No Bitcoin node,
-Blake2b node, Electrum server, electrs/Fulcrum indexer, or Nostr relay is bundled or
-started by the desktop app.** All chain and relay endpoints are external.
+plus documentation and dependency license/privacy resources.
 
 Opening the app launches `Contents/Resources/blakeswap desktop --data-dir …
 --parent-pid …`. The helper holds an exclusive lock on that data directory and
-owns the wallet engines, API listeners, and runtime credential files. Mainnet and
-testnet have one trading wallet. Regtest additionally exposes Alice/Bob as a
-local demonstration of independent participants; their encrypted master seeds
-remain separate.
+owns the wallet engines, API listeners, and runtime credential files. Settings
+supports creating independent wallets and editing their display names. All saved
+wallets are selectable and run on every network. New installations start with
+one wallet; legacy Alice/Bob vaults retain their original encrypted master seeds.
+The isolated regtest demonstration explicitly prepares Alice and Bob.
+
+There is no pause control. The client restarts an unexpectedly exited helper while
+the app remains open, and old persisted pause flags are cleared on reopen.
+Watchtower service runs alongside trading, with public listing off by default.
 
 Quitting, including closing the last window, sends SIGTERM to the owned helper
 and waits for it to release its vaults and API endpoints. The helper independently
 checks its parent PID every 300 ms and cancels on parent death, so force-killing
-the GUI also stops its daemon. It does not stop external services. No launch agent,
-login item, privileged service, or system daemon is installed.
+the GUI also stops its daemon.
 
 Closing the app stops swap progress and observations. Chain deadlines continue.
 An armed external watchtower can execute its already-authorized rescues while the

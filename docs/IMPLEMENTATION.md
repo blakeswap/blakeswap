@@ -3,8 +3,7 @@
 The entries below record the initial regtest milestone. Current native transport,
 packaging and network support are described in [API](API.md),
 [Packaging](PACKAGING.md), and [Operations](OPERATIONS.md). The app now owns its
-daemon, defaults to external public Electrum, supports all three environments,
-and bundles no nodes/indexers. Public swaps use median-time deadlines and BTC
+daemon, defaults to public Electrum, and supports all three environments. Public swaps use median-time deadlines and BTC
 ancestry checks; the initial short regtest height schedule is retained for tests.
 
 

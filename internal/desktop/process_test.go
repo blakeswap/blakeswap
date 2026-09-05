@@ -13,6 +13,7 @@ import (
 	"testing"
 	"time"
 
+	pb "github.com/blakeswap/blakeswap/api/gen/blakeswap/v1"
 	"github.com/blakeswap/blakeswap/internal/api"
 	"github.com/blakeswap/blakeswap/internal/daemon"
 )
@@ -116,6 +117,52 @@ func TestDesktopOwnedProcessLifecycle(t *testing.T) {
 			}
 			if _, err = api.Call(ctx, endpoints["alice"].Socket, daemon.Request{Method: "settings.get"}); err != nil {
 				t.Fatal("Settings unavailable while connecting", err)
+			}
+			// The typed API creates a real separate vault and live endpoint even while
+			// the shared chain endpoints are unavailable.
+			walletCtx, walletCancel := context.WithTimeout(context.Background(), 10*time.Second)
+			defer walletCancel()
+			createdRaw, err := api.Call(walletCtx, endpoints["alice"].Socket, daemon.Request{Method: "wallet.create", Params: json.RawMessage(`{"name":"Savings","revision":1}`)})
+			if err != nil {
+				t.Fatal("create wallet while offline", err)
+			}
+			created := &pb.Settings{}
+			if err := json.Unmarshal(createdRaw, created); err != nil {
+				t.Fatal(err)
+			}
+			if len(created.Wallets) != 2 || created.Wallets[1].Name != "Savings" {
+				t.Fatal("created profile missing")
+			}
+			id := created.Wallets[1].Id
+			raw, err = os.ReadFile(manifest)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := json.Unmarshal(raw, &endpoints); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := api.Call(walletCtx, endpoints[id].Socket, daemon.Request{Method: "status"}); err != nil {
+				t.Fatal("new wallet endpoint unavailable", err)
+			}
+			seedBefore, _, err := master(filepath.Join(root, "wallets", id))
+			if err != nil {
+				t.Fatal(err)
+			}
+			created.Wallets[1].Name = "Long-term savings"
+			renameRaw, err := json.Marshal(created)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, err := api.Call(walletCtx, endpoints[id].Socket, daemon.Request{Method: "settings.update", Params: renameRaw}); err != nil {
+				t.Fatal("rename", err)
+			}
+			persisted, err := loadSettings(root)
+			if err != nil || persisted.Wallets[1].Id != id || persisted.Wallets[1].Name != "Long-term savings" {
+				t.Fatal("rename did not persist stable identity", err)
+			}
+			seedAfter, _, err := master(filepath.Join(root, "wallets", id))
+			if err != nil || seedBefore != seedAfter {
+				t.Fatal("rename changed wallet keys", err)
 			}
 			childPID := cmd.Process.Pid
 			if scenario == "parent-death" {

@@ -101,9 +101,8 @@ See [Risks](RISKS.md) for the trust and liveness assumptions that remain necessa
 | Network identity | Fork v2 header hash fixture from upstream, checkpoint/hash tampering, cross-network signed offer/mailbox rejection and key derivation separation |
 
 The Electrum fixture is test-only Go code. It forwards broadcasts to actual
-regtest consensus nodes and constructs inclusion proofs from their blocks. It
-is not a bundled indexer or an independent consensus implementation. Real public
-endpoint reads are separately opt-in:
+regtest consensus nodes and constructs inclusion proofs from their blocks. Real
+public endpoint reads are separately opt-in:
 
 ```sh
 BLAKESWAP_LIVE_READS=1 sh scripts/go.sh test -count=1 -run TestPublishedElectrumServices -v ./internal/chain
@@ -118,7 +117,7 @@ run independent mining suites against the same datadirs concurrently.
 
 The DMG checks include signature/resource sealing, disk-image checksums, relocated
 app launch without repository dependencies, and process-tree inspection for exactly
-one app-owned Go helper and no bundled chain executables. GUI shutdown and parent
+one app-owned Go helper. GUI shutdown and parent
 death must remove the helper/runtime while external fixtures remain alive.
 
 The GitHub Go validation workflow runs vet, unit/IPC lifecycle tests, race checks,
@@ -141,3 +140,33 @@ Run the native snapshot regressions without chain services:
 ```sh
 swift test --package-path macos --scratch-path .cache/swift-build --cache-path .cache/swift-cache -c release --filter AppModelTests
 ```
+
+## Market and watchtower regressions
+
+Native tests cover fee-inclusive sell balances, zero/unknown balances, amount
+bounds, all/own/other open-order filters, and automatic helper restart with no
+relaunch during shutdown. The native gRPC trade also checks that backend error
+messages reach the UI and that generated watchtower scripts/npub are exposed with
+public listing off by default.
+
+Go tests cover provider signature, identity/network/expiry/payout/visibility
+binding, encrypted private npub lookup without a public event, public opt-in and
+withdrawal ordering, per-network favorite persistence and normalization, and
+pause rejection. `TestRealDiscoveredTraderWatchtowerAndOfferBalance` uses actual
+BTC/Blake2b transactions: it rejects unfunded offers, pins a privately discovered
+quote, receives a durable job receipt from a trading wallet, reopens that wallet
+from disk, and confirms its delayed refund rescue.
+
+Additional regressions isolate recurring discovery from a saturated protocol
+mailbox, expire discovery state, reject invalid-curve npubs and out-of-range
+observed outputs, keep remote history out of the local swap scanner, and distinguish
+abandoned registrations from funded obligations and failed indexer lookups.
+
+Wallet regressions cover legacy Alice/Bob migration without seed replacement,
+immutable IDs, invalid/deleted profiles, and creating/renaming a wallet through
+the real IPC service while nodes are unavailable. Native tests exercise custom
+wallet selection across networks and create a third independent wallet, reject
+its empty-balance offers on both assets, and verify its addresses/identity survive
+renaming before completing an actual two-chain trade. Watchtower tests also cover
+asymmetric public clocks, unrelated funding-output rejection, and one private
+lookup per provider per expiry period after successful relay publication.

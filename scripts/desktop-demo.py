@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-"""Explicit developer fixture for the desktop app. Nodes/relay remain external.
+"""Developer fixture for the desktop app.
 
-prepare starts separate regtest services and writes isolated Settings; it never
+prepare starts regtest services and writes isolated Settings; it never
 installs or changes the normal desktop wallet. Launch the app with the printed
 --data-dir. trade uses the app-owned daemon's gRPC API and real test coins.
 """
@@ -36,6 +36,7 @@ def prepare():
                 helper.terminate(); helper.wait(timeout=30)
     settings = json.loads((DATA / "settings.json").read_text())
     settings["active_network"] = "regtest"
+    settings["wallets"] = [{"id": "alice", "name": "Alice"}, {"id": "bob", "name": "Bob"}]
     for env in settings["environments"]:
         if env["network"] == "regtest":
             env["nodes"] = {chain: {"kind":"rpc", "url":f"http://127.0.0.1:{port}", "cookie":str(ROOT / ".local" / chain / "regtest/.cookie")} for chain, (_,port) in local.NODES.items()}

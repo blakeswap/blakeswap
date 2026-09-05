@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
+	"fiatjaf.com/nostr"
+	"github.com/blakeswap/blakeswap/internal/chain"
 	"github.com/blakeswap/blakeswap/internal/contract"
 	"github.com/blakeswap/blakeswap/internal/protocol"
 	"github.com/blakeswap/blakeswap/internal/transport"
@@ -35,10 +37,28 @@ func bindFunding(c contract.HTLC, raw string) (contract.HTLC, error) {
 	return c, nil
 }
 func (e *Engine) handle(from string, m transport.Message) error {
-	if m.Type == "tower-job" {
-		if e.Config.Mode != "tower" {
-			return errors.New("not a tower")
+	if m.Type == "tower-query" {
+		if err := e.advertiseTower(); err != nil {
+			return err
 		}
+		return e.queue(from, "tower-quote", "", e.s.Towers[e.identity.Public().Hex()])
+	}
+	if m.Type == "tower-quote" {
+		var event nostr.Event
+		if err := json.Unmarshal(m.Body, &event); err != nil {
+			return err
+		}
+		if event.PubKey.Hex() != from {
+			return errors.New("watchtower quote sender mismatch")
+		}
+		if _, err := protocol.DecodeTower(event, e.Config.Network, time.Now().Unix()); err != nil {
+			return err
+		}
+		e.ingestTower(event)
+		return nil
+	}
+
+	if m.Type == "tower-job" {
 		var job protocol.Job
 		if err := json.Unmarshal(m.Body, &job); err != nil {
 			return err
@@ -49,7 +69,7 @@ func (e *Engine) handle(from string, m transport.Message) error {
 		if job.Owner != from || m.SwapID != job.SwapID {
 			return errors.New("job sender mismatch")
 		}
-		if err := job.Validate(e.Config.Tower.Scripts, e.Config.Tower.BPS); err != nil {
+		if err := job.Validate(e.ownTower().Scripts, e.ownTower().BPS); err != nil {
 			return err
 		}
 		if len(e.s.TowerJobs) >= 1000 && e.s.TowerJobs[job.ID] == nil {
@@ -60,6 +80,9 @@ func (e *Engine) handle(from string, m transport.Message) error {
 				return errors.New("job ID collision")
 			}
 		} else {
+			if !e.registrationWindow(job.Target.Chain, job.Target.RefundHeight) {
+				return errors.New("tower registration outside funding window")
+			}
 			e.s.TowerJobs[job.ID] = &TowerJob{Job: job}
 			if err := e.save(); err != nil {
 				return err
@@ -98,14 +121,15 @@ func (e *Engine) handle(from string, m transport.Message) error {
 		if e.balances[o.Sell] < o.SellAmount+protocol.FundingFee {
 			return e.queue(from, "rejected", request.ID, map[string]string{"reason": "maker lacks confirmed balance"})
 		}
-		if o.TowerBPS > 0 && (o.TowerBPS != e.Config.Tower.BPS || !protocol.Hex32(e.Config.Tower.PubKey)) {
-			return errors.New("tower quote unavailable")
+		tower, err := e.selectedTower(o)
+		if err != nil {
+			return err
 		}
 		keys, err := e.swapKeys(request.ID)
 		if err != nil {
 			return err
 		}
-		terms, err := protocol.NewTermsWithClocks(request, keys, e.heights, e.clocks, e.Config.Tower.PubKey, e.Config.Tower.Scripts)
+		terms, err := protocol.NewTermsWithClocks(request, keys, e.heights, e.clocks, tower.PubKey, tower.Scripts)
 		if err != nil {
 			return err
 		}
@@ -153,7 +177,11 @@ func (e *Engine) handle(from string, m transport.Message) error {
 		if protocol.Digest(terms.Request) != protocol.Digest(s.Request) || from != terms.Offer().Maker {
 			return errors.New("acceptance changed request or maker")
 		}
-		if terms.Offer().TowerBPS > 0 && (terms.Tower != e.Config.Tower.PubKey || terms.Offer().TowerBPS != e.Config.Tower.BPS || protocol.Digest(terms.TowerScripts) != protocol.Digest(e.Config.Tower.Scripts)) {
+		tower, err := e.selectedTower(terms.Offer())
+		if err != nil {
+			return err
+		}
+		if terms.Offer().TowerBPS > 0 && (terms.Tower != tower.PubKey || terms.Offer().TowerBPS != tower.BPS || protocol.Digest(terms.TowerScripts) != protocol.Digest(tower.Scripts)) {
 			return errors.New("unapproved tower quote")
 		}
 		if s.Terms != nil {
@@ -232,4 +260,17 @@ func (e *Engine) handle(from string, m transport.Message) error {
 		return nil
 	}
 	return errors.New("unknown swap message type")
+}
+
+func (e *Engine) registrationWindow(id chain.ID, refund uint32) bool {
+	now := e.clocks[id]
+	horizon := uint64(protocol.LongBlocks)
+	if e.Config.Network != chain.Regtest {
+		if e.clocks[chain.BTC] < protocol.TimeLockThreshold || e.clocks[chain.Blake] < protocol.TimeLockThreshold {
+			return false
+		}
+		now = max(e.clocks[chain.BTC], e.clocks[chain.Blake])
+		horizon = uint64(protocol.LongSeconds) + uint64(protocol.MaxClockSkew)
+	}
+	return now > 0 && refund > now && uint64(refund) <= uint64(now)+horizon
 }

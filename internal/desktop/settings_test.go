@@ -3,6 +3,8 @@ package desktop
 import (
 	"context"
 	"encoding/json"
+	"fiatjaf.com/nostr"
+	"fiatjaf.com/nostr/nip19"
 	pb "github.com/blakeswap/blakeswap/api/gen/blakeswap/v1"
 	"github.com/blakeswap/blakeswap/internal/chain"
 	"github.com/blakeswap/blakeswap/internal/daemon"
@@ -160,7 +162,7 @@ func TestSettingsCancelsBootstrapBeforeInspectingStoredObligations(t *testing.T)
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	job := &networkOpening{cancel: cancel, done: make(chan networkResult, 1)}
-	m.opening = job
+	m.openings = map[string]*networkOpening{"alice": job}
 	go func() {
 		<-ctx.Done()
 		_ = vault.Close()
@@ -175,7 +177,7 @@ func TestSettingsCancelsBootstrapBeforeInspectingStoredObligations(t *testing.T)
 	if _, err = m.writeSettings(context.Background(), next); err == nil {
 		t.Fatal("bootstrap concealed an outstanding swap")
 	}
-	if m.opening != nil || ctx.Err() == nil {
+	if len(m.openings) != 0 || ctx.Err() == nil {
 		t.Fatal("bootstrap not cancelled before checking stored state")
 	}
 	// A second open proves that cancellation waited for the bootstrap's vault.
@@ -184,4 +186,136 @@ func TestSettingsCancelsBootstrapBeforeInspectingStoredObligations(t *testing.T)
 		t.Fatal(err)
 	}
 	_ = reopened.Close()
+}
+
+func TestWatchtowerPrivacyAndFavoritesPersistPerNetwork(t *testing.T) {
+	settings := Defaults()
+	for _, env := range settings.Environments {
+		if env.PublicWatchtower {
+			t.Fatal("watchtower public by default")
+		}
+	}
+	key := nostr.Generate().Public()
+	env := environment(settings, "mainnet")
+	env.PublicWatchtower = true
+	env.FavoriteWatchtowers = []string{key.Hex()}
+	if err := validate(settings); err != nil {
+		t.Fatal(err)
+	}
+	if env.FavoriteWatchtowers[0] != nip19.EncodeNpub(key) {
+		t.Fatal("favorite not normalized to npub")
+	}
+	root := t.TempDir()
+	if err := saveSettings(root, settings); err != nil {
+		t.Fatal(err)
+	}
+	loaded, err := loadSettings(root)
+	if err != nil || !proto.Equal(loaded, settings) {
+		t.Fatal("watchtower preferences not persisted", err)
+	}
+	if environment(loaded, "regtest").PublicWatchtower || len(environment(loaded, "regtest").FavoriteWatchtowers) != 0 {
+		t.Fatal("preferences crossed networks")
+	}
+	env.FavoriteWatchtowers = append(env.FavoriteWatchtowers, key.Hex())
+	if validate(settings) == nil {
+		t.Fatal("duplicate favorite identity accepted")
+	}
+	env.FavoriteWatchtowers = []string{"not-an-npub"}
+	if validate(settings) == nil {
+		t.Fatal("invalid favorite accepted")
+	}
+}
+
+func TestLegacyWalletMigrationPreservesVaults(t *testing.T) {
+	for _, hasBob := range []bool{false, true} {
+		root := t.TempDir()
+		legacy := Defaults()
+		legacy.Wallets = nil
+		if err := saveSettings(root, legacy); err != nil {
+			t.Fatal(err)
+		}
+		aliceSeed, _, err := master(filepath.Join(root, "wallets", "alice"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		var bobSeed string
+		if hasBob {
+			bobSeed, _, err = master(filepath.Join(root, "wallets", "bob"))
+			if err != nil {
+				t.Fatal(err)
+			}
+		}
+		migrated, err := loadSettings(root)
+		if err != nil {
+			t.Fatal(err)
+		}
+		want := 1
+		if hasBob {
+			want++
+		}
+		if len(migrated.Wallets) != want || migrated.Wallets[0].Id != "alice" {
+			t.Fatal("lost existing profiles")
+		}
+		if seed, _, err := master(filepath.Join(root, "wallets", "alice")); err != nil || seed != aliceSeed {
+			t.Fatal("replaced Alice seed")
+		}
+		if hasBob {
+			if seed, _, err := master(filepath.Join(root, "wallets", "bob")); err != nil || seed != bobSeed {
+				t.Fatal("replaced Bob seed")
+			}
+		}
+		again, err := loadSettings(root)
+		if err != nil || !proto.Equal(again, migrated) {
+			t.Fatal("migration is not stable")
+		}
+	}
+}
+func TestWalletIDsCannotBeChangedOrDeletedBySettings(t *testing.T) {
+	m := &Manager{root: t.TempDir(), settings: Defaults()}
+	for _, change := range []func(*pb.Settings){
+		func(s *pb.Settings) { s.Wallets[0].Id = "../../outside" },
+		func(s *pb.Settings) { s.Wallets[0].Id = "different" },
+		func(s *pb.Settings) { s.Wallets = nil },
+		func(s *pb.Settings) { s.Wallets = append(s.Wallets, &pb.WalletProfile{Id: "another", Name: "Another"}) },
+		func(s *pb.Settings) { s.Wallets[0].Name = " " },
+	} {
+		next := proto.Clone(m.settings).(*pb.Settings)
+		change(next)
+		if _, err := m.writeSettings(context.Background(), next); err == nil {
+			t.Fatal("invalid wallet update accepted")
+		}
+	}
+}
+
+func TestRenameAndInactiveSettingsDoNotRestartWallets(t *testing.T) {
+	m := &Manager{root: t.TempDir(), settings: Defaults()}
+	next := proto.Clone(m.settings).(*pb.Settings)
+	next.Wallets[0].Name = "Savings"
+	saved, err := m.writeSettings(context.Background(), next)
+	if err != nil || m.restart || saved.Wallets[0].Name != "Savings" {
+		t.Fatal("rename reconnected wallet", err)
+	}
+	next = proto.Clone(saved).(*pb.Settings)
+	environment(next, "regtest").PublicWatchtower = true
+	if _, err := m.writeSettings(context.Background(), next); err != nil || m.restart {
+		t.Fatal("inactive network settings reconnected active wallet", err)
+	}
+}
+
+func TestReadyWalletStartsWhileAnotherBootstrapIsBlocked(t *testing.T) {
+	settings := Defaults()
+	settings.Wallets = append(settings.Wallets, &pb.WalletProfile{Id: "savings", Name: "Savings"})
+	ready, blocked := &networkOpening{cancel: func() {}, done: make(chan networkResult, 1)}, &networkOpening{cancel: func() {}, done: make(chan networkResult, 1)}
+	engine := &daemon.Engine{} // Identity-only sentinel; no chain calls are needed.
+	ready.done <- networkResult{manager: &Manager{engines: map[string]*daemon.Engine{"alice": engine}, configs: map[string]daemon.Config{"alice": {Name: "alice"}}}}
+	m := &Manager{settings: settings, engines: map[string]*daemon.Engine{}, configs: map[string]daemon.Config{}, openings: map[string]*networkOpening{"alice": ready, "savings": blocked}}
+	m.connect(context.Background())
+	if m.engines["alice"] != engine || m.openings["savings"] != blocked {
+		t.Fatal("ready engine held until another wallet's rescan finishes")
+	}
+	blocked.done <- networkResult{manager: &Manager{engines: map[string]*daemon.Engine{}}, err: context.DeadlineExceeded}
+	m.connect(context.Background())
+	if m.engines["alice"] != engine || len(m.openings) != 0 {
+		t.Fatal("failed bootstrap discarded another wallet's running engine")
+	}
 }

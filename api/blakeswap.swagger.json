@@ -388,6 +388,71 @@
           "DaemonService"
         ]
       }
+    },
+    "/v1/wallets": {
+      "post": {
+        "operationId": "DaemonService_CreateWallet",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1Settings"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/googleRpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/v1CreateWalletRequest"
+            }
+          }
+        ],
+        "tags": [
+          "DaemonService"
+        ]
+      }
+    },
+    "/v1/watchtowers/resolve": {
+      "post": {
+        "operationId": "DaemonService_ResolveWatchtower",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "type": "object",
+              "properties": {}
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/googleRpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/v1ResolveWatchtowerRequest"
+            }
+          }
+        ],
+        "tags": [
+          "DaemonService"
+        ]
+      }
     }
   },
   "definitions": {
@@ -459,6 +524,20 @@
         },
         "network": {
           "type": "string"
+        },
+        "own_watchtower": {
+          "$ref": "#/definitions/v1Tower"
+        },
+        "watchtowers": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/v1Tower"
+          }
+        },
+        "funding_fee": {
+          "type": "string",
+          "format": "int64"
         }
       }
     },
@@ -527,6 +606,10 @@
     "v1CreateOfferRequest": {
       "type": "object",
       "properties": {
+        "tower_pubkey": {
+          "type": "string",
+          "description": "Selected discovered provider; ignored when protection is off."
+        },
         "sell": {
           "type": "string",
           "description": "btc or blake."
@@ -554,6 +637,18 @@
         }
       }
     },
+    "v1CreateWalletRequest": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "revision": {
+          "type": "string",
+          "format": "uint64"
+        }
+      }
+    },
     "v1Environment": {
       "type": "object",
       "properties": {
@@ -576,6 +671,17 @@
         },
         "tower": {
           "$ref": "#/definitions/v1Tower"
+        },
+        "public_watchtower": {
+          "type": "boolean",
+          "description": "Off by default; private npub lookup remains available."
+        },
+        "favorite_watchtowers": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Provider npubs, scoped to this network."
         }
       }
     },
@@ -707,6 +813,9 @@
         },
         "network": {
           "type": "string"
+        },
+        "tower": {
+          "$ref": "#/definitions/v1Tower"
         }
       }
     },
@@ -717,6 +826,17 @@
           "type": "string"
         },
         "warning": {
+          "type": "string"
+        }
+      }
+    },
+    "v1ResolveWatchtowerRequest": {
+      "type": "object",
+      "properties": {
+        "pubkey": {
+          "type": "string"
+        },
+        "expected_network": {
           "type": "string"
         }
       }
@@ -735,6 +855,14 @@
     "v1Settings": {
       "type": "object",
       "properties": {
+        "wallets": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/v1WalletProfile"
+          },
+          "description": "Stable IDs; display names may be edited. Create IDs with CreateWallet."
+        },
         "active_network": {
           "type": "string"
         },
@@ -854,6 +982,27 @@
         "bps": {
           "type": "string",
           "format": "int64"
+        },
+        "npub": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "network": {
+          "type": "string"
+        },
+        "expires": {
+          "type": "string",
+          "format": "int64"
+        },
+        "public": {
+          "type": "boolean",
+          "description": "Opt-in public directory listing."
+        },
+        "event": {
+          "type": "string",
+          "description": "Signed provider announcement pinned to a protected offer."
         }
       }
     },
@@ -887,6 +1036,17 @@
           "type": "boolean"
         },
         "error": {
+          "type": "string"
+        }
+      }
+    },
+    "v1WalletProfile": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "name": {
           "type": "string"
         }
       }

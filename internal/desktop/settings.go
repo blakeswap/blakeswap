@@ -7,16 +7,22 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"regexp"
+	"strings"
+	"unicode"
+	"unicode/utf8"
 
+	"fiatjaf.com/nostr/nip19"
 	pb "github.com/blakeswap/blakeswap/api/gen/blakeswap/v1"
 	"github.com/blakeswap/blakeswap/internal/chain"
+	"github.com/blakeswap/blakeswap/internal/protocol"
 	"google.golang.org/protobuf/encoding/protojson"
 )
 
 func Defaults() *pb.Settings {
 	userDir, _ := os.UserHomeDir()
 	relays := []string{"wss://nos.lol", "wss://relay.primal.net", "wss://relay.ditto.pub"}
-	return &pb.Settings{ActiveNetwork: "mainnet", Revision: 1, Environments: []*pb.Environment{
+	return &pb.Settings{ActiveNetwork: "mainnet", Revision: 1, Wallets: []*pb.WalletProfile{{Id: "alice", Name: "Wallet 1"}}, Environments: []*pb.Environment{
 		{Network: "regtest", Nodes: map[string]*pb.Node{"btc": {Kind: "rpc", Url: "http://127.0.0.1:19443", Cookie: filepath.Join(userDir, "Library/Application Support/Bitcoin/regtest/.cookie")}, "blake": {Kind: "rpc", Url: "http://127.0.0.1:29443", Cookie: filepath.Join(userDir, "Library/Application Support/BitcoinBlake2b/regtest/.cookie")}}, Relays: append([]string(nil), relays...), Tower: &pb.Tower{}},
 		{Network: "testnet", Nodes: map[string]*pb.Node{"btc": {Kind: "electrum", Url: "ssl://mempool.space:40002"}, "blake": {Kind: "electrum"}}, Relays: relays, Tower: &pb.Tower{}},
 		{Network: "mainnet", Nodes: map[string]*pb.Node{"btc": {Kind: "electrum", Url: "ssl://electrum.blockstream.info:50002"}, "blake": {Kind: "electrum", Url: "ssl://fulcrum.kilombino.com:17717", CertificateSha256: "506dadc710c5abaeb13191056c5aaf47035d30e08bd869f7b4fbe6e13745d5a7"}}, Relays: append([]string(nil), relays...), Tower: &pb.Tower{}},
@@ -33,6 +39,19 @@ func environment(s *pb.Settings, network string) *pb.Environment {
 func validate(s *pb.Settings) error {
 	if s == nil || !chain.Network(s.ActiveNetwork).Valid() || s.ActiveNetwork == "" || len(s.Environments) != 3 {
 		return errors.New("settings require all three networks and an active network")
+	}
+	if len(s.Wallets) == 0 || len(s.Wallets) > 20 {
+		return errors.New("configure between one and 20 wallets")
+	}
+	ids := map[string]bool{}
+	for _, profile := range s.Wallets {
+		if profile == nil || !walletID.MatchString(profile.Id) || ids[profile.Id] {
+			return errors.New("invalid or duplicate wallet ID")
+		}
+		if err := validateWalletName(profile.Name); err != nil {
+			return err
+		}
+		ids[profile.Id] = true
 	}
 	seen := map[string]bool{}
 	for _, env := range s.Environments {
@@ -83,6 +102,22 @@ func validate(s *pb.Settings) error {
 				return errors.New("relays require WSS or loopback WS")
 			}
 		}
+		if len(env.FavoriteWatchtowers) > 100 {
+			return errors.New("at most 100 favorite watchtowers per network")
+		}
+		favorites := map[string]bool{}
+		for i, value := range env.FavoriteWatchtowers {
+			pub, err := protocol.PublicKey(value)
+			if err != nil {
+				return err
+			}
+			npub := nip19.EncodeNpub(pub)
+			if favorites[npub] {
+				return errors.New("duplicate favorite watchtower")
+			}
+			favorites[npub] = true
+			env.FavoriteWatchtowers[i] = npub
+		}
 		if env.Tower != nil && (env.Tower.Bps < 0 || env.Tower.Bps > 1000) {
 			return errors.New("invalid tower rate")
 		}
@@ -106,7 +141,24 @@ func loadSettings(root string) (*pb.Settings, error) {
 	if err = protojson.Unmarshal(raw, s); err != nil {
 		return nil, err
 	}
-	return s, validate(s)
+	// Legacy profiles used these stable directories; never generate replacement seeds.
+	migrated := len(s.Wallets) == 0
+	if migrated {
+		s.Wallets = []*pb.WalletProfile{{Id: "alice", Name: "Alice"}}
+		if _, err := os.Stat(filepath.Join(root, "wallets", "bob")); err == nil {
+			s.Wallets = append(s.Wallets, &pb.WalletProfile{Id: "bob", Name: "Bob"})
+		} else if !errors.Is(err, os.ErrNotExist) {
+			return nil, err
+		}
+		s.Revision++
+	}
+	if err := validate(s); err != nil {
+		return nil, err
+	}
+	if migrated {
+		return s, saveSettings(root, s)
+	}
+	return s, nil
 }
 func saveSettings(root string, s *pb.Settings) error {
 	raw, err := json.MarshalIndent(s, "", "  ")
@@ -144,4 +196,18 @@ func writePrivate(path string, raw []byte) error {
 	}
 	defer d.Close()
 	return d.Sync()
+}
+
+var walletID = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{0,31}$`)
+
+func validateWalletName(name string) error {
+	if name != strings.TrimSpace(name) || name == "" || !utf8.ValidString(name) || utf8.RuneCountInString(name) > 40 {
+		return errors.New("wallet name must contain 1–40 characters without surrounding spaces")
+	}
+	for _, r := range name {
+		if unicode.IsControl(r) {
+			return errors.New("wallet name cannot contain control characters")
+		}
+	}
+	return nil
 }

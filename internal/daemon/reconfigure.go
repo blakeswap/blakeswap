@@ -34,7 +34,7 @@ func canChangeNetwork(s State) error {
 		}
 	}
 	for _, job := range s.TowerJobs {
-		if job.Confirmed < 6 {
+		if job.Confirmed < 6 && !job.Expired {
 			return errors.New("watchtower jobs are still active")
 		}
 	}
@@ -69,7 +69,7 @@ func CheckStoredNetwork(c Config) error {
 // selected wallet. Standalone immutable-config daemons accept legacy callers.
 func CheckCommandNetwork(req Request, actual chain.Network, required bool) error {
 	switch req.Method {
-	case "offer.create", "offer.cancel", "swap.take", "pause", "regtest.mine", "regtest.faucet":
+	case "tower.resolve", "offer.create", "offer.cancel", "swap.take", "pause", "regtest.mine", "regtest.faucet":
 	default:
 		return nil
 	}

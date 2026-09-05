@@ -18,6 +18,19 @@ import (
 func (e *Engine) Status() Status { e.mu.Lock(); defer e.mu.Unlock(); return e.status() }
 func (e *Engine) status() Status {
 	s := Status{Network: e.Config.Network, Name: e.Config.Name, Mode: e.Config.Mode, PubKey: e.identity.Public().Hex(), Addresses: map[chain.ID]string{}, Balances: map[chain.ID]int64{}, Heights: map[chain.ID]uint32{}, Paused: e.s.Paused, Orders: []protocol.Offer{}, Swaps: []PublicSwap{}, TowerJobs: []map[string]any{}, LastError: e.lastError, Tower: e.Config.Tower}
+	s.OwnWatchtower = e.ownTower()
+	s.FundingFee = protocol.FundingFee
+	s.Watchtowers = []protocol.Tower{}
+	for _, event := range e.s.Towers {
+		if tower, err := protocol.DecodeTower(event, e.Config.Network, time.Now().Unix()); err == nil {
+			if tower.PubKey == s.PubKey {
+				s.OwnWatchtower = tower
+			} else {
+				s.Watchtowers = append(s.Watchtowers, tower)
+			}
+		}
+	}
+	sort.Slice(s.Watchtowers, func(i, j int) bool { return s.Watchtowers[i].PubKey < s.Watchtowers[j].PubKey })
 	for id, addr := range e.addresses {
 		s.Addresses[id] = addr
 		s.Balances[id] = e.balances[id]
@@ -72,6 +85,17 @@ func (e *Engine) Command(ctx context.Context, req Request) (any, error) {
 	switch req.Method {
 	case "status":
 		return e.status(), nil
+	case "tower.resolve":
+		var p struct {
+			PubKey string `json:"pubkey"`
+		}
+		if err := json.Unmarshal(req.Params, &p); err != nil {
+			return nil, err
+		}
+		if err := e.resolveTower(p.PubKey); err != nil {
+			return nil, err
+		}
+		return true, e.save()
 	case "pause":
 		var p struct {
 			Paused bool `json:"paused"`
@@ -79,7 +103,10 @@ func (e *Engine) Command(ctx context.Context, req Request) (any, error) {
 		if err := json.Unmarshal(req.Params, &p); err != nil {
 			return nil, err
 		}
-		e.s.Paused = p.Paused
+		if p.Paused {
+			return nil, errors.New("the daemon runs while the app is open; close the app to stop it")
+		}
+		e.s.Paused = false
 		return e.status(), e.save()
 	case "offer.create":
 		if e.Config.Mode != "trader" {
@@ -100,14 +127,43 @@ func (e *Engine) Command(ctx context.Context, req Request) (any, error) {
 		if err := o.Validate(time.Now().Unix()); err != nil {
 			return nil, err
 		}
-		if o.TowerBPS > 0 && (o.TowerBPS != e.Config.Tower.BPS || !protocol.Hex32(e.Config.Tower.PubKey)) {
-			return nil, errors.New("tower quote does not match configured provider")
+		if o.TowerBPS > 0 {
+			var selection struct {
+				PubKey string `json:"tower_pubkey"`
+			}
+			if err := json.Unmarshal(req.Params, &selection); err != nil {
+				return nil, err
+			}
+			if selection.PubKey != "" {
+				pub, err := protocol.PublicKey(selection.PubKey)
+				if err != nil {
+					return nil, err
+				}
+				event, ok := e.s.Towers[pub.Hex()]
+				if !ok {
+					return nil, errors.New("watchtower has not been discovered on your relays")
+				}
+				tower, err := protocol.DecodeTower(event, e.Config.Network, time.Now().Unix())
+				if err != nil {
+					return nil, err
+				}
+				if tower.BPS != o.TowerBPS {
+					return nil, errors.New("watchtower fee changed; refresh the quote")
+				}
+				o.Tower = &tower
+			}
+			if _, err := e.selectedTower(o); err != nil {
+				return nil, err
+			}
+			if err := o.Validate(time.Now().Unix()); err != nil {
+				return nil, err
+			}
 		}
 		if err := e.refresh(ctx); err != nil {
 			return nil, err
 		}
 		if e.balances[o.Sell] < o.SellAmount+protocol.FundingFee {
-			return nil, errors.New("insufficient confirmed balance")
+			return nil, fmt.Errorf("insufficient confirmed %s balance: need %d sats including the %d-sat funding fee; available %d sats", o.Sell, o.SellAmount+protocol.FundingFee, protocol.FundingFee, e.balances[o.Sell])
 		}
 		if len(e.s.Offers) >= 1000 {
 			return nil, errors.New("order capacity reached")
@@ -140,8 +196,8 @@ func (e *Engine) Command(ctx context.Context, req Request) (any, error) {
 		}
 		return o, e.save()
 	case "swap.take":
-		if e.Config.Mode != "trader" || e.s.Paused {
-			return nil, errors.New("trader is paused or unavailable")
+		if e.Config.Mode != "trader" {
+			return nil, errors.New("trader is unavailable")
 		}
 		var p struct {
 			Maker string `json:"maker"`
@@ -161,8 +217,8 @@ func (e *Engine) Command(ctx context.Context, req Request) (any, error) {
 		if o.Status != "open" || o.Maker == e.identity.Public().Hex() {
 			return nil, errors.New("offer not available to take")
 		}
-		if o.TowerBPS > 0 && (o.TowerBPS != e.Config.Tower.BPS || !protocol.Hex32(e.Config.Tower.PubKey)) {
-			return nil, errors.New("tower quote mismatch")
+		if _, err := e.selectedTower(o); err != nil {
+			return nil, err
 		}
 		if len(e.s.Swaps) >= 1000 {
 			return nil, errors.New("swap capacity")

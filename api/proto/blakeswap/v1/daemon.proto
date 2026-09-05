@@ -17,6 +17,7 @@ option (grpc.gateway.protoc_gen_openapiv2.options.openapiv2_swagger) = {
 
 service DaemonService {
  rpc GetStatus(google.protobuf.Empty) returns (Status) { option (google.api.http) = { get: "/v1/status" }; }
+ rpc ResolveWatchtower(ResolveWatchtowerRequest) returns (google.protobuf.Empty) { option (google.api.http) = { post: "/v1/watchtowers/resolve" body: "*" }; }
  rpc SetPaused(SetPausedRequest) returns (Status) { option (google.api.http) = { put: "/v1/pause" body: "*" }; }
  rpc CreateOffer(CreateOfferRequest) returns (Offer) { option (google.api.http) = { post: "/v1/offers" body: "*" }; }
  rpc CancelOffer(CancelOfferRequest) returns (Offer) { option (google.api.http) = { delete: "/v1/offers/{id}" }; }
@@ -25,12 +26,15 @@ service DaemonService {
  rpc Faucet(FaucetRequest) returns (FaucetResponse) { option (google.api.http) = { post: "/v1/regtest/faucet" body: "*" }; }
  rpc GetRecovery(google.protobuf.Empty) returns (Recovery) { option (google.api.http) = { post: "/v1/wallet/recovery" body: "*" }; }
  rpc BackupWallet(google.protobuf.Empty) returns (Backup) { option (google.api.http) = { post: "/v1/wallet/backup" body: "*" }; }
+ rpc CreateWallet(CreateWalletRequest) returns (Settings) { option (google.api.http) = { post: "/v1/wallets" body: "*" }; }
  rpc GetSettings(google.protobuf.Empty) returns (Settings) { option (google.api.http) = { get: "/v1/settings" }; }
  rpc UpdateSettings(Settings) returns (Settings) { option (google.api.http) = { put: "/v1/settings" body: "*" }; }
  rpc CheckNode(CheckNodeRequest) returns (CheckNodeResponse) { option (google.api.http) = { post: "/v1/settings/check-node" body: "*" }; }
 }
+message ResolveWatchtowerRequest { string pubkey = 1; string expected_network = 2; }
 message SetPausedRequest { bool paused = 1; string expected_network = 2; }
 message CreateOfferRequest {
+ string tower_pubkey = 7; // Selected discovered provider; ignored when protection is off.
  string sell = 1; // btc or blake.
  string expected_network = 6; // Must match the active desktop network.
  int64 sell_amount = 2;
@@ -49,7 +53,7 @@ message Backup { string path = 1; }
 message Offer {
  string id = 1; string maker = 2; string sell = 3;
  int64 sell_amount = 4; int64 buy_amount = 5; int64 tower_bps = 6;
- int64 expires = 7; string status = 8; string reservation = 9; string network = 10;
+ int64 expires = 7; string status = 8; string reservation = 9; string network = 10; Tower tower = 11;
 }
 message HTLC {
  string chain = 1; string hash = 2; string claim_key = 3; string refund_key = 4;
@@ -65,7 +69,12 @@ message Swap {
  bool tower_ready = 13; bool tower_enabled = 14; bool secret_revealed = 15;
  uint32 takeover = 16; uint32 reveal_before = 17;
 }
-message Tower { string pubkey = 1; map<string,string> scripts = 2; int64 bps = 3; }
+message Tower {
+ string pubkey = 1; map<string,string> scripts = 2; int64 bps = 3;
+ string npub = 4; string name = 5; string network = 6; int64 expires = 7;
+ bool public = 9; // Opt-in public directory listing.
+ string event = 8; // Signed provider announcement pinned to a protected offer.
+}
 message TowerJob {
  string id = 1; string swap_id = 2; string kind = 3; string chain = 4;
  uint32 eligible_height = 5; string broadcast = 6; int32 confirmations = 7;
@@ -78,6 +87,7 @@ message Status {
  repeated Offer orders = 8; repeated Swap swaps = 9; repeated TowerJob tower_jobs = 10;
  int32 pending_messages = 11; string last_error = 12; Tower tower = 13;
  string network = 14;
+ Tower own_watchtower = 15; repeated Tower watchtowers = 16; int64 funding_fee = 17;
 }
 message Node {
  string kind = 1; // electrum or rpc; all chain backends are external.
@@ -91,8 +101,13 @@ message Environment {
  repeated string relays = 3;
  Tower tower = 4;
  reserved 5;
+ bool public_watchtower = 7; // Off by default; private npub lookup remains available.
+ repeated string favorite_watchtowers = 6; // Provider npubs, scoped to this network.
 }
+message WalletProfile { string id = 1; string name = 2; }
+message CreateWalletRequest { string name = 1; uint64 revision = 2; }
 message Settings {
+ repeated WalletProfile wallets = 4; // Stable IDs; display names may be edited. Create IDs with CreateWallet.
  string active_network = 1;
  repeated Environment environments = 2;
  uint64 revision = 3; // Compare-and-swap revision: stale updates are rejected.

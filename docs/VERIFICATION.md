@@ -59,7 +59,7 @@ milestone; the transport and packaging have since changed.
   cleanup: helper exit, endpoint removal, credential removal and wallet-lock release.
 - The DMG built, passed checksum verification, was mounted read-only, and its app
   was copied out and launched. Codesign verification passed. A bundle inventory
-  found exactly the UI and Go daemon Mach-O executables, and no nodes/indexers.
+  found exactly the UI and Go daemon Mach-O executables.
 - The relocated native app displayed public BTC/Blake2b heights using direct gRPC.
   Subsequent native UI automation failed with “native pipe closed before response,”
   so Settings click-through and a new graphical quit/force-quit sequence could not
