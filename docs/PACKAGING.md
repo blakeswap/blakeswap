@@ -58,6 +58,12 @@ No repository checkout or separately installed Go runtime is needed to run it.
 Native dependencies are linked into the executable. Building does require the
 pinned package downloads; node downloads are not part of packaging.
 
+The source app icon is `macos/Assets/AppIcon.png`. The build uses macOS `sips`
+and `iconutil` to package its 16, 32, 128, 256, and 512 point representations at
+1× and 2× resolution, preserving transparency. `AppIcon.icns` is included in
+the app's Resources directory and declared in `Info.plist` before code signing.
+The generated artwork and its prompt are kept together in `macos/Assets/`.
+
 Without signing credentials, builds are **ad-hoc signed local development
 artifacts**, not notarized public releases. Gatekeeper may reject a downloaded
 ad-hoc build. For a distributable signed/notarized build, configure your own
