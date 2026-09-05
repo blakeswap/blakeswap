@@ -41,7 +41,7 @@ func TestProviderSignedQuotesRejectTamperingAndStaleDiscovery(t *testing.T) {
 			t.Fatal("npub round trip", err)
 		}
 	}
-	for _, value := range []string{"", "npub1bad", nip19.EncodeNsec(nostr.Generate())} {
+	for _, value := range []string{"", "npub1bad", nip19.EncodeNpub(nostr.PubKey{}), nip19.EncodeNsec(nostr.Generate())} {
 		if _, err := PublicKey(value); err == nil {
 			t.Fatal("invalid identity accepted")
 		}

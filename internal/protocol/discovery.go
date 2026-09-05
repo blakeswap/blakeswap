@@ -36,7 +36,7 @@ func PublicKey(value string) (nostr.PubKey, error) {
 		prefix, decoded, err := nip19.Decode(value)
 		if err == nil && prefix == "npub" {
 			if pub, ok := decoded.(nostr.PubKey); ok {
-				return pub, nil
+				return nostr.PubKeyFromHex(pub.Hex())
 			}
 		}
 		return nostr.PubKey{}, errors.New("invalid watchtower npub")

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/hex"
 	"encoding/json"
+	"fmt"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -162,5 +163,51 @@ func TestRealDiscoveredTraderWatchtowerAndOfferBalance(t *testing.T) {
 		if job.Confirmed < 2 {
 			t.Fatal("rescue did not confirm")
 		}
+	}
+}
+
+func TestDiscoveryMailboxIsSeparateBoundedAndExpires(t *testing.T) {
+	provider, client := discoveryEngine(t), discoveryEngine(t)
+	for i := 0; i < 10001; i++ {
+		client.s.Seen[fmt.Sprint(i)] = "existing protocol message"
+	}
+	if err := client.resolveTower(provider.ownTower().Npub); err != nil {
+		t.Fatal(err)
+	}
+	for _, d := range client.s.Outbox {
+		if err := provider.receive(d.Event); err != nil {
+			t.Fatal(err)
+		}
+		if err := provider.receive(d.Event); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, d := range provider.s.Outbox {
+		if d.Type != "tower-quote" || d.Expires == 0 {
+			t.Fatal("discovery created durable ack")
+		}
+		if err := client.receive(d.Event); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if len(provider.s.Seen) != 0 || len(client.s.Seen) != 10001 || len(provider.s.DiscoverySeen) != 1 || len(client.s.DiscoverySeen) != 1 {
+		t.Fatal("discovery consumes trading inbox")
+	}
+	if err := client.flush(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if err := provider.flush(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if len(client.s.Outbox) != 0 || len(provider.s.Outbox) != 0 {
+		t.Fatal("published discovery deliveries retained")
+	}
+	for key := range client.s.DiscoverySeen {
+		client.s.DiscoverySeen[key] = time.Now().Unix() - 1
+	}
+	client.s.Outbox["expired"] = &Delivery{Type: "tower-query", Expires: time.Now().Unix() - 1}
+	client.pruneDiscovery()
+	if len(client.s.DiscoverySeen) != 0 || len(client.s.Outbox) != 0 {
+		t.Fatal("discovery state never expires")
 	}
 }

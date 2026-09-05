@@ -393,9 +393,13 @@ func (e *Engine) advanceSwap(ctx context.Context, s *Swap, all map[chain.ID]map[
 func (e *Engine) advanceTower(ctx context.Context, all map[chain.ID]map[string]chain.Observation) error {
 	for _, state := range e.s.TowerJobs {
 		job := state.Job
+		if state.Expired {
+			continue
+		}
 		state.Error = ""
 		if err := job.Validate(e.ownTower().Scripts, e.ownTower().BPS); err != nil {
-			return err
+			state.Error = err.Error()
+			continue
 		}
 		obs, spent := observation(all, job.Target)
 		state.Confirmed = 0
@@ -467,4 +471,26 @@ func (e *Engine) gate(t *protocol.Terms, phase string) error {
 		}
 	}
 	return t.Gate(phase, e.clocks)
+}
+
+// A registration precedes funding. Once its contract's refund grace has passed,
+// an explicitly absent, never-seen funding transaction is no longer an armed
+// obligation. Keep funded jobs guarded even if an indexer later loses history.
+func (e *Engine) refreshTowerJobs(ctx context.Context) {
+	for _, state := range e.s.TowerJobs {
+		state.Expired = false
+		if state.FundingSeen {
+			continue
+		}
+		target := state.Job.Target
+		tx, err := e.nodes[target.Chain].Transaction(ctx, target.TxID)
+		if chain.TransactionNotFound(err) {
+			deadline := uint64(target.RefundHeight) + uint64(protocol.RefundDelay(e.Config.Network))
+			state.Expired = deadline <= uint64(^uint32(0)) && e.eligible(target.Chain, uint32(deadline))
+		} else if err != nil {
+			state.Error = err.Error()
+		} else if tx.TxID == target.TxID {
+			state.FundingSeen = true
+		}
+	}
 }

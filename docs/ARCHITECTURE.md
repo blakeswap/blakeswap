@@ -94,3 +94,11 @@ Unlisted providers answer `tower-query` with an encrypted `tower-quote`, carryin
 the same signed proof without posting an announcement. Protected offers pin the
 proof and terms must preserve it. Directory cache and favorites are bounded and
 network-scoped; stale quotes cannot authorize new offers.
+
+Discovery queries and replies expire after fifteen minutes and use a bounded
+replay cache separate from durable swap acknowledgements. Discovery failures do
+not abort settlement. Remote watchtower jobs use separate scanner cursors and a
+bounded scan budget after local swap advancement. New registrations must fit the
+current funding horizon. Never-seen, explicitly absent funding transactions retire
+after the contract's refund grace; observed funding remains an obligation until
+settled. Indexer errors never count as proof that a transaction is absent.

@@ -34,7 +34,7 @@ func canChangeNetwork(s State) error {
 		}
 	}
 	for _, job := range s.TowerJobs {
-		if job.Confirmed < 6 {
+		if job.Confirmed < 6 && !job.Expired {
 			return errors.New("watchtower jobs are still active")
 		}
 	}

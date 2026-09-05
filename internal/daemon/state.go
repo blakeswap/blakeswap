@@ -31,6 +31,7 @@ type Config struct {
 	Tower               TowerConfig             `json:"tower"`
 }
 type Delivery struct {
+	Expires     int64       `json:"expires,omitempty"`
 	Type        string      `json:"type,omitempty"`
 	Event       nostr.Event `json:"event"`
 	To          string      `json:"to"`
@@ -67,6 +68,8 @@ type Swap struct {
 	TowerPayments      map[chain.ID]int64          `json:"tower_payments"`
 }
 type TowerJob struct {
+	FundingSeen bool         `json:"funding_seen,omitempty"`
+	Expired     bool         `json:"expired,omitempty"`
 	Job         protocol.Job `json:"job"`
 	Secret      string       `json:"secret,omitempty"`
 	Broadcast   string       `json:"broadcast,omitempty"`
@@ -76,19 +79,20 @@ type TowerJob struct {
 	Error       string       `json:"error,omitempty"`
 }
 type State struct {
-	TowerPublic bool                   `json:"tower_public,omitempty"`
-	Towers      map[string]nostr.Event `json:"towers,omitempty"`
-	Network     chain.Network          `json:"network,omitempty"`
-	Version     int                    `json:"version"`
-	Mnemonic    string                 `json:"mnemonic"`
-	Paused      bool                   `json:"paused"`
-	Offers      map[string]nostr.Event `json:"offers"`
-	Book        map[string]nostr.Event `json:"book"`
-	Swaps       map[string]*Swap       `json:"swaps"`
-	Outbox      map[string]*Delivery   `json:"outbox"`
-	Seen        map[string]string      `json:"seen"`
-	TowerJobs   map[string]*TowerJob   `json:"tower_jobs"`
-	EventTime   nostr.Timestamp        `json:"event_time"`
+	DiscoverySeen map[string]int64       `json:"discovery_seen,omitempty"`
+	TowerPublic   bool                   `json:"tower_public,omitempty"`
+	Towers        map[string]nostr.Event `json:"towers,omitempty"`
+	Network       chain.Network          `json:"network,omitempty"`
+	Version       int                    `json:"version"`
+	Mnemonic      string                 `json:"mnemonic"`
+	Paused        bool                   `json:"paused"`
+	Offers        map[string]nostr.Event `json:"offers"`
+	Book          map[string]nostr.Event `json:"book"`
+	Swaps         map[string]*Swap       `json:"swaps"`
+	Outbox        map[string]*Delivery   `json:"outbox"`
+	Seen          map[string]string      `json:"seen"`
+	TowerJobs     map[string]*TowerJob   `json:"tower_jobs"`
+	EventTime     nostr.Timestamp        `json:"event_time"`
 }
 type PublicSwap struct {
 	ID                 string             `json:"id"`

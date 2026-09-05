@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fiatjaf.com/nostr"
+	"github.com/blakeswap/blakeswap/internal/chain"
 	"github.com/blakeswap/blakeswap/internal/contract"
 	"github.com/blakeswap/blakeswap/internal/protocol"
 	"github.com/blakeswap/blakeswap/internal/transport"
@@ -79,6 +80,14 @@ func (e *Engine) handle(from string, m transport.Message) error {
 				return errors.New("job ID collision")
 			}
 		} else {
+			now := e.clocks[job.Target.Chain]
+			horizon := uint64(protocol.LongBlocks)
+			if e.Config.Network != chain.Regtest {
+				horizon = uint64(protocol.LongSeconds)
+			}
+			if now == 0 || job.Target.RefundHeight <= now || uint64(job.Target.RefundHeight) > uint64(now)+horizon {
+				return errors.New("tower registration outside funding window")
+			}
 			e.s.TowerJobs[job.ID] = &TowerJob{Job: job}
 			if err := e.save(); err != nil {
 				return err

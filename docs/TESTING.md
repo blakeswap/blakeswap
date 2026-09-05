@@ -157,3 +157,8 @@ pause rejection. `TestRealDiscoveredTraderWatchtowerAndOfferBalance` uses actual
 BTC/Blake2b transactions: it rejects unfunded offers, pins a privately discovered
 quote, receives a durable job receipt from a trading wallet, reopens that wallet
 from disk, and confirms its delayed refund rescue.
+
+Additional regressions isolate recurring discovery from a saturated protocol
+mailbox, expire discovery state, reject invalid-curve npubs and out-of-range
+observed outputs, keep remote history out of the local swap scanner, and distinguish
+abandoned registrations from funded obligations and failed indexer lookups.

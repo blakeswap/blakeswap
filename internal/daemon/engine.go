@@ -25,22 +25,23 @@ import (
 )
 
 type Engine struct {
-	mu        sync.Mutex
-	Config    Config
-	s         State
-	vault     *storage.Vault
-	keys      *wallet.Keys
-	identity  nostr.SecretKey
-	nodes     map[chain.ID]chain.Backend
-	watch     map[chain.ID]chain.Backend
-	scanners  map[chain.ID]chain.SpendScanner
-	addresses map[chain.ID]string
-	scripts   map[chain.ID][]byte
-	heights   map[chain.ID]uint32
-	clocks    map[chain.ID]uint32
-	balances  map[chain.ID]int64
-	lastError string
-	fatal     error
+	mu            sync.Mutex
+	Config        Config
+	s             State
+	vault         *storage.Vault
+	keys          *wallet.Keys
+	identity      nostr.SecretKey
+	nodes         map[chain.ID]chain.Backend
+	watch         map[chain.ID]chain.Backend
+	scanners      map[chain.ID]chain.SpendScanner
+	towerScanners map[chain.ID]chain.SpendScanner
+	addresses     map[chain.ID]string
+	scripts       map[chain.ID][]byte
+	heights       map[chain.ID]uint32
+	clocks        map[chain.ID]uint32
+	balances      map[chain.ID]int64
+	lastError     string
+	fatal         error
 }
 
 func Open(ctx context.Context, c Config) (*Engine, error) {
@@ -105,6 +106,7 @@ func Open(ctx context.Context, c Config) (*Engine, error) {
 		return fail(e)
 	}
 	en.identity = nostr.SecretKey(key.Serialize())
+	en.towerScanners = map[chain.ID]chain.SpendScanner{}
 	for _, id := range []chain.ID{chain.BTC, chain.Blake} {
 		cfg, ok := c.Nodes[id]
 		if !ok {
@@ -129,8 +131,10 @@ func Open(ctx context.Context, c Config) (*Engine, error) {
 		en.nodes[id] = r
 		if rpc, ok := r.(*chain.RPC); ok {
 			en.scanners[id] = &chain.Scanner{RPC: rpc}
+			en.towerScanners[id] = &chain.Scanner{RPC: rpc}
 		} else {
 			en.scanners[id] = r.(chain.SpendScanner)
+			en.towerScanners[id] = r.(chain.SpendScanner)
 		}
 		key, e := en.keys.Spending(id, "deposit")
 		if e != nil {
@@ -240,10 +244,11 @@ func (e *Engine) Tick(ctx context.Context) error {
 	if err := e.advertiseTower(); err != nil {
 		return err
 	}
-	if err := e.refreshFavoriteTowers(); err != nil {
-		return err
-	}
+	e.pruneDiscovery()
 	e.lastError = ""
+	if err := e.refreshFavoriteTowers(); err != nil {
+		e.lastError = "watchtower discovery: " + err.Error()
+	}
 	filters := []nostr.Filter{{Kinds: []nostr.Kind{transport.TowerKind}, Tags: nostr.TagMap{"t": {e.Config.Network.Namespace()}}}, {Kinds: []nostr.Kind{transport.OfferKind}, Tags: nostr.TagMap{"t": {e.Config.Network.Namespace()}}}, {Kinds: []nostr.Kind{1059}, Tags: nostr.TagMap{"p": {e.identity.Public().Hex()}}}}
 	for _, url := range e.Config.Relays {
 		events, err := transport.PullAs(ctx, url, e.identity, filters...)
@@ -270,9 +275,6 @@ func (e *Engine) Tick(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	if err = e.advanceTower(ctx, observations); err != nil {
-		return err
-	}
 	if e.Config.Mode == "trader" {
 		ids := make([]string, 0, len(e.s.Swaps))
 		for id := range e.s.Swaps {
@@ -289,8 +291,17 @@ func (e *Engine) Tick(ctx context.Context) error {
 			}
 		}
 	}
-	if err != nil {
-		return err
+	// Remote registrations have their own scan cursor and time budget. Their
+	// failures must not suppress our claims/refunds or durable message delivery.
+	towerCtx, cancelTower := context.WithTimeout(ctx, 5*time.Second)
+	e.refreshTowerJobs(towerCtx)
+	towerObservations, towerErr := e.scanTower(towerCtx)
+	if towerErr == nil {
+		towerErr = e.advanceTower(towerCtx, towerObservations)
+	}
+	cancelTower()
+	if towerErr != nil {
+		e.lastError = "watchtower: " + towerErr.Error()
 	}
 	if err = e.save(); err != nil {
 		return err
@@ -322,11 +333,27 @@ func (e *Engine) queue(to, typ, swapID string, body any) error {
 		return err
 	}
 	m := transport.Message{Version: 1, ID: id, Type: typ, SwapID: swapID, Body: raw}
-	event, err := transport.WrapFor(e.Config.Network.Namespace(), e.identity, pub, m)
+	var event nostr.Event
+	var expires int64
+	if discoveryMessage(typ) {
+		pending := 0
+		for _, d := range e.s.Outbox {
+			if d.Expires > 0 {
+				pending++
+			}
+		}
+		if pending >= 256 {
+			return errors.New("discovery queue capacity reached")
+		}
+		expires = time.Now().Unix() + 900
+		event, err = transport.WrapExpiringFor(e.Config.Network.Namespace(), e.identity, pub, m, expires)
+	} else {
+		event, err = transport.WrapFor(e.Config.Network.Namespace(), e.identity, pub, m)
+	}
 	if err != nil {
 		return err
 	}
-	e.s.Outbox[id] = &Delivery{Type: typ, Event: event, To: to, MessageID: id, Digest: protocol.Digest(m), IsAck: typ == "ack"}
+	e.s.Outbox[id] = &Delivery{Expires: expires, Type: typ, Event: event, To: to, MessageID: id, Digest: protocol.Digest(m), IsAck: typ == "ack"}
 	return nil
 }
 func (e *Engine) queueEvent(event nostr.Event) {
@@ -336,6 +363,10 @@ func (e *Engine) queueEvent(event nostr.Event) {
 func (e *Engine) flush(ctx context.Context) error {
 	now := time.Now().Unix()
 	for id, d := range e.s.Outbox {
+		if d.Expires > 0 && d.Expires <= now {
+			delete(e.s.Outbox, id)
+			continue
+		}
 		interval := int64(5)
 		if d.IsAck && d.Published {
 			interval = 60
@@ -352,7 +383,7 @@ func (e *Engine) flush(ctx context.Context) error {
 			}
 		}
 		d.Published = all
-		if d.To == "" && all {
+		if (d.To == "" || d.Expires > 0) && all {
 			delete(e.s.Outbox, id)
 		}
 	}
@@ -362,6 +393,26 @@ func (e *Engine) receive(event nostr.Event) error {
 	from, m, err := transport.UnwrapFor(e.Config.Network.Namespace(), e.identity, event)
 	if err != nil {
 		return err
+	}
+	if discoveryMessage(m.Type) {
+		e.pruneDiscovery()
+		expires, err := strconv.ParseInt(transport.Tag(event, "expiration"), 10, 64)
+		now := time.Now().Unix()
+		if err != nil || expires <= now || expires > now+900 {
+			return errors.New("expired or invalid discovery envelope")
+		}
+		key := from.Hex() + ":" + protocol.Digest(m)
+		if e.s.DiscoverySeen[key] > now {
+			return nil
+		}
+		if len(e.s.DiscoverySeen) >= 2000 {
+			return errors.New("discovery inbox capacity reached")
+		}
+		if err := e.handle(from.Hex(), m); err != nil {
+			return err
+		}
+		e.s.DiscoverySeen[key] = expires
+		return e.save()
 	}
 	if len(e.s.Seen) > 10000 || len(e.s.Outbox) > 10000 {
 		return errors.New("mailbox capacity reached")
@@ -571,7 +622,34 @@ func (e *Engine) scan(ctx context.Context) (map[chain.ID]map[string]chain.Observ
 			add(s.Short, s.Terms.StartHeights[s.Short.Chain])
 		}
 	}
+	out := map[chain.ID]map[string]chain.Observation{}
+	for _, id := range []chain.ID{chain.BTC, chain.Blake} {
+		result, err := e.scanners[id].Scan(ctx, starts[id], points[id])
+		if err != nil {
+			return nil, err
+		}
+		out[id] = result
+	}
+	return out, nil
+}
+
+func (e *Engine) scanTower(ctx context.Context) (map[chain.ID]map[string]chain.Observation, error) {
+	points := map[chain.ID][]string{}
+	starts := map[chain.ID]uint32{chain.BTC: e.heights[chain.BTC], chain.Blake: e.heights[chain.Blake]}
+	add := func(c contract.HTLC, start uint32) {
+		points[c.Chain] = append(points[c.Chain], chain.OutpointKey(c.TxID, c.Vout))
+		if start < starts[c.Chain] {
+			starts[c.Chain] = start
+		}
+	}
 	for _, j := range e.s.TowerJobs {
+		if j.Expired {
+			continue
+		}
+		if err := j.Job.Validate(e.ownTower().Scripts, e.ownTower().BPS); err != nil {
+			j.Error = err.Error()
+			continue
+		}
 		add(j.Job.Target, j.Job.ScanFrom)
 		if j.Job.Observe != nil {
 			start := j.Job.ObserveScanFrom
@@ -583,7 +661,11 @@ func (e *Engine) scan(ctx context.Context) (map[chain.ID]map[string]chain.Observ
 	}
 	out := map[chain.ID]map[string]chain.Observation{}
 	for _, id := range []chain.ID{chain.BTC, chain.Blake} {
-		result, err := e.scanners[id].Scan(ctx, starts[id], points[id])
+		if len(points[id]) == 0 {
+			out[id] = map[string]chain.Observation{}
+			continue
+		}
+		result, err := e.towerScanners[id].Scan(ctx, starts[id], points[id])
 		if err != nil {
 			return nil, err
 		}

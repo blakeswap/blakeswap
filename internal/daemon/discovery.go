@@ -143,3 +143,21 @@ func (e *Engine) refreshFavoriteTowers() error {
 	}
 	return nil
 }
+
+func discoveryMessage(typ string) bool { return typ == "tower-query" || typ == "tower-quote" }
+func (e *Engine) pruneDiscovery() {
+	if e.s.DiscoverySeen == nil {
+		e.s.DiscoverySeen = map[string]int64{}
+	}
+	now := time.Now().Unix()
+	for key, expires := range e.s.DiscoverySeen {
+		if expires <= now {
+			delete(e.s.DiscoverySeen, key)
+		}
+	}
+	for key, delivery := range e.s.Outbox {
+		if delivery.Expires > 0 && delivery.Expires <= now {
+			delete(e.s.Outbox, key)
+		}
+	}
+}
