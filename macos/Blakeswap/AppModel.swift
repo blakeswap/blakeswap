@@ -7,8 +7,14 @@ import SwiftProtobuf
 final class AppModel: ObservableObject {
     @Published var profile = "alice"
     @Published var page = "Market"
-    @Published var status: DaemonStatus?
-    @Published var settings: AppSettings?
+    struct Snapshot {
+        var status: DaemonStatus?
+        var settings: AppSettings?
+    }
+    @Published private(set) var snapshot = Snapshot()
+    var status: DaemonStatus? { snapshot.status }
+    var settings: AppSettings? { snapshot.settings }
+    private(set) var generation: UInt64 = 0
     @Published var connectionError: String?
     @Published var notice: String?
     @Published var busy = false
@@ -17,36 +23,51 @@ final class AppModel: ObservableObject {
     private var refreshing = false
     var network: String { settings?.activeNetwork ?? status?.network ?? "mainnet" }
     var isRegtest: Bool { network == "regtest" }
-    func selectProfile(_ name: String) { profile = name; status = nil; notice = nil; recovery = nil }
+    func invalidateSnapshot() { generation &+= 1; snapshot.status = nil; recovery = nil }
+    func selectProfile(_ name: String) { invalidateSnapshot(); profile = name; notice = nil }
+
+    @discardableResult
+    func acceptSnapshot(_ next: DaemonStatus?, settings nextSettings: AppSettings, profile selected: String, generation expected: UInt64) -> Bool {
+        guard expected == generation, selected == profile,
+              nextSettings.revision >= (settings?.revision ?? 0) else { return false }
+        if nextSettings.revision != settings?.revision || nextSettings.activeNetwork != settings?.activeNetwork {
+            generation &+= 1
+            recovery = nil
+        }
+        let matching = next?.network == nextSettings.activeNetwork && next?.name == selected
+        snapshot = Snapshot(status: matching ? next : nil, settings: nextSettings)
+        if nextSettings.activeNetwork != "regtest" && profile != "alice" { selectProfile("alice") }
+        return matching
+    }
     func start() { do { try DaemonProcess.shared.start() } catch { connectionError = error.localizedDescription } }
     func refresh() async {
         guard !refreshing else { return }; refreshing = true; defer { refreshing = false }
         if let failure = DaemonProcess.shared.failure { connectionError = failure; return }
-        let selected = profile
+        let selected = profile, expected = generation
         do {
             let raw = try await DaemonRPC.call(root: root, profile: selected, method: "status")
             let next = try DaemonStatus(serializedBytes: raw)
-            guard selected == profile else { return }
-            status = next; connectionError = nil
-            await loadSettings()
-            if !isRegtest && profile != "alice" { selectProfile("alice") }
-        } catch { if selected == profile { connectionError = error.localizedDescription } }
+            let settingsRaw = try await DaemonRPC.call(root: root, profile: selected, method: "settings.get")
+            let nextSettings = try AppSettings(serializedBytes: settingsRaw)
+            if acceptSnapshot(next, settings: nextSettings, profile: selected, generation: expected) { connectionError = nil }
+        } catch { if selected == profile && expected == generation { connectionError = error.localizedDescription } }
     }
     func loadSettings() async {
+        let selected = profile, expected = generation
         do {
-            let raw = try await DaemonRPC.call(root: root, profile: profile, method: "settings.get")
+            let raw = try await DaemonRPC.call(root: root, profile: selected, method: "settings.get")
             let next = try AppSettings(serializedBytes: raw)
-            if settings?.activeNetwork != next.activeNetwork { recovery = nil }
-            settings = next
-        } catch { notice = error.localizedDescription }
+            acceptSnapshot(status, settings: next, profile: selected, generation: expected)
+        } catch { if selected == profile && expected == generation { notice = error.localizedDescription } }
     }
     func saveSettings(_ draft: AppSettings) async {
-        guard !busy else { return }; busy = true; defer { busy = false }
+        guard !busy else { return }; busy = true; invalidateSnapshot()
+        defer { busy = false; invalidateSnapshot() }
         do {
             let raw = try await DaemonRPC.call(root: root, profile: profile, method: "settings.update", payload: draft.jsonUTF8Data())
-            settings = try AppSettings(serializedBytes: raw)
-            if !isRegtest { selectProfile("alice") }
-            status = nil; recovery = nil; notice = "Settings saved. Connecting."
+            let next = try AppSettings(serializedBytes: raw)
+            acceptSnapshot(nil, settings: next, profile: profile, generation: generation)
+            notice = "Settings saved. Connecting."
         } catch { notice = error.localizedDescription }
     }
     func checkNode(network: String, chain: String, node: NodeSettings) async -> String {
@@ -70,7 +91,7 @@ final class AppModel: ObservableObject {
             if selected == profile {
                 if method == "wallet.recovery" { recovery = try Blakeswap_V1_Recovery(serializedBytes: raw).mnemonic }
                 if method == "wallet.backup" {
- let path = try Blakeswap_V1_Backup(serializedBytes: raw).path
+                    let path = try Blakeswap_V1_Backup(serializedBytes: raw).path
                     notice = "Backup saved. Keep the vault password separately."
                     NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: path)])
                 }

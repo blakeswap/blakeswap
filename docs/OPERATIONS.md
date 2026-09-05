@@ -129,3 +129,30 @@ Restoring stale snapshots is not generally safe automatic recovery. Previously s
 **Contested outcome:** inspect both spend IDs and chain histories. A claim/refund split reflects violated liveness/security assumptions, not a state that the relay or a UI cancellation can reverse.
 
 **Relay history/storage limit:** the local implementation fails visibly at bounded capacities. Archive/rebuild a disposable regtest environment only after completing or safely recovering all swaps. There is no production retention/compaction workflow.
+
+### External RPC wallet synchronization
+
+An external full node needs an unpruned, indexed chain and descriptor-wallet RPC
+support, including `gettxspendingprevout` (the pinned Core/Knots 29 nodes support
+it). The daemon imports only public deposit-address descriptors. Initial imports
+scan historical blocks from timestamp zero, preserving deposits when restoring a
+wallet or moving from Electrum to RPC. This can take hours on mainnet. Desktop
+bootstrap runs independently of the short trading cycles; status and Settings
+remain available, and trading stays unavailable until both wallets are ready.
+Changing Settings or quitting cancels the bootstrap request and releases local
+wallet locks. It does not stop or abort the user's external node.
+
+After a complete successful import response, the daemon records the
+`blakeswap-history-ready-v1` address label in that node's watch-only wallet. On
+reconnect it checks both the descriptor's historical timestamp and this label,
+avoiding a new historical scan. A descriptor without the completion label is not
+considered ready. If the app loses the response or exits during a scan, the node
+may finish independently; the next connection waits while the node reports a
+scan and then conservatively repeats that unacknowledged import once. Pruned or
+failed historical scans remain errors. Do not manually set the readiness label
+on an incompletely scanned wallet.
+
+Mempool spend observation queries the watched outpoints with
+`gettxspendingprevout` and downloads only relevant spending transactions. It does
+not enumerate or download the public mempool. Confirmed block scanning and reorg
+checks remain separate.

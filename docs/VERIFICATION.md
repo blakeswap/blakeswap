@@ -87,3 +87,11 @@ of this verification.
 A repeated all-tests run exposed accumulated watch-only fixture wallets causing
 bulk-mining RPC timeouts. The harness now unloads its own observation wallets at
 cleanup; node timeouts and protocol assertions were not relaxed.
+
+PR review also identified and corrected historical RPC rescans on reconnect,
+public-mempool work scaling, a native network/status publication race, and the
+pause HTTP method in the API table. Focused race tests cover incomplete rescan
+responses, durable node-wallet readiness, cancellation and lock release, and
+relevant preimage observation with a large unrelated mempool. Native XCTest
+regressions cover mismatched networks, older Settings revisions and invalidated
+profile/Settings generations. Status and Settings now publish together.

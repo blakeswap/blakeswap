@@ -37,6 +37,16 @@ type Manager struct {
 	lastError string
 	restart   bool
 	stopped   bool
+	opening   *networkOpening
+}
+
+type networkOpening struct {
+	cancel context.CancelFunc
+	done   chan networkResult
+}
+type networkResult struct {
+	manager *Manager
+	err     error
 }
 
 // Immutable snapshots keep status and Settings readable while an external
@@ -164,6 +174,9 @@ func (m *Manager) writeSettings(ctx context.Context, next *pb.Settings) (*pb.Set
 	if next.Revision != m.settings.Revision {
 		return nil, status.Error(codes.Aborted, "settings changed; reload before saving")
 	}
+	// Release any bootstrap vault before inspecting its persisted obligations.
+	// The worker owns separate maps and never takes m.mu.
+	m.stopOpening()
 	if next.ActiveNetwork != m.settings.ActiveNetwork {
 		for _, profile := range []string{"alice", "bob"} {
 			if e := m.engines[profile]; e != nil {
@@ -225,10 +238,49 @@ func (m *Manager) command(ctx context.Context, profile string, req daemon.Reques
 	return result, err
 }
 func (m *Manager) closeNetwork() {
+	m.stopOpening()
 	for _, e := range m.engines {
 		_ = e.Close()
 	}
 	m.engines = map[string]*daemon.Engine{}
+}
+
+func (m *Manager) stopOpening() {
+	if m.opening == nil {
+		return
+	}
+	m.opening.cancel()
+	result := <-m.opening.done
+	result.manager.closeNetwork()
+	m.opening = nil
+}
+
+// Initial RPC history discovery runs independently of short trading cycles.
+// Settings changes and application shutdown cancel it and wait for vault release.
+func (m *Manager) connect(ctx context.Context) {
+	if m.opening == nil {
+		worker := &Manager{root: m.root, settings: proto.Clone(m.settings).(*pb.Settings), engines: map[string]*daemon.Engine{}, configs: map[string]daemon.Config{}}
+		openingCtx, cancel := context.WithCancel(ctx)
+		job := &networkOpening{cancel: cancel, done: make(chan networkResult, 1)}
+		m.opening = job
+		m.lastError = "Connecting; RPC wallet history may still be synchronizing"
+		go func() { err := worker.openNetwork(openingCtx); job.done <- networkResult{worker, err} }()
+		return
+	}
+	select {
+	case result := <-m.opening.done:
+		m.opening.cancel()
+		m.opening = nil
+		if result.err != nil {
+			result.manager.closeNetwork()
+			m.lastError = result.err.Error()
+		} else {
+			m.engines = result.manager.engines
+			m.configs = result.manager.configs
+			m.lastError = ""
+		}
+	default:
+	}
 }
 func (m *Manager) run(ctx context.Context) error {
 	defer func() { m.mu.Lock(); defer m.mu.Unlock(); m.stopped = true; m.closeNetwork() }()
@@ -244,14 +296,7 @@ func (m *Manager) run(ctx context.Context) error {
 			m.restart = false
 		}
 		if len(m.engines) == 0 {
-			m.lastError = "Connecting"
-			if err := m.openNetwork(cycle); err != nil {
-				m.lastError = err.Error()
-				for _, engine := range m.engines {
-					_ = engine.Close()
-				}
-				m.engines = map[string]*daemon.Engine{}
-			}
+			m.connect(ctx)
 		}
 		if len(m.engines) > 0 {
 			m.lastError = ""

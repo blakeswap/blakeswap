@@ -88,6 +88,9 @@ See [Risks](RISKS.md) for the trust and liveness assumptions that remain necessa
 | Protobuf maps full HTLCs and exact int64 money | Native gRPC and HTTP round-trip tests include values above JavaScript's exact integer range, amount, outpoint and timestamp locktime |
 | Local API authorization | Missing token, foreign Origin/Host, private file modes, startup token discovery and shutdown credential cleanup |
 | Settings persistence/isolation | Revision conflict, invalid endpoints/network sets/relays, encrypted offline active-swap guard, stable profile master seed, readable snapshots during external IO |
+| RPC history readiness | Completed descriptor imports survive reconnect without rescan; interrupted/partial scans stay unavailable; bootstrap cancellation releases vaults before network checks |
+| RPC mempool observation | Repeated cycles query only watched outpoints and preserve the revealed secret despite 10,000 unrelated transactions |
+| Native snapshot isolation | Network mismatch, stale Settings revision, profile round trip and invalidated settings-save generation cannot publish old addresses |
 | Public timing | Both assets as maker sell side, asymmetric chain heights, exact funding/reveal boundaries, clock skew/staleness, malicious far-future schedules |
 | Consensus timestamp finality | Real BTC and Blake2b nodes reject delayed claims/refunds at exactly MTP=locktime and accept after MTP advances one second |
 | Electrum transport | Invalid JSON, response ID confusion, missing results, explicit missing-transaction classification |
@@ -131,3 +134,9 @@ BLAKESWAP_SWIFT_TEST_ROOT="$PWD/.local/desktop-demo" sh scripts/test-swift.sh
 Run it after the Go integration suite, not concurrently on shared test nodes.
 It starts only a test wallet daemon, uses external node/relay fixtures, and saves
 public settlement evidence in `successful-swift-trade.json`.
+
+Run the native snapshot regressions without chain services:
+
+```sh
+swift test --package-path macos --scratch-path .cache/swift-build --cache-path .cache/swift-cache -c release --filter AppModelTests
+```

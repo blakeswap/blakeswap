@@ -166,7 +166,7 @@ struct ContentView: View {
                 Button { showOffer = true } label: { Label("Create offer", systemImage: "plus") }.buttonStyle(MintButton()).disabled(model.busy).accessibilityIdentifier("create-offer")
             }
             if status.orders.isEmpty {
-                ContentUnavailableView("No offers yet", systemImage: "arrow.left.arrow.right", description: Text("Create an offer to add it to the orderbook."))
+                ContentUnavailableView("No offers yet", systemImage: "arrow.left.arrow.right")
                     .frame(maxWidth: .infinity).padding(28).background(panel.opacity(0.5), in: RoundedRectangle(cornerRadius: 14))
             } else {
                 VStack(spacing: 0) {
@@ -194,7 +194,7 @@ struct ContentView: View {
     }
     private func swaps(_ status: DaemonStatus) -> some View {
         VStack(alignment: .leading, spacing: 18) {
-            if status.swaps.isEmpty { ContentUnavailableView("No swaps yet", systemImage: "arrow.triangle.2.circlepath", description: Text("Take an offer from the market to begin.")).frame(maxWidth: .infinity).padding(50) }
+            if status.swaps.isEmpty { ContentUnavailableView("No swaps yet", systemImage: "arrow.triangle.2.circlepath").frame(maxWidth: .infinity).padding(50) }
             ForEach(status.swaps) { swap in
                 VStack(alignment: .leading, spacing: 18) {
                     HStack {
@@ -205,7 +205,7 @@ struct ContentView: View {
                     }
                     if swap.long.refundLocktime > 0 {
                         HStack(spacing: 20) { leg(swap.long, swap.longSpend, swap.longConfirmations); Image(systemName: "arrow.left.arrow.right").foregroundStyle(.secondary); leg(swap.short, swap.shortSpend, swap.shortConfirmations) }
-                    } else { Text("The encrypted request is waiting for the maker's acceptance.").font(.callout).foregroundStyle(.secondary) }
+                    } else { Text("Waiting for maker acceptance.").font(.callout).foregroundStyle(.secondary) }
                     Divider().opacity(0.5)
                     HStack(spacing: 24) {
                         metric("PREIMAGE", swap.secretRevealed ? "Released / observed" : "Private")

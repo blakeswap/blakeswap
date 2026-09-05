@@ -69,6 +69,18 @@ type RPCError struct {
 
 func (e *RPCError) Error() string { return fmt.Sprintf("RPC %d: %s", e.Code, e.Message) }
 func (r *RPC) Call(ctx context.Context, method string, out any, params ...any) error {
+	return r.call(ctx, r.client, method, out, params...)
+}
+
+// Wallet history operations can take hours. Their caller owns cancellation;
+// ordinary observations retain the short HTTP timeout.
+func (r *RPC) historyCall(ctx context.Context, method string, out any, params ...any) error {
+	client := *r.client
+	client.Timeout = 0
+	return r.call(ctx, &client, method, out, params...)
+}
+
+func (r *RPC) call(ctx context.Context, client *http.Client, method string, out any, params ...any) error {
 	if params == nil {
 		params = []any{}
 	}
@@ -94,7 +106,7 @@ func (r *RPC) Call(ctx context.Context, method string, out any, params ...any) e
 	}
 	req.SetBasicAuth(user, pass)
 	req.Header.Set("Content-Type", "application/json")
-	resp, err := r.client.Do(req)
+	resp, err := client.Do(req)
 	if err != nil {
 		return err
 	}
@@ -295,7 +307,7 @@ func (r *RPC) Observe(ctx context.Context, name string, addresses []string) (Bac
 		}
 		var e error
 		if exists {
-			e = r.Call(ctx, "loadwallet", nil, name)
+			e = r.historyCall(ctx, "loadwallet", nil, name)
 		} else {
 			e = r.Call(ctx, "createwallet", nil, name, true, true, "", false, true)
 		}
@@ -303,24 +315,71 @@ func (r *RPC) Observe(ctx context.Context, name string, addresses []string) (Bac
 			return nil, e
 		}
 	}
+	var info struct{ Scanning json.RawMessage }
+	if err := w.Call(ctx, "getwalletinfo", &info); err != nil {
+		return nil, err
+	}
+	if string(info.Scanning) != "false" {
+		return nil, errors.New("RPC wallet history is synchronizing; waiting for the node rescan")
+	}
+	var descriptors struct {
+		Descriptors []struct {
+			Desc      string
+			Timestamp int64
+		}
+	}
+	if err := w.Call(ctx, "listdescriptors", &descriptors); err != nil {
+		return nil, err
+	}
+	known := map[string]bool{}
+	for _, d := range descriptors.Descriptors {
+		known[d.Desc] = d.Timestamp >= 0 && d.Timestamp <= 1 // Core normalizes timestamp zero to one.
+	}
+	// Descriptor presence alone cannot prove that its initial rescan succeeded.
+	// Record readiness in the same node wallet only after the complete response.
+	const readyLabel = "blakeswap-history-ready-v1"
 	var imports []any
+	var pending []string
 	for _, addr := range addresses {
 		var d struct{ Descriptor string }
 		if e := r.Call(ctx, "getdescriptorinfo", &d, "addr("+addr+")"); e != nil {
 			return nil, e
 		}
+		var address struct{ Labels []string }
+		if err := w.Call(ctx, "getaddressinfo", &address, addr); err != nil {
+			return nil, err
+		}
+		ready := false
+		for _, label := range address.Labels {
+			ready = ready || label == readyLabel
+		}
+		if known[d.Descriptor] && ready {
+			continue
+		}
 		imports = append(imports, map[string]any{"desc": d.Descriptor, "timestamp": 0})
+		pending = append(pending, addr)
+	}
+	if len(imports) == 0 {
+		return w, nil
 	}
 	var result []struct {
 		Success bool
 		Error   *RPCError
 	}
-	if e := w.Call(ctx, "importdescriptors", &result, imports); e != nil {
+	if e := w.historyCall(ctx, "importdescriptors", &result, imports); e != nil {
 		return nil, e
+	}
+	if len(result) != len(imports) {
+		return nil, errors.New("incomplete descriptor import response")
 	}
 	for _, r := range result {
 		if !r.Success {
 			return nil, fmt.Errorf("import failed: %v", r.Error)
+		}
+	}
+	for _, addr := range pending {
+		if err := w.Call(ctx, "setlabel", nil, addr, readyLabel); err != nil {
+			return nil, err
 		}
 	}
 	return w, nil

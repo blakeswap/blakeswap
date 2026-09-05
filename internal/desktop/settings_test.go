@@ -134,3 +134,54 @@ func TestStaleNetworkMutationIsRejectedBeforeWalletLookup(t *testing.T) {
 		t.Fatal("matching network did not reach wallet readiness check", err)
 	}
 }
+
+// A slow initial node rescan must neither block Settings reads nor retain a
+// vault lock when a user switches endpoints or the application closes.
+func TestSettingsCancelsBootstrapBeforeInspectingStoredObligations(t *testing.T) {
+	root := t.TempDir()
+	settings := Defaults()
+	m := &Manager{root: root, settings: settings, engines: map[string]*daemon.Engine{}}
+	walletDir := filepath.Join(root, "wallets", "alice")
+	seed, password, err := master(walletDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw, err := os.ReadFile(password)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer clear(raw)
+	vault, err := storage.Open(filepath.Join(walletDir, "mainnet", "state.db"), raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = vault.Save(daemon.State{Version: 1, Network: chain.Mainnet, Mnemonic: seed, Swaps: map[string]*daemon.Swap{"pending": {ID: "pending", Stage: "funding broadcast"}}}); err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	job := &networkOpening{cancel: cancel, done: make(chan networkResult, 1)}
+	m.opening = job
+	go func() {
+		<-ctx.Done()
+		_ = vault.Close()
+		job.done <- networkResult{manager: &Manager{engines: map[string]*daemon.Engine{}}, err: ctx.Err()}
+	}()
+	m.publishView()
+	if _, err := m.readSettings(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	next := proto.Clone(settings).(*pb.Settings)
+	next.ActiveNetwork = "testnet"
+	if _, err = m.writeSettings(context.Background(), next); err == nil {
+		t.Fatal("bootstrap concealed an outstanding swap")
+	}
+	if m.opening != nil || ctx.Err() == nil {
+		t.Fatal("bootstrap not cancelled before checking stored state")
+	}
+	// A second open proves that cancellation waited for the bootstrap's vault.
+	reopened, err := storage.Open(filepath.Join(walletDir, "mainnet", "state.db"), raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = reopened.Close()
+}

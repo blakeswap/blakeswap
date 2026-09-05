@@ -43,7 +43,7 @@ account that can read those files.
 | RPC | HTTP | Purpose |
 | --- | --- | --- |
 | GetStatus | GET `/v1/status` | Public wallet identity, network, balances, chain heights, offers, swaps, delivery state, errors |
-| SetPaused | POST `/v1/pause` | Pause/resume protocol advancement; deadlines continue |
+| SetPaused | PUT `/v1/pause` | Pause/resume protocol advancement; deadlines continue |
 | CreateOffer | POST `/v1/offers` | Exact chain/amount pair, optional expiry and tower basis points |
 | CancelOffer | DELETE `/v1/offers/{id}` | Cancel an unreserved local offer |
 | TakeOffer | POST `/v1/swaps` | Request a signed maker offer by maker key and ID |
@@ -108,3 +108,7 @@ The scripts pin the Go plugins and resolve exact direct Swift dependencies with 
 committed `Package.resolved`. Google API and OpenAPI option protos and their
 licenses are vendored under `api/third_party`. Regenerate all clients and the spec
 together whenever the schema changes. Never reuse deleted protobuf field numbers.
+
+The native client publishes wallet status and Settings as one snapshot only when
+network and profile match. Profile changes and Settings saves invalidate earlier
+responses, and older Settings revisions cannot overwrite a newer selection.
