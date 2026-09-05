@@ -43,3 +43,47 @@ Chain heights at verification were BTC 341 and BLAKE 406. The demonstration towe
 The final per-asset fee-status and GUI refinements were followed by passing focused daemon/protocol/transport race tests, another native build, and the fresh GUI trade above. Full harness output remains in ignored `.local/test-results/full-run.log`, with package coverage in `.local/test-results/coverage.out`.
 
 The [invariant matrix](TESTING.md) maps each boundary to its evidence. Tests are finite and do not prove every distributed schedule, deep reorg, fee market, power-loss boundary, or economic attack. The [risk register](RISKS.md) describes those limits and the additional work required before considering real funds.
+
+## Protobuf, external backends and desktop distribution update
+
+Verified September 5, 2026. The original record above remains the initial UI
+milestone; the transport and packaging have since changed.
+
+- Real-node RPC and Electrum fixture matrices cover self-claim, offline-maker
+  takeover, offline-both refunds, reverse-direction unprotected trade, late taker
+  refunds, restart handoffs and claim reorgs. Blake2b reduced-data rules were active.
+- Timestamp claim/refund tests passed on both actual regtest nodes at strict
+  median-time finality boundaries. Public-network protocol tests cover asymmetric
+  heights, freshness/skew, deadline mutations and exact funding/reveal cutoffs.
+- Go subprocess tests passed for normal daemon termination and force-killed parent
+  cleanup: helper exit, endpoint removal, credential removal and wallet-lock release.
+- The DMG built, passed checksum verification, was mounted read-only, and its app
+  was copied out and launched. Codesign verification passed. A bundle inventory
+  found exactly the UI and Go daemon Mach-O executables, and no nodes/indexers.
+- The relocated native app displayed public BTC/Blake2b heights using direct gRPC.
+  Subsequent native UI automation failed with “native pipe closed before response,”
+  so Settings click-through and a new graphical quit/force-quit sequence could not
+  be completed in that session. The equivalent API, process watchdog and native
+  transport paths have automated tests; this is not recorded as a passed visual test.
+- The **same Swift DaemonRPC client used by the app** executed a full regtest trade
+  through its generated protobuf/gRPC bindings (not the HTTP gateway), with an
+  external relay and external RPC nodes on ports 21443/31443. Both claims had two
+  confirmations and zero tower bounty:
+
+```
+swap: e5aea7a3e51aa8d50915b0d2259e16966202660444bc10200ca62af6a69b304d
+long Blake2b claim: 8fc859a28bfd970d618f33fe4dd1d7db5b4c2498907ab8561462efdbf6b23e2c
+short BTC claim: 7160c4c5d4cf8d63048ede5882ea668f6dd9b2b3da2f4a54f43b3fd84036fd21
+```
+
+Public Electrum checks verified real BTC mainnet, Blake2b mainnet, and BTC Testnet4
+headers/coinbase inclusion without broadcasting. Public relay REQ/EOSE checks
+succeeded for nos.lol, relay.primal.net, and relay.ditto.pub. Availability failures
+removed dmrelay.com, relay.damus.io, and relay.nostr.band from the candidate defaults.
+No public Blake2b Testnet4 server was verified. No real-money swap, public order,
+public encrypted message, Developer ID signature or Apple notarization was part
+of this verification.
+
+A repeated all-tests run exposed accumulated watch-only fixture wallets causing
+bulk-mining RPC timeouts. The harness now unloads its own observation wallets at
+cleanup; node timeouts and protocol assertions were not relaxed.

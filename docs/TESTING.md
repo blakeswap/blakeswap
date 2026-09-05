@@ -80,3 +80,54 @@ A further trade through the final native build completed on September 5, 2026. S
 - Native UI verification is a recorded end-to-end exercise, not a packaged XCUITest suite across macOS releases or display sizes.
 
 See [Risks](RISKS.md) for the trust and liveness assumptions that remain necessary even when every test passes.
+
+## API, desktop and public-backend coverage
+
+| Boundary | Evidence |
+| --- | --- |
+| Protobuf maps full HTLCs and exact int64 money | Native gRPC and HTTP round-trip tests include values above JavaScript's exact integer range, amount, outpoint and timestamp locktime |
+| Local API authorization | Missing token, foreign Origin/Host, private file modes, startup token discovery and shutdown credential cleanup |
+| Settings persistence/isolation | Revision conflict, invalid endpoints/network sets/relays, encrypted offline active-swap guard, stable profile master seed, readable snapshots during external IO |
+| Public timing | Both assets as maker sell side, asymmetric chain heights, exact funding/reveal boundaries, clock skew/staleness, malicious far-future schedules |
+| Consensus timestamp finality | Real BTC and Blake2b nodes reject delayed claims/refunds at exactly MTP=locktime and accept after MTP advances one second |
+| Electrum transport | Invalid JSON, response ID confusion, missing results, explicit missing-transaction classification |
+| Indexer observation integrity | Real headers/transactions with forged genesis, raw transaction, merkle branch, UTXO amount and duplicate UTXO replies rejected |
+| Actual Electrum swaps | All five asynchronous/restart/self-claim/tower/refund/reorg scenarios run through local Electrum fixtures indexing real regtest blocks |
+| Replay boundary | Shared/pre-fork ancestry rejected, absent opposite-chain coinbase never treated as exclusivity, mismatched transaction IDs/cancellation fail closed |
+| Network identity | Fork v2 header hash fixture from upstream, checkpoint/hash tampering, cross-network signed offer/mailbox rejection and key derivation separation |
+
+The Electrum fixture is test-only Go code. It forwards broadcasts to actual
+regtest consensus nodes and constructs inclusion proofs from their blocks. It
+is not a bundled indexer or an independent consensus implementation. Real public
+endpoint reads are separately opt-in:
+
+```sh
+BLAKESWAP_LIVE_READS=1 sh scripts/go.sh test -count=1 -run TestPublishedElectrumServices -v ./internal/chain
+```
+
+No public event posting or real-money trade is part of the automated harness.
+Run `BLAKESWAP_TEST_ELECTRUM=1` with `BLAKESWAP_REGTEST` for the Electrum daemon
+matrix. `BLAKESWAP_BTC_RPC_PORT` / `BLAKESWAP_BLAKE_RPC_PORT` isolate test ports,
+and `BLAKESWAP_RDTS=1` starts the external Blake2b fixture with reduced-data rules
+active. The suite mutates test nodes and runs chain packages sequentially; do not
+run independent mining suites against the same datadirs concurrently.
+
+The DMG checks include signature/resource sealing, disk-image checksums, relocated
+app launch without repository dependencies, and process-tree inspection for exactly
+one app-owned Go helper and no bundled chain executables. GUI shutdown and parent
+death must remove the helper/runtime while external fixtures remain alive.
+
+The GitHub Go validation workflow runs vet, unit/IPC lifecycle tests, race checks,
+NIP-44 vectors and formatting on Linux. Native Swift, DMG, and real two-chain
+integration validation run locally on macOS; CI does not imply those ran there.
+The native client has a separate actual gRPC trade test using the same DaemonRPC
+implementation as the GUI:
+
+```sh
+python3 scripts/desktop-demo.py prepare
+BLAKESWAP_SWIFT_TEST_ROOT="$PWD/.local/desktop-demo" sh scripts/test-swift.sh
+```
+
+Run it after the Go integration suite, not concurrently on shared test nodes.
+It starts only a test wallet daemon, uses external node/relay fixtures, and saves
+public settlement evidence in `successful-swift-trade.json`.

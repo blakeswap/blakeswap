@@ -18,7 +18,7 @@ OP_IF
   OP_SHA256 <H> OP_EQUALVERIFY
   <claim compressed public key> OP_CHECKSIG
 OP_ELSE
-  <refund height> OP_CHECKLOCKTIMEVERIFY OP_DROP
+  <refund locktime> OP_CHECKLOCKTIMEVERIFY OP_DROP
   <refund compressed public key> OP_CHECKSIG
 OP_ENDIF
 ```
@@ -40,7 +40,7 @@ The two contracts share `H` but have different keys and assets:
 
 The request contains a random swap ID, the original signed open-offer event, taker Nostr identity, `H`, and two taker per-swap compressed public keys. The maker verifies the request, its own current open offer, available funds, and configured tower quote. It reserves the entire offer exactly once, derives its keys, and sends immutable accepted terms.
 
-Terms include the full request, both contracts before funding, both maker keys, both application chain domains, both refund heights, the long-chain reveal cutoff/tower takeover height, and selected tower identity/payout scripts. JSON structs are serialized deterministically by Go and SHA256 hashed to bind subsequent messages. There are no floating-point amounts or prices: all amounts and basis points are integers. An implementation in another language must reproduce this serialization or negotiate a future canonical encoding version.
+Terms include the full request, both contracts before funding, both maker keys, both application chain domains, both refund locktimes, the long-chain reveal cutoff/tower takeover locktime, and selected tower identity/payout scripts. JSON structs are serialized deterministically by Go and SHA256 hashed to bind subsequent messages. There are no floating-point amounts or prices: all amounts and basis points are integers. An implementation in another language must reproduce this serialization or negotiate a future canonical encoding version.
 
 The taker checks that acceptance preserves its exact request, the signed maker offer, keys, amounts, hash, domains, and locally configured tower quote. A changed contract requires a new negotiation, not reinterpretation of a signature already handed out.
 
@@ -66,6 +66,45 @@ Gate checks are repeated before irreversible actions:
 These are local demonstration parameters, not calibrated mainnet security recommendations. Relative chain progress, censorship, congestion, and reorg risk still matter. Mining one regtest chain far ahead intentionally demonstrates failures of timing assumptions.
 
 Height locktimes use Bitcoin's strict finality comparison. A transaction with `nLockTime=T` is eligible for the next block when the current tip reaches `T`; its first eligible block has height `T+1`. The GUI displays tip thresholds. A refund becoming eligible does not invalidate a claim: they can compete for the same UTXO.
+
+## Public-network deadline policy
+
+Mainnet and Testnet4 use time-based CLTV, not cross-chain block-count comparisons.
+Read BIP-113 median time past (MTP) from each chain. At acceptance let `T0` be the
+larger MTP, after checking the clocks differ by at most two hours. Terms separately
+record each chain's current height for observation scans; timestamps must never
+be used as scan heights.
+
+| Quantity | Unix locktime / policy |
+| --- | --- |
+| Long refund | `T0 + 4 days` |
+| Short refund | `T0 + 2 days` |
+| Tower long-claim takeover | `T0 + 24 hours` |
+| Last honest first-reveal window | Strictly before `T0 + 12 hours` on the long chain |
+| Tower refund takeover | Own refund locktime + 6 hours |
+| Funding / settlement confidence | 6 confirmations on each chain |
+
+A timestamp transaction becomes eligible only when the preceding block's MTP is
+**strictly greater** than its locktime. Wall-clock passage alone does not unlock
+funds. Both chain clocks must be within two hours of each other and within the
+range local wall clock minus six hours to plus two hours for new funding/revelation.
+The local wall clock is therefore also an availability dependency. These checks
+do not block already-authorized refunds or rescue attempts.
+
+Before long funding, at least 94 long-chain hours and 46 short-chain hours remain.
+Before short funding, at least 72 and 24 hours remain, and two hours remain before
+the reveal cutoff. Before first revelation, at least 48 and 12 hours remain and
+the long-chain MTP is strictly before the cutoff. A proposed schedule starting
+more than two hours beyond the latest observed MTP is rejected. These gates run
+again immediately before broadcasting new funding or committing first revelation.
+Exact UTXOs, six confirmations, BTC replay ancestry, keys, amounts, network domains,
+and optional durable tower receipts are checked independently.
+
+This replaces the regtest assumption of comparable block rates with explicit
+clock and bounded-response assumptions. It does not guarantee settlement under
+arbitrary hash-rate loss, clock manipulation, reorgs, congestion, or censorship.
+The four/two-day schedule and six confirmations are implemented policy, not an
+independently calibrated economic security guarantee.
 
 ## Happy-path state transitions
 
@@ -111,7 +150,7 @@ The taker's first-reveal transaction is never handed to the tower containing a s
 
 The tower's clock starts at a pre-agreed local-chain threshold. It does not restart when the other chain reveals a secret. The application reveal cutoff normally leaves a grace window; it is not enforced by the HTLC script against a malicious taker. “Tower needed” means the output remains available when the delayed transaction becomes eligible, not proof that its owner was offline.
 
-Refund rescue jobs similarly spend the party's own HTLC after the refund threshold plus six blocks. The owner can refund first without a bounty. No hash preimage is needed for a refund job.
+Refund rescue jobs similarly spend the party's own HTLC after the refund threshold plus six blocks on regtest or six hours on public networks. The owner can refund first without a bounty. No hash preimage is needed for a refund job.
 
 ## Messaging and crash recovery
 
@@ -132,6 +171,7 @@ After acceptance/funding, “cancel” cannot revoke an HTLC or erase a signatur
 ## Primary references
 
 - [BIP-65: CHECKLOCKTIMEVERIFY](https://github.com/bitcoin/bips/blob/master/bip-0065.mediawiki)
+- [BIP-113: median time past locktime semantics](https://github.com/bitcoin/bips/blob/master/bip-0113.mediawiki)
 - [BIP-143: SegWit signature hashing](https://github.com/bitcoin/bips/blob/master/bip-0143.mediawiki)
 - [Pinned Bitcoin Blake2b unified signature specification](https://github.com/bitcoinknots/bitcoin/blob/v29.4.1.knots20260508/doc/unified-sighash.md)
 - [NIP-01: event and relay protocol](https://github.com/nostr-protocol/nips/blob/master/01.md)

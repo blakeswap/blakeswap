@@ -55,7 +55,7 @@ func (c HTLC) Script() ([]byte, error) {
 	if _, e = btcec.ParsePubKey(refund); e != nil {
 		return nil, e
 	}
-	if !c.Chain.Valid() || c.RefundHeight < 1 || c.RefundHeight >= 500000000 || c.Amount < Dust || c.Amount > MaxMoney {
+	if !c.Chain.Valid() || c.RefundHeight < 1 || c.RefundHeight > 4000000000 || c.Amount < Dust || c.Amount > MaxMoney {
 		return nil, errors.New("invalid HTLC bounds")
 	}
 	return txscript.NewScriptBuilder().AddOp(txscript.OP_IF).AddOp(txscript.OP_SIZE).AddInt64(32).AddOp(txscript.OP_EQUALVERIFY).AddOp(txscript.OP_SHA256).AddData(h).AddOp(txscript.OP_EQUALVERIFY).AddData(claim).AddOp(txscript.OP_CHECKSIG).AddOp(txscript.OP_ELSE).AddInt64(int64(c.RefundHeight)).AddOp(txscript.OP_CHECKLOCKTIMEVERIFY).AddOp(txscript.OP_DROP).AddData(refund).AddOp(txscript.OP_CHECKSIG).AddOp(txscript.OP_ENDIF).Script()
@@ -266,7 +266,7 @@ func Spend(c HTLC, key *btcec.PrivateKey, recipient []byte, fee int64, refund bo
 	expected := c.ClaimKey
 	if refund {
 		expected = c.RefundKey
-		if lock < c.RefundHeight {
+		if lock < c.RefundHeight || (lock < 500000000) != (c.RefundHeight < 500000000) {
 			return nil, errors.New("premature refund locktime")
 		}
 	}
@@ -279,8 +279,8 @@ func Spend(c HTLC, key *btcec.PrivateKey, recipient []byte, fee int64, refund bo
 	if bounty > 0 && (bounty < Dust || len(towerScript) != 22 || towerScript[0] != 0 || towerScript[1] != 20) {
 		return nil, errors.New("invalid bounty")
 	}
-	if lock >= 500000000 {
-		return nil, errors.New("block-height locktime required")
+	if lock > 4000000000 {
+		return nil, errors.New("locktime out of supported range")
 	}
 	if len(secret) != 0 {
 		h := sha256.Sum256(secret)
@@ -340,7 +340,7 @@ func VerifySignature(c HTLC, tx *wire.MsgTx, refund bool) error {
 	expected := c.ClaimKey
 	if refund {
 		expected = c.RefundKey
-		if len(w) != 3 || len(w[1]) != 0 || tx.LockTime < c.RefundHeight {
+		if len(w) != 3 || len(w[1]) != 0 || tx.LockTime < c.RefundHeight || (tx.LockTime < 500000000) != (c.RefundHeight < 500000000) {
 			return errors.New("invalid refund")
 		}
 	} else if len(w) != 4 || !bytes.Equal(w[2], []byte{1}) {

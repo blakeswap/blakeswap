@@ -3,6 +3,7 @@ import AppKit
 
 @main
 struct BlakeswapApp: App {
+    @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
     @StateObject private var model = AppModel()
     var body: some Scene {
         WindowGroup("Blakeswap") {
@@ -10,6 +11,7 @@ struct BlakeswapApp: App {
                 .frame(minWidth: 1060, minHeight: 730)
                 .preferredColorScheme(.dark)
                 .task {
+                    model.start()
                     NSApp.activate(ignoringOtherApps: true)
                     while !Task.isCancelled {
                         await model.refresh()
@@ -21,7 +23,7 @@ struct BlakeswapApp: App {
         .commands {
             CommandGroup(replacing: .help) {
                 Button("Blakeswap Protocol & Setup") {
-                    NSWorkspace.shared.open(URL(fileURLWithPath: "\(model.root)/README.md"))
+                    if let url = Bundle.main.resourceURL?.appendingPathComponent("docs/PROTOCOL.md") { NSWorkspace.shared.open(url) }
                 }
             }
         }
@@ -56,14 +58,16 @@ struct ContentView: View {
                             VStack(alignment: .leading, spacing: 12) {
                                 Label("Local daemon disconnected", systemImage: "network.slash").font(.headline)
                                 Text(error).foregroundStyle(.secondary)
-                                Button("Start local network") { Task { await model.startNetwork() } }.buttonStyle(.borderedProminent).tint(mint)
+                                Button("Restart daemon") { model.start() }.buttonStyle(.borderedProminent).tint(mint)
                             }.padding(24).frame(maxWidth: .infinity, alignment: .leading).background(panel, in: RoundedRectangle(cornerRadius: 16))
                         }
-                        if let status = model.status {
+                        if model.page == "Settings", let settings = model.settings { SettingsView(settings: settings).id(settings.revision) }
+                        else if let status = model.status {
                             if model.page == "Market" { market(status) }
                             else if model.page == "Swaps" { swaps(status) }
                             else { wallet(status) }
                         }
+                        if let error = model.status?.lastError, !error.isEmpty { Text(error).font(.callout).foregroundStyle(.orange).textSelection(.enabled) }
                         if let notice = model.notice {
                             Label(notice, systemImage: "info.circle").font(.callout).foregroundStyle(mint).textSelection(.enabled)
                         }
@@ -90,24 +94,21 @@ struct ContentView: View {
                 Text("blakeswap").font(.system(size: 22, weight: .semibold, design: .rounded)).lineLimit(1).fixedSize()
             }.padding(.top, 14)
             VStack(alignment: .leading, spacing: 9) {
-                Text("LOCAL WALLET").font(.system(size: 10, weight: .semibold)).tracking(1.8).foregroundStyle(.secondary)
-                Picker("Wallet", selection: Binding(get: { model.profile }, set: { model.selectProfile($0) })) {
+                if model.isRegtest { Text("WALLET").font(.system(size: 10, weight: .semibold)).tracking(1.8).foregroundStyle(.secondary) }
+                if model.isRegtest { Picker("Wallet", selection: Binding(get: { model.profile }, set: { model.selectProfile($0) })) {
                     Text("Alice · maker").tag("alice")
                     Text("Bob · taker").tag("bob")
-                }.labelsHidden().pickerStyle(.menu).controlSize(.large).accessibilityIdentifier("wallet-picker")
+                }.labelsHidden().pickerStyle(.menu).controlSize(.large).accessibilityIdentifier("wallet-picker") }
             }
             VStack(spacing: 6) {
                 nav("Market", "chart.xyaxis.line")
                 nav("Swaps", "arrow.triangle.2.circlepath")
                 nav("Wallet", "wallet.bifold")
+                nav("Settings", "gearshape")
             }
             Spacer()
-            VStack(alignment: .leading, spacing: 10) {
-                Label("REGTEST", systemImage: "testtube.2").font(.caption.bold()).foregroundStyle(mint)
-                Text("Real chain rules.\nLocal test coins.").font(.caption).foregroundStyle(.secondary).lineSpacing(3)
-                Divider().padding(.vertical, 4)
-                Text("Go daemon\nNative macOS client").font(.caption2).foregroundStyle(.tertiary).lineSpacing(4)
-            }
+            Text(model.network == "testnet" ? "TESTNET4" : model.network.uppercased()).font(.caption.bold()).foregroundStyle(mint)
+
         }.padding(22).frame(width: 220).background(Color(red: 0.085, green: 0.098, blue: 0.12))
     }
     private func nav(_ name: String, _ icon: String) -> some View {
@@ -121,8 +122,7 @@ struct ContentView: View {
         HStack {
             VStack(alignment: .leading, spacing: 5) {
                 Text(model.page).font(.system(size: 27, weight: .semibold))
-                Text(model.page == "Market" ? "Bitcoin ↔ Bitcoin Blake2b" : model.page == "Swaps" ? "Atomic settlement, one step at a time" : "One recovery phrase. Two independent chain wallets.")
-                    .font(.callout).foregroundStyle(.secondary)
+
             }
             Spacer()
             if model.busy { ProgressView().controlSize(.small).padding(.trailing, 8) }
@@ -135,12 +135,12 @@ struct ContentView: View {
     }
     private var footer: some View {
         HStack(spacing: 18) {
-            Label("Nostr mailboxes", systemImage: "envelope.badge.shield.half.filled")
+            Label("Queued messages: \(model.status?.pendingMessages ?? 0)", systemImage: "envelope")
             Text("BTC #\(model.status?.heights["btc"] ?? 0)")
             Text("BLAKE #\(model.status?.heights["blake"] ?? 0)")
             Spacer()
-            Button("Mine 2 blocks on both chains") { Task { await model.command("regtest.mine", ["blocks": 2]) } }
-                .disabled(model.busy || model.status == nil).accessibilityIdentifier("mine-blocks")
+            if model.isRegtest { Button("Mine 2 blocks on both chains") { Task { await model.command("regtest.mine", ["blocks": 2]) } }
+                .disabled(model.busy || model.status == nil).accessibilityIdentifier("mine-blocks") }
         }.font(.caption).foregroundStyle(.secondary).padding(.horizontal, 30).padding(.vertical, 14).background(panel.opacity(0.5))
     }
     private func balanceCard(_ chain: String, _ status: DaemonStatus) -> some View {
@@ -152,7 +152,7 @@ struct ContentView: View {
                 Text(symbol(chain)).font(.caption2).foregroundStyle(.secondary)
             }
             Text(units(status.balances[chain] ?? 0)).font(.system(size: 28, weight: .medium, design: .rounded)).monospacedDigit()
-            Text("Confirmed, available balance").font(.caption).foregroundStyle(.secondary)
+            Text("Confirmed balance").font(.caption).foregroundStyle(.secondary)
         }.padding(22).frame(maxWidth: .infinity, alignment: .leading).background(panel, in: RoundedRectangle(cornerRadius: 14))
     }
     private func market(_ status: DaemonStatus) -> some View {
@@ -160,14 +160,13 @@ struct ContentView: View {
             HStack(spacing: 16) { balanceCard("btc", status); balanceCard("blake", status) }
             HStack {
                 VStack(alignment: .leading, spacing: 5) {
-                    Text("Distributed orderbook").font(.title3.weight(.semibold))
-                    Text("Signed fixed-size offers · settlement on both chains").font(.caption).foregroundStyle(.secondary)
+                    Text("Orderbook").font(.title3.weight(.semibold))
                 }
                 Spacer()
                 Button { showOffer = true } label: { Label("Create offer", systemImage: "plus") }.buttonStyle(MintButton()).disabled(model.busy).accessibilityIdentifier("create-offer")
             }
             if status.orders.isEmpty {
-                ContentUnavailableView("No offers yet", systemImage: "arrow.left.arrow.right", description: Text("Create an offer, then switch to the other local wallet to take it."))
+                ContentUnavailableView("No offers yet", systemImage: "arrow.left.arrow.right", description: Text("Create an offer to add it to the orderbook."))
                     .frame(maxWidth: .infinity).padding(28).background(panel.opacity(0.5), in: RoundedRectangle(cornerRadius: 14))
             } else {
                 VStack(spacing: 0) {
@@ -189,13 +188,13 @@ struct ContentView: View {
                     }
                 }.background(panel.opacity(0.6), in: RoundedRectangle(cornerRadius: 14))
             }
-            Label("Closing this window leaves the daemon running. A stopped maker can receive requests when it returns; a funded swap still has deadlines.", systemImage: "clock.arrow.circlepath")
+            Label("Quitting stops your daemon. Keep the app open during funded swaps unless a watchtower is armed.", systemImage: "clock.arrow.circlepath")
                 .font(.callout).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
         }
     }
     private func swaps(_ status: DaemonStatus) -> some View {
         VStack(alignment: .leading, spacing: 18) {
-            if status.swaps.isEmpty { ContentUnavailableView("No swaps yet", systemImage: "arrow.triangle.2.circlepath", description: Text("Take an offer from the market to begin an asynchronous atomic swap.")).frame(maxWidth: .infinity).padding(50) }
+            if status.swaps.isEmpty { ContentUnavailableView("No swaps yet", systemImage: "arrow.triangle.2.circlepath", description: Text("Take an offer from the market to begin.")).frame(maxWidth: .infinity).padding(50) }
             ForEach(status.swaps) { swap in
                 VStack(alignment: .leading, spacing: 18) {
                     HStack {
@@ -204,27 +203,27 @@ struct ContentView: View {
                         Spacer()
                         Text(swap.towerReady ? "Tower armed" : swap.towerEnabled ? "Preparing protection" : "No tower armed").font(.caption).foregroundStyle(mint)
                     }
-                    if swap.long.refundHeight > 0 {
+                    if swap.long.refundLocktime > 0 {
                         HStack(spacing: 20) { leg(swap.long, swap.longSpend, swap.longConfirmations); Image(systemName: "arrow.left.arrow.right").foregroundStyle(.secondary); leg(swap.short, swap.shortSpend, swap.shortConfirmations) }
                     } else { Text("The encrypted request is waiting for the maker's acceptance.").font(.callout).foregroundStyle(.secondary) }
                     Divider().opacity(0.5)
                     HStack(spacing: 24) {
                         metric("PREIMAGE", swap.secretRevealed ? "Released / observed" : "Private")
-                        metric("TOWER TAKEOVER", swap.takeover > 0 ? "\(symbol(swap.long.chain)) #\(swap.takeover)" : "Negotiating")
+                        metric("TOWER TAKEOVER", swap.takeover > 0 ? locktimeLabel(swap.takeover) : "Negotiating")
                         metric("TOWER FEE PAID", swap.feeLabel)
                     }
-                    if let error = swap.error { Text(error).font(.caption).foregroundStyle(.orange).textSelection(.enabled) }
+                    if !swap.error.isEmpty { Text(swap.error).font(.caption).foregroundStyle(.orange).textSelection(.enabled) }
                 }.padding(24).background(panel, in: RoundedRectangle(cornerRadius: 16))
             }
         }
     }
-    private func leg(_ htlc: HTLC, _ spend: String?, _ confirmations: Int) -> some View {
+    private func leg(_ htlc: HTLC, _ spend: String?, _ confirmations: Int32) -> some View {
         VStack(alignment: .leading, spacing: 8) {
             Text("\(units(htlc.amount)) \(symbol(htlc.chain))").font(.system(.title3, design: .monospaced).weight(.medium))
             Text(spend == nil || spend == "" ? "Waiting for claim" : "Spend: \(confirmations) confirmations").font(.caption).foregroundStyle(.secondary)
-            if let txid = htlc.txid, !txid.isEmpty { Text("Lock  \(txid.prefix(18))…").font(.caption2.monospaced()).foregroundStyle(.secondary).help(txid).textSelection(.enabled) }
+            if !htlc.txid.isEmpty { Text("Lock  \(htlc.txid.prefix(18))…").font(.caption2.monospaced()).foregroundStyle(.secondary).help(htlc.txid).textSelection(.enabled) }
             if let spend, !spend.isEmpty { Text("Spend \(spend.prefix(18))…").font(.caption2.monospaced()).foregroundStyle(mint).help(spend).textSelection(.enabled) }
-            Text("Refund eligible at #\(htlc.refundHeight)").font(.caption2).foregroundStyle(.secondary)
+            Text("Refund eligible: \(locktimeLabel(htlc.refundLocktime))").font(.caption2).foregroundStyle(.secondary)
         }.frame(maxWidth: .infinity, alignment: .leading)
     }
     private func metric(_ title: String, _ value: String) -> some View { VStack(alignment: .leading, spacing: 7) { Text(title).font(.system(size: 9, weight: .semibold)).tracking(1).foregroundStyle(.secondary); Text(value).font(.caption) }.frame(maxWidth: .infinity, alignment: .leading) }
@@ -237,14 +236,13 @@ struct ContentView: View {
                     Text(status.addresses[chain] ?? "").font(.system(.body, design: .monospaced)).textSelection(.enabled)
                     HStack {
                         Button("Copy address") { NSPasteboard.general.clearContents(); NSPasteboard.general.setString(status.addresses[chain] ?? "", forType: .string) }
-                        Button("Add 1 test coin") { Task { await model.command("regtest.faucet", ["chain": chain, "amount": 100_000_000]) } }.disabled(model.busy)
-                        Text("Mine 2 blocks to confirm deposits.").font(.caption).foregroundStyle(.secondary)
+                        if model.isRegtest { Button("Add 1 test coin") { Task { await model.command("regtest.faucet", ["chain": chain, "amount": 100_000_000]) } }.disabled(model.busy)
+                        Text("Mine 2 blocks to confirm deposits.").font(.caption).foregroundStyle(.secondary) }
                     }
                 }.padding(24).frame(maxWidth: .infinity, alignment: .leading).background(panel, in: RoundedRectangle(cornerRadius: 14))
             }
             VStack(alignment: .leading, spacing: 14) {
                 Text("Recovery & protection").font(.headline)
-                Text("Separate hardened derivation paths for BTC, Blake2b, and Nostr. The GUI talks to a private local socket; the daemon keeps signing keys.").font(.callout).foregroundStyle(.secondary)
                 HStack { Button("Reveal recovery phrase") { Task { await model.command("wallet.recovery") } }; Button("Save encrypted state backup") { Task { await model.command("wallet.backup") } } }.disabled(model.busy)
                 Text("Watchtower quote: \(percentage(status.tower.bps)) of the rescued local-chain output. No upfront fee. Mining fees are separate.").font(.caption).foregroundStyle(.secondary)
             }.padding(24).background(panel, in: RoundedRectangle(cornerRadius: 14))
@@ -258,16 +256,16 @@ struct OfferSheet: View {
     @State private var sell = "btc"
     @State private var sellAmount = "1000000"
     @State private var buyAmount = "2000000"
-    @State private var protection = true
+    @State private var protection = false
     @State private var validation: String?
     var body: some View {
         VStack(alignment: .leading, spacing: 24) {
-            VStack(alignment: .leading, spacing: 8) { Text("Create an offer").font(.title.bold()); Text("Set exact amounts for a single atomic swap.").foregroundStyle(.secondary) }
+            Text("Create an offer").font(.title.bold())
             Form {
                 Picker("You sell", selection: $sell) { Text("Bitcoin (BTC)").tag("btc"); Text("Bitcoin Blake2b (BLAKE)").tag("blake") }
                 TextField("Sell amount (sats)", text: $sellAmount).accessibilityIdentifier("sell-amount")
                 TextField("Receive amount (sats)", text: $buyAmount).accessibilityIdentifier("buy-amount")
-                Toggle("Delayed watchtower protection", isOn: $protection)
+                Toggle("Delayed watchtower protection", isOn: $protection).disabled(model.status?.tower.pubkey.isEmpty ?? true)
             }.formStyle(.grouped)
             Text(protection ? "The tower earns \(percentage(model.status?.tower.bps ?? 50)) only when its delayed rescue transaction confirms. Claim yourself first to avoid that fee." : "Your daemon must respond before the refund deadlines. This offer will have no tower protection.")
                 .font(.callout).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
@@ -279,7 +277,7 @@ struct OfferSheet: View {
                 Spacer()
                 Button("Publish offer") {
                     guard let a = Int64(sellAmount), let b = Int64(buyAmount), a >= 100_000, b >= 100_000 else { validation = "Enter whole satoshi amounts of at least 100,000."; return }
-                    Task { await model.command("offer.create", ["sell": sell, "sell_amount": a, "buy_amount": b, "tower_bps": protection ? (model.status?.tower.bps ?? 50) : 0]); dismiss() }
+                    Task { if await model.command("offer.create", ["sell": sell, "sell_amount": a, "buy_amount": b, "tower_bps": protection ? (model.status?.tower.bps ?? 0) : 0]) { dismiss() } else { validation = model.notice } }
                 }.buttonStyle(MintButton()).keyboardShortcut(.defaultAction).disabled(model.busy).accessibilityIdentifier("publish-offer")
             }
         }.padding(32).frame(width: 510)

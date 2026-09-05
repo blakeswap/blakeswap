@@ -1,7 +1,6 @@
 package daemon
 
 import (
-	"bufio"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
@@ -11,17 +10,14 @@ import (
 	"github.com/blakeswap/blakeswap/internal/chain"
 	"github.com/blakeswap/blakeswap/internal/protocol"
 	"github.com/blakeswap/blakeswap/internal/transport"
-	"net"
-	"os"
 	"path/filepath"
 	"sort"
-	"strings"
 	"time"
 )
 
 func (e *Engine) Status() Status { e.mu.Lock(); defer e.mu.Unlock(); return e.status() }
 func (e *Engine) status() Status {
-	s := Status{Name: e.Config.Name, Mode: e.Config.Mode, PubKey: e.identity.Public().Hex(), Addresses: map[chain.ID]string{}, Balances: map[chain.ID]int64{}, Heights: map[chain.ID]uint32{}, Paused: e.s.Paused, Orders: []protocol.Offer{}, Swaps: []PublicSwap{}, TowerJobs: []map[string]any{}, LastError: e.lastError, Tower: e.Config.Tower}
+	s := Status{Network: e.Config.Network, Name: e.Config.Name, Mode: e.Config.Mode, PubKey: e.identity.Public().Hex(), Addresses: map[chain.ID]string{}, Balances: map[chain.ID]int64{}, Heights: map[chain.ID]uint32{}, Paused: e.s.Paused, Orders: []protocol.Offer{}, Swaps: []PublicSwap{}, TowerJobs: []map[string]any{}, LastError: e.lastError, Tower: e.Config.Tower}
 	for id, addr := range e.addresses {
 		s.Addresses[id] = addr
 		s.Balances[id] = e.balances[id]
@@ -64,6 +60,12 @@ func (e *Engine) status() Status {
 func (e *Engine) Command(ctx context.Context, req Request) (any, error) {
 	e.mu.Lock()
 	defer e.mu.Unlock()
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	if err := CheckCommandNetwork(req, e.Config.Network, false); err != nil {
+		return nil, err
+	}
 	if e.fatal != nil {
 		return nil, e.fatal
 	}
@@ -87,6 +89,7 @@ func (e *Engine) Command(ctx context.Context, req Request) (any, error) {
 		if err := json.Unmarshal(req.Params, &o); err != nil {
 			return nil, err
 		}
+		o.Network = e.Config.Network
 		o.ID = transport.RandomID()
 		o.Maker = e.identity.Public().Hex()
 		o.Status = "open"
@@ -182,6 +185,9 @@ func (e *Engine) Command(ctx context.Context, req Request) (any, error) {
 		}
 		return map[string]string{"id": id}, e.save()
 	case "regtest.mine":
+		if e.Config.Network != chain.Regtest {
+			return nil, errors.New("mining is only available on regtest")
+		}
 		var p struct {
 			Chain  chain.ID `json:"chain"`
 			Blocks uint32   `json:"blocks"`
@@ -205,16 +211,22 @@ func (e *Engine) Command(ctx context.Context, req Request) (any, error) {
 			ids = []chain.ID{p.Chain}
 		}
 		for _, id := range ids {
+			if _, ok := e.nodes[id].(*chain.RPC); !ok {
+				return nil, errors.New("mining requires full-node RPC")
+			}
 			var addr string
-			if err := e.nodes[id].WithWallet("faucet").Call(ctx, "getnewaddress", &addr); err != nil {
+			if err := e.nodes[id].(*chain.RPC).WithWallet("faucet").Call(ctx, "getnewaddress", &addr); err != nil {
 				return nil, err
 			}
-			if err := e.nodes[id].Call(ctx, "generatetoaddress", nil, p.Blocks, addr); err != nil {
+			if err := e.nodes[id].(*chain.RPC).Call(ctx, "generatetoaddress", nil, p.Blocks, addr); err != nil {
 				return nil, err
 			}
 		}
 		return true, e.refresh(ctx)
 	case "regtest.faucet":
+		if e.Config.Network != chain.Regtest {
+			return nil, errors.New("faucet is only available on regtest")
+		}
 		var p struct {
 			Chain  chain.ID `json:"chain"`
 			Amount int64    `json:"amount"`
@@ -225,8 +237,11 @@ func (e *Engine) Command(ctx context.Context, req Request) (any, error) {
 		if !p.Chain.Valid() || p.Amount < 100000 || p.Amount > 1000000000 {
 			return nil, errors.New("invalid faucet amount")
 		}
+		if _, ok := e.nodes[p.Chain].(*chain.RPC); !ok {
+			return nil, errors.New("faucet requires full-node RPC")
+		}
 		var txid string
-		if err := e.nodes[p.Chain].WithWallet("faucet").Call(ctx, "sendtoaddress", &txid, e.addresses[p.Chain], chain.Coins(p.Amount)); err != nil {
+		if err := e.nodes[p.Chain].(*chain.RPC).WithWallet("faucet").Call(ctx, "sendtoaddress", &txid, e.addresses[p.Chain], chain.Coins(p.Amount)); err != nil {
 			return nil, err
 		}
 		return map[string]string{"txid": txid}, nil
@@ -244,101 +259,4 @@ func (e *Engine) Command(ctx context.Context, req Request) (any, error) {
 	default:
 		return nil, fmt.Errorf("unknown method %q", req.Method)
 	}
-}
-
-// One versioned JSON request/response per connection; per-user socket permissions
-// are the local authentication boundary. No wallet HTTP server or browser origin.
-func (e *Engine) Serve(ctx context.Context) error {
-	path := e.Config.Socket
-	if !filepath.IsAbs(path) {
-		return errors.New("socket path must be absolute")
-	}
-	if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
-		return err
-	}
-	if info, err := os.Lstat(path); err == nil {
-		if info.Mode()&os.ModeSocket == 0 {
-			return errors.New("refusing to replace a non-socket file")
-		}
-		conn, err := net.DialTimeout("unix", path, time.Second)
-		if err == nil {
-			conn.Close()
-			return errors.New("daemon socket already active")
-		}
-		if err = os.Remove(path); err != nil {
-			return err
-		}
-	}
-	listener, err := net.Listen("unix", path)
-	if err != nil {
-		return err
-	}
-	defer listener.Close()
-	defer os.Remove(path)
-	if err = os.Chmod(path, 0600); err != nil {
-		return err
-	}
-	go func() { <-ctx.Done(); listener.Close() }()
-	limit := make(chan struct{}, 16)
-	for {
-		conn, err := listener.Accept()
-		if err != nil {
-			if ctx.Err() != nil {
-				return nil
-			}
-			return err
-		}
-		select {
-		case limit <- struct{}{}:
-		default:
-			conn.Close()
-			continue
-		}
-		go func() {
-			defer func() { <-limit; conn.Close() }()
-			_ = conn.SetDeadline(time.Now().Add(45 * time.Second))
-			scanner := bufio.NewScanner(conn)
-			scanner.Buffer(make([]byte, 4096), 128*1024)
-			if !scanner.Scan() {
-				return
-			}
-			var req Request
-			resp := Response{}
-			if err := json.Unmarshal(scanner.Bytes(), &req); err != nil {
-				resp.Error = "invalid JSON request"
-			} else {
-				result, err := e.Command(ctx, req)
-				if err != nil {
-					resp.Error = err.Error()
-				} else {
-					resp.Result = result
-				}
-			}
-			_ = json.NewEncoder(conn).Encode(resp)
-		}()
-	}
-}
-func Call(ctx context.Context, socket string, req Request) (json.RawMessage, error) {
-	d := net.Dialer{}
-	conn, err := d.DialContext(ctx, "unix", socket)
-	if err != nil {
-		return nil, err
-	}
-	defer conn.Close()
-	_ = conn.SetDeadline(time.Now().Add(45 * time.Second))
-	if err = json.NewEncoder(conn).Encode(req); err != nil {
-		return nil, err
-	}
-	var resp struct {
-		Result json.RawMessage `json:"result"`
-		Error  string          `json:"error"`
-	}
-	dec := json.NewDecoder(bufio.NewReaderSize(conn, 4096))
-	if err = dec.Decode(&resp); err != nil {
-		return nil, err
-	}
-	if strings.TrimSpace(resp.Error) != "" {
-		return nil, errors.New(resp.Error)
-	}
-	return resp.Result, nil
 }

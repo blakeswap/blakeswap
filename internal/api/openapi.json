@@ -1,0 +1,908 @@
+{
+  "swagger": "2.0",
+  "info": {
+    "title": "Blakeswap daemon API",
+    "description": "Local wallet API. All amounts are integer satoshis. Protobuf JSON represents int64 as decimal strings. Bearer credentials are read from a private runtime file. HTTP binds only to loopback; gRPC binds to a private Unix socket.",
+    "version": "1.0"
+  },
+  "tags": [
+    {
+      "name": "DaemonService"
+    }
+  ],
+  "schemes": [
+    "http"
+  ],
+  "consumes": [
+    "application/json"
+  ],
+  "produces": [
+    "application/json"
+  ],
+  "paths": {
+    "/v1/offers": {
+      "post": {
+        "operationId": "DaemonService_CreateOffer",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1Offer"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/googleRpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/v1CreateOfferRequest"
+            }
+          }
+        ],
+        "tags": [
+          "DaemonService"
+        ]
+      }
+    },
+    "/v1/offers/{id}": {
+      "delete": {
+        "operationId": "DaemonService_CancelOffer",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1Offer"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/googleRpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "name": "expected_network",
+            "in": "query",
+            "required": false,
+            "type": "string"
+          }
+        ],
+        "tags": [
+          "DaemonService"
+        ]
+      }
+    },
+    "/v1/pause": {
+      "put": {
+        "operationId": "DaemonService_SetPaused",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/blakeswapV1Status"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/googleRpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/v1SetPausedRequest"
+            }
+          }
+        ],
+        "tags": [
+          "DaemonService"
+        ]
+      }
+    },
+    "/v1/regtest/faucet": {
+      "post": {
+        "operationId": "DaemonService_Faucet",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1FaucetResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/googleRpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/v1FaucetRequest"
+            }
+          }
+        ],
+        "tags": [
+          "DaemonService"
+        ]
+      }
+    },
+    "/v1/regtest/mine": {
+      "post": {
+        "operationId": "DaemonService_Mine",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "type": "object",
+              "properties": {}
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/googleRpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/v1MineRequest"
+            }
+          }
+        ],
+        "tags": [
+          "DaemonService"
+        ]
+      }
+    },
+    "/v1/settings": {
+      "get": {
+        "operationId": "DaemonService_GetSettings",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1Settings"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/googleRpcStatus"
+            }
+          }
+        },
+        "tags": [
+          "DaemonService"
+        ]
+      },
+      "put": {
+        "operationId": "DaemonService_UpdateSettings",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1Settings"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/googleRpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/v1Settings"
+            }
+          }
+        ],
+        "tags": [
+          "DaemonService"
+        ]
+      }
+    },
+    "/v1/settings/check-node": {
+      "post": {
+        "operationId": "DaemonService_CheckNode",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1CheckNodeResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/googleRpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/v1CheckNodeRequest"
+            }
+          }
+        ],
+        "tags": [
+          "DaemonService"
+        ]
+      }
+    },
+    "/v1/status": {
+      "get": {
+        "operationId": "DaemonService_GetStatus",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/blakeswapV1Status"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/googleRpcStatus"
+            }
+          }
+        },
+        "tags": [
+          "DaemonService"
+        ]
+      }
+    },
+    "/v1/swaps": {
+      "post": {
+        "operationId": "DaemonService_TakeOffer",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1TakeOfferResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/googleRpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/v1TakeOfferRequest"
+            }
+          }
+        ],
+        "tags": [
+          "DaemonService"
+        ]
+      }
+    },
+    "/v1/wallet/backup": {
+      "post": {
+        "operationId": "DaemonService_BackupWallet",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1Backup"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/googleRpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "type": "object",
+              "properties": {}
+            }
+          }
+        ],
+        "tags": [
+          "DaemonService"
+        ]
+      }
+    },
+    "/v1/wallet/recovery": {
+      "post": {
+        "operationId": "DaemonService_GetRecovery",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1Recovery"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/googleRpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "type": "object",
+              "properties": {}
+            }
+          }
+        ],
+        "tags": [
+          "DaemonService"
+        ]
+      }
+    }
+  },
+  "definitions": {
+    "blakeswapV1Status": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "mode": {
+          "type": "string"
+        },
+        "pubkey": {
+          "type": "string"
+        },
+        "addresses": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
+        "balances": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string",
+            "format": "int64"
+          }
+        },
+        "heights": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "integer",
+            "format": "int64"
+          }
+        },
+        "paused": {
+          "type": "boolean"
+        },
+        "orders": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/v1Offer"
+          }
+        },
+        "swaps": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/v1Swap"
+          }
+        },
+        "tower_jobs": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/v1TowerJob"
+          }
+        },
+        "pending_messages": {
+          "type": "integer",
+          "format": "int32"
+        },
+        "last_error": {
+          "type": "string"
+        },
+        "tower": {
+          "$ref": "#/definitions/v1Tower"
+        },
+        "network": {
+          "type": "string"
+        }
+      }
+    },
+    "googleRpcStatus": {
+      "type": "object",
+      "properties": {
+        "code": {
+          "type": "integer",
+          "format": "int32"
+        },
+        "message": {
+          "type": "string"
+        },
+        "details": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/protobufAny"
+          }
+        }
+      }
+    },
+    "protobufAny": {
+      "type": "object",
+      "properties": {
+        "@type": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": {}
+    },
+    "v1Backup": {
+      "type": "object",
+      "properties": {
+        "path": {
+          "type": "string"
+        }
+      }
+    },
+    "v1CheckNodeRequest": {
+      "type": "object",
+      "properties": {
+        "network": {
+          "type": "string"
+        },
+        "chain": {
+          "type": "string"
+        },
+        "node": {
+          "$ref": "#/definitions/v1Node"
+        }
+      }
+    },
+    "v1CheckNodeResponse": {
+      "type": "object",
+      "properties": {
+        "height": {
+          "type": "integer",
+          "format": "int64"
+        },
+        "trust": {
+          "type": "string"
+        }
+      }
+    },
+    "v1CreateOfferRequest": {
+      "type": "object",
+      "properties": {
+        "sell": {
+          "type": "string",
+          "description": "btc or blake."
+        },
+        "expected_network": {
+          "type": "string",
+          "description": "Must match the active desktop network."
+        },
+        "sell_amount": {
+          "type": "string",
+          "format": "int64"
+        },
+        "buy_amount": {
+          "type": "string",
+          "format": "int64"
+        },
+        "tower_bps": {
+          "type": "string",
+          "format": "int64"
+        },
+        "expires": {
+          "type": "string",
+          "format": "int64",
+          "description": "Unix seconds; zero means 24 hours."
+        }
+      }
+    },
+    "v1Environment": {
+      "type": "object",
+      "properties": {
+        "network": {
+          "type": "string",
+          "description": "regtest, testnet (Testnet4), or mainnet."
+        },
+        "nodes": {
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/definitions/v1Node"
+          },
+          "description": "Exactly btc and blake."
+        },
+        "relays": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "tower": {
+          "$ref": "#/definitions/v1Tower"
+        }
+      }
+    },
+    "v1FaucetRequest": {
+      "type": "object",
+      "properties": {
+        "chain": {
+          "type": "string"
+        },
+        "amount": {
+          "type": "string",
+          "format": "int64"
+        },
+        "expected_network": {
+          "type": "string"
+        }
+      }
+    },
+    "v1FaucetResponse": {
+      "type": "object",
+      "properties": {
+        "txid": {
+          "type": "string"
+        }
+      }
+    },
+    "v1HTLC": {
+      "type": "object",
+      "properties": {
+        "chain": {
+          "type": "string"
+        },
+        "hash": {
+          "type": "string"
+        },
+        "claim_key": {
+          "type": "string"
+        },
+        "refund_key": {
+          "type": "string"
+        },
+        "refund_locktime": {
+          "type": "integer",
+          "format": "int64",
+          "description": "Legacy JSON alias; block height on regtest, median-time Unix timestamp on public networks."
+        },
+        "amount": {
+          "type": "string",
+          "format": "int64"
+        },
+        "txid": {
+          "type": "string"
+        },
+        "vout": {
+          "type": "integer",
+          "format": "int64"
+        }
+      }
+    },
+    "v1MineRequest": {
+      "type": "object",
+      "properties": {
+        "chain": {
+          "type": "string"
+        },
+        "blocks": {
+          "type": "integer",
+          "format": "int64"
+        },
+        "expected_network": {
+          "type": "string"
+        }
+      }
+    },
+    "v1Node": {
+      "type": "object",
+      "properties": {
+        "kind": {
+          "type": "string",
+          "description": "electrum or rpc; all chain backends are external."
+        },
+        "url": {
+          "type": "string",
+          "description": "ssl://host:port or tcp://loopback:port for Electrum; HTTPS/loopback HTTP for RPC."
+        },
+        "cookie": {
+          "type": "string",
+          "description": "Absolute path to an RPC cookie file. The API never returns its contents."
+        },
+        "certificate_sha256": {
+          "type": "string",
+          "description": "Optional explicit SHA256 of the Electrum server's DER certificate."
+        }
+      }
+    },
+    "v1Offer": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "maker": {
+          "type": "string"
+        },
+        "sell": {
+          "type": "string"
+        },
+        "sell_amount": {
+          "type": "string",
+          "format": "int64"
+        },
+        "buy_amount": {
+          "type": "string",
+          "format": "int64"
+        },
+        "tower_bps": {
+          "type": "string",
+          "format": "int64"
+        },
+        "expires": {
+          "type": "string",
+          "format": "int64"
+        },
+        "status": {
+          "type": "string"
+        },
+        "reservation": {
+          "type": "string"
+        },
+        "network": {
+          "type": "string"
+        }
+      }
+    },
+    "v1Recovery": {
+      "type": "object",
+      "properties": {
+        "mnemonic": {
+          "type": "string"
+        },
+        "warning": {
+          "type": "string"
+        }
+      }
+    },
+    "v1SetPausedRequest": {
+      "type": "object",
+      "properties": {
+        "paused": {
+          "type": "boolean"
+        },
+        "expected_network": {
+          "type": "string"
+        }
+      }
+    },
+    "v1Settings": {
+      "type": "object",
+      "properties": {
+        "active_network": {
+          "type": "string"
+        },
+        "environments": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/v1Environment"
+          }
+        },
+        "revision": {
+          "type": "string",
+          "format": "uint64",
+          "description": "Compare-and-swap revision: stale updates are rejected."
+        }
+      }
+    },
+    "v1Swap": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "role": {
+          "type": "string"
+        },
+        "stage": {
+          "type": "string"
+        },
+        "error": {
+          "type": "string"
+        },
+        "long": {
+          "$ref": "#/definitions/v1HTLC"
+        },
+        "short": {
+          "$ref": "#/definitions/v1HTLC"
+        },
+        "long_spend": {
+          "type": "string"
+        },
+        "short_spend": {
+          "type": "string"
+        },
+        "long_confirmations": {
+          "type": "integer",
+          "format": "int32"
+        },
+        "short_confirmations": {
+          "type": "integer",
+          "format": "int32"
+        },
+        "tower_paid": {
+          "type": "string",
+          "format": "int64"
+        },
+        "tower_payments": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string",
+            "format": "int64"
+          }
+        },
+        "tower_ready": {
+          "type": "boolean"
+        },
+        "tower_enabled": {
+          "type": "boolean"
+        },
+        "secret_revealed": {
+          "type": "boolean"
+        },
+        "takeover": {
+          "type": "integer",
+          "format": "int64"
+        },
+        "reveal_before": {
+          "type": "integer",
+          "format": "int64"
+        }
+      }
+    },
+    "v1TakeOfferRequest": {
+      "type": "object",
+      "properties": {
+        "maker": {
+          "type": "string"
+        },
+        "id": {
+          "type": "string"
+        },
+        "expected_network": {
+          "type": "string"
+        }
+      }
+    },
+    "v1TakeOfferResponse": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        }
+      }
+    },
+    "v1Tower": {
+      "type": "object",
+      "properties": {
+        "pubkey": {
+          "type": "string"
+        },
+        "scripts": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
+        "bps": {
+          "type": "string",
+          "format": "int64"
+        }
+      }
+    },
+    "v1TowerJob": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "swap_id": {
+          "type": "string"
+        },
+        "kind": {
+          "type": "string"
+        },
+        "chain": {
+          "type": "string"
+        },
+        "eligible_height": {
+          "type": "integer",
+          "format": "int64"
+        },
+        "broadcast": {
+          "type": "string"
+        },
+        "confirmations": {
+          "type": "integer",
+          "format": "int32"
+        },
+        "secret_observed": {
+          "type": "boolean"
+        },
+        "error": {
+          "type": "string"
+        }
+      }
+    }
+  },
+  "securityDefinitions": {
+    "Bearer": {
+      "type": "apiKey",
+      "description": "Bearer \u003cruntime token\u003e",
+      "name": "Authorization",
+      "in": "header"
+    }
+  },
+  "security": [
+    {
+      "Bearer": []
+    }
+  ]
+}

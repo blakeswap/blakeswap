@@ -1,90 +1,83 @@
 import AppKit
 import Foundation
 import SwiftUI
+import SwiftProtobuf
 
 @MainActor
 final class AppModel: ObservableObject {
     @Published var profile = "alice"
     @Published var page = "Market"
     @Published var status: DaemonStatus?
+    @Published var settings: AppSettings?
     @Published var connectionError: String?
     @Published var notice: String?
     @Published var busy = false
     @Published var recovery: String?
-    let root: String
-    private let decoder: JSONDecoder = {
-        let d = JSONDecoder(); d.keyDecodingStrategy = .convertFromSnakeCase; return d
-    }()
-
-    init() {
-        let args = CommandLine.arguments
-        if let index = args.firstIndex(of: "--workspace"), args.count > index + 1 {
-            root = args[index + 1]
-        } else if let url = Bundle.main.url(forResource: "workspace", withExtension: "txt"),
-                  let text = try? String(contentsOf: url, encoding: .utf8) {
-            root = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        } else { root = FileManager.default.currentDirectoryPath }
-    }
-
-    func selectProfile(_ name: String) {
-        profile = name; status = nil; notice = nil; recovery = nil
-    }
-
+    let root = DaemonProcess.shared.root
+    private var refreshing = false
+    var network: String { settings?.activeNetwork ?? status?.network ?? "mainnet" }
+    var isRegtest: Bool { network == "regtest" }
+    func selectProfile(_ name: String) { profile = name; status = nil; notice = nil; recovery = nil }
+    func start() { do { try DaemonProcess.shared.start() } catch { connectionError = error.localizedDescription } }
     func refresh() async {
+        guard !refreshing else { return }; refreshing = true; defer { refreshing = false }
+        if let failure = DaemonProcess.shared.failure { connectionError = failure; return }
         let selected = profile
         do {
-            let raw = try await UnixRPC.call(socket: "\(root)/.local/\(selected)/daemon.sock", method: "status")
-            struct Reply: Decodable { let result: DaemonStatus?; let error: String? }
-            let reply = try decoder.decode(Reply.self, from: raw)
-            if let error = reply.error { throw RPCError.message(error) }
+            let raw = try await DaemonRPC.call(root: root, profile: selected, method: "status")
+            let next = try DaemonStatus(serializedBytes: raw)
             guard selected == profile else { return }
-            status = reply.result; connectionError = nil
+            status = next; connectionError = nil
+            await loadSettings()
+            if !isRegtest && profile != "alice" { selectProfile("alice") }
         } catch { if selected == profile { connectionError = error.localizedDescription } }
     }
-
-    func command(_ method: String, _ params: [String: Any] = [:]) async {
-        guard !busy else { return }
-        busy = true; notice = nil
+    func loadSettings() async {
+        do {
+            let raw = try await DaemonRPC.call(root: root, profile: profile, method: "settings.get")
+            let next = try AppSettings(serializedBytes: raw)
+            if settings?.activeNetwork != next.activeNetwork { recovery = nil }
+            settings = next
+        } catch { notice = error.localizedDescription }
+    }
+    func saveSettings(_ draft: AppSettings) async {
+        guard !busy else { return }; busy = true; defer { busy = false }
+        do {
+            let raw = try await DaemonRPC.call(root: root, profile: profile, method: "settings.update", payload: draft.jsonUTF8Data())
+            settings = try AppSettings(serializedBytes: raw)
+            if !isRegtest { selectProfile("alice") }
+            status = nil; recovery = nil; notice = "Settings saved. Connecting."
+        } catch { notice = error.localizedDescription }
+    }
+    func checkNode(network: String, chain: String, node: NodeSettings) async -> String {
+        do {
+            var request = Blakeswap_V1_CheckNodeRequest(); request.network = network; request.chain = chain; request.node = node
+            let raw = try await DaemonRPC.call(root: root, profile: profile, method: "settings.check-node", payload: request.jsonUTF8Data())
+            let result = try Blakeswap_V1_CheckNodeResponse(serializedBytes: raw)
+            return "Connected at block \(result.height). \(result.trust)"
+        } catch { return error.localizedDescription }
+    }
+    func command(_ method: String, _ params: [String: Any] = [:]) async -> Bool {
+        guard !busy else { return false }; busy = true; notice = nil
         let selected = profile
         defer { busy = false }
         do {
-            let data = try JSONSerialization.data(withJSONObject: params)
-            let raw = try await UnixRPC.call(socket: "\(root)/.local/\(selected)/daemon.sock", method: method, params: data)
-            let reply = try JSONSerialization.jsonObject(with: raw) as? [String: Any]
-            if let error = reply?["error"] as? String { throw RPCError.message(error) }
+            var bound = params
+            if ["offer.create", "offer.cancel", "swap.take", "pause", "regtest.mine", "regtest.faucet"].contains(method) {
+                bound["expected_network"] = status?.network ?? network
+            }
+            let raw = try await DaemonRPC.call(root: root, profile: selected, method: method, params: bound)
             if selected == profile {
-                if method == "wallet.recovery", let result = reply?["result"] as? [String: String] { recovery = result["mnemonic"] }
-                if method == "wallet.backup", let result = reply?["result"] as? [String: String], let path = result["path"] {
-                    notice = "Encrypted backup saved. Keep its vault password separately."
+                if method == "wallet.recovery" { recovery = try Blakeswap_V1_Recovery(serializedBytes: raw).mnemonic }
+                if method == "wallet.backup" {
+ let path = try Blakeswap_V1_Backup(serializedBytes: raw).path
+                    notice = "Backup saved. Keep the vault password separately."
                     NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: path)])
                 }
-                if method == "swap.take" { page = "Swaps"; notice = "Request encrypted and queued. The maker can respond when their daemon returns." }
-                if method == "offer.create" { notice = "Offer signed and queued for both Nostr relays." }
+                if method == "swap.take" { page = "Swaps" }
+                if method == "offer.create" { notice = "Offer queued." }
             }
-            await refresh()
-        } catch { notice = error.localizedDescription }
-    }
-
-    func startNetwork() async {
-        guard !busy else { return }; busy = true
-        defer { busy = false }
-        let workspace = root
-        do {
-            try await Task.detached {
-                let process = Process()
-                process.executableURL = URL(fileURLWithPath: "/usr/bin/env")
-                process.arguments = ["python3", "\(workspace)/scripts/dev.py", "up"]
-                process.currentDirectoryURL = URL(fileURLWithPath: workspace)
-                let logURL = URL(fileURLWithPath: "\(workspace)/.local/gui-start.log")
-                try FileManager.default.createDirectory(at: logURL.deletingLastPathComponent(), withIntermediateDirectories: true)
-                FileManager.default.createFile(atPath: logURL.path, contents: nil)
-                let log = try FileHandle(forWritingTo: logURL)
-                defer { try? log.close() }
-                process.standardOutput = log; process.standardError = log
-                try process.run(); process.waitUntilExit()
-                guard process.terminationStatus == 0 else { throw RPCError.message("Startup failed. See .local/gui-start.log in the workspace.") }
-            }.value
-            await refresh()
-        } catch { notice = error.localizedDescription }
+            await refresh(); return true
+        } catch { notice = error.localizedDescription; return false }
     }
 }

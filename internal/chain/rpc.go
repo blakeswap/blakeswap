@@ -1,4 +1,4 @@
-// Package chain talks only to explicitly configured local regtest full nodes.
+// Package chain provides full-node and Electrum chain observations.
 package chain
 
 import (
@@ -39,22 +39,26 @@ func (id ID) Domain() string {
 }
 
 type RPC struct {
-	ID     ID
-	URL    string
-	Cookie string
-	Wallet string
-	client *http.Client
+	ID      ID
+	Network Network
+	URL     string
+	Cookie  string
+	Wallet  string
+	client  *http.Client
 }
 
 func New(id ID, endpoint, cookie string) (*RPC, error) {
+	return NewFor(Regtest, id, endpoint, cookie)
+}
+func NewFor(network Network, id ID, endpoint, cookie string) (*RPC, error) {
 	u, e := url.Parse(endpoint)
 	if e != nil {
 		return nil, e
 	}
-	if !id.Valid() || u.Scheme != "http" || u.User != nil || (u.Hostname() != "127.0.0.1" && u.Hostname() != "::1") {
-		return nil, errors.New("only explicit loopback regtest RPC endpoints are supported")
+	if !id.Valid() || !network.Valid() || u.User != nil || u.RawQuery != "" || u.Fragment != "" || (u.Scheme != "https" && (u.Scheme != "http" || (u.Hostname() != "127.0.0.1" && u.Hostname() != "::1"))) {
+		return nil, errors.New("RPC requires HTTPS or explicit loopback HTTP; credentials belong in a cookie file")
 	}
-	return &RPC{ID: id, URL: strings.TrimRight(endpoint, "/"), Cookie: cookie, client: &http.Client{Timeout: 15 * time.Second}}, nil
+	return &RPC{ID: id, Network: network.Normalized(), URL: strings.TrimRight(endpoint, "/"), Cookie: cookie, client: &http.Client{Timeout: 15 * time.Second}}, nil
 }
 func (r *RPC) WithWallet(name string) *RPC { c := *r; c.Wallet = name; return &c }
 
@@ -126,8 +130,15 @@ func (r *RPC) Check(ctx context.Context) error {
 	if e := r.Call(ctx, "getblockchaininfo", &info); e != nil {
 		return e
 	}
-	if info.Chain != "regtest" || info.Blocks < 2 {
-		return errors.New("refusing non-regtest or uninitialized chain")
+	if info.Chain != r.Network.NodeName() || info.Blocks < int(r.Network.ForkHeight())+1 {
+		return errors.New("wrong network or chain has not passed Blake2b activation")
+	}
+	var genesis string
+	if err := r.Call(ctx, "getblockhash", &genesis, 0); err != nil {
+		return err
+	}
+	if genesis != r.Network.Genesis() {
+		return errors.New("wrong chain genesis")
 	}
 	var header string
 	if e := r.Call(ctx, "getblockheader", &header, info.BestBlockHash, false); e != nil {
@@ -147,8 +158,17 @@ func (r *RPC) Check(ctx context.Context) error {
 		if e := json.Unmarshal(dep["blake2b"], &fork); e != nil {
 			return e
 		}
-		if !fork.Active || fork.Height != 1 {
-			return errors.New("wrong Blake2b regtest activation")
+		if r.Network == Mainnet {
+			var hash string
+			if err := r.Call(ctx, "getblockhash", &hash, r.Network.ForkHeight()); err != nil {
+				return err
+			}
+			if hash != "0000000000000050c1e5f69672f459293be14f46e5a494e7a8c8541396f18eeb" {
+				return errors.New("Blake2b checkpoint mismatch")
+			}
+		}
+		if !fork.Active || fork.Height != int(r.Network.ForkHeight()) {
+			return errors.New("wrong Blake2b activation")
 		}
 	}
 	if len(header) != expected {
@@ -229,6 +249,7 @@ func (r *RPC) Output(ctx context.Context, txid string, vout uint32) (*TxOut, err
 }
 
 type Transaction struct {
+	Height        uint32 `json:"height"`
 	Hex           string `json:"hex"`
 	TxID          string `json:"txid"`
 	Confirmations int    `json:"confirmations"`
@@ -238,11 +259,18 @@ type Transaction struct {
 func (r *RPC) Transaction(ctx context.Context, id string) (Transaction, error) {
 	var t Transaction
 	e := r.Call(ctx, "getrawtransaction", &t, id, true)
+	if e == nil && t.BlockHash != "" {
+		var h struct{ Height uint32 }
+		if err := r.Call(ctx, "getblockheader", &h, t.BlockHash); err != nil {
+			return t, err
+		}
+		t.Height = h.Height
+	}
 	return t, e
 }
 
 // Observe imports addresses into a watch-only node wallet. No spending key crosses RPC.
-func (r *RPC) Observe(ctx context.Context, name string, addresses []string) (*RPC, error) {
+func (r *RPC) Observe(ctx context.Context, name string, addresses []string) (Backend, error) {
 	w := r.WithWallet(name)
 	var loaded []string
 	if e := r.Call(ctx, "listwallets", &loaded); e != nil {

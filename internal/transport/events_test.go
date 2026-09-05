@@ -91,3 +91,18 @@ func FuzzUnwrap(f *testing.F) {
 		_, _, _ = Unwrap(key, event)
 	})
 }
+
+func TestMailboxesRejectForeignNetworkBindings(t *testing.T) {
+	sender, recipient := nostr.Generate(), nostr.Generate()
+	message := Message{Version: 1, ID: RandomID(), Type: "request", Body: json.RawMessage(`{}`)}
+	event, err := WrapFor("blakeswap-mainnet-v1", sender, recipient.Public(), message)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err = UnwrapFor("blakeswap-testnet-v1", recipient, event); err == nil {
+		t.Fatal("foreign network message accepted")
+	}
+	if _, _, err = UnwrapFor("blakeswap-mainnet-v1", recipient, event); err != nil {
+		t.Fatal(err)
+	}
+}

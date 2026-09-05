@@ -80,11 +80,14 @@ func decrypt(sk nostr.SecretKey, from nostr.PubKey, raw string) (string, error) 
 	return nip44.Decrypt(raw, key)
 }
 func Wrap(sk nostr.SecretKey, to nostr.PubKey, m Message) (nostr.Event, error) {
+	return WrapFor(Namespace, sk, to, m)
+}
+func WrapFor(namespace string, sk nostr.SecretKey, to nostr.PubKey, m Message) (nostr.Event, error) {
 	raw, e := json.Marshal(m)
 	if e != nil {
 		return nostr.Event{}, e
 	}
-	rumor := nostr.Event{Kind: RumorKind, PubKey: sk.Public(), CreatedAt: nostr.Now(), Tags: nostr.Tags{{"p", to.Hex()}, {"t", Namespace}}, Content: string(raw)}
+	rumor := nostr.Event{Kind: RumorKind, PubKey: sk.Public(), CreatedAt: nostr.Now(), Tags: nostr.Tags{{"p", to.Hex()}, {"t", namespace}}, Content: string(raw)}
 	rumor.ID = EventID(rumor)
 	content, e := encrypt(sk, to, rumor.String())
 	if e != nil {
@@ -109,6 +112,9 @@ func Wrap(sk nostr.SecretKey, to nostr.PubKey, m Message) (nostr.Event, error) {
 	return outer, nil
 }
 func Unwrap(sk nostr.SecretKey, outer nostr.Event) (nostr.PubKey, Message, error) {
+	return UnwrapFor(Namespace, sk, outer)
+}
+func UnwrapFor(namespace string, sk nostr.SecretKey, outer nostr.Event) (nostr.PubKey, Message, error) {
 	fail := func(e error) (nostr.PubKey, Message, error) { return nostr.PubKey{}, Message{}, e }
 	if e := Valid(outer); e != nil {
 		return fail(e)
@@ -138,7 +144,7 @@ func Unwrap(sk nostr.SecretKey, outer nostr.Event) (nostr.PubKey, Message, error
 	if e = json.Unmarshal([]byte(raw), &rumor); e != nil {
 		return fail(e)
 	}
-	if rumor.Kind != RumorKind || rumor.PubKey != seal.PubKey || rumor.Sig != ([64]byte{}) || !validStrings(rumor) || EventID(rumor) != rumor.ID || Tag(rumor, "p") != sk.Public().Hex() || Tag(rumor, "t") != Namespace {
+	if rumor.Kind != RumorKind || rumor.PubKey != seal.PubKey || rumor.Sig != ([64]byte{}) || !validStrings(rumor) || EventID(rumor) != rumor.ID || Tag(rumor, "p") != sk.Public().Hex() || Tag(rumor, "t") != namespace {
 		return fail(errors.New("invalid rumor binding"))
 	}
 	var m Message

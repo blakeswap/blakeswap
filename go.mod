@@ -1,6 +1,6 @@
 module github.com/blakeswap/blakeswap
 
-go 1.25
+go 1.25.0
 
 require (
 	fiatjaf.com/nostr v0.0.0-20260902034142-316ef6591fa2
@@ -9,9 +9,13 @@ require (
 	github.com/btcsuite/btcd/btcutil v1.1.5
 	github.com/btcsuite/btcd/chaincfg/chainhash v1.1.0
 	github.com/coder/websocket v1.8.13
+	github.com/grpc-ecosystem/grpc-gateway/v2 v2.30.0
 	github.com/tyler-smith/go-bip39 v1.1.0
 	go.etcd.io/bbolt v1.4.2
-	golang.org/x/crypto v0.39.0
+	golang.org/x/crypto v0.55.0
+	google.golang.org/genproto/googleapis/api v0.0.0-20260803160001-6ac0973c030d
+	google.golang.org/grpc v1.83.2
+	google.golang.org/protobuf v1.36.12
 )
 
 require (
@@ -31,5 +35,8 @@ require (
 	github.com/tidwall/match v1.1.1 // indirect
 	github.com/tidwall/pretty v1.2.1 // indirect
 	golang.org/x/exp v0.0.0-20250305212735-054e65f0b394 // indirect
-	golang.org/x/sys v0.35.0 // indirect
+	golang.org/x/net v0.58.0 // indirect
+	golang.org/x/sys v0.47.0 // indirect
+	golang.org/x/text v0.41.0 // indirect
+	google.golang.org/genproto/googleapis/rpc v0.0.0-20260803160001-6ac0973c030d // indirect
 )

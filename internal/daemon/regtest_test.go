@@ -8,10 +8,12 @@ import (
 	"github.com/blakeswap/blakeswap/internal/contract"
 	"github.com/blakeswap/blakeswap/internal/protocol"
 	"github.com/blakeswap/blakeswap/internal/relay"
+	"github.com/blakeswap/blakeswap/internal/testutil"
 	"github.com/blakeswap/blakeswap/internal/transport"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -33,7 +35,15 @@ func newHarness(t *testing.T, bps int64) *harness {
 	h := &harness{t: t, ctx: context.Background(), engines: map[string]*Engine{}, configs: map[string]Config{}, nodes: map[chain.ID]*chain.RPC{}}
 	nodes := map[chain.ID]NodeConfig{}
 	for i, id := range []chain.ID{chain.BTC, chain.Blake} {
-		cfg := NodeConfig{URL: fmt.Sprintf("http://127.0.0.1:%d", 19443+i*10000), Cookie: filepath.Join(root, ".local", string(id), "regtest", ".cookie")}
+		port := 19443 + i*10000
+		if configured := os.Getenv("BLAKESWAP_" + strings.ToUpper(string(id)) + "_RPC_PORT"); configured != "" {
+			var err error
+			port, err = strconv.Atoi(configured)
+			if err != nil {
+				t.Fatal(err)
+			}
+		}
+		cfg := NodeConfig{URL: fmt.Sprintf("http://127.0.0.1:%d", port), Cookie: filepath.Join(root, ".local", string(id), "regtest", ".cookie")}
 		nodes[id] = cfg
 		r, e := chain.New(id, cfg.URL, cfg.Cookie)
 		if e != nil {
@@ -69,6 +79,14 @@ func newHarness(t *testing.T, bps int64) *harness {
 			t.Fatal(err)
 		}
 		h.engines[name] = e
+		watchWallet := "blakeswap-" + e.Status().PubKey[:20]
+		t.Cleanup(func() {
+			for _, node := range h.nodes {
+				if err := node.Call(context.Background(), "unloadwallet", nil, watchWallet); err != nil {
+					t.Error("unload fixture wallet", err)
+				}
+			}
+		})
 		if name == "tower" {
 			tower = e.Config.Tower
 		}
@@ -88,6 +106,20 @@ func newHarness(t *testing.T, bps int64) *harness {
 	h.mine(chain.BTC, 2)
 	h.mine(chain.Blake, 2)
 	h.tick("maker", "taker", "tower")
+	if os.Getenv("BLAKESWAP_TEST_ELECTRUM") == "1" {
+		indexers := map[chain.ID]NodeConfig{}
+		for _, id := range []chain.ID{chain.BTC, chain.Blake} {
+			_, endpoint := testutil.NewElectrumBridge(t, h.nodes[id])
+			indexers[id] = NodeConfig{Kind: "electrum", URL: endpoint}
+		}
+		for _, name := range []string{"maker", "taker", "tower"} {
+			h.offline(name)
+			cfg := h.configs[name]
+			cfg.Nodes = indexers
+			h.configs[name] = cfg
+			h.online(name)
+		}
+	}
 	return h
 }
 func (h *harness) command(name, method string, params any) any {

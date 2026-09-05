@@ -3,6 +3,7 @@ package wallet
 import (
 	"bytes"
 	"github.com/blakeswap/blakeswap/internal/chain"
+	"strings"
 	"testing"
 )
 
@@ -45,5 +46,47 @@ func TestHardenedSeparationAndRecovery(t *testing.T) {
 	}
 	if _, e = FromMnemonic("not a mnemonic"); e == nil {
 		t.Fatal("invalid mnemonic")
+	}
+}
+
+func TestNetworkDerivationsRecoverWithoutReusingKeys(t *testing.T) {
+	mnemonic, err := NewMnemonic()
+	if err != nil {
+		t.Fatal(err)
+	}
+	seen := map[string]bool{}
+	for _, network := range []chain.Network{chain.Regtest, chain.Testnet, chain.Mainnet} {
+		a, _ := FromMnemonic(mnemonic)
+		a.SetNetwork(network)
+		b, _ := FromMnemonic(mnemonic)
+		b.SetNetwork(network)
+		for branch := uint32(0); branch < 3; branch++ {
+			key, err := a.Derive(branch, "deposit")
+			if err != nil {
+				t.Fatal(err)
+			}
+			restored, err := b.Derive(branch, "deposit")
+			if err != nil || !bytes.Equal(key.Serialize(), restored.Serialize()) {
+				t.Fatal("network key recovery failed")
+			}
+			if seen[string(key.Serialize())] {
+				t.Fatal("key reused between chains/networks")
+			}
+			seen[string(key.Serialize())] = true
+			address, _, err := AddressFor(network, key.PubKey())
+			if err != nil {
+				t.Fatal(err)
+			}
+			prefix := "bcrt1"
+			if network == chain.Testnet {
+				prefix = "tb1"
+			}
+			if network == chain.Mainnet {
+				prefix = "bc1"
+			}
+			if !strings.HasPrefix(address, prefix) {
+				t.Fatal(address)
+			}
+		}
 	}
 }

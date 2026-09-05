@@ -1,19 +1,19 @@
 #!/usr/bin/env python3
 """Build/start the local desktop stack and drive its real daemon API."""
-import argparse, json, os, pathlib, secrets, signal, socket, subprocess, sys, time
+import argparse, json, os, pathlib, secrets, signal, subprocess, sys, time
 from local import ROOT, NODES, start
 
 LOCAL = ROOT / ".local"
 BIN = ROOT / "bin" / "blakeswap"
 
 def call(name, method="status", params=None):
-    with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as sock:
-        sock.settimeout(45)
-        sock.connect(str(LOCAL / name / "daemon.sock"))
-        sock.sendall(json.dumps({"method": method, "params": params or {}}).encode()+b"\n")
-        with sock.makefile("rb") as f: result = json.loads(f.readline(2**20))
-    if result.get("error"): raise RuntimeError(result["error"])
-    return result.get("result")
+    result = subprocess.run([str(BIN), "call", "--socket", str(LOCAL/name/"daemon.sock"), "--method", method, "--params", json.dumps(params or {})], capture_output=True, text=True, timeout=50)
+    if result.returncode: raise RuntimeError(result.stderr.strip())
+    value = json.loads(result.stdout)
+    if method == "status":
+        for key in ("orders", "swaps", "tower_jobs"): value.setdefault(key, [])
+        for key in ("balances", "heights", "addresses"): value.setdefault(key, {})
+    return value
 
 def wait_for(fn, timeout=30):
     deadline = time.monotonic()+timeout
@@ -49,7 +49,10 @@ def config(name, mode, tower):
 def up():
     LOCAL.mkdir(exist_ok=True,mode=0o700)
     for id in NODES:start(id)
-    subprocess.run(["sh","scripts/go.sh","build","-o",str(BIN),"./cmd/blakeswap"],cwd=ROOT,check=True)
+    staged=BIN.with_name("blakeswap.build")
+    staged.parent.mkdir(exist_ok=True)
+    subprocess.run(["sh","scripts/go.sh","build","-o",str(staged),"./cmd/blakeswap"],cwd=ROOT,check=True)
+    staged.replace(BIN)
     for suffix,port in [("a",7447),("b",7448)]:spawn("relay-"+suffix,["relay","--db",str(LOCAL/("relay-"+suffix+".db")),"--listen",f"127.0.0.1:{port}"])
     tower_config=config("tower","tower",{"bps":50})
     spawn("tower",["daemon","--config",str(tower_config)])

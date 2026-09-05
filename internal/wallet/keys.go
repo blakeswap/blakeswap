@@ -13,7 +13,10 @@ import (
 	"github.com/tyler-smith/go-bip39"
 )
 
-type Keys struct{ master *hdkeychain.ExtendedKey }
+type Keys struct {
+	master  *hdkeychain.ExtendedKey
+	network chain.Network
+}
 
 func NewMnemonic() (string, error) {
 	entropy, e := bip39.NewEntropy(256)
@@ -30,13 +33,13 @@ func FromMnemonic(m string) (*Keys, error) {
 	if e != nil {
 		return nil, e
 	}
-	return &Keys{k}, nil
+	return &Keys{master: k}, nil
 }
 
 // Private hardened branches separate spending and app identity. Context is hashed
 // into eight hardened path components (248 bits); no public derivation is exposed.
 func (k *Keys) Derive(branch uint32, context string) (*btcec.PrivateKey, error) {
-	d := sha256.Sum256([]byte("blakeswap/v1/" + context))
+	d := sha256.Sum256([]byte("blakeswap/v1/" + k.network.KeyContext(context)))
 	path := []uint32{83696968, branch}
 	for i := 0; i < 8; i++ {
 		path = append(path, binary.BigEndian.Uint32(d[i*4:i*4+4])&0x7fffffff)
@@ -61,8 +64,10 @@ func (k *Keys) Spending(id chain.ID, context string) (*btcec.PrivateKey, error) 
 	}
 	return k.Derive(branch, context)
 }
-func Address(pub *btcec.PublicKey) (string, []byte, error) {
-	addr, e := btcutil.NewAddressWitnessPubKeyHash(btcutil.Hash160(pub.SerializeCompressed()), &chaincfg.RegressionNetParams)
+func (k *Keys) SetNetwork(n chain.Network)                 { k.network = n.Normalized() }
+func Address(pub *btcec.PublicKey) (string, []byte, error) { return AddressFor(chain.Regtest, pub) }
+func AddressFor(n chain.Network, pub *btcec.PublicKey) (string, []byte, error) {
+	addr, e := btcutil.NewAddressWitnessPubKeyHash(btcutil.Hash160(pub.SerializeCompressed()), n.Params())
 	if e != nil {
 		return "", nil, e
 	}

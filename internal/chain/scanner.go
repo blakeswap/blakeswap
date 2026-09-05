@@ -32,7 +32,11 @@ func parseRaw(raw string) (*wire.MsgTx, error) {
 		return nil, e
 	}
 	tx := wire.NewMsgTx(2)
-	e = tx.Deserialize(strings.NewReader(string(b)))
+	reader := strings.NewReader(string(b))
+	e = tx.Deserialize(reader)
+	if e == nil && reader.Len() != 0 {
+		return nil, fmt.Errorf("trailing transaction bytes")
+	}
 	return tx, e
 }
 func (s *Scanner) Scan(ctx context.Context, start uint32, outpoints []string) (map[string]Observation, error) {

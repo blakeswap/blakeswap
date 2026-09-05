@@ -1,5 +1,13 @@
 # Implementation ledger
 
+The entries below record the initial regtest milestone. Current native transport,
+packaging and network support are described in [API](API.md),
+[Packaging](PACKAGING.md), and [Operations](OPERATIONS.md). The app now owns its
+daemon, defaults to external public Electrum, supports all three environments,
+and bundles no nodes/indexers. Public swaps use median-time deadlines and BTC
+ancestry checks; the initial short regtest height schedule is retained for tests.
+
+
 Goal: run BTC and actual Bitcoin Blake2b regtest nodes, local Nostr relay(s), independent Go trader daemons, a keyless delayed-bounty watchtower, and a native macOS GUI. Verify a real atomic trade and adversarial paths. Windows is excluded.
 
 Agreed constraints: one recovery seed with hardened chain and communication branches; Nostr public offers and encrypted persistent mailboxes; asynchronous participation; fixed-size atomic swaps; no DAO, token, treasury or upfront service charge. Watchtower fee is a percentage paid only by a confirmed delayed fallback. The owner can self-claim earlier without that fee. Mining fees are separate. No server gets spending keys or prematurely disclosed preimages.
