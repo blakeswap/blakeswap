@@ -39,11 +39,12 @@ private let appIcon = Bundle.main.url(forResource: "AppIcon", withExtension: "ic
     .flatMap { NSImage(contentsOf: $0) } ?? NSImage(size: .zero)
 
 private struct MintButton: ButtonStyle {
+    @Environment(\.isEnabled) private var isEnabled
     func makeBody(configuration: Configuration) -> some View {
         configuration.label.font(.callout.weight(.medium))
             .padding(.horizontal, 15).padding(.vertical, 10)
-            .foregroundStyle(.black)
-            .background(mint.opacity(configuration.isPressed ? 0.75 : 1), in: RoundedRectangle(cornerRadius: 8))
+            .foregroundStyle(isEnabled ? .black : Color.white.opacity(0.35))
+            .background(isEnabled ? mint.opacity(configuration.isPressed ? 0.75 : 1) : Color.white.opacity(0.05), in: RoundedRectangle(cornerRadius: 8))
     }
 }
 

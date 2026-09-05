@@ -37,7 +37,7 @@ type Manager struct {
 	lastError  string
 	restart    bool
 	stopped    bool
-	opening    *networkOpening
+	openings   map[string]*networkOpening
 	runtimeCtx context.Context
 	runtimeDir string
 	servers    map[string]*api.Server
@@ -256,51 +256,50 @@ func (m *Manager) closeNetwork() {
 }
 
 func (m *Manager) stopOpening() {
-	if m.opening == nil {
-		return
+	for _, job := range m.openings {
+		job.cancel()
 	}
-	m.opening.cancel()
-	result := <-m.opening.done
-	result.manager.closeNetwork()
-	m.opening = nil
+	for id, job := range m.openings {
+		result := <-job.done
+		result.manager.closeNetwork()
+		delete(m.openings, id)
+	}
 }
 
-// Initial RPC history discovery runs independently of short trading cycles.
-// Settings changes and application shutdown cancel it and wait for vault release.
+// Each wallet bootstraps independently, including after a cold start. A slow
+// history scan never holds back another wallet that is already ready to trade.
 func (m *Manager) connect(ctx context.Context) {
-	if m.opening == nil {
-		pending := proto.Clone(m.settings).(*pb.Settings)
-		pending.Wallets = nil
-		for _, profile := range m.settings.Wallets {
-			if m.engines[profile.Id] == nil {
-				pending.Wallets = append(pending.Wallets, proto.Clone(profile).(*pb.WalletProfile))
-			}
+	if m.openings == nil {
+		m.openings = map[string]*networkOpening{}
+	}
+	for _, profile := range m.settings.Wallets {
+		if m.engines[profile.Id] != nil {
+			continue
 		}
+		if job := m.openings[profile.Id]; job != nil {
+			select {
+			case result := <-job.done:
+				job.cancel()
+				delete(m.openings, profile.Id)
+				if result.err != nil {
+					result.manager.closeNetwork()
+					m.lastError = result.err.Error()
+				} else {
+					m.engines[profile.Id] = result.manager.engines[profile.Id]
+					m.configs[profile.Id] = result.manager.configs[profile.Id]
+				}
+			default:
+			}
+			continue
+		}
+		pending := proto.Clone(m.settings).(*pb.Settings)
+		pending.Wallets = []*pb.WalletProfile{proto.Clone(profile).(*pb.WalletProfile)}
 		worker := &Manager{root: m.root, settings: pending, engines: map[string]*daemon.Engine{}, configs: map[string]daemon.Config{}}
 		openingCtx, cancel := context.WithCancel(ctx)
 		job := &networkOpening{cancel: cancel, done: make(chan networkResult, 1)}
-		m.opening = job
+		m.openings[profile.Id] = job
 		m.lastError = "Connecting; RPC wallet history may still be synchronizing"
 		go func() { err := worker.openNetwork(openingCtx); job.done <- networkResult{worker, err} }()
-		return
-	}
-	select {
-	case result := <-m.opening.done:
-		m.opening.cancel()
-		m.opening = nil
-		if result.err != nil {
-			result.manager.closeNetwork()
-			m.lastError = result.err.Error()
-		} else {
-			for id, engine := range result.manager.engines {
-				m.engines[id] = engine
-			}
-			for id, config := range result.manager.configs {
-				m.configs[id] = config
-			}
-			m.lastError = ""
-		}
-	default:
 	}
 }
 func (m *Manager) run(ctx context.Context) error {
@@ -316,10 +315,10 @@ func (m *Manager) run(ctx context.Context) error {
 			m.configs = map[string]daemon.Config{}
 			m.restart = false
 		}
-		if len(m.engines) < len(m.settings.Wallets) || m.opening != nil {
+		if len(m.engines) < len(m.settings.Wallets) || len(m.openings) > 0 {
 			m.connect(ctx)
 		}
-		if len(m.engines) == len(m.settings.Wallets) && m.opening == nil {
+		if len(m.engines) == len(m.settings.Wallets) && len(m.openings) == 0 {
 			m.lastError = ""
 		}
 		// Each wallet gets the whole cycle budget. A slow provider for one wallet

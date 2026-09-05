@@ -162,7 +162,7 @@ func TestSettingsCancelsBootstrapBeforeInspectingStoredObligations(t *testing.T)
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	job := &networkOpening{cancel: cancel, done: make(chan networkResult, 1)}
-	m.opening = job
+	m.openings = map[string]*networkOpening{"alice": job}
 	go func() {
 		<-ctx.Done()
 		_ = vault.Close()
@@ -177,7 +177,7 @@ func TestSettingsCancelsBootstrapBeforeInspectingStoredObligations(t *testing.T)
 	if _, err = m.writeSettings(context.Background(), next); err == nil {
 		t.Fatal("bootstrap concealed an outstanding swap")
 	}
-	if m.opening != nil || ctx.Err() == nil {
+	if len(m.openings) != 0 || ctx.Err() == nil {
 		t.Fatal("bootstrap not cancelled before checking stored state")
 	}
 	// A second open proves that cancellation waited for the bootstrap's vault.
@@ -299,5 +299,23 @@ func TestRenameAndInactiveSettingsDoNotRestartWallets(t *testing.T) {
 	environment(next, "regtest").PublicWatchtower = true
 	if _, err := m.writeSettings(context.Background(), next); err != nil || m.restart {
 		t.Fatal("inactive network settings reconnected active wallet", err)
+	}
+}
+
+func TestReadyWalletStartsWhileAnotherBootstrapIsBlocked(t *testing.T) {
+	settings := Defaults()
+	settings.Wallets = append(settings.Wallets, &pb.WalletProfile{Id: "savings", Name: "Savings"})
+	ready, blocked := &networkOpening{cancel: func() {}, done: make(chan networkResult, 1)}, &networkOpening{cancel: func() {}, done: make(chan networkResult, 1)}
+	engine := &daemon.Engine{} // Identity-only sentinel; no chain calls are needed.
+	ready.done <- networkResult{manager: &Manager{engines: map[string]*daemon.Engine{"alice": engine}, configs: map[string]daemon.Config{"alice": {Name: "alice"}}}}
+	m := &Manager{settings: settings, engines: map[string]*daemon.Engine{}, configs: map[string]daemon.Config{}, openings: map[string]*networkOpening{"alice": ready, "savings": blocked}}
+	m.connect(context.Background())
+	if m.engines["alice"] != engine || m.openings["savings"] != blocked {
+		t.Fatal("ready engine held until another wallet's rescan finishes")
+	}
+	blocked.done <- networkResult{manager: &Manager{engines: map[string]*daemon.Engine{}}, err: context.DeadlineExceeded}
+	m.connect(context.Background())
+	if m.engines["alice"] != engine || len(m.openings) != 0 {
+		t.Fatal("failed bootstrap discarded another wallet's running engine")
 	}
 }
