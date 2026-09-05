@@ -28,16 +28,19 @@ import (
 )
 
 type Manager struct {
-	mu        sync.Mutex
-	view      atomic.Pointer[desktopView]
-	root      string
-	settings  *pb.Settings
-	engines   map[string]*daemon.Engine
-	configs   map[string]daemon.Config
-	lastError string
-	restart   bool
-	stopped   bool
-	opening   *networkOpening
+	mu         sync.Mutex
+	view       atomic.Pointer[desktopView]
+	root       string
+	settings   *pb.Settings
+	engines    map[string]*daemon.Engine
+	configs    map[string]daemon.Config
+	lastError  string
+	restart    bool
+	stopped    bool
+	opening    *networkOpening
+	runtimeCtx context.Context
+	runtimeDir string
+	servers    map[string]*api.Server
 }
 
 type networkOpening struct {
@@ -58,7 +61,8 @@ type desktopView struct {
 
 func (m *Manager) publishView() {
 	v := &desktopView{settings: proto.Clone(m.settings).(*pb.Settings), statuses: map[string]json.RawMessage{}}
-	for _, profile := range []string{"alice", "bob"} {
+	for _, wallet := range m.settings.Wallets {
+		profile := wallet.Id
 		s := daemon.Status{Name: profile, Mode: "trader", Network: chain.Network(m.settings.ActiveNetwork), LastError: m.lastError}
 		if e := m.engines[profile]; e != nil && !m.restart {
 			s = e.Status()
@@ -124,29 +128,21 @@ func Run(ctx context.Context, root string, parent int) error {
 		return err
 	}
 	defer os.RemoveAll(runtimeDir)
-	endpoints := map[string]api.Endpoint{}
-	var servers []*api.Server
+	m.runtimeCtx, m.runtimeDir, m.servers = ctx, runtimeDir, map[string]*api.Server{}
 	defer func() {
-		for _, server := range servers {
+		m.mu.Lock()
+		defer m.mu.Unlock()
+		for _, server := range m.servers {
 			server.Close()
 		}
 		_ = os.Remove(filepath.Join(root, "runtime.json"))
 	}()
-	for _, profile := range []string{"alice", "bob"} {
-		profile := profile
-		service := &api.Service{Command: func(ctx context.Context, r daemon.Request) (any, error) { return m.command(ctx, profile, r) }, ReadSettings: m.readSettings, WriteSettings: m.writeSettings}
-		server, err := api.Listen(ctx, filepath.Join(runtimeDir, profile+".sock"), service)
-		if err != nil {
+	for _, wallet := range settings.Wallets {
+		if err := m.startAPI(wallet.Id); err != nil {
 			return err
 		}
-		servers = append(servers, server)
-		endpoints[profile] = server.Endpoint
 	}
-	raw, err := json.Marshal(endpoints)
-	if err != nil {
-		return err
-	}
-	if err = writePrivate(filepath.Join(root, "runtime.json"), raw); err != nil {
+	if err := m.writeRuntime(); err != nil {
 		return err
 	}
 	return m.run(ctx)
@@ -174,11 +170,20 @@ func (m *Manager) writeSettings(ctx context.Context, next *pb.Settings) (*pb.Set
 	if next.Revision != m.settings.Revision {
 		return nil, status.Error(codes.Aborted, "settings changed; reload before saving")
 	}
+	if len(next.Wallets) != len(m.settings.Wallets) {
+		return nil, status.Error(codes.InvalidArgument, "use CreateWallet to add wallets; removing wallets is not supported")
+	}
+	for i, profile := range next.Wallets {
+		if profile.Id != m.settings.Wallets[i].Id {
+			return nil, status.Error(codes.InvalidArgument, "wallet IDs and order cannot be changed")
+		}
+	}
 	// Release any bootstrap vault before inspecting its persisted obligations.
 	// The worker owns separate maps and never takes m.mu.
 	m.stopOpening()
 	if next.ActiveNetwork != m.settings.ActiveNetwork {
-		for _, profile := range []string{"alice", "bob"} {
+		for _, wallet := range m.settings.Wallets {
+			profile := wallet.Id
 			if e := m.engines[profile]; e != nil {
 				if err := e.CanChangeNetwork(); err != nil {
 					return nil, err
@@ -301,12 +306,25 @@ func (m *Manager) run(ctx context.Context) error {
 		if len(m.engines) > 0 {
 			m.lastError = ""
 		}
-		for _, profile := range []string{"alice", "bob"} {
-			if e := m.engines[profile]; e != nil {
-				if err := e.Tick(cycle); err != nil {
-					m.lastError = err.Error()
-				}
+		// Each wallet gets the whole cycle budget. A slow provider for one wallet
+		// must not consume the time available for the other wallets' settlements.
+		var ticks sync.WaitGroup
+		failures := make(chan error, len(m.engines))
+		for _, wallet := range m.settings.Wallets {
+			if e := m.engines[wallet.Id]; e != nil {
+				ticks.Add(1)
+				go func() {
+					defer ticks.Done()
+					if err := e.Tick(cycle); err != nil {
+						failures <- err
+					}
+				}()
 			}
+		}
+		ticks.Wait()
+		close(failures)
+		for err := range failures {
+			m.lastError = err.Error()
 		}
 		cancel()
 		m.publishView()
@@ -323,10 +341,6 @@ func (m *Manager) openNetwork(ctx context.Context) error {
 	if env == nil {
 		return errors.New("missing active environment")
 	}
-	profiles := []string{"alice"}
-	if env.Network == "regtest" {
-		profiles = []string{"alice", "bob"}
-	}
 	var tower daemon.TowerConfig
 	if env.Tower != nil {
 		tower = daemon.TowerConfig{PubKey: env.Tower.Pubkey, BPS: env.Tower.Bps, Scripts: map[chain.ID]string{}}
@@ -334,7 +348,8 @@ func (m *Manager) openNetwork(ctx context.Context) error {
 			tower.Scripts[chain.ID(id)] = script
 		}
 	}
-	for _, profile := range profiles {
+	for _, wallet := range m.settings.Wallets {
+		profile := wallet.Id
 		cfg, err := m.config(profile, env)
 		if err != nil {
 			return err

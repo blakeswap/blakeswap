@@ -10,10 +10,11 @@ started by the desktop app.** All chain and relay endpoints are external.
 
 Opening the app launches `Contents/Resources/blakeswap desktop --data-dir …
 --parent-pid …`. The helper holds an exclusive lock on that data directory and
-owns the wallet engines, API listeners, and runtime credential files. Mainnet and
-testnet have one trading wallet. Regtest additionally exposes Alice/Bob as a
-local demonstration of independent participants; their encrypted master seeds
-remain separate.
+owns the wallet engines, API listeners, and runtime credential files. Settings
+supports creating independent wallets and editing their display names. All saved
+wallets are selectable and run on every network. New installations start with
+one wallet; legacy Alice/Bob vaults retain their original encrypted master seeds.
+The isolated regtest demonstration explicitly prepares Alice and Bob.
 
 There is no pause control. The client restarts an unexpectedly exited helper while
 the app remains open, and old persisted pause flags are cleared on reopen.

@@ -1,6 +1,7 @@
 package daemon
 
 import (
+	"bytes"
 	"context"
 	"encoding/hex"
 	"errors"
@@ -489,7 +490,18 @@ func (e *Engine) refreshTowerJobs(ctx context.Context) {
 			state.Expired = deadline <= uint64(^uint32(0)) && e.eligible(target.Chain, uint32(deadline))
 		} else if err != nil {
 			state.Error = err.Error()
-		} else if tx.TxID == target.TxID {
+		} else {
+			funding, parseErr := contract.Parse(tx.Hex)
+			script, scriptErr := target.PkScript()
+			if parseErr != nil || scriptErr != nil || funding.TxHash().String() != target.TxID {
+				state.Error = "invalid funding transaction returned by backend"
+				continue // Bad backend data is not evidence that a real obligation is absent.
+			}
+			if uint64(target.Vout) >= uint64(len(funding.TxOut)) || funding.TxOut[target.Vout].Value != target.Amount || !bytes.Equal(funding.TxOut[target.Vout].PkScript, script) {
+				state.Expired = true
+				state.Error = "registered funding output does not match the contract"
+				continue
+			}
 			state.FundingSeen = true
 		}
 	}

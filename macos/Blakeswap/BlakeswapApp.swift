@@ -47,6 +47,35 @@ private struct MintButton: ButtonStyle {
     }
 }
 
+private struct OrderFilterTab: View {
+    let filter: OrderFilter
+    let count: Int
+    let selected: Bool
+    let action: () -> Void
+    @State private var hovering = false
+    @FocusState private var focused: Bool
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 9) {
+                Text(filter.title).font(.system(size: 13, weight: .semibold))
+                Text(count.formatted()).font(.system(size: 10, weight: .semibold, design: .rounded)).monospacedDigit()
+                    .padding(.horizontal, 6).padding(.vertical, 3)
+                    .background(selected ? mint.opacity(0.13) : Color.white.opacity(0.05), in: Capsule())
+            }
+            .foregroundStyle(selected ? mint : Color.white.opacity(hovering ? 0.88 : 0.55))
+            .padding(.horizontal, 14).padding(.vertical, 10)
+            .background(selected ? mint.opacity(0.08) : (hovering ? Color.white.opacity(0.035) : .clear), in: RoundedRectangle(cornerRadius: 9))
+            .overlay { RoundedRectangle(cornerRadius: 9).strokeBorder(focused ? mint : (selected ? mint.opacity(0.22) : .clear), lineWidth: 1) }
+            .contentShape(RoundedRectangle(cornerRadius: 9))
+        }
+        .buttonStyle(.plain).focused($focused).onHover { hovering = $0 }
+        .accessibilityLabel(filter.rawValue).accessibilityValue("\(count) orders")
+        .accessibilityAddTraits(selected ? .isSelected : [])
+        .accessibilityIdentifier("order-filter-\(filter.key)")
+    }
+}
+
 struct ContentView: View {
     @EnvironmentObject private var model: AppModel
     @State private var showOffer = false
@@ -101,11 +130,10 @@ struct ContentView: View {
                 Text("blakeswap").font(.system(size: 22, weight: .semibold, design: .rounded)).lineLimit(1).fixedSize()
             }.padding(.top, 14)
             VStack(alignment: .leading, spacing: 9) {
-                if model.isRegtest { Text("WALLET").font(.system(size: 10, weight: .semibold)).tracking(1.8).foregroundStyle(.secondary) }
-                if model.isRegtest { Picker("Wallet", selection: Binding(get: { model.profile }, set: { model.selectProfile($0) })) {
-                    Text("Alice · maker").tag("alice")
-                    Text("Bob · taker").tag("bob")
-                }.labelsHidden().pickerStyle(.menu).controlSize(.large).accessibilityIdentifier("wallet-picker") }
+                Text("WALLET").font(.system(size: 10, weight: .semibold)).tracking(1.8).foregroundStyle(.secondary)
+                Picker("Wallet", selection: Binding(get: { model.profile }, set: { model.selectProfile($0) })) {
+                    ForEach(model.settings?.wallets ?? [], id: \.id) { wallet in Text(wallet.name).tag(wallet.id) }
+                }.labelsHidden().pickerStyle(.menu).controlSize(.large).accessibilityIdentifier("wallet-picker").disabled(model.busy)
             }
             VStack(spacing: 6) {
                 nav("Market", "chart.xyaxis.line")
@@ -169,9 +197,15 @@ struct ContentView: View {
                 Spacer()
                 Button { showOffer = true } label: { Label("Create offer", systemImage: "plus") }.buttonStyle(MintButton()).disabled(model.busy || !["btc", "blake"].contains(where: status.canSell)).accessibilityIdentifier("create-offer")
             }
-            Picker("Show orders", selection: $orderFilter) {
-                ForEach(OrderFilter.allCases, id: \.self) { Text($0.rawValue).tag($0) }
-            }.pickerStyle(.segmented).accessibilityIdentifier("order-filter")
+            HStack(spacing: 6) {
+                ForEach(OrderFilter.allCases, id: \.self) { filter in
+                    OrderFilterTab(filter: filter, count: filter.orders(in: status).count, selected: orderFilter == filter) { orderFilter = filter }
+                }
+                Spacer(minLength: 0)
+            }
+            .padding(.bottom, 10)
+            .overlay(alignment: .bottom) { Rectangle().fill(Color.white.opacity(0.07)).frame(height: 1) }
+            .accessibilityElement(children: .contain).accessibilityLabel("Show open orders").accessibilityIdentifier("order-filter")
             if !["btc", "blake"].contains(where: status.canSell) {
                 Text("Deposit BTC or BLAKE and wait for confirmation to create an offer. The sell balance must cover the amount and funding fee.").font(.callout).foregroundStyle(.secondary)
             }

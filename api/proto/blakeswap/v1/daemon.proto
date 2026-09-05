@@ -26,6 +26,7 @@ service DaemonService {
  rpc Faucet(FaucetRequest) returns (FaucetResponse) { option (google.api.http) = { post: "/v1/regtest/faucet" body: "*" }; }
  rpc GetRecovery(google.protobuf.Empty) returns (Recovery) { option (google.api.http) = { post: "/v1/wallet/recovery" body: "*" }; }
  rpc BackupWallet(google.protobuf.Empty) returns (Backup) { option (google.api.http) = { post: "/v1/wallet/backup" body: "*" }; }
+ rpc CreateWallet(CreateWalletRequest) returns (Settings) { option (google.api.http) = { post: "/v1/wallets" body: "*" }; }
  rpc GetSettings(google.protobuf.Empty) returns (Settings) { option (google.api.http) = { get: "/v1/settings" }; }
  rpc UpdateSettings(Settings) returns (Settings) { option (google.api.http) = { put: "/v1/settings" body: "*" }; }
  rpc CheckNode(CheckNodeRequest) returns (CheckNodeResponse) { option (google.api.http) = { post: "/v1/settings/check-node" body: "*" }; }
@@ -103,7 +104,10 @@ message Environment {
  bool public_watchtower = 7; // Off by default; private npub lookup remains available.
  repeated string favorite_watchtowers = 6; // Provider npubs, scoped to this network.
 }
+message WalletProfile { string id = 1; string name = 2; }
+message CreateWalletRequest { string name = 1; uint64 revision = 2; }
 message Settings {
+ repeated WalletProfile wallets = 4; // Stable IDs; display names may be edited. Create IDs with CreateWallet.
  string active_network = 1;
  repeated Environment environments = 2;
  uint64 revision = 3; // Compare-and-swap revision: stale updates are rejected.

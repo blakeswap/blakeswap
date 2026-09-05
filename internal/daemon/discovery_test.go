@@ -199,15 +199,51 @@ func TestDiscoveryMailboxIsSeparateBoundedAndExpires(t *testing.T) {
 	if err := provider.flush(context.Background()); err != nil {
 		t.Fatal(err)
 	}
-	if len(client.s.Outbox) != 0 || len(provider.s.Outbox) != 0 {
-		t.Fatal("published discovery deliveries retained")
+	if len(client.s.Outbox) != 1 || len(provider.s.Outbox) != 0 {
+		t.Fatal("only the published query should remain until expiry")
 	}
 	for key := range client.s.DiscoverySeen {
 		client.s.DiscoverySeen[key] = time.Now().Unix() - 1
 	}
-	client.s.Outbox["expired"] = &Delivery{Type: "tower-query", Expires: time.Now().Unix() - 1}
+	for _, delivery := range client.s.Outbox {
+		delivery.Expires = time.Now().Unix() - 1
+	}
 	client.pruneDiscovery()
 	if len(client.s.DiscoverySeen) != 0 || len(client.s.Outbox) != 0 {
 		t.Fatal("discovery state never expires")
+	}
+}
+
+func TestOfflineFavoriteQueriesOnlyOncePerExpiryPeriod(t *testing.T) {
+	provider, client := discoveryEngine(t), discoveryEngine(t)
+	client.Config.FavoriteWatchtowers = []string{provider.ownTower().Npub}
+	for i := 0; i < 5; i++ {
+		if err := client.refreshFavoriteTowers(); err != nil {
+			t.Fatal(err)
+		}
+		if err := client.flush(context.Background()); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if len(client.s.Outbox) != 1 {
+		t.Fatal("published query was recreated")
+	}
+	for _, d := range client.s.Outbox {
+		if !d.Published {
+			t.Fatal("query not published")
+		}
+		d.Expires = time.Now().Unix() - 1
+	}
+	client.pruneDiscovery()
+	if err := client.refreshFavoriteTowers(); err != nil {
+		t.Fatal(err)
+	}
+	if len(client.s.Outbox) != 1 {
+		t.Fatal("expired lookup was not renewed")
+	}
+	for _, d := range client.s.Outbox {
+		if d.Published {
+			t.Fatal("new lookup inherited old delivery")
+		}
 	}
 }

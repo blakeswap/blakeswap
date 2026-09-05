@@ -76,3 +76,22 @@ extension AppModelTests {
         XCTAssertEqual(OrderFilter.mine.orders(in: status).map(\.maker), ["bob"])
     }
 }
+
+extension AppModelTests {
+    @MainActor
+    func testCustomWalletSelectionSurvivesRenameAndNetworkSwitch() {
+        let model = AppModel()
+        var settings = AppSettings(); settings.activeNetwork = "mainnet"; settings.revision = 1
+        var wallet = Blakeswap_V1_WalletProfile(); wallet.id = "wallet-123"; wallet.name = "Savings"
+        settings.wallets = [wallet]
+        model.selectProfile(wallet.id)
+        var status = DaemonStatus(); status.name = wallet.id; status.network = "mainnet"
+        XCTAssertTrue(model.acceptSnapshot(status, settings: settings, profile: wallet.id, generation: model.generation))
+        settings.wallets[0].name = "Renamed"; settings.activeNetwork = "testnet"; settings.revision = 2
+        XCTAssertFalse(model.acceptSnapshot(status, settings: settings, profile: wallet.id, generation: model.generation))
+        XCTAssertEqual(model.profile, wallet.id)
+        XCTAssertEqual(model.settings?.wallets[0].name, "Renamed")
+        status.network = "testnet"
+        XCTAssertTrue(model.acceptSnapshot(status, settings: settings, profile: wallet.id, generation: model.generation))
+    }
+}

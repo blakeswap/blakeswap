@@ -80,12 +80,7 @@ func (e *Engine) handle(from string, m transport.Message) error {
 				return errors.New("job ID collision")
 			}
 		} else {
-			now := e.clocks[job.Target.Chain]
-			horizon := uint64(protocol.LongBlocks)
-			if e.Config.Network != chain.Regtest {
-				horizon = uint64(protocol.LongSeconds)
-			}
-			if now == 0 || job.Target.RefundHeight <= now || uint64(job.Target.RefundHeight) > uint64(now)+horizon {
+			if !e.registrationWindow(job.Target.Chain, job.Target.RefundHeight) {
 				return errors.New("tower registration outside funding window")
 			}
 			e.s.TowerJobs[job.ID] = &TowerJob{Job: job}
@@ -265,4 +260,17 @@ func (e *Engine) handle(from string, m transport.Message) error {
 		return nil
 	}
 	return errors.New("unknown swap message type")
+}
+
+func (e *Engine) registrationWindow(id chain.ID, refund uint32) bool {
+	now := e.clocks[id]
+	horizon := uint64(protocol.LongBlocks)
+	if e.Config.Network != chain.Regtest {
+		if e.clocks[chain.BTC] < protocol.TimeLockThreshold || e.clocks[chain.Blake] < protocol.TimeLockThreshold {
+			return false
+		}
+		now = max(e.clocks[chain.BTC], e.clocks[chain.Blake])
+		horizon = uint64(protocol.LongSeconds) + uint64(protocol.MaxClockSkew)
+	}
+	return now > 0 && refund > now && uint64(refund) <= uint64(now)+horizon
 }

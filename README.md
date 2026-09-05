@@ -99,3 +99,10 @@ See [the invariant matrix and test limits](docs/TESTING.md). “Comprehensive”
 - [Completed local demonstration and transaction evidence](docs/VERIFICATION.md)
 
 Source lives in `internal/` and `cmd/blakeswap/`; native SwiftUI source lives in `macos/Blakeswap/`. Build products, downloaded binaries, regtest data, credentials, and wallet state remain in ignored directories.
+
+Wallets can be created and renamed in Settings. New installations start with one
+wallet; existing Alice/Bob vaults are preserved. The selector lists saved wallets
+on every network, and all wallets continue trading and serving watchtower jobs
+while the app is open. Names are labels: renaming does not change keys, addresses,
+or balances. Public watchtower listing is off by default; its per-network toggle
+opts all of the app's wallets into that network's public directory.

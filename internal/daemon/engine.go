@@ -367,6 +367,9 @@ func (e *Engine) flush(ctx context.Context) error {
 			delete(e.s.Outbox, id)
 			continue
 		}
+		if d.Type == "tower-query" && d.Published {
+			continue
+		}
 		interval := int64(5)
 		if d.IsAck && d.Published {
 			interval = 60
@@ -383,7 +386,7 @@ func (e *Engine) flush(ctx context.Context) error {
 			}
 		}
 		d.Published = all
-		if (d.To == "" || d.Expires > 0) && all {
+		if (d.To == "" || (d.Expires > 0 && d.Type != "tower-query")) && all {
 			delete(e.s.Outbox, id)
 		}
 	}

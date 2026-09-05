@@ -36,7 +36,7 @@ final class AppModel: ObservableObject {
         }
         let matching = next?.network == nextSettings.activeNetwork && next?.name == selected
         snapshot = Snapshot(status: matching ? next : nil, settings: nextSettings)
-        if nextSettings.activeNetwork != "regtest" && profile != "alice" { selectProfile("alice") }
+        if !nextSettings.wallets.isEmpty, !nextSettings.wallets.contains(where: { $0.id == profile }) { selectProfile(nextSettings.wallets[0].id) }
         return matching
     }
     func start() { do { try DaemonProcess.shared.start() } catch { connectionError = error.localizedDescription } }
@@ -68,6 +68,21 @@ final class AppModel: ObservableObject {
             let next = try AppSettings(serializedBytes: raw)
             acceptSnapshot(nil, settings: next, profile: profile, generation: generation)
             notice = "Settings saved. Connecting."
+        } catch { notice = error.localizedDescription }
+    }
+    func createWallet(name: String) async {
+        guard !busy, let current = settings else { return }
+        busy = true; invalidateSnapshot()
+        defer { busy = false }
+        do {
+            var request = Blakeswap_V1_CreateWalletRequest()
+            request.name = name.trimmingCharacters(in: .whitespacesAndNewlines)
+            request.revision = current.revision
+            let raw = try await DaemonRPC.call(root: root, profile: profile, method: "wallet.create", payload: request.jsonUTF8Data())
+            let next = try AppSettings(serializedBytes: raw)
+            acceptSnapshot(nil, settings: next, profile: profile, generation: generation)
+            if let created = next.wallets.last { selectProfile(created.id) }
+            notice = "Wallet created. Connecting."
         } catch { notice = error.localizedDescription }
     }
     func checkNode(network: String, chain: String, node: NodeSettings) async -> String {

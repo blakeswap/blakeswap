@@ -225,3 +225,64 @@ func TestWatchtowerPrivacyAndFavoritesPersistPerNetwork(t *testing.T) {
 		t.Fatal("invalid favorite accepted")
 	}
 }
+
+func TestLegacyWalletMigrationPreservesVaults(t *testing.T) {
+	for _, hasBob := range []bool{false, true} {
+		root := t.TempDir()
+		legacy := Defaults()
+		legacy.Wallets = nil
+		if err := saveSettings(root, legacy); err != nil {
+			t.Fatal(err)
+		}
+		aliceSeed, _, err := master(filepath.Join(root, "wallets", "alice"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		var bobSeed string
+		if hasBob {
+			bobSeed, _, err = master(filepath.Join(root, "wallets", "bob"))
+			if err != nil {
+				t.Fatal(err)
+			}
+		}
+		migrated, err := loadSettings(root)
+		if err != nil {
+			t.Fatal(err)
+		}
+		want := 1
+		if hasBob {
+			want++
+		}
+		if len(migrated.Wallets) != want || migrated.Wallets[0].Id != "alice" {
+			t.Fatal("lost existing profiles")
+		}
+		if seed, _, err := master(filepath.Join(root, "wallets", "alice")); err != nil || seed != aliceSeed {
+			t.Fatal("replaced Alice seed")
+		}
+		if hasBob {
+			if seed, _, err := master(filepath.Join(root, "wallets", "bob")); err != nil || seed != bobSeed {
+				t.Fatal("replaced Bob seed")
+			}
+		}
+		again, err := loadSettings(root)
+		if err != nil || !proto.Equal(again, migrated) {
+			t.Fatal("migration is not stable")
+		}
+	}
+}
+func TestWalletIDsCannotBeChangedOrDeletedBySettings(t *testing.T) {
+	m := &Manager{root: t.TempDir(), settings: Defaults()}
+	for _, change := range []func(*pb.Settings){
+		func(s *pb.Settings) { s.Wallets[0].Id = "../../outside" },
+		func(s *pb.Settings) { s.Wallets[0].Id = "different" },
+		func(s *pb.Settings) { s.Wallets = nil },
+		func(s *pb.Settings) { s.Wallets = append(s.Wallets, &pb.WalletProfile{Id: "another", Name: "Another"}) },
+		func(s *pb.Settings) { s.Wallets[0].Name = " " },
+	} {
+		next := proto.Clone(m.settings).(*pb.Settings)
+		change(next)
+		if _, err := m.writeSettings(context.Background(), next); err == nil {
+			t.Fatal("invalid wallet update accepted")
+		}
+	}
+}

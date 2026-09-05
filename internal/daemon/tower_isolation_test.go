@@ -11,6 +11,7 @@ import (
 	"github.com/blakeswap/blakeswap/internal/protocol"
 	"github.com/blakeswap/blakeswap/internal/transport"
 	"github.com/btcsuite/btcd/btcec/v2"
+	"github.com/btcsuite/btcd/wire"
 )
 
 func claimJob(t *testing.T, e *Engine) protocol.Job {
@@ -118,7 +119,15 @@ func TestNeverFundedRegistrationsExpireWithoutForgettingFundedJobs(t *testing.T)
 		t.Fatal("lookup failure discarded an obligation")
 	}
 	lookup.err = nil
-	lookup.tx = chain.Transaction{TxID: job.Target.TxID}
+	funding := wire.NewMsgTx(2)
+	funding.AddTxIn(wire.NewTxIn(&wire.OutPoint{}, nil, nil))
+	script, err := job.Target.PkScript()
+	if err != nil {
+		t.Fatal(err)
+	}
+	funding.AddTxOut(wire.NewTxOut(job.Target.Amount, script))
+	state.Job.Target.TxID = funding.TxHash().String()
+	lookup.tx = chain.Transaction{TxID: state.Job.Target.TxID, Hex: contract.Hex(funding)}
 	e.refreshTowerJobs(context.Background())
 	lookup.err = &chain.RPCError{Code: -5, Message: "transaction not found"}
 	e.refreshTowerJobs(context.Background())
@@ -128,5 +137,38 @@ func TestNeverFundedRegistrationsExpireWithoutForgettingFundedJobs(t *testing.T)
 	state.Confirmed = 6
 	if e.CanChangeNetwork() != nil {
 		t.Fatal("settled obligation still blocks network")
+	}
+}
+
+func TestTowerRegistrationUsesBothPublicClocks(t *testing.T) {
+	e := discoveryEngine(t)
+	e.Config.Network = chain.Mainnet
+	now := uint32(1800000000)
+	e.clocks = map[chain.ID]uint32{chain.BTC: now - 3600, chain.Blake: now}
+	for _, id := range []chain.ID{chain.BTC, chain.Blake} {
+		if !e.registrationWindow(id, now+protocol.LongSeconds) {
+			t.Fatal("valid max-clock terms rejected", id)
+		}
+		if !e.registrationWindow(id, now+protocol.LongSeconds+protocol.MaxClockSkew) {
+			t.Fatal("allowed provider observation skew rejected")
+		}
+		if e.registrationWindow(id, now+protocol.LongSeconds+protocol.MaxClockSkew+1) || e.registrationWindow(id, now) {
+			t.Fatal("unbounded registration")
+		}
+	}
+}
+func TestUnrelatedFundingCannotPermanentlyArmTowerJob(t *testing.T) {
+	e := discoveryEngine(t)
+	job := claimJob(t, e)
+	funding := wire.NewMsgTx(2)
+	funding.AddTxIn(wire.NewTxIn(&wire.OutPoint{}, nil, nil))
+	funding.AddTxOut(wire.NewTxOut(job.Target.Amount, e.scripts[chain.BTC]))
+	job.Target.TxID = funding.TxHash().String()
+	state := &TowerJob{Job: job}
+	e.s.TowerJobs = map[string]*TowerJob{job.ID: state}
+	e.nodes = map[chain.ID]chain.Backend{chain.BTC: &towerLookup{tx: chain.Transaction{TxID: job.Target.TxID, Hex: contract.Hex(funding)}}}
+	e.refreshTowerJobs(context.Background())
+	if state.FundingSeen || !state.Expired || state.Error == "" || e.CanChangeNetwork() != nil {
+		t.Fatal("unrelated unspent output pinned wallet")
 	}
 }

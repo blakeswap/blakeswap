@@ -122,3 +122,15 @@ still be selected by favorite identity. Each Settings environment has
 CreateOffer rechecks the confirmed sell balance against principal plus funding
 fee and rejects expired discovery quotes. Protected offers retain the provider's
 signed quote so settings edits cannot redirect negotiated rescue payouts.
+
+### Wallet profiles
+
+Desktop Settings includes `wallets: [{id, name}]`. IDs are immutable storage
+identities; names may be changed through `UpdateSettings` with its current
+revision. Wallet removal, replacement IDs, and reordering are rejected. Use
+`CreateWallet` (`POST /v1/wallets`, CLI `wallet.create`) with `name` and `revision`
+to generate an independent encrypted seed and register a live endpoint in
+`runtime.json`. Creation and renaming work with disconnected chain backends.
+The desktop supports up to 20 wallets on each active network. Each wallet has its
+own bearer credential, vault, network state, and npub. Changing networks checks
+outstanding obligations in every saved wallet.

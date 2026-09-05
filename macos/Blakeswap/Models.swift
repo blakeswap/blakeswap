@@ -38,6 +38,8 @@ enum OrderFilter: String, CaseIterable {
     case all = "All open orders"
     case mine = "My open orders"
     case others = "Other open orders"
+    var title: String { switch self { case .all: "All orders"; case .mine: "My orders"; case .others: "Other orders" } }
+    var key: String { switch self { case .all: "all"; case .mine: "mine"; case .others: "others" } }
     func orders(in status: DaemonStatus) -> [Order] {
         status.orders.filter { order in
             order.status == "open" && (self == .all || (order.maker == status.pubkey) == (self == .mine))

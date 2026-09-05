@@ -162,3 +162,12 @@ Additional regressions isolate recurring discovery from a saturated protocol
 mailbox, expire discovery state, reject invalid-curve npubs and out-of-range
 observed outputs, keep remote history out of the local swap scanner, and distinguish
 abandoned registrations from funded obligations and failed indexer lookups.
+
+Wallet regressions cover legacy Alice/Bob migration without seed replacement,
+immutable IDs, invalid/deleted profiles, and creating/renaming a wallet through
+the real IPC service while nodes are unavailable. Native tests exercise custom
+wallet selection across networks and create a third independent wallet, reject
+its empty-balance offers on both assets, and verify its addresses/identity survive
+renaming before completing an actual two-chain trade. Watchtower tests also cover
+asymmetric public clocks, unrelated funding-output rejection, and one private
+lookup per provider per expiry period after successful relay publication.

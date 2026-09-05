@@ -36,6 +36,7 @@ def prepare():
                 helper.terminate(); helper.wait(timeout=30)
     settings = json.loads((DATA / "settings.json").read_text())
     settings["active_network"] = "regtest"
+    settings["wallets"] = [{"id": "alice", "name": "Alice"}, {"id": "bob", "name": "Bob"}]
     for env in settings["environments"]:
         if env["network"] == "regtest":
             env["nodes"] = {chain: {"kind":"rpc", "url":f"http://127.0.0.1:{port}", "cookie":str(ROOT / ".local" / chain / "regtest/.cookie")} for chain, (_,port) in local.NODES.items()}

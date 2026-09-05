@@ -30,6 +30,7 @@ const (
 	DaemonService_Faucet_FullMethodName            = "/blakeswap.v1.DaemonService/Faucet"
 	DaemonService_GetRecovery_FullMethodName       = "/blakeswap.v1.DaemonService/GetRecovery"
 	DaemonService_BackupWallet_FullMethodName      = "/blakeswap.v1.DaemonService/BackupWallet"
+	DaemonService_CreateWallet_FullMethodName      = "/blakeswap.v1.DaemonService/CreateWallet"
 	DaemonService_GetSettings_FullMethodName       = "/blakeswap.v1.DaemonService/GetSettings"
 	DaemonService_UpdateSettings_FullMethodName    = "/blakeswap.v1.DaemonService/UpdateSettings"
 	DaemonService_CheckNode_FullMethodName         = "/blakeswap.v1.DaemonService/CheckNode"
@@ -49,6 +50,7 @@ type DaemonServiceClient interface {
 	Faucet(ctx context.Context, in *FaucetRequest, opts ...grpc.CallOption) (*FaucetResponse, error)
 	GetRecovery(ctx context.Context, in *emptypb.Empty, opts ...grpc.CallOption) (*Recovery, error)
 	BackupWallet(ctx context.Context, in *emptypb.Empty, opts ...grpc.CallOption) (*Backup, error)
+	CreateWallet(ctx context.Context, in *CreateWalletRequest, opts ...grpc.CallOption) (*Settings, error)
 	GetSettings(ctx context.Context, in *emptypb.Empty, opts ...grpc.CallOption) (*Settings, error)
 	UpdateSettings(ctx context.Context, in *Settings, opts ...grpc.CallOption) (*Settings, error)
 	CheckNode(ctx context.Context, in *CheckNodeRequest, opts ...grpc.CallOption) (*CheckNodeResponse, error)
@@ -162,6 +164,16 @@ func (c *daemonServiceClient) BackupWallet(ctx context.Context, in *emptypb.Empt
 	return out, nil
 }
 
+func (c *daemonServiceClient) CreateWallet(ctx context.Context, in *CreateWalletRequest, opts ...grpc.CallOption) (*Settings, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(Settings)
+	err := c.cc.Invoke(ctx, DaemonService_CreateWallet_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *daemonServiceClient) GetSettings(ctx context.Context, in *emptypb.Empty, opts ...grpc.CallOption) (*Settings, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(Settings)
@@ -206,6 +218,7 @@ type DaemonServiceServer interface {
 	Faucet(context.Context, *FaucetRequest) (*FaucetResponse, error)
 	GetRecovery(context.Context, *emptypb.Empty) (*Recovery, error)
 	BackupWallet(context.Context, *emptypb.Empty) (*Backup, error)
+	CreateWallet(context.Context, *CreateWalletRequest) (*Settings, error)
 	GetSettings(context.Context, *emptypb.Empty) (*Settings, error)
 	UpdateSettings(context.Context, *Settings) (*Settings, error)
 	CheckNode(context.Context, *CheckNodeRequest) (*CheckNodeResponse, error)
@@ -248,6 +261,9 @@ func (UnimplementedDaemonServiceServer) GetRecovery(context.Context, *emptypb.Em
 }
 func (UnimplementedDaemonServiceServer) BackupWallet(context.Context, *emptypb.Empty) (*Backup, error) {
 	return nil, status.Error(codes.Unimplemented, "method BackupWallet not implemented")
+}
+func (UnimplementedDaemonServiceServer) CreateWallet(context.Context, *CreateWalletRequest) (*Settings, error) {
+	return nil, status.Error(codes.Unimplemented, "method CreateWallet not implemented")
 }
 func (UnimplementedDaemonServiceServer) GetSettings(context.Context, *emptypb.Empty) (*Settings, error) {
 	return nil, status.Error(codes.Unimplemented, "method GetSettings not implemented")
@@ -459,6 +475,24 @@ func _DaemonService_BackupWallet_Handler(srv interface{}, ctx context.Context, d
 	return interceptor(ctx, in, info, handler)
 }
 
+func _DaemonService_CreateWallet_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(CreateWalletRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DaemonServiceServer).CreateWallet(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: DaemonService_CreateWallet_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DaemonServiceServer).CreateWallet(ctx, req.(*CreateWalletRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _DaemonService_GetSettings_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(emptypb.Empty)
 	if err := dec(in); err != nil {
@@ -559,6 +593,10 @@ var DaemonService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "BackupWallet",
 			Handler:    _DaemonService_BackupWallet_Handler,
+		},
+		{
+			MethodName: "CreateWallet",
+			Handler:    _DaemonService_CreateWallet_Handler,
 		},
 		{
 			MethodName: "GetSettings",
