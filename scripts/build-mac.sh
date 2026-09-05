@@ -8,6 +8,7 @@ trap 'rm -rf "$stage_path"' EXIT
 app_path="$stage_path/Blakeswap.app"
 resources="$app_path/Contents/Resources"
 mkdir -p "$app_path/Contents/MacOS" "$resources/licenses"
+sh scripts/build-app-icon.sh "$resources/AppIcon.icns"
 sh scripts/go.sh build -trimpath -o "$resources/blakeswap" ./cmd/blakeswap
 swift build --package-path macos --scratch-path .cache/swift-build --cache-path .cache/swift-cache --product Blakeswap -c release
 swift_bin=$(swift build --package-path macos --scratch-path .cache/swift-build --show-bin-path -c release)
@@ -29,6 +30,7 @@ cat > "$app_path/Contents/Info.plist" <<'PLIST'
 <key>CFBundleIdentifier</key><string>org.blakeswap.app</string>
 <key>CFBundleName</key><string>Blakeswap</string>
 <key>CFBundleDisplayName</key><string>Blakeswap</string>
+<key>CFBundleIconFile</key><string>AppIcon</string>
 <key>CFBundlePackageType</key><string>APPL</string>
 <key>CFBundleShortVersionString</key><string>0.2.0</string>
 <key>CFBundleVersion</key><string>2</string>
