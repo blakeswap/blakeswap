@@ -127,6 +127,9 @@ func validate(s *pb.Settings) error {
 		if env.Tower != nil && (env.Tower.Bps < 0 || env.Tower.Bps > 1000) {
 			return errors.New("invalid tower rate")
 		}
+		if env.RescueFeeBps < 0 || env.RescueFeeBps > 1000 {
+			return errors.New("rescue fee must be 1–1000 basis points (0 uses the 50 basis-point default)")
+		}
 	}
 	return nil
 }

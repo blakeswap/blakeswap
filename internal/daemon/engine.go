@@ -52,6 +52,9 @@ func Open(ctx context.Context, c Config) (*Engine, error) {
 	if c.Mode != "trader" && c.Mode != "tower" {
 		return nil, errors.New("mode must be trader or tower")
 	}
+	if c.RescueFeeBPS < 0 || c.RescueFeeBPS > 1000 {
+		return nil, errors.New("rescue fee must be 1–1000 basis points (0 uses the default)")
+	}
 	if len(c.Relays) < 1 || len(c.Relays) > 3 {
 		return nil, errors.New("configure one to three relay URLs")
 	}
@@ -151,6 +154,13 @@ func Open(ctx context.Context, c Config) (*Engine, error) {
 			return fail(e)
 		}
 		en.watch[id] = w
+		if c.ChainReady != nil {
+			height, err := r.Height(ctx)
+			if err != nil {
+				return fail(err)
+			}
+			c.ChainReady(id, height)
+		}
 	}
 	if c.Mode == "tower" {
 		en.Config.Tower.PubKey = en.identity.Public().Hex()
@@ -649,7 +659,8 @@ func (e *Engine) scanTower(ctx context.Context) (map[chain.ID]map[string]chain.O
 		if j.Expired {
 			continue
 		}
-		if err := j.Job.Validate(e.ownTower().Scripts, e.ownTower().BPS); err != nil {
+		// Accepted jobs retain their signed rate when the provider changes its quote.
+		if err := j.Job.Validate(e.ownTower().Scripts, j.Job.BPS); err != nil {
 			j.Error = err.Error()
 			continue
 		}

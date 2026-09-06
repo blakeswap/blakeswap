@@ -28,6 +28,88 @@ func discoveryEngine(t *testing.T) *Engine {
 	blake, _ := hex.DecodeString("0014" + strings.Repeat("22", 20))
 	return &Engine{Config: Config{Name: "Test", Mode: "trader", Network: chain.Regtest}, identity: nostr.Generate(), vault: vault, scripts: map[chain.ID][]byte{chain.BTC: btc, chain.Blake: blake}, s: State{Towers: map[string]nostr.Event{}, Outbox: map[string]*Delivery{}, Seen: map[string]string{}}}
 }
+
+func TestRescueFeeRefreshesSignedQuotesImmediately(t *testing.T) {
+	for _, public := range []bool{false, true} {
+		t.Run(fmt.Sprint(public), func(t *testing.T) {
+			e := discoveryEngine(t)
+			e.Config.PublicWatchtower = public
+			e.Config.Tower.BPS = 300 // A legacy selected provider must not set our own fee.
+			if e.ownTower().BPS != protocol.DefaultTowerBPS {
+				t.Fatal("legacy default changed")
+			}
+			if err := e.advertiseTower(); err != nil {
+				t.Fatal(err)
+			}
+			previous := e.s.Towers[e.identity.Public().Hex()]
+			for _, bps := range []int64{125, 1, 1000, 0} {
+				e.Config.RescueFeeBPS = bps
+				if err := e.advertiseTower(); err != nil {
+					t.Fatal(err)
+				}
+				event := e.s.Towers[e.identity.Public().Hex()]
+				quote, err := protocol.DecodeTower(event, chain.Regtest, time.Now().Unix())
+				want := bps
+				if want == 0 {
+					want = protocol.DefaultTowerBPS
+				}
+				if err != nil || quote.BPS != want || quote.Public != public || event.CreatedAt <= previous.CreatedAt {
+					t.Fatal("stale or invalid signed fee", err)
+				}
+				if !public && len(e.s.Outbox) != 0 {
+					t.Fatal("private fee update published")
+				}
+				if public && (len(e.s.Outbox) != 1 || e.s.Outbox[event.ID.Hex()] == nil) {
+					t.Fatal("outdated announcement retained")
+				}
+				previous = event
+			}
+		})
+	}
+}
+
+func TestAcceptedRescueJobsKeepTheirRateAfterRestart(t *testing.T) {
+	provider, owner := discoveryEngine(t), discoveryEngine(t)
+	job := claimJob(t, provider)
+	job.Owner = owner.identity.Public().Hex()
+	provider.s.TowerJobs = map[string]*TowerJob{job.ID: {Job: job}}
+	if err := provider.save(); err != nil {
+		t.Fatal(err)
+	}
+	provider.s = State{}
+	if _, err := provider.vault.Load(&provider.s); err != nil {
+		t.Fatal(err)
+	}
+	provider.Config.RescueFeeBPS = 125
+	provider.heights = map[chain.ID]uint32{chain.BTC: 120, chain.Blake: 120}
+	provider.clocks = provider.heights
+	scanner := &recordingScanner{}
+	provider.towerScanners = map[chain.ID]chain.SpendScanner{chain.BTC: scanner, chain.Blake: &recordingScanner{}}
+	if _, err := provider.scanTower(context.Background()); err != nil || len(scanner.points) != 1 {
+		t.Fatal("accepted job no longer scanned", err)
+	}
+	if err := provider.advanceTower(context.Background(), nil); err != nil || provider.s.TowerJobs[job.ID].Error != "" {
+		t.Fatal("accepted job no longer serviced", err)
+	}
+	deliver := func(j protocol.Job) error {
+		owner.s.Outbox = map[string]*Delivery{}
+		if err := owner.queue(provider.identity.Public().Hex(), "tower-job", j.SwapID, j); err != nil {
+			t.Fatal(err)
+		}
+		for _, d := range owner.s.Outbox {
+			return provider.receive(d.Event)
+		}
+		t.Fatal("missing registration")
+		return nil
+	}
+	if err := deliver(job); err != nil {
+		t.Fatal("accepted registration retry rejected", err)
+	}
+	job.ID = transport.RandomID()
+	if err := deliver(job); err == nil {
+		t.Fatal("new registration used old rate")
+	}
+}
 func TestPrivateByDefaultLookupAndPublicOptOut(t *testing.T) {
 	provider, client := discoveryEngine(t), discoveryEngine(t)
 	if err := provider.advertiseTower(); err != nil {
@@ -102,9 +184,11 @@ func TestRealDiscoveredTraderWatchtowerAndOfferBalance(t *testing.T) {
 	// A trading wallet simultaneously serves rescue jobs, with no public listing.
 	tower.Config.Mode = "trader"
 	tower.Config.Tower = TowerConfig{}
+	tower.Config.RescueFeeBPS = 125
 	cfg := h.configs["tower"]
 	cfg.Mode = "trader"
 	cfg.Tower = TowerConfig{}
+	cfg.RescueFeeBPS = 125
 	h.configs["tower"] = cfg
 	for _, name := range []string{"maker", "taker"} {
 		h.engines[name].Config.Tower = TowerConfig{}
@@ -123,7 +207,7 @@ func TestRealDiscoveredTraderWatchtowerAndOfferBalance(t *testing.T) {
 			t.Fatal("unfunded offer accepted", err)
 		}
 	}
-	o := h.command("maker", "offer.create", map[string]any{"sell": "btc", "sell_amount": 1000000, "buy_amount": 2000000, "tower_bps": 50, "tower_pubkey": tower.ownTower().Npub}).(protocol.Offer)
+	o := h.command("maker", "offer.create", map[string]any{"sell": "btc", "sell_amount": 1000000, "buy_amount": 2000000, "tower_bps": 125, "tower_pubkey": tower.ownTower().Npub}).(protocol.Offer)
 	if o.Tower == nil || o.Tower.Verify() != nil || o.Tower.PubKey != tower.identity.Public().Hex() {
 		t.Fatal("provider quote not pinned")
 	}
@@ -138,7 +222,22 @@ func TestRealDiscoveredTraderWatchtowerAndOfferBalance(t *testing.T) {
 		t.Fatal(err)
 	}
 	h.offline("tower")
+	cfg.RescueFeeBPS = 250
+	var ready []chain.ID
+	cfg.ChainReady = func(id chain.ID, height uint32) {
+		if height == 0 {
+			t.Fatal("ready chain had no observed height")
+		}
+		ready = append(ready, id)
+	}
+	h.configs["tower"] = cfg
 	h.online("tower")
+	if len(ready) != 2 || ready[0] != chain.BTC || ready[1] != chain.Blake {
+		t.Fatal("chains did not report readiness separately", ready)
+	}
+	if h.engines["tower"].ownTower().BPS != 250 {
+		t.Fatal("new quote not applied on restart")
+	}
 	if h.engines["tower"].Status().Paused {
 		t.Fatal("legacy pause survived reopen")
 	}
@@ -160,6 +259,9 @@ func TestRealDiscoveredTraderWatchtowerAndOfferBalance(t *testing.T) {
 		t.Fatal("trading watchtower did not execute delayed rescue", h.swap("taker", id).Stage)
 	}
 	for _, job := range h.engines["tower"].s.TowerJobs {
+		if job.Job.BPS != 125 {
+			t.Fatal("accepted rescue fee changed")
+		}
 		if job.Confirmed < 2 {
 			t.Fatal("rescue did not confirm")
 		}

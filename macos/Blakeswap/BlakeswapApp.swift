@@ -186,8 +186,8 @@ struct ContentView: View {
     private var footer: some View {
         HStack(spacing: 18) {
             Label("Queued messages: \(model.status?.pendingMessages ?? 0)", systemImage: "envelope")
-            Text("BTC #\(model.status?.heights["btc"] ?? 0)")
-            Text("BLAKE #\(model.status?.heights["blake"] ?? 0)")
+            ChainHeightIndicator(chain: "btc", height: model.status?.heights["btc"])
+            ChainHeightIndicator(chain: "blake", height: model.status?.heights["blake"])
             Spacer()
             if model.isRegtest { Button("Mine 2 blocks on both chains") { Task { await model.command("regtest.mine", ["blocks": 2]) } }
                 .disabled(model.busy || model.status == nil).accessibilityIdentifier("mine-blocks") }

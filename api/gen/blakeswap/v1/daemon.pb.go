@@ -1497,6 +1497,7 @@ type Environment struct {
 	Tower               *Tower                 `protobuf:"bytes,4,opt,name=tower,proto3" json:"tower,omitempty"`
 	PublicWatchtower    bool                   `protobuf:"varint,7,opt,name=public_watchtower,json=publicWatchtower,proto3" json:"public_watchtower,omitempty"`         // Off by default; private npub lookup remains available.
 	FavoriteWatchtowers []string               `protobuf:"bytes,6,rep,name=favorite_watchtowers,json=favoriteWatchtowers,proto3" json:"favorite_watchtowers,omitempty"` // Provider npubs, scoped to this network.
+	RescueFeeBps        int64                  `protobuf:"varint,8,opt,name=rescue_fee_bps,json=rescueFeeBps,proto3" json:"rescue_fee_bps,omitempty"`                   // Own wallets' rescue rate: 1–1000 basis points; 0 retains the 50 bps default.
 	unknownFields       protoimpl.UnknownFields
 	sizeCache           protoimpl.SizeCache
 }
@@ -1571,6 +1572,13 @@ func (x *Environment) GetFavoriteWatchtowers() []string {
 		return x.FavoriteWatchtowers
 	}
 	return nil
+}
+
+func (x *Environment) GetRescueFeeBps() int64 {
+	if x != nil {
+		return x.RescueFeeBps
+	}
+	return 0
 }
 
 type WalletProfile struct {
@@ -2267,14 +2275,15 @@ const file_blakeswap_v1_daemon_proto_rawDesc = "" +
 	"\x04kind\x18\x01 \x01(\tR\x04kind\x12\x10\n" +
 	"\x03url\x18\x02 \x01(\tR\x03url\x12\x16\n" +
 	"\x06cookie\x18\x03 \x01(\tR\x06cookie\x12-\n" +
-	"\x12certificate_sha256\x18\x04 \x01(\tR\x11certificateSha256\"\xda\x02\n" +
+	"\x12certificate_sha256\x18\x04 \x01(\tR\x11certificateSha256\"\x80\x03\n" +
 	"\vEnvironment\x12\x18\n" +
 	"\anetwork\x18\x01 \x01(\tR\anetwork\x12:\n" +
 	"\x05nodes\x18\x02 \x03(\v2$.blakeswap.v1.Environment.NodesEntryR\x05nodes\x12\x16\n" +
 	"\x06relays\x18\x03 \x03(\tR\x06relays\x12)\n" +
 	"\x05tower\x18\x04 \x01(\v2\x13.blakeswap.v1.TowerR\x05tower\x12+\n" +
 	"\x11public_watchtower\x18\a \x01(\bR\x10publicWatchtower\x121\n" +
-	"\x14favorite_watchtowers\x18\x06 \x03(\tR\x13favoriteWatchtowers\x1aL\n" +
+	"\x14favorite_watchtowers\x18\x06 \x03(\tR\x13favoriteWatchtowers\x12$\n" +
+	"\x0erescue_fee_bps\x18\b \x01(\x03R\frescueFeeBps\x1aL\n" +
 	"\n" +
 	"NodesEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12(\n" +

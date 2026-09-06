@@ -19,6 +19,8 @@ func (e *Engine) ownTower() protocol.Tower {
 	tower := protocol.Tower{PubKey: pub.Hex(), Npub: nip19.EncodeNpub(pub), Name: e.Config.Name, Network: e.Config.Network, Public: e.Config.PublicWatchtower, BPS: protocol.DefaultTowerBPS, Scripts: map[chain.ID]string{}}
 	if e.Config.Mode == "tower" {
 		tower.BPS = e.Config.Tower.BPS
+	} else if e.Config.RescueFeeBPS != 0 {
+		tower.BPS = e.Config.RescueFeeBPS
 	}
 	for id, script := range e.scripts {
 		tower.Scripts[id] = hex.EncodeToString(script)
@@ -36,13 +38,15 @@ func (e *Engine) advertiseTower() error {
 			delete(e.s.Towers, pub)
 		}
 	}
+	tower := e.ownTower()
 	if event, ok := e.s.Towers[e.identity.Public().Hex()]; ok && now-int64(event.CreatedAt) < 900 && e.s.TowerPublic == e.Config.PublicWatchtower {
-		return nil
+		if previous, err := protocol.DecodeTower(event, e.Config.Network, now); err == nil && previous.BPS == tower.BPS {
+			return nil
+		}
 	}
 	if old, ok := e.s.Towers[e.identity.Public().Hex()]; ok && int64(old.CreatedAt) >= now {
 		now = int64(old.CreatedAt) + 1
 	}
-	tower := e.ownTower()
 	tower.Expires = now + protocol.TowerLifetime
 	raw, err := json.Marshal(tower)
 	if err != nil {

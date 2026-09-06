@@ -322,3 +322,76 @@ func TestReadyWalletStartsWhileAnotherBootstrapIsBlocked(t *testing.T) {
 }
 
 func configuredDefaults() *pb.Settings { s := Defaults(); s.OnboardingStage = ""; return s }
+
+func TestRescueFeePersistsPerNetworkAndReachesEveryWallet(t *testing.T) {
+	m := &Manager{root: t.TempDir(), settings: configuredDefaults()}
+	next := proto.Clone(m.settings).(*pb.Settings)
+	environment(next, "regtest").RescueFeeBps = 125
+	saved, err := m.writeSettings(context.Background(), next)
+	if err != nil || m.restart {
+		t.Fatal("inactive rescue fee update", err)
+	}
+	loaded, err := loadSettings(m.root)
+	if err != nil || !proto.Equal(saved, loaded) {
+		t.Fatal("rescue fee not persisted", err)
+	}
+	if environment(loaded, "mainnet").RescueFeeBps != 0 {
+		t.Fatal("fee crossed networks")
+	}
+	for _, profile := range []string{"alice", "savings"} {
+		cfg, err := m.config(profile, environment(loaded, "regtest"))
+		if err != nil || cfg.RescueFeeBPS != 125 || cfg.Tower.BPS != 0 {
+			t.Fatal("own rate not isolated from selected tower", err)
+		}
+	}
+	for _, bps := range []int64{-1, 1001} {
+		bad := proto.Clone(saved).(*pb.Settings)
+		environment(bad, "mainnet").RescueFeeBps = bps
+		if _, err := m.writeSettings(context.Background(), bad); status.Code(err) != codes.InvalidArgument {
+			t.Fatal("invalid fee accepted", err)
+		}
+	}
+	for _, bps := range []int64{1, 1000, 0} {
+		next := proto.Clone(m.settings).(*pb.Settings)
+		environment(next, "mainnet").RescueFeeBps = bps
+		if _, err := m.writeSettings(context.Background(), next); err != nil || !m.restart {
+			t.Fatal("active fee did not reconnect", err)
+		}
+		m.restart = false
+	}
+}
+
+func TestBootstrapPublishesIndependentChainHeightsAndClearsStaleProgress(t *testing.T) {
+	job := &networkOpening{}
+	m := &Manager{settings: configuredDefaults(), openings: map[string]*networkOpening{"alice": job}}
+	read := func() daemon.Status {
+		t.Helper()
+		m.publishView()
+		var s daemon.Status
+		if err := json.Unmarshal(m.view.Load().statuses["alice"], &s); err != nil {
+			t.Fatal(err)
+		}
+		return s
+	}
+	if len(read().Heights) != 0 {
+		t.Fatal("unconnected chains reported a height")
+	}
+	job.chainReady(chain.BTC, 123)
+	first := read()
+	if first.Heights[chain.BTC] != 123 || len(first.Heights) != 1 {
+		t.Fatal("BTC readiness waited for BLAKE")
+	}
+	job.chainReady(chain.Blake, 456)
+	if len(first.Heights) != 1 || read().Heights[chain.Blake] != 456 {
+		t.Fatal("progress snapshot was mutated or lost")
+	}
+	m.restart = true
+	if len(read().Heights) != 0 {
+		t.Fatal("old heights survived settings change")
+	}
+	m.restart = false
+	delete(m.openings, "alice")
+	if len(read().Heights) != 0 {
+		t.Fatal("failed bootstrap retained heights")
+	}
+}

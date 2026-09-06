@@ -143,6 +143,14 @@ swift test --package-path macos --scratch-path .cache/swift-build --cache-path .
 
 ## Market and watchtower regressions
 
+Rescue fee regressions cover per-network persistence, bounds, propagation to all
+wallets, legacy defaults, immediate public/private quote replacement, and retained
+accepted jobs and receipts after a rate change and restart. Native Settings tests
+cover fee serialization and independent chain readiness; desktop snapshots clear
+partial heights on failure or network changes. Missing RPC cookie tests check
+actionable connection guidance. Run `--filter SettingsTests` with `swift test` for
+the native settings regressions.
+
 Native tests cover fee-inclusive sell balances, zero/unknown balances, amount
 bounds, all/own/other open-order filters, and automatic helper restart with no
 relaunch during shutdown. The native gRPC trade also checks that backend error

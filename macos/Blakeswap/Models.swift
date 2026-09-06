@@ -22,6 +22,12 @@ extension Blakeswap_V1_Swap: Identifiable {
     }
 }
 extension Blakeswap_V1_Environment: Identifiable { var id: String { network } }
+extension Blakeswap_V1_Environment {
+    var rescueFeeBasisPoints: Int64 {
+        get { rescueFeeBps == 0 ? 50 : rescueFeeBps }
+        set { rescueFeeBps = newValue }
+    }
+}
 func units(_ sats: Int64) -> String { "\(sats / 100_000_000).\(String(format: "%08lld", sats % 100_000_000))" }
 func symbol(_ chain: String) -> String { chain == "btc" ? "BTC" : "BLAKE" }
 func percentage(_ bps: Int64) -> String { String(format: "%.2f%%", Double(bps) / 100) }
