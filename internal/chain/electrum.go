@@ -386,6 +386,7 @@ func (e *Electrum) inclusion(ctx context.Context, t Transaction, height uint32) 
 		return t, errors.New("tip changed during merkle verification")
 	}
 	t.Height = height
+	t.BlockTime = int64(binary.LittleEndian.Uint32(header[68:72]))
 	t.Confirmations = int(tip - height + 1)
 	hash, _ := HeaderHash(header)
 	t.BlockHash = hash.String()

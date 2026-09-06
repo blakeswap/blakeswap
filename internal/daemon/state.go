@@ -91,26 +91,32 @@ type TowerJob struct {
 	Error       string       `json:"error,omitempty"`
 }
 type State struct {
-	TradeReceipts    map[string]*TradeReceipt   `json:"trade_receipts,omitempty"`
-	FundingFees      map[string]FeeSelection    `json:"funding_fees,omitempty"`
-	OfferTowers      map[string]protocol.Tower  `json:"offer_towers,omitempty"`
-	CoinReservations map[string]CoinReservation `json:"coin_reservations,omitempty"`
-	Sends            map[string]*WalletSend     `json:"sends,omitempty"`
-	ReceiveIndexes   map[chain.ID]uint32        `json:"receive_indexes,omitempty"`
-	DiscoverySeen    map[string]int64           `json:"discovery_seen,omitempty"`
-	TowerPublic      bool                       `json:"tower_public,omitempty"`
-	Towers           map[string]nostr.Event     `json:"towers,omitempty"`
-	Network          chain.Network              `json:"network,omitempty"`
-	Version          int                        `json:"version"`
-	Mnemonic         string                     `json:"mnemonic"`
-	Paused           bool                       `json:"paused"`
-	Offers           map[string]nostr.Event     `json:"offers"`
-	Book             map[string]nostr.Event     `json:"book"`
-	Swaps            map[string]*Swap           `json:"swaps"`
-	Outbox           map[string]*Delivery       `json:"outbox"`
-	Seen             map[string]string          `json:"seen"`
-	TowerJobs        map[string]*TowerJob       `json:"tower_jobs"`
-	EventTime        nostr.Timestamp            `json:"event_time"`
+	ActivityObservationSequence uint64                     `json:"activity_observation_sequence"`
+	ActivityVersion             int                        `json:"activity_version"`
+	Activities                  map[string]Activity        `json:"activities"`
+	ActivityRevision            uint64                     `json:"activity_revision"`
+	ActivityIndexes             map[chain.ID]ActivityIndex `json:"activity_indexes"`
+	ActivityError               string                     `json:"activity_error"`
+	TradeReceipts               map[string]*TradeReceipt   `json:"trade_receipts,omitempty"`
+	FundingFees                 map[string]FeeSelection    `json:"funding_fees,omitempty"`
+	OfferTowers                 map[string]protocol.Tower  `json:"offer_towers,omitempty"`
+	CoinReservations            map[string]CoinReservation `json:"coin_reservations,omitempty"`
+	Sends                       map[string]*WalletSend     `json:"sends,omitempty"`
+	ReceiveIndexes              map[chain.ID]uint32        `json:"receive_indexes,omitempty"`
+	DiscoverySeen               map[string]int64           `json:"discovery_seen,omitempty"`
+	TowerPublic                 bool                       `json:"tower_public,omitempty"`
+	Towers                      map[string]nostr.Event     `json:"towers,omitempty"`
+	Network                     chain.Network              `json:"network,omitempty"`
+	Version                     int                        `json:"version"`
+	Mnemonic                    string                     `json:"mnemonic"`
+	Paused                      bool                       `json:"paused"`
+	Offers                      map[string]nostr.Event     `json:"offers"`
+	Book                        map[string]nostr.Event     `json:"book"`
+	Swaps                       map[string]*Swap           `json:"swaps"`
+	Outbox                      map[string]*Delivery       `json:"outbox"`
+	Seen                        map[string]string          `json:"seen"`
+	TowerJobs                   map[string]*TowerJob       `json:"tower_jobs"`
+	EventTime                   nostr.Timestamp            `json:"event_time"`
 }
 type PublicSwap struct {
 	ClaimFee           int64              `json:"claim_fee"`
