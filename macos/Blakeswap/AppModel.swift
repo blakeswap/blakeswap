@@ -116,7 +116,7 @@ final class AppModel: ObservableObject {
             var request = Blakeswap_V1_CheckNodeRequest(); request.network = network; request.chain = chain; request.node = node
             let raw = try await DaemonRPC.call(root: root, profile: profile, method: "settings.check-node", payload: request.jsonUTF8Data())
             let result = try Blakeswap_V1_CheckNodeResponse(serializedBytes: raw)
-            return "Connected at block \(result.height). \(result.trust)"
+            return "Connected at block \(result.height)"
         } catch { return error.localizedDescription }
     }
     func command(_ method: String, _ params: [String: Any] = [:]) async -> Bool {
