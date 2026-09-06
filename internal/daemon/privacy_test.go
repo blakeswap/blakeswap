@@ -213,3 +213,27 @@ func TestRetiredOfferCacheIsWithdrawnWithoutProviderConfig(t *testing.T) {
 		t.Fatal("cache cleanup is not idempotent", err)
 	}
 }
+
+func TestTakerProtectionRequiresOnlyItsRefundToMeetEconomicMinimum(t *testing.T) {
+	e, _, _ := sendFixture(t)
+	e.Config.Tower = discoveryEngine(t).ownTower()
+	o := protocol.Offer{ID: transport.RandomID(), Maker: discoveryEngine(t).identity.Public().Hex(), Network: chain.Regtest, Sell: chain.Blake, SellAmount: 100000, BuyAmount: 1000000, Expires: time.Now().Unix() + 3600, Status: "open"}
+	if tower, err := e.selectProtection(o, 50, "", false); err != nil || tower.BPS != 50 {
+		t.Fatal("valid taker refund rejected because of peer leg", err)
+	}
+	if _, err := e.selectProtection(o, 50, "", true); err == nil {
+		t.Fatal("maker's dust rescue accepted")
+	}
+	o.SellAmount, o.BuyAmount = o.BuyAmount, o.SellAmount
+	if _, err := e.selectProtection(o, 50, "", false); err == nil {
+		t.Fatal("taker's dust refund accepted")
+	}
+	if _, err := e.selectProtection(o, -1, "", false); err == nil {
+		t.Fatal("negative protection fee accepted")
+	}
+	o.SellAmount, o.BuyAmount = 1000000, 1000000
+	e.Config.Tower.Scripts[chain.BTC] = "0014"
+	if _, err := e.selectProtection(o, 50, "", true); err == nil {
+		t.Fatal("invalid payout accepted")
+	}
+}

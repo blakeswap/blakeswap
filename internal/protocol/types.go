@@ -44,25 +44,6 @@ func (o Offer) Validate(now int64) error {
 	if !o.Network.Valid() || !Hex32(o.ID) || !Hex32(o.Maker) || !o.Sell.Valid() || o.SellAmount < 100000 || o.BuyAmount < 100000 || o.SellAmount > 10000000000 || o.BuyAmount > 10000000000 {
 		return errors.New("invalid order bounds (v1: 100,000 to 10 billion sats per leg)")
 	}
-	if o.TowerBPS < 0 || o.TowerBPS > 1000 {
-		return errors.New("tower quote out of bounds")
-	}
-	if o.Tower != nil {
-		if o.TowerBPS == 0 || o.TowerBPS != o.Tower.BPS || o.Tower.PubKey == o.Maker || o.Tower.Network != o.Network.Normalized() {
-			return errors.New("invalid selected watchtower")
-		}
-		if err := o.Tower.Verify(); err != nil {
-			return err
-		}
-	}
-	if o.TowerBPS > 0 {
-		for _, n := range []int64{o.SellAmount, o.BuyAmount} {
-			fee := Bounty(n, o.TowerBPS)
-			if fee < contract.Dust || n-fee-RescueFees[len(RescueFees)-1] < contract.Dust {
-				return errors.New("trade below tower economic minimum")
-			}
-		}
-	}
 	if o.Expires <= now || o.Expires > now+7*24*3600 {
 		return errors.New("order expired or too far in future")
 	}
@@ -71,6 +52,25 @@ func (o Offer) Validate(now int64) error {
 	}
 	return nil
 }
+
+// ValidateRescueAmounts checks only the outputs this wallet authorizes the
+// tower to spend. Takers protect their refund; makers protect both legs.
+func ValidateRescueAmounts(bps int64, amounts ...int64) error {
+	if bps < 0 || bps > 1000 {
+		return errors.New("tower quote out of bounds")
+	}
+	if bps == 0 {
+		return nil
+	}
+	for _, n := range amounts {
+		fee := Bounty(n, bps)
+		if fee < contract.Dust || n-fee-RescueFees[len(RescueFees)-1] < contract.Dust {
+			return errors.New("trade below tower economic minimum")
+		}
+	}
+	return nil
+}
+
 func DecodeOffer(event nostr.Event, now int64) (Offer, error) {
 	var o Offer
 	if e := transport.Valid(event); e != nil {

@@ -164,7 +164,7 @@ func (e *Engine) Command(ctx context.Context, req Request) (any, error) {
 		if err := json.Unmarshal(req.Params, &selection); err != nil {
 			return nil, err
 		}
-		tower, err := e.selectProtection(o, o.TowerBPS, selection.PubKey)
+		tower, err := e.selectProtection(o, o.TowerBPS, selection.PubKey, true)
 		if err != nil {
 			return nil, err
 		}
@@ -247,7 +247,7 @@ func (e *Engine) Command(ctx context.Context, req Request) (any, error) {
 		if o.Status != "open" || o.Maker == e.identity.Public().Hex() {
 			return nil, errors.New("offer not available to take")
 		}
-		tower, err := e.selectProtection(o, p.TowerBPS, p.TowerPubKey)
+		tower, err := e.selectProtection(o, p.TowerBPS, p.TowerPubKey, false)
 		if err != nil {
 			return nil, err
 		}

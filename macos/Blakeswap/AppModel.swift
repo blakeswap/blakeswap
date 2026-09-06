@@ -27,7 +27,8 @@ final class AppModel: ObservableObject {
         root = self.daemon.root
     }
     private var refreshing = false
-    @Published private(set) var checkingSwaps = false
+    @Published private(set) var swapRefreshGeneration: UInt64?
+    var checkingSwaps: Bool { swapRefreshGeneration == generation }
     var network: String { settings?.activeNetwork ?? status?.network ?? "mainnet" }
     var isRegtest: Bool { network == "regtest" }
     func invalidateSnapshot() { generation &+= 1; snapshot.status = nil; recovery = nil }
@@ -65,13 +66,16 @@ final class AppModel: ObservableObject {
     func beginSwapRefresh() -> Bool {
         guard !checkingSwaps else { return false }
         generation &+= 1 // Invalidate polling responses that started before this check.
-        checkingSwaps = true
+        swapRefreshGeneration = generation
         return true
+    }
+    func finishSwapRefresh(_ expected: UInt64) {
+        if swapRefreshGeneration == expected { swapRefreshGeneration = nil }
     }
     func refreshSwaps() async {
         guard beginSwapRefresh() else { return }
-        defer { checkingSwaps = false }
         let selected = profile, expected = generation
+        defer { finishSwapRefresh(expected) }
         let currentNetwork = network
         do {
             let raw = try await DaemonRPC.call(root: root, profile: selected, method: "status.refresh", params: ["expected_network": currentNetwork])

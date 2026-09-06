@@ -85,11 +85,11 @@ func TestBountyRoundingAndEconomicBounds(t *testing.T) {
 	o := sample(t).Offer()
 	o.TowerBPS = 50
 	o.SellAmount = 100000
-	if o.Validate(time.Now().Unix()) == nil {
+	if ValidateRescueAmounts(o.TowerBPS, o.SellAmount, o.BuyAmount) == nil {
 		t.Fatal("dust bounty accepted")
 	}
 	o.SellAmount = 120000
-	if e := o.Validate(time.Now().Unix()); e != nil {
+	if e := ValidateRescueAmounts(o.TowerBPS, o.SellAmount, o.BuyAmount); e != nil {
 		t.Fatal(e)
 	}
 }

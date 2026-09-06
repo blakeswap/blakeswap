@@ -3,6 +3,21 @@ import XCTest
 
 final class AppModelTests: XCTestCase {
     @MainActor
+    func testSwitchingWalletKeepsPollingAndNewRefreshIndependent() {
+        let model = AppModel()
+        XCTAssertTrue(model.beginSwapRefresh())
+        let aliceRefresh = model.generation
+        model.selectProfile("bob")
+        XCTAssertFalse(model.checkingSwaps, "Alice's pending check must not block Bob's polling")
+        XCTAssertTrue(model.beginSwapRefresh())
+        let bobRefresh = model.generation
+        model.finishSwapRefresh(aliceRefresh)
+        XCTAssertTrue(model.checkingSwaps, "Alice's completion must not clear Bob's pending check")
+        model.finishSwapRefresh(bobRefresh)
+        XCTAssertFalse(model.checkingSwaps)
+    }
+
+    @MainActor
     func testManualRefreshRejectsOlderPollWithoutClearingVisibleSwap() {
         let model = AppModel()
         var settings = AppSettings(); settings.activeNetwork = "regtest"; settings.revision = 1

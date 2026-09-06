@@ -29,7 +29,14 @@ func (e *Engine) ownOffer(o protocol.Offer) protocol.Offer {
 
 // selectProtection consumes only an authenticated local command, never a peer's
 // offer or terms. Both parties may independently choose their own provider.
-func (e *Engine) selectProtection(o protocol.Offer, bps int64, pubkey string) (protocol.Tower, error) {
+func (e *Engine) selectProtection(o protocol.Offer, bps int64, pubkey string, maker bool) (protocol.Tower, error) {
+	amounts := []int64{o.BuyAmount}
+	if maker {
+		amounts = append(amounts, o.SellAmount)
+	}
+	if err := protocol.ValidateRescueAmounts(bps, amounts...); err != nil {
+		return protocol.Tower{}, err
+	}
 	o.Tower, o.TowerBPS = nil, bps
 	if bps > 0 && pubkey != "" {
 		pub, err := protocol.PublicKey(pubkey)
