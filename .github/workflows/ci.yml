@@ -15,6 +15,8 @@ jobs:
           persist-credentials: false
       - name: Vet
         run: sh scripts/go.sh vet ./...
+      - name: Local storage reset
+        run: make test-reset
       - name: Unit, IPC lifecycle, race and NIP-44 vectors
         run: sh scripts/go.sh test -race -count=1 -p=1 ./... fiatjaf.com/nostr/nip44
       - name: Formatting

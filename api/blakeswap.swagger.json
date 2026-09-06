@@ -88,6 +88,167 @@
         ]
       }
     },
+    "/v1/onboarding/backup": {
+      "post": {
+        "operationId": "DaemonService_ExportFirstWallet",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1Backup"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/googleRpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/v1ExportFirstWalletRequest"
+            }
+          }
+        ],
+        "tags": [
+          "DaemonService"
+        ]
+      }
+    },
+    "/v1/onboarding/confirm": {
+      "post": {
+        "operationId": "DaemonService_ConfirmFirstWallet",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1Settings"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/googleRpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/v1ConfirmFirstWalletRequest"
+            }
+          }
+        ],
+        "tags": [
+          "DaemonService"
+        ]
+      }
+    },
+    "/v1/onboarding/finish": {
+      "post": {
+        "operationId": "DaemonService_FinishOnboarding",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1Settings"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/googleRpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/v1Settings"
+            }
+          }
+        ],
+        "tags": [
+          "DaemonService"
+        ]
+      }
+    },
+    "/v1/onboarding/recovery": {
+      "post": {
+        "operationId": "DaemonService_GetFirstWallet",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1FirstWallet"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/googleRpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "type": "object",
+              "properties": {}
+            }
+          }
+        ],
+        "tags": [
+          "DaemonService"
+        ]
+      }
+    },
+    "/v1/onboarding/wallet": {
+      "post": {
+        "operationId": "DaemonService_PrepareFirstWallet",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1FirstWallet"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/googleRpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/v1PrepareFirstWalletRequest"
+            }
+          }
+        ],
+        "tags": [
+          "DaemonService"
+        ]
+      }
+    },
     "/v1/pause": {
       "put": {
         "operationId": "DaemonService_SetPaused",
@@ -603,6 +764,21 @@
         }
       }
     },
+    "v1ConfirmFirstWalletRequest": {
+      "type": "object",
+      "properties": {
+        "revision": {
+          "type": "string",
+          "format": "uint64"
+        },
+        "words": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    },
     "v1CreateOfferRequest": {
       "type": "object",
       "properties": {
@@ -685,6 +861,21 @@
         }
       }
     },
+    "v1ExportFirstWalletRequest": {
+      "type": "object",
+      "properties": {
+        "path": {
+          "type": "string"
+        },
+        "password": {
+          "type": "string"
+        },
+        "revision": {
+          "type": "string",
+          "format": "uint64"
+        }
+      }
+    },
     "v1FaucetRequest": {
       "type": "object",
       "properties": {
@@ -705,6 +896,24 @@
       "properties": {
         "txid": {
           "type": "string"
+        }
+      }
+    },
+    "v1FirstWallet": {
+      "type": "object",
+      "properties": {
+        "settings": {
+          "$ref": "#/definitions/v1Settings"
+        },
+        "recovery": {
+          "$ref": "#/definitions/v1Recovery"
+        },
+        "backup_word_positions": {
+          "type": "array",
+          "items": {
+            "type": "integer",
+            "format": "int64"
+          }
         }
       }
     },
@@ -819,6 +1028,27 @@
         }
       }
     },
+    "v1PrepareFirstWalletRequest": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "mnemonic": {
+          "type": "string"
+        },
+        "backup_path": {
+          "type": "string"
+        },
+        "backup_password": {
+          "type": "string"
+        },
+        "revision": {
+          "type": "string",
+          "format": "uint64"
+        }
+      }
+    },
     "v1Recovery": {
       "type": "object",
       "properties": {
@@ -855,6 +1085,10 @@
     "v1Settings": {
       "type": "object",
       "properties": {
+        "onboarding_stage": {
+          "type": "string",
+          "description": "wallet, backup, connect; empty means completed. Older installs remain completed."
+        },
         "wallets": {
           "type": "array",
           "items": {

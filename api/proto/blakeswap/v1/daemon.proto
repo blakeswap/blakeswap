@@ -27,6 +27,11 @@ service DaemonService {
  rpc GetRecovery(google.protobuf.Empty) returns (Recovery) { option (google.api.http) = { post: "/v1/wallet/recovery" body: "*" }; }
  rpc BackupWallet(google.protobuf.Empty) returns (Backup) { option (google.api.http) = { post: "/v1/wallet/backup" body: "*" }; }
  rpc CreateWallet(CreateWalletRequest) returns (Settings) { option (google.api.http) = { post: "/v1/wallets" body: "*" }; }
+ rpc PrepareFirstWallet(PrepareFirstWalletRequest) returns (FirstWallet) { option (google.api.http) = { post: "/v1/onboarding/wallet" body: "*" }; }
+ rpc GetFirstWallet(google.protobuf.Empty) returns (FirstWallet) { option (google.api.http) = { post: "/v1/onboarding/recovery" body: "*" }; }
+ rpc ConfirmFirstWallet(ConfirmFirstWalletRequest) returns (Settings) { option (google.api.http) = { post: "/v1/onboarding/confirm" body: "*" }; }
+ rpc ExportFirstWallet(ExportFirstWalletRequest) returns (Backup) { option (google.api.http) = { post: "/v1/onboarding/backup" body: "*" }; }
+ rpc FinishOnboarding(Settings) returns (Settings) { option (google.api.http) = { post: "/v1/onboarding/finish" body: "*" }; }
  rpc GetSettings(google.protobuf.Empty) returns (Settings) { option (google.api.http) = { get: "/v1/settings" }; }
  rpc UpdateSettings(Settings) returns (Settings) { option (google.api.http) = { put: "/v1/settings" body: "*" }; }
  rpc CheckNode(CheckNodeRequest) returns (CheckNodeResponse) { option (google.api.http) = { post: "/v1/settings/check-node" body: "*" }; }
@@ -106,7 +111,15 @@ message Environment {
 }
 message WalletProfile { string id = 1; string name = 2; }
 message CreateWalletRequest { string name = 1; uint64 revision = 2; }
+message PrepareFirstWalletRequest {
+ string name = 1; string mnemonic = 2;
+ string backup_path = 3; string backup_password = 4; uint64 revision = 5;
+}
+message FirstWallet { Settings settings = 1; Recovery recovery = 2; repeated uint32 backup_word_positions = 3; }
+message ConfirmFirstWalletRequest { uint64 revision = 1; repeated string words = 2; }
+message ExportFirstWalletRequest { string path = 1; string password = 2; uint64 revision = 3; }
 message Settings {
+ string onboarding_stage = 5; // wallet, backup, connect; empty means completed. Older installs remain completed.
  repeated WalletProfile wallets = 4; // Stable IDs; display names may be edited. Create IDs with CreateWallet.
  string active_network = 1;
  repeated Environment environments = 2;

@@ -54,6 +54,11 @@ account that can read those files.
 | Faucet | POST `/v1/regtest/faucet` | Test faucet to caller's deposit address, regtest RPC only |
 | GetSettings | GET `/v1/settings` | Desktop environment configuration and revision |
 | UpdateSettings | PUT `/v1/settings` | Atomic compare-and-swap configuration update |
+| PrepareFirstWallet | POST `/v1/onboarding/wallet` | Create or restore the first wallet with the current Settings revision |
+| GetFirstWallet | POST `/v1/onboarding/recovery` | Explicit recovery phrase request while backup confirmation is pending |
+| ConfirmFirstWallet | POST `/v1/onboarding/confirm` | Verify three requested recovery words and advance setup |
+| ExportFirstWallet | POST `/v1/onboarding/backup` | Save a setup wallet backup with a chosen password and unused absolute filename |
+| FinishOnboarding | POST `/v1/onboarding/finish` | Validate connections and mark setup complete using the current Settings revision |
 | CheckNode | POST `/v1/settings/check-node` | Read-only chain identity/height check and trust description |
 
 Settings methods belong to the desktop manager; standalone `daemon --config`
@@ -134,3 +139,24 @@ to generate an independent encrypted seed and register a live endpoint in
 The desktop supports up to 20 wallets on each active network. Each wallet has its
 own bearer credential, vault, network state, and npub. Changing networks checks
 outstanding obligations in every saved wallet.
+
+### First-launch setup
+
+New desktop Settings starts with `onboarding_stage: "wallet"`. Preparation
+accepts a name and either no recovery input (generate), `mnemonic` (BIP39), or
+`backup_path` with `backup_password` (encrypted state restore). Generated and
+phrase-restored wallets advance to `backup`; the response contains the recovery
+phrase and three one-based `backup_word_positions`. Confirmation accepts the
+three words in that order and advances to `connect`. Restoring an existing
+encrypted backup goes directly to `connect`, retaining its network and swap state.
+Only explicit setup recovery calls return the phrase; status and Settings never do.
+
+Finishing accepts Settings still at `connect`, validates both active endpoints,
+checks restored obligations before a network change, and clears the stage. A
+missing/empty stage in pre-existing settings means setup is already complete.
+Generic Settings updates and wallet creation cannot bypass a pending step.
+All setup mutations carry a revision; stale calls are rejected. Preparation is
+durable before advancing the stage, so a restart cannot silently replace keys.
+Onboarding RPCs are unavailable after setup (use normal wallet recovery/backup).
+The CLI names are `onboarding.prepare`, `onboarding.get`, `onboarding.confirm`,
+`onboarding.export`, and `onboarding.finish`.

@@ -20,20 +20,25 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	DaemonService_GetStatus_FullMethodName         = "/blakeswap.v1.DaemonService/GetStatus"
-	DaemonService_ResolveWatchtower_FullMethodName = "/blakeswap.v1.DaemonService/ResolveWatchtower"
-	DaemonService_SetPaused_FullMethodName         = "/blakeswap.v1.DaemonService/SetPaused"
-	DaemonService_CreateOffer_FullMethodName       = "/blakeswap.v1.DaemonService/CreateOffer"
-	DaemonService_CancelOffer_FullMethodName       = "/blakeswap.v1.DaemonService/CancelOffer"
-	DaemonService_TakeOffer_FullMethodName         = "/blakeswap.v1.DaemonService/TakeOffer"
-	DaemonService_Mine_FullMethodName              = "/blakeswap.v1.DaemonService/Mine"
-	DaemonService_Faucet_FullMethodName            = "/blakeswap.v1.DaemonService/Faucet"
-	DaemonService_GetRecovery_FullMethodName       = "/blakeswap.v1.DaemonService/GetRecovery"
-	DaemonService_BackupWallet_FullMethodName      = "/blakeswap.v1.DaemonService/BackupWallet"
-	DaemonService_CreateWallet_FullMethodName      = "/blakeswap.v1.DaemonService/CreateWallet"
-	DaemonService_GetSettings_FullMethodName       = "/blakeswap.v1.DaemonService/GetSettings"
-	DaemonService_UpdateSettings_FullMethodName    = "/blakeswap.v1.DaemonService/UpdateSettings"
-	DaemonService_CheckNode_FullMethodName         = "/blakeswap.v1.DaemonService/CheckNode"
+	DaemonService_GetStatus_FullMethodName          = "/blakeswap.v1.DaemonService/GetStatus"
+	DaemonService_ResolveWatchtower_FullMethodName  = "/blakeswap.v1.DaemonService/ResolveWatchtower"
+	DaemonService_SetPaused_FullMethodName          = "/blakeswap.v1.DaemonService/SetPaused"
+	DaemonService_CreateOffer_FullMethodName        = "/blakeswap.v1.DaemonService/CreateOffer"
+	DaemonService_CancelOffer_FullMethodName        = "/blakeswap.v1.DaemonService/CancelOffer"
+	DaemonService_TakeOffer_FullMethodName          = "/blakeswap.v1.DaemonService/TakeOffer"
+	DaemonService_Mine_FullMethodName               = "/blakeswap.v1.DaemonService/Mine"
+	DaemonService_Faucet_FullMethodName             = "/blakeswap.v1.DaemonService/Faucet"
+	DaemonService_GetRecovery_FullMethodName        = "/blakeswap.v1.DaemonService/GetRecovery"
+	DaemonService_BackupWallet_FullMethodName       = "/blakeswap.v1.DaemonService/BackupWallet"
+	DaemonService_CreateWallet_FullMethodName       = "/blakeswap.v1.DaemonService/CreateWallet"
+	DaemonService_PrepareFirstWallet_FullMethodName = "/blakeswap.v1.DaemonService/PrepareFirstWallet"
+	DaemonService_GetFirstWallet_FullMethodName     = "/blakeswap.v1.DaemonService/GetFirstWallet"
+	DaemonService_ConfirmFirstWallet_FullMethodName = "/blakeswap.v1.DaemonService/ConfirmFirstWallet"
+	DaemonService_ExportFirstWallet_FullMethodName  = "/blakeswap.v1.DaemonService/ExportFirstWallet"
+	DaemonService_FinishOnboarding_FullMethodName   = "/blakeswap.v1.DaemonService/FinishOnboarding"
+	DaemonService_GetSettings_FullMethodName        = "/blakeswap.v1.DaemonService/GetSettings"
+	DaemonService_UpdateSettings_FullMethodName     = "/blakeswap.v1.DaemonService/UpdateSettings"
+	DaemonService_CheckNode_FullMethodName          = "/blakeswap.v1.DaemonService/CheckNode"
 )
 
 // DaemonServiceClient is the client API for DaemonService service.
@@ -51,6 +56,11 @@ type DaemonServiceClient interface {
 	GetRecovery(ctx context.Context, in *emptypb.Empty, opts ...grpc.CallOption) (*Recovery, error)
 	BackupWallet(ctx context.Context, in *emptypb.Empty, opts ...grpc.CallOption) (*Backup, error)
 	CreateWallet(ctx context.Context, in *CreateWalletRequest, opts ...grpc.CallOption) (*Settings, error)
+	PrepareFirstWallet(ctx context.Context, in *PrepareFirstWalletRequest, opts ...grpc.CallOption) (*FirstWallet, error)
+	GetFirstWallet(ctx context.Context, in *emptypb.Empty, opts ...grpc.CallOption) (*FirstWallet, error)
+	ConfirmFirstWallet(ctx context.Context, in *ConfirmFirstWalletRequest, opts ...grpc.CallOption) (*Settings, error)
+	ExportFirstWallet(ctx context.Context, in *ExportFirstWalletRequest, opts ...grpc.CallOption) (*Backup, error)
+	FinishOnboarding(ctx context.Context, in *Settings, opts ...grpc.CallOption) (*Settings, error)
 	GetSettings(ctx context.Context, in *emptypb.Empty, opts ...grpc.CallOption) (*Settings, error)
 	UpdateSettings(ctx context.Context, in *Settings, opts ...grpc.CallOption) (*Settings, error)
 	CheckNode(ctx context.Context, in *CheckNodeRequest, opts ...grpc.CallOption) (*CheckNodeResponse, error)
@@ -174,6 +184,56 @@ func (c *daemonServiceClient) CreateWallet(ctx context.Context, in *CreateWallet
 	return out, nil
 }
 
+func (c *daemonServiceClient) PrepareFirstWallet(ctx context.Context, in *PrepareFirstWalletRequest, opts ...grpc.CallOption) (*FirstWallet, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(FirstWallet)
+	err := c.cc.Invoke(ctx, DaemonService_PrepareFirstWallet_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *daemonServiceClient) GetFirstWallet(ctx context.Context, in *emptypb.Empty, opts ...grpc.CallOption) (*FirstWallet, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(FirstWallet)
+	err := c.cc.Invoke(ctx, DaemonService_GetFirstWallet_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *daemonServiceClient) ConfirmFirstWallet(ctx context.Context, in *ConfirmFirstWalletRequest, opts ...grpc.CallOption) (*Settings, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(Settings)
+	err := c.cc.Invoke(ctx, DaemonService_ConfirmFirstWallet_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *daemonServiceClient) ExportFirstWallet(ctx context.Context, in *ExportFirstWalletRequest, opts ...grpc.CallOption) (*Backup, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(Backup)
+	err := c.cc.Invoke(ctx, DaemonService_ExportFirstWallet_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *daemonServiceClient) FinishOnboarding(ctx context.Context, in *Settings, opts ...grpc.CallOption) (*Settings, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(Settings)
+	err := c.cc.Invoke(ctx, DaemonService_FinishOnboarding_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *daemonServiceClient) GetSettings(ctx context.Context, in *emptypb.Empty, opts ...grpc.CallOption) (*Settings, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(Settings)
@@ -219,6 +279,11 @@ type DaemonServiceServer interface {
 	GetRecovery(context.Context, *emptypb.Empty) (*Recovery, error)
 	BackupWallet(context.Context, *emptypb.Empty) (*Backup, error)
 	CreateWallet(context.Context, *CreateWalletRequest) (*Settings, error)
+	PrepareFirstWallet(context.Context, *PrepareFirstWalletRequest) (*FirstWallet, error)
+	GetFirstWallet(context.Context, *emptypb.Empty) (*FirstWallet, error)
+	ConfirmFirstWallet(context.Context, *ConfirmFirstWalletRequest) (*Settings, error)
+	ExportFirstWallet(context.Context, *ExportFirstWalletRequest) (*Backup, error)
+	FinishOnboarding(context.Context, *Settings) (*Settings, error)
 	GetSettings(context.Context, *emptypb.Empty) (*Settings, error)
 	UpdateSettings(context.Context, *Settings) (*Settings, error)
 	CheckNode(context.Context, *CheckNodeRequest) (*CheckNodeResponse, error)
@@ -264,6 +329,21 @@ func (UnimplementedDaemonServiceServer) BackupWallet(context.Context, *emptypb.E
 }
 func (UnimplementedDaemonServiceServer) CreateWallet(context.Context, *CreateWalletRequest) (*Settings, error) {
 	return nil, status.Error(codes.Unimplemented, "method CreateWallet not implemented")
+}
+func (UnimplementedDaemonServiceServer) PrepareFirstWallet(context.Context, *PrepareFirstWalletRequest) (*FirstWallet, error) {
+	return nil, status.Error(codes.Unimplemented, "method PrepareFirstWallet not implemented")
+}
+func (UnimplementedDaemonServiceServer) GetFirstWallet(context.Context, *emptypb.Empty) (*FirstWallet, error) {
+	return nil, status.Error(codes.Unimplemented, "method GetFirstWallet not implemented")
+}
+func (UnimplementedDaemonServiceServer) ConfirmFirstWallet(context.Context, *ConfirmFirstWalletRequest) (*Settings, error) {
+	return nil, status.Error(codes.Unimplemented, "method ConfirmFirstWallet not implemented")
+}
+func (UnimplementedDaemonServiceServer) ExportFirstWallet(context.Context, *ExportFirstWalletRequest) (*Backup, error) {
+	return nil, status.Error(codes.Unimplemented, "method ExportFirstWallet not implemented")
+}
+func (UnimplementedDaemonServiceServer) FinishOnboarding(context.Context, *Settings) (*Settings, error) {
+	return nil, status.Error(codes.Unimplemented, "method FinishOnboarding not implemented")
 }
 func (UnimplementedDaemonServiceServer) GetSettings(context.Context, *emptypb.Empty) (*Settings, error) {
 	return nil, status.Error(codes.Unimplemented, "method GetSettings not implemented")
@@ -493,6 +573,96 @@ func _DaemonService_CreateWallet_Handler(srv interface{}, ctx context.Context, d
 	return interceptor(ctx, in, info, handler)
 }
 
+func _DaemonService_PrepareFirstWallet_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(PrepareFirstWalletRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DaemonServiceServer).PrepareFirstWallet(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: DaemonService_PrepareFirstWallet_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DaemonServiceServer).PrepareFirstWallet(ctx, req.(*PrepareFirstWalletRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _DaemonService_GetFirstWallet_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(emptypb.Empty)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DaemonServiceServer).GetFirstWallet(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: DaemonService_GetFirstWallet_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DaemonServiceServer).GetFirstWallet(ctx, req.(*emptypb.Empty))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _DaemonService_ConfirmFirstWallet_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ConfirmFirstWalletRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DaemonServiceServer).ConfirmFirstWallet(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: DaemonService_ConfirmFirstWallet_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DaemonServiceServer).ConfirmFirstWallet(ctx, req.(*ConfirmFirstWalletRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _DaemonService_ExportFirstWallet_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ExportFirstWalletRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DaemonServiceServer).ExportFirstWallet(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: DaemonService_ExportFirstWallet_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DaemonServiceServer).ExportFirstWallet(ctx, req.(*ExportFirstWalletRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _DaemonService_FinishOnboarding_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(Settings)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DaemonServiceServer).FinishOnboarding(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: DaemonService_FinishOnboarding_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DaemonServiceServer).FinishOnboarding(ctx, req.(*Settings))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _DaemonService_GetSettings_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(emptypb.Empty)
 	if err := dec(in); err != nil {
@@ -597,6 +767,26 @@ var DaemonService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "CreateWallet",
 			Handler:    _DaemonService_CreateWallet_Handler,
+		},
+		{
+			MethodName: "PrepareFirstWallet",
+			Handler:    _DaemonService_PrepareFirstWallet_Handler,
+		},
+		{
+			MethodName: "GetFirstWallet",
+			Handler:    _DaemonService_GetFirstWallet_Handler,
+		},
+		{
+			MethodName: "ConfirmFirstWallet",
+			Handler:    _DaemonService_ConfirmFirstWallet_Handler,
+		},
+		{
+			MethodName: "ExportFirstWallet",
+			Handler:    _DaemonService_ExportFirstWallet_Handler,
+		},
+		{
+			MethodName: "FinishOnboarding",
+			Handler:    _DaemonService_FinishOnboarding_Handler,
 		},
 		{
 			MethodName: "GetSettings",

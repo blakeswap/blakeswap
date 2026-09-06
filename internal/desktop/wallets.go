@@ -20,7 +20,7 @@ import (
 // Called with the manager lock held (or before the run loop starts). Socket
 // names stay short enough for macOS regardless of the stable wallet ID.
 func (m *Manager) startAPI(profile string) error {
-	service := &api.Service{Command: func(ctx context.Context, r daemon.Request) (any, error) { return m.command(ctx, profile, r) }, ReadSettings: m.readSettings, WriteSettings: m.writeSettings, NewWallet: m.createWallet}
+	service := &api.Service{Command: func(ctx context.Context, r daemon.Request) (any, error) { return m.command(ctx, profile, r) }, ReadSettings: m.readSettings, WriteSettings: m.writeSettings, NewWallet: m.createWallet, PrepareWallet: m.prepareFirstWallet, FirstWallet: m.firstWallet, ConfirmWallet: m.confirmFirstWallet, ExportWallet: m.exportFirstWallet, FinishSetup: m.finishOnboarding}
 	server, err := api.Listen(m.runtimeCtx, filepath.Join(m.runtimeDir, fmt.Sprintf("%d.sock", len(m.servers))), service)
 	if err != nil {
 		return err
@@ -55,6 +55,9 @@ func (m *Manager) createWallet(ctx context.Context, request *pb.CreateWalletRequ
 	}
 	if request.Revision != m.settings.Revision {
 		return nil, status.Error(codes.Aborted, "settings changed; reload before creating a wallet")
+	}
+	if m.settings.OnboardingStage != "" {
+		return nil, status.Error(codes.FailedPrecondition, "finish setting up your first wallet")
 	}
 	if len(m.settings.Wallets) >= 20 {
 		return nil, status.Error(codes.ResourceExhausted, "at most 20 wallets")

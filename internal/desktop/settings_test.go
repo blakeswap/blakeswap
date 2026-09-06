@@ -24,6 +24,7 @@ func TestSettingsPersistAndRejectStaleOrInvalidUpdates(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	settings.OnboardingStage = "" // This test exercises an already configured installation.
 	if settings.ActiveNetwork != "mainnet" {
 		t.Fatal("public mainnet is the default")
 	}
@@ -61,7 +62,7 @@ func TestSettingsPersistAndRejectStaleOrInvalidUpdates(t *testing.T) {
 }
 func TestOfflineActiveSwapCannotBeHiddenByNetworkChange(t *testing.T) {
 	root := t.TempDir()
-	settings := Defaults()
+	settings := configuredDefaults()
 	m := &Manager{root: root, settings: settings, engines: map[string]*daemon.Engine{}}
 	walletDir := filepath.Join(root, "wallets", "alice")
 	seed, password, err := master(walletDir)
@@ -93,7 +94,7 @@ func TestOfflineActiveSwapCannotBeHiddenByNetworkChange(t *testing.T) {
 }
 
 func TestStatusAndSettingsStayReadableDuringExternalIO(t *testing.T) {
-	m := &Manager{settings: Defaults(), engines: map[string]*daemon.Engine{}, lastError: "Connecting", restart: true}
+	m := &Manager{settings: configuredDefaults(), engines: map[string]*daemon.Engine{}, lastError: "Connecting", restart: true}
 	m.publishView()
 	m.mu.Lock()
 	done := make(chan error, 1)
@@ -122,7 +123,7 @@ func TestStatusAndSettingsStayReadableDuringExternalIO(t *testing.T) {
 }
 
 func TestStaleNetworkMutationIsRejectedBeforeWalletLookup(t *testing.T) {
-	m := &Manager{settings: Defaults(), engines: map[string]*daemon.Engine{}}
+	m := &Manager{settings: configuredDefaults(), engines: map[string]*daemon.Engine{}}
 	for _, network := range []string{"", "regtest", "testnet"} {
 		raw, _ := json.Marshal(map[string]any{"expected_network": network, "sell": "btc", "sell_amount": 1000000, "buy_amount": 2000000})
 		_, err := m.command(context.Background(), "alice", daemon.Request{Method: "offer.create", Params: raw})
@@ -141,7 +142,7 @@ func TestStaleNetworkMutationIsRejectedBeforeWalletLookup(t *testing.T) {
 // vault lock when a user switches endpoints or the application closes.
 func TestSettingsCancelsBootstrapBeforeInspectingStoredObligations(t *testing.T) {
 	root := t.TempDir()
-	settings := Defaults()
+	settings := configuredDefaults()
 	m := &Manager{root: root, settings: settings, engines: map[string]*daemon.Engine{}}
 	walletDir := filepath.Join(root, "wallets", "alice")
 	seed, password, err := master(walletDir)
@@ -189,7 +190,7 @@ func TestSettingsCancelsBootstrapBeforeInspectingStoredObligations(t *testing.T)
 }
 
 func TestWatchtowerPrivacyAndFavoritesPersistPerNetwork(t *testing.T) {
-	settings := Defaults()
+	settings := configuredDefaults()
 	for _, env := range settings.Environments {
 		if env.PublicWatchtower {
 			t.Fatal("watchtower public by default")
@@ -229,7 +230,7 @@ func TestWatchtowerPrivacyAndFavoritesPersistPerNetwork(t *testing.T) {
 func TestLegacyWalletMigrationPreservesVaults(t *testing.T) {
 	for _, hasBob := range []bool{false, true} {
 		root := t.TempDir()
-		legacy := Defaults()
+		legacy := configuredDefaults()
 		legacy.Wallets = nil
 		if err := saveSettings(root, legacy); err != nil {
 			t.Fatal(err)
@@ -271,7 +272,7 @@ func TestLegacyWalletMigrationPreservesVaults(t *testing.T) {
 	}
 }
 func TestWalletIDsCannotBeChangedOrDeletedBySettings(t *testing.T) {
-	m := &Manager{root: t.TempDir(), settings: Defaults()}
+	m := &Manager{root: t.TempDir(), settings: configuredDefaults()}
 	for _, change := range []func(*pb.Settings){
 		func(s *pb.Settings) { s.Wallets[0].Id = "../../outside" },
 		func(s *pb.Settings) { s.Wallets[0].Id = "different" },
@@ -288,7 +289,7 @@ func TestWalletIDsCannotBeChangedOrDeletedBySettings(t *testing.T) {
 }
 
 func TestRenameAndInactiveSettingsDoNotRestartWallets(t *testing.T) {
-	m := &Manager{root: t.TempDir(), settings: Defaults()}
+	m := &Manager{root: t.TempDir(), settings: configuredDefaults()}
 	next := proto.Clone(m.settings).(*pb.Settings)
 	next.Wallets[0].Name = "Savings"
 	saved, err := m.writeSettings(context.Background(), next)
@@ -303,7 +304,7 @@ func TestRenameAndInactiveSettingsDoNotRestartWallets(t *testing.T) {
 }
 
 func TestReadyWalletStartsWhileAnotherBootstrapIsBlocked(t *testing.T) {
-	settings := Defaults()
+	settings := configuredDefaults()
 	settings.Wallets = append(settings.Wallets, &pb.WalletProfile{Id: "savings", Name: "Savings"})
 	ready, blocked := &networkOpening{cancel: func() {}, done: make(chan networkResult, 1)}, &networkOpening{cancel: func() {}, done: make(chan networkResult, 1)}
 	engine := &daemon.Engine{} // Identity-only sentinel; no chain calls are needed.
@@ -319,3 +320,5 @@ func TestReadyWalletStartsWhileAnotherBootstrapIsBlocked(t *testing.T) {
 		t.Fatal("failed bootstrap discarded another wallet's running engine")
 	}
 }
+
+func configuredDefaults() *pb.Settings { s := Defaults(); s.OnboardingStage = ""; return s }
