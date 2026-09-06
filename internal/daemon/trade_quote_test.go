@@ -79,6 +79,12 @@ func TestTradeQuoteIsReadOnlyAndConfirmationSurvivesExpiryRestart(t *testing.T) 
 			if got.State != "accepted" || got.ID != request.RequestID {
 				t.Fatal(got)
 			}
+			// Model elapsed time without a two-minute sleep: the stored receipt's
+			// quote is expired before closing/reloading the encrypted snapshot.
+			e.s.TradeReceipts[request.RequestID].Snapshot.Quote.Expires = time.Now().Unix() - 1
+			if err := e.save(); err != nil {
+				t.Fatal(err)
+			}
 			var saved State
 			if _, err := e.vault.Load(&saved); err != nil {
 				t.Fatal(err)
