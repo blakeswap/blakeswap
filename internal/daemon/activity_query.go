@@ -60,10 +60,10 @@ func (e *Engine) activityPage(raw json.RawMessage) (ActivityPage, error) {
 		if q.Cursor != 0 {
 			return ActivityPage{}, errors.New("an activity cursor requires its original snapshot")
 		}
-		if len(e.activitySnapshots) >= 32 {
+		if len(e.activitySnapshots) >= 4 {
 			oldest := ""
 			for id, s := range e.activitySnapshots {
-				if oldest == "" || s.Page.Expires < e.activitySnapshots[oldest].Page.Expires {
+				if oldest == "" || s.Sequence < e.activitySnapshots[oldest].Sequence {
 					oldest = id
 				}
 			}
@@ -71,6 +71,11 @@ func (e *Engine) activityPage(raw json.RawMessage) (ActivityPage, error) {
 		}
 		page := ActivityPage{Snapshot: transport.RandomID(), Expires: now + 600, Revision: e.s.ActivityRevision, Records: []Activity{}, Index: e.s.ActivityIndexes, Error: e.s.ActivityError}
 		for _, a := range e.s.Activities {
+			if a.Generation > 0 && !e.activitySourceCurrent(a.Chain, a.Generation) {
+				a.History = append(append([]ActivityOutcome{}, a.History...), activityOutcome(a))
+				a.Status = "unknown"
+				a.Confirmations = 0
+			}
 			if activityMatches(a, q) {
 				page.Records = append(page.Records, a)
 			}
@@ -93,7 +98,8 @@ func (e *Engine) activityPage(raw json.RawMessage) (ActivityPage, error) {
 			return ActivityPage{}, err
 		}
 		q.Snapshot = page.Snapshot
-		e.activitySnapshots[q.Snapshot] = activitySnapshot{Page: page, Filter: activityFilter(q)}
+		e.activitySnapshotSequence++
+		e.activitySnapshots[q.Snapshot] = activitySnapshot{Page: page, Filter: activityFilter(q), Sequence: e.activitySnapshotSequence}
 	}
 	snapshot, ok := e.activitySnapshots[q.Snapshot]
 	if !ok {
@@ -111,6 +117,14 @@ func (e *Engine) activityPage(raw json.RawMessage) (ActivityPage, error) {
 	page.NextCursor = 0
 	if end < page.Total {
 		page.NextCursor = end
+	}
+	// Callers cannot mutate the cached snapshot through returned slices/maps.
+	encoded, err := json.Marshal(page)
+	if err != nil {
+		return ActivityPage{}, err
+	}
+	if err := json.Unmarshal(encoded, &page); err != nil {
+		return ActivityPage{}, err
 	}
 	return page, nil
 }
@@ -135,7 +149,7 @@ func activityCSV(records []Activity, header bool) (string, error) {
 	var output bytes.Buffer
 	writer := csv.NewWriter(&output)
 	if header {
-		if err := writer.Write([]string{"id", "group_id", "wallet", "network", "kind", "asset", "direction", "movement", "amount_sats", "principal_sats", "fee_sats", "fee_known", "fee_payer", "bounty_sats", "txid", "variants", "outpoints", "order_id", "swap_id", "send_id", "address", "status", "confirmations", "created_at_utc", "created_time_source", "first_recorded_at_utc", "block_time_utc", "observed_at_utc", "source", "generation", "label", "prior_outcomes"}); err != nil {
+		if err := writer.Write([]string{"id", "group_id", "wallet", "network", "kind", "asset", "direction", "movement", "amount_sats", "principal_sats", "fee_sats", "fee_known", "fee_payer", "bounty_sats", "txid", "variants", "outpoints", "order_id", "swap_id", "send_id", "address", "status", "confirmations", "created_at_utc", "created_time_source", "first_recorded_at_utc", "block_time_utc", "observed_at_utc", "source", "generation", "label", "prior_outcomes", "classification", "counter_asset", "counter_principal_sats", "related_ids", "variant_amounts", "local_status"}); err != nil {
 			return "", err
 		}
 	}
@@ -150,11 +164,13 @@ func activityCSV(records []Activity, header bool) (string, error) {
 			fee = strconv.FormatInt(a.Fee, 10)
 		}
 		row := []string{a.ID, a.GroupID, a.Wallet, string(a.Network), a.Kind, string(a.Chain), a.Direction, strconv.FormatBool(a.Movement), strconv.FormatInt(a.Amount, 10), strconv.FormatInt(a.Principal, 10), fee, strconv.FormatBool(a.FeeKnown), a.FeePayer, strconv.FormatInt(a.Bounty, 10), a.TxID, strings.Join(a.Variants, "|"), strings.Join(points, "|"), a.OrderID, a.SwapID, a.SendID, a.Address, a.Status, strconv.Itoa(a.Confirmations), csvTime(a.CreatedAt), a.CreatedSource, csvTime(a.RecordedAt), csvTime(a.BlockTime), csvTime(a.ObservedAt), a.Source, strconv.FormatUint(a.Generation, 10), a.Label, string(history)}
+		variants, _ := json.Marshal(a.VariantAmounts)
+		row = append(row, a.Classification, string(a.CounterChain), strconv.FormatInt(a.CounterAmount, 10), strings.Join(a.RelatedIDs, "|"), string(variants), a.LocalStatus)
 		for i := range row {
 			// Numeric cells are formatted from typed integers, never user text.
 			// Preserve negative values exactly if a future activity uses them.
 			switch i {
-			case 8, 9, 10, 13, 22, 29:
+			case 8, 9, 10, 13, 22, 29, 34:
 				continue
 			}
 			row[i] = csvText(row[i])

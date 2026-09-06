@@ -20,6 +20,8 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
+	DaemonService_ListActivity_FullMethodName       = "/blakeswap.v1.DaemonService/ListActivity"
+	DaemonService_ExportActivity_FullMethodName     = "/blakeswap.v1.DaemonService/ExportActivity"
 	DaemonService_GetStatus_FullMethodName          = "/blakeswap.v1.DaemonService/GetStatus"
 	DaemonService_RefreshStatus_FullMethodName      = "/blakeswap.v1.DaemonService/RefreshStatus"
 	DaemonService_ResolveWatchtower_FullMethodName  = "/blakeswap.v1.DaemonService/ResolveWatchtower"
@@ -52,6 +54,8 @@ const (
 //
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
 type DaemonServiceClient interface {
+	ListActivity(ctx context.Context, in *ActivityQuery, opts ...grpc.CallOption) (*ActivityPage, error)
+	ExportActivity(ctx context.Context, in *ActivityQuery, opts ...grpc.CallOption) (*ActivityExport, error)
 	GetStatus(ctx context.Context, in *emptypb.Empty, opts ...grpc.CallOption) (*Status, error)
 	RefreshStatus(ctx context.Context, in *RefreshStatusRequest, opts ...grpc.CallOption) (*Status, error)
 	ResolveWatchtower(ctx context.Context, in *ResolveWatchtowerRequest, opts ...grpc.CallOption) (*emptypb.Empty, error)
@@ -86,6 +90,26 @@ type daemonServiceClient struct {
 
 func NewDaemonServiceClient(cc grpc.ClientConnInterface) DaemonServiceClient {
 	return &daemonServiceClient{cc}
+}
+
+func (c *daemonServiceClient) ListActivity(ctx context.Context, in *ActivityQuery, opts ...grpc.CallOption) (*ActivityPage, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ActivityPage)
+	err := c.cc.Invoke(ctx, DaemonService_ListActivity_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *daemonServiceClient) ExportActivity(ctx context.Context, in *ActivityQuery, opts ...grpc.CallOption) (*ActivityExport, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ActivityExport)
+	err := c.cc.Invoke(ctx, DaemonService_ExportActivity_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
 }
 
 func (c *daemonServiceClient) GetStatus(ctx context.Context, in *emptypb.Empty, opts ...grpc.CallOption) (*Status, error) {
@@ -352,6 +376,8 @@ func (c *daemonServiceClient) CheckNode(ctx context.Context, in *CheckNodeReques
 // All implementations must embed UnimplementedDaemonServiceServer
 // for forward compatibility.
 type DaemonServiceServer interface {
+	ListActivity(context.Context, *ActivityQuery) (*ActivityPage, error)
+	ExportActivity(context.Context, *ActivityQuery) (*ActivityExport, error)
 	GetStatus(context.Context, *emptypb.Empty) (*Status, error)
 	RefreshStatus(context.Context, *RefreshStatusRequest) (*Status, error)
 	ResolveWatchtower(context.Context, *ResolveWatchtowerRequest) (*emptypb.Empty, error)
@@ -388,6 +414,12 @@ type DaemonServiceServer interface {
 // pointer dereference when methods are called.
 type UnimplementedDaemonServiceServer struct{}
 
+func (UnimplementedDaemonServiceServer) ListActivity(context.Context, *ActivityQuery) (*ActivityPage, error) {
+	return nil, status.Error(codes.Unimplemented, "method ListActivity not implemented")
+}
+func (UnimplementedDaemonServiceServer) ExportActivity(context.Context, *ActivityQuery) (*ActivityExport, error) {
+	return nil, status.Error(codes.Unimplemented, "method ExportActivity not implemented")
+}
 func (UnimplementedDaemonServiceServer) GetStatus(context.Context, *emptypb.Empty) (*Status, error) {
 	return nil, status.Error(codes.Unimplemented, "method GetStatus not implemented")
 }
@@ -485,6 +517,42 @@ func RegisterDaemonServiceServer(s grpc.ServiceRegistrar, srv DaemonServiceServe
 		t.testEmbeddedByValue()
 	}
 	s.RegisterService(&DaemonService_ServiceDesc, srv)
+}
+
+func _DaemonService_ListActivity_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ActivityQuery)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DaemonServiceServer).ListActivity(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: DaemonService_ListActivity_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DaemonServiceServer).ListActivity(ctx, req.(*ActivityQuery))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _DaemonService_ExportActivity_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ActivityQuery)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DaemonServiceServer).ExportActivity(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: DaemonService_ExportActivity_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DaemonServiceServer).ExportActivity(ctx, req.(*ActivityQuery))
+	}
+	return interceptor(ctx, in, info, handler)
 }
 
 func _DaemonService_GetStatus_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
@@ -962,6 +1030,14 @@ var DaemonService_ServiceDesc = grpc.ServiceDesc{
 	ServiceName: "blakeswap.v1.DaemonService",
 	HandlerType: (*DaemonServiceServer)(nil),
 	Methods: []grpc.MethodDesc{
+		{
+			MethodName: "ListActivity",
+			Handler:    _DaemonService_ListActivity_Handler,
+		},
+		{
+			MethodName: "ExportActivity",
+			Handler:    _DaemonService_ExportActivity_Handler,
+		},
 		{
 			MethodName: "GetStatus",
 			Handler:    _DaemonService_GetStatus_Handler,

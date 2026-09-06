@@ -259,3 +259,12 @@ func (s *Service) ConfirmTrade(ctx context.Context, in *pb.ConfirmTradeRequest) 
 	out := &pb.ConfirmTradeResult{}
 	return out, s.command(ctx, "trade.confirm", in, out)
 }
+
+func (s *Service) ListActivity(ctx context.Context, in *pb.ActivityQuery) (*pb.ActivityPage, error) {
+	out := &pb.ActivityPage{}
+	return out, s.command(ctx, "activity.list", in, out)
+}
+func (s *Service) ExportActivity(ctx context.Context, in *pb.ActivityQuery) (*pb.ActivityExport, error) {
+	out := &pb.ActivityExport{}
+	return out, s.command(ctx, "activity.export", in, out)
+}

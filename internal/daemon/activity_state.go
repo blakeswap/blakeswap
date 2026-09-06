@@ -14,15 +14,22 @@ const maxActivityRecords = 50000
 
 func activityID(kind, key string) string { return kind + "/" + key }
 func activityOutcome(a Activity) ActivityOutcome {
-	return ActivityOutcome{Status: a.Status, TxID: a.TxID, Amount: a.Amount, Fee: a.Fee, FeeKnown: a.FeeKnown, BlockHash: a.BlockHash, BlockTime: a.BlockTime, ObservedAt: a.ObservedAt, Source: a.Source, Generation: a.Generation}
+	outcome := ActivityOutcome{Status: a.Status, TxID: a.TxID, Amount: a.Amount, Fee: a.Fee, FeeKnown: a.FeeKnown, BlockHash: a.BlockHash, BlockTime: a.BlockTime, ObservedAt: a.ObservedAt, Source: a.Source, Generation: a.Generation}
+	if outcome.ObservedAt == 0 && a.UpdatedAt > 0 {
+		outcome.ObservedAt = a.UpdatedAt
+		outcome.Source = "local_state"
+	}
+	return outcome
 }
 func activityMaterial(a Activity) string {
 	a.ObservedAt = 0 // Routine polling is not another economic outcome.
+	a.UpdatedAt = 0
 	return protocol.Digest(struct {
-		Outcome                      ActivityOutcome
-		Kind, Direction, LocalStatus string
-		Movement                     bool
-	}{activityOutcome(a), a.Kind, a.Direction, a.LocalStatus, a.Movement})
+		Outcome                                               ActivityOutcome
+		Kind, Direction, LocalStatus, Classification, GroupID string
+		RelatedIDs, Variants                                  []string
+		Movement                                              bool
+	}{activityOutcome(a), a.Kind, a.Direction, a.LocalStatus, a.Classification, a.GroupID, a.RelatedIDs, a.Variants, a.Movement})
 }
 func mergeActivityIDs(a, b []string) []string {
 	set := map[string]bool{}
@@ -243,6 +250,8 @@ func (e *Engine) syncActivity() {
 		}
 		e.putActivity(Activity{ID: activityID("tower", id), GroupID: activityID("tower", id), Kind: "tower_earning", Chain: job.Target.Chain, Direction: "incoming", Movement: true, Amount: bounty, Principal: bounty, Fee: job.Target.Amount - total, FeeKnown: true, FeePayer: "contract_owner", SwapID: job.SwapID, TxID: state.Broadcast, Variants: rawActivityIDs(job.Templates), VariantAmounts: activityVariantAmounts(job.Templates, job.Target.Amount, true), Outpoints: []CoinOutpoint{{TxID: job.Target.TxID, Vout: job.Target.Vout}}, LocalStatus: status, Status: status, Confirmations: state.Confirmed, Label: "Earned tower " + job.Kind + " bounty"}, backfill)
 	}
+	e.seedActivityCoins()
+	e.reconcileActivityReceipts()
 	e.s.ActivityVersion = 1
 }
 

@@ -100,3 +100,42 @@ func TestActivityCSVExactSafeAndPrivate(t *testing.T) {
 		}
 	}
 }
+
+func TestActivitySnapshotEvictionIsOldestFirst(t *testing.T) {
+	e := activityQueryFixture()
+	q := ActivityQuery{ExpectedWallet: "alice", ExpectedNetwork: "regtest"}
+	var snapshots []string
+	for i := 0; i < 5; i++ {
+		snapshots = append(snapshots, queryActivity(t, e, q).Snapshot)
+	}
+	q.Snapshot = snapshots[0]
+	raw, _ := json.Marshal(q)
+	if _, err := e.activityPage(raw); err == nil {
+		t.Fatal("oldest snapshot survived bounded FIFO eviction")
+	}
+	for _, id := range snapshots[1:] {
+		q.Snapshot = id
+		if got := queryActivity(t, e, q); got.Total != 2 {
+			t.Fatal("newer snapshot was evicted", got)
+		}
+	}
+}
+
+func TestActivityLifecycleHistoryRetainsLocalTimeAndDoesNotGrowOnPolling(t *testing.T) {
+	e := activityQueryFixture()
+	order := Activity{ID: "order/id", Kind: "order", Status: "open", LocalStatus: "open"}
+	e.putActivity(order, true)
+	old := e.s.Activities[order.ID]
+	if old.CreatedAt != 0 || old.CreatedSource != "unknown" {
+		t.Fatal("migration invented creation time", old)
+	}
+	order.Status, order.LocalStatus = "cancelled", "cancelled"
+	e.putActivity(order, false)
+	for i := 0; i < 10; i++ {
+		e.putActivity(order, false)
+	}
+	got := e.s.Activities[order.ID]
+	if len(got.History) != 1 || got.History[0].Status != "open" || got.History[0].ObservedAt != old.UpdatedAt || got.History[0].Source != "local_state" {
+		t.Fatal("local transition lost its observed time or polling duplicated it", got)
+	}
+}

@@ -82,6 +82,14 @@ func Call(ctx context.Context, socket string, req daemon.Request) (json.RawMessa
 		p := &pb.TradeQuoteRequest{}
 		in = p
 		invoke = func() (proto.Message, error) { return client.QuoteTrade(ctx, p) }
+	case "activity.list":
+		p := &pb.ActivityQuery{}
+		in = p
+		invoke = func() (proto.Message, error) { return client.ListActivity(ctx, p) }
+	case "activity.export":
+		p := &pb.ActivityQuery{}
+		in = p
+		invoke = func() (proto.Message, error) { return client.ExportActivity(ctx, p) }
 	case "trade.confirm":
 		p := &pb.ConfirmTradeRequest{}
 		in = p
