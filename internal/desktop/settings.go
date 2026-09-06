@@ -64,6 +64,17 @@ func validate(s *pb.Settings) error {
 			return errors.New("invalid or duplicate environment")
 		}
 		seen[env.Network] = true
+		if len(env.Explorers) > 2 {
+			return errors.New("configure explorers only for BTC and BLAKE")
+		}
+		for id, endpoint := range env.Explorers {
+			if !chain.ID(id).Valid() {
+				return errors.New("invalid explorer chain")
+			}
+			if err := validateExplorer(env.Network, endpoint); err != nil {
+				return err
+			}
+		}
 		if len(env.Nodes) != 2 || env.Nodes["btc"] == nil || env.Nodes["blake"] == nil {
 			return errors.New("both node settings are required")
 		}
@@ -131,6 +142,23 @@ func validate(s *pb.Settings) error {
 		if env.RescueFeeBps < 0 || env.RescueFeeBps > 1000 {
 			return errors.New("rescue fee must be 1–1000 basis points (0 uses the 50 basis-point default)")
 		}
+	}
+	return nil
+}
+
+func validateExplorer(network, endpoint string) error {
+	if endpoint == "" {
+		return nil
+	}
+	if len(endpoint) > 2048 || strings.Count(endpoint, "{txid}") != 1 {
+		return errors.New("explorer URL must contain exactly one {txid} placeholder")
+	}
+	u, err := url.Parse(strings.ReplaceAll(endpoint, "{txid}", strings.Repeat("a", 64)))
+	if err != nil || u.Hostname() == "" || u.User != nil || u.Fragment != "" || u.RawQuery != "" {
+		return errors.New("explorer URL must have a host and no credentials, query or fragment")
+	}
+	if u.Scheme != "https" && !(network == "regtest" && u.Scheme == "http" && (u.Hostname() == "127.0.0.1" || u.Hostname() == "::1")) {
+		return errors.New("explorer requires HTTPS, or loopback HTTP on regtest")
 	}
 	return nil
 }

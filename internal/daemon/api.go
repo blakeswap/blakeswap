@@ -132,6 +132,10 @@ func (e *Engine) Command(ctx context.Context, req Request) (any, error) {
 		return nil, e.fatal
 	}
 	switch req.Method {
+	case "activity.list":
+		return e.activityPage(req.Params)
+	case "activity.export":
+		return e.exportActivity(req.Params)
 	case "status":
 		return e.status(), nil
 	case "transaction.bump":

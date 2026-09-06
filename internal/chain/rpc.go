@@ -268,6 +268,7 @@ func (r *RPC) Output(ctx context.Context, txid string, vout uint32) (*TxOut, err
 }
 
 type Transaction struct {
+	BlockTime     int64  `json:"blocktime"`
 	Height        uint32 `json:"height"`
 	Hex           string `json:"hex"`
 	TxID          string `json:"txid"`
@@ -279,11 +280,15 @@ func (r *RPC) Transaction(ctx context.Context, id string) (Transaction, error) {
 	var t Transaction
 	e := r.Call(ctx, "getrawtransaction", &t, id, true)
 	if e == nil && t.BlockHash != "" {
-		var h struct{ Height uint32 }
+		var h struct {
+			Height uint32
+			Time   int64
+		}
 		if err := r.Call(ctx, "getblockheader", &h, t.BlockHash); err != nil {
 			return t, err
 		}
 		t.Height = h.Height
+		t.BlockTime = h.Time
 	}
 	return t, e
 }

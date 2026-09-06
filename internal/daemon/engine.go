@@ -26,35 +26,43 @@ import (
 )
 
 type Engine struct {
-	mu              sync.Mutex
-	tradeQuotes     map[string]TradeQuoteSnapshot
-	tradeConfirming map[string]bool
-	tradeQuoteBusy  atomic.Bool
-	feeQuoteBusy    atomic.Bool
-	preflightBusy   atomic.Bool
-	htlcBalances    map[chain.ID]int64
-	htlcAvailable   map[chain.ID]bool
-	Config          Config
-	s               State
-	vault           *storage.Vault
-	keys            *wallet.Keys
-	identity        nostr.SecretKey
-	nodes           map[chain.ID]chain.Backend
-	watch           map[chain.ID]chain.Backend
-	scanners        map[chain.ID]chain.SpendScanner
-	towerScanners   map[chain.ID]chain.SpendScanner
-	receiveBook     map[chain.ID][]receiveAddress
-	receiveReady    map[chain.ID]bool
-	walletCoins     map[chain.ID]map[string][]chain.UTXO
-	walletCursor    map[chain.ID]int
-	sendCursor      string
-	addresses       map[chain.ID]string
-	scripts         map[chain.ID][]byte
-	heights         map[chain.ID]uint32
-	clocks          map[chain.ID]uint32
-	balances        map[chain.ID]int64
-	lastError       string
-	fatal           error
+	activityBusy             atomic.Bool
+	activityCancel           context.CancelFunc
+	activityReaders          sync.WaitGroup
+	activityClosed           bool
+	activitySnapshots        map[string]activitySnapshot
+	activitySnapshotSequence uint64
+	activityCursors          map[chain.ID]string
+	activityVariants         map[chain.ID]int
+	mu                       sync.Mutex
+	tradeQuotes              map[string]TradeQuoteSnapshot
+	tradeConfirming          map[string]bool
+	tradeQuoteBusy           atomic.Bool
+	feeQuoteBusy             atomic.Bool
+	preflightBusy            atomic.Bool
+	htlcBalances             map[chain.ID]int64
+	htlcAvailable            map[chain.ID]bool
+	Config                   Config
+	s                        State
+	vault                    *storage.Vault
+	keys                     *wallet.Keys
+	identity                 nostr.SecretKey
+	nodes                    map[chain.ID]chain.Backend
+	watch                    map[chain.ID]chain.Backend
+	scanners                 map[chain.ID]chain.SpendScanner
+	towerScanners            map[chain.ID]chain.SpendScanner
+	receiveBook              map[chain.ID][]receiveAddress
+	receiveReady             map[chain.ID]bool
+	walletCoins              map[chain.ID]map[string][]chain.UTXO
+	walletCursor             map[chain.ID]int
+	sendCursor               string
+	addresses                map[chain.ID]string
+	scripts                  map[chain.ID][]byte
+	heights                  map[chain.ID]uint32
+	clocks                   map[chain.ID]uint32
+	balances                 map[chain.ID]int64
+	lastError                string
+	fatal                    error
 }
 
 func Open(ctx context.Context, c Config) (*Engine, error) {
@@ -180,6 +188,20 @@ func Open(ctx context.Context, c Config) (*Engine, error) {
 	return en, nil
 }
 func (e *Engine) Close() error {
+	e.mu.Lock()
+	if e.activityClosed {
+		e.mu.Unlock()
+		return nil
+	}
+	e.activityClosed = true
+	if e.activityCancel != nil {
+		e.activityCancel()
+	}
+	if e.fatal == nil {
+		e.fatal = errors.New("engine closed")
+	}
+	e.mu.Unlock()
+	e.activityReaders.Wait()
 	for _, r := range e.nodes {
 		_ = r.Close()
 	}
@@ -189,6 +211,7 @@ func (e *Engine) save() error {
 	if e.fatal != nil {
 		return e.fatal
 	}
+	e.syncActivity()
 	if err := e.vault.Save(e.s); err != nil {
 		e.fatal = fmt.Errorf("durability failure; execution stopped: %w", err)
 		return e.fatal
@@ -261,6 +284,13 @@ func (e *Engine) Run(ctx context.Context) error {
 	}
 }
 func (e *Engine) Tick(ctx context.Context) error {
+	err := e.tickProtocol(ctx)
+	// Advisory history runs after settlement/delivery, outside the engine lock.
+	// Its bounded failures must never suppress recovery or become spend evidence.
+	e.refreshActivity(ctx)
+	return err
+}
+func (e *Engine) tickProtocol(ctx context.Context) error {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 	if e.fatal != nil {

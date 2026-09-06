@@ -7,6 +7,7 @@ import SwiftProtobuf
 final class AppModel: ObservableObject {
     @Published var profile = "alice"
     @Published var page = "Market"
+    @Published var activityDestination: ActivityDestination?
     struct Snapshot {
         var status: DaemonStatus?
         var settings: AppSettings?
@@ -31,7 +32,7 @@ final class AppModel: ObservableObject {
     var checkingSwaps: Bool { swapRefreshGeneration == generation }
     var network: String { settings?.activeNetwork ?? status?.network ?? "mainnet" }
     var isRegtest: Bool { network == "regtest" }
-    func invalidateSnapshot() { generation &+= 1; snapshot.status = nil; recovery = nil }
+    func invalidateSnapshot() { generation &+= 1; snapshot.status = nil; recovery = nil; activityDestination = nil }
     func selectProfile(_ name: String) { invalidateSnapshot(); profile = name; notice = nil }
 
     @discardableResult

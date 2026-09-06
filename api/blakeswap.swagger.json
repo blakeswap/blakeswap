@@ -20,6 +20,70 @@
     "application/json"
   ],
   "paths": {
+    "/v1/activity/export": {
+      "post": {
+        "operationId": "DaemonService_ExportActivity",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1ActivityExport"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/googleRpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/v1ActivityQuery"
+            }
+          }
+        ],
+        "tags": [
+          "DaemonService"
+        ]
+      }
+    },
+    "/v1/activity/query": {
+      "post": {
+        "operationId": "DaemonService_ListActivity",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1ActivityPage"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/googleRpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/v1ActivityQuery"
+            }
+          }
+        ],
+        "tags": [
+          "DaemonService"
+        ]
+      }
+    },
     "/v1/fees/quote": {
       "post": {
         "operationId": "DaemonService_QuoteFee",
@@ -982,6 +1046,414 @@
       },
       "additionalProperties": {}
     },
+    "v1ActivityExport": {
+      "type": "object",
+      "properties": {
+        "snapshot": {
+          "type": "string"
+        },
+        "expires": {
+          "type": "string",
+          "format": "int64"
+        },
+        "next_cursor": {
+          "type": "integer",
+          "format": "int64"
+        },
+        "total": {
+          "type": "integer",
+          "format": "int64"
+        },
+        "csv": {
+          "type": "string"
+        }
+      }
+    },
+    "v1ActivityIndex": {
+      "type": "object",
+      "properties": {
+        "address": {
+          "type": "integer",
+          "format": "int64"
+        },
+        "after": {
+          "type": "string"
+        },
+        "source": {
+          "type": "string"
+        },
+        "generation": {
+          "type": "string",
+          "format": "uint64"
+        },
+        "completed_pass": {
+          "type": "string",
+          "format": "int64"
+        },
+        "error": {
+          "type": "string"
+        }
+      }
+    },
+    "v1ActivityObservation": {
+      "type": "object",
+      "properties": {
+        "sequence": {
+          "type": "string",
+          "format": "uint64"
+        },
+        "txid": {
+          "type": "string"
+        },
+        "status": {
+          "type": "string"
+        },
+        "confirmations": {
+          "type": "integer",
+          "format": "int32"
+        },
+        "height": {
+          "type": "integer",
+          "format": "int64"
+        },
+        "block_hash": {
+          "type": "string"
+        },
+        "block_time": {
+          "type": "string",
+          "format": "int64"
+        },
+        "observed_at": {
+          "type": "string",
+          "format": "int64"
+        },
+        "source": {
+          "type": "string"
+        },
+        "generation": {
+          "type": "string",
+          "format": "uint64"
+        },
+        "error": {
+          "type": "string"
+        }
+      }
+    },
+    "v1ActivityOutcome": {
+      "type": "object",
+      "properties": {
+        "status": {
+          "type": "string"
+        },
+        "txid": {
+          "type": "string"
+        },
+        "amount": {
+          "type": "string",
+          "format": "int64"
+        },
+        "fee": {
+          "type": "string",
+          "format": "int64"
+        },
+        "fee_known": {
+          "type": "boolean"
+        },
+        "block_hash": {
+          "type": "string"
+        },
+        "block_time": {
+          "type": "string",
+          "format": "int64"
+        },
+        "observed_at": {
+          "type": "string",
+          "format": "int64"
+        },
+        "source": {
+          "type": "string"
+        },
+        "generation": {
+          "type": "string",
+          "format": "uint64"
+        }
+      }
+    },
+    "v1ActivityPage": {
+      "type": "object",
+      "properties": {
+        "snapshot": {
+          "type": "string"
+        },
+        "expires": {
+          "type": "string",
+          "format": "int64"
+        },
+        "revision": {
+          "type": "string",
+          "format": "uint64"
+        },
+        "total": {
+          "type": "integer",
+          "format": "int64"
+        },
+        "next_cursor": {
+          "type": "integer",
+          "format": "int64"
+        },
+        "records": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/v1ActivityRecord"
+          }
+        },
+        "index": {
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/definitions/v1ActivityIndex"
+          }
+        },
+        "error": {
+          "type": "string"
+        }
+      }
+    },
+    "v1ActivityQuery": {
+      "type": "object",
+      "properties": {
+        "expected_wallet": {
+          "type": "string"
+        },
+        "expected_network": {
+          "type": "string"
+        },
+        "kind": {
+          "type": "string"
+        },
+        "status": {
+          "type": "string"
+        },
+        "chain": {
+          "type": "string"
+        },
+        "from": {
+          "type": "string",
+          "format": "int64"
+        },
+        "to": {
+          "type": "string",
+          "format": "int64"
+        },
+        "snapshot": {
+          "type": "string"
+        },
+        "cursor": {
+          "type": "integer",
+          "format": "int64"
+        },
+        "limit": {
+          "type": "integer",
+          "format": "int64"
+        }
+      }
+    },
+    "v1ActivityRecord": {
+      "type": "object",
+      "properties": {
+        "version": {
+          "type": "integer",
+          "format": "int32"
+        },
+        "id": {
+          "type": "string"
+        },
+        "group_id": {
+          "type": "string"
+        },
+        "wallet": {
+          "type": "string"
+        },
+        "network": {
+          "type": "string"
+        },
+        "kind": {
+          "type": "string"
+        },
+        "chain": {
+          "type": "string"
+        },
+        "direction": {
+          "type": "string"
+        },
+        "classification": {
+          "type": "string"
+        },
+        "movement": {
+          "type": "boolean"
+        },
+        "amount": {
+          "type": "string",
+          "format": "int64"
+        },
+        "principal": {
+          "type": "string",
+          "format": "int64"
+        },
+        "fee": {
+          "type": "string",
+          "format": "int64"
+        },
+        "fee_known": {
+          "type": "boolean"
+        },
+        "fee_payer": {
+          "type": "string"
+        },
+        "bounty": {
+          "type": "string",
+          "format": "int64"
+        },
+        "counter_chain": {
+          "type": "string"
+        },
+        "counter_amount": {
+          "type": "string",
+          "format": "int64"
+        },
+        "order_id": {
+          "type": "string"
+        },
+        "swap_id": {
+          "type": "string"
+        },
+        "send_id": {
+          "type": "string"
+        },
+        "related_ids": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "address": {
+          "type": "string"
+        },
+        "outpoints": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/v1Outpoint"
+          }
+        },
+        "txid": {
+          "type": "string"
+        },
+        "variants": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "local_status": {
+          "type": "string"
+        },
+        "status": {
+          "type": "string"
+        },
+        "confirmations": {
+          "type": "integer",
+          "format": "int32"
+        },
+        "created_at": {
+          "type": "string",
+          "format": "int64"
+        },
+        "created_source": {
+          "type": "string"
+        },
+        "recorded_at": {
+          "type": "string",
+          "format": "int64"
+        },
+        "updated_at": {
+          "type": "string",
+          "format": "int64"
+        },
+        "block_time": {
+          "type": "string",
+          "format": "int64"
+        },
+        "block_hash": {
+          "type": "string"
+        },
+        "label": {
+          "type": "string"
+        },
+        "source": {
+          "type": "string"
+        },
+        "generation": {
+          "type": "string",
+          "format": "uint64"
+        },
+        "observed_at": {
+          "type": "string",
+          "format": "int64"
+        },
+        "variant_amounts": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/v1ActivityVariant"
+          }
+        },
+        "observations": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/v1ActivityObservation"
+          }
+        },
+        "history": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/v1ActivityOutcome"
+          }
+        }
+      }
+    },
+    "v1ActivityVariant": {
+      "type": "object",
+      "properties": {
+        "txid": {
+          "type": "string"
+        },
+        "amount": {
+          "type": "string",
+          "format": "int64"
+        },
+        "principal": {
+          "type": "string",
+          "format": "int64"
+        },
+        "fee": {
+          "type": "string",
+          "format": "int64"
+        },
+        "fee_known": {
+          "type": "boolean"
+        },
+        "fee_payer": {
+          "type": "string"
+        },
+        "bounty": {
+          "type": "string",
+          "format": "int64"
+        }
+      }
+    },
     "v1Backup": {
       "type": "object",
       "properties": {
@@ -1222,6 +1694,13 @@
     "v1Environment": {
       "type": "object",
       "properties": {
+        "explorers": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          },
+          "description": "Optional per-chain transaction URL templates containing {txid}; no default explorer is guessed."
+        },
         "network": {
           "type": "string",
           "description": "regtest, testnet (Testnet4), or mainnet."

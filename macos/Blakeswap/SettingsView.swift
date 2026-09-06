@@ -27,6 +27,17 @@ struct SettingsView: View {
         if favorites.contains(tower.npub) { draft.environments[index].favoriteWatchtowers.removeAll { $0 == tower.npub } }
         else { draft.environments[index].favoriteWatchtowers.append(tower.npub) }
     }
+    private var explorerSettings: some View {
+        GroupBox("Transaction explorers · " + editing) {
+            VStack(alignment: .leading, spacing: 10) {
+                Text("Optional HTTPS transaction URL templates containing {txid}. Configure each asset on this network explicitly; no explorer is assumed. Opening a link shares that transaction ID with the configured site.").font(.caption).foregroundStyle(.secondary)
+                ForEach(["btc", "blake"], id: \.self) { chain in
+                    TextField(symbol(chain) + " explorer URL with {txid}", text: Binding(get: { environment.explorers[chain] ?? "" }, set: { draft.environments[index].explorers[chain] = $0 }))
+                        .textFieldStyle(.roundedBorder).accessibilityIdentifier("explorer-" + chain)
+                }
+            }.padding(10)
+        }
+    }
     private var watchtowerSettings: some View {
         GroupBox("Watchtowers") {
             VStack(alignment: .leading, spacing: 14) {
@@ -158,7 +169,8 @@ struct SettingsView: View {
                 GroupBox("Nostr relays") {
                     VStack(spacing: 10) { ForEach(0..<3) { position in TextField("wss://relay.example", text: relay(position)).textFieldStyle(.roundedBorder) } }.padding(10)
                 }
-                watchtowerSettings
+                explorerSettings
+            watchtowerSettings
             }
             HStack {
                 Button("Reload") { Task { if let saved = await model.loadSettings() { draft = saved; editing = saved.activeNetwork; checks = [:] } } }.disabled(model.busy)
