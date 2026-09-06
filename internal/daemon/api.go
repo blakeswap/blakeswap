@@ -83,6 +83,7 @@ func (e *Engine) status() Status {
 		}
 	}
 	s.Coins = e.publicCoins()
+	s.Funds = e.chainBalances(s.Coins)
 	s.Sends = []PublicSend{}
 	for _, send := range e.s.Sends {
 		s.Sends = append(s.Sends, send.PublicSend)
@@ -91,6 +92,9 @@ func (e *Engine) status() Status {
 	return s
 }
 func (e *Engine) Command(ctx context.Context, req Request) (any, error) {
+	if req.Method == "wallet.preflight" {
+		return e.preflightFunds(ctx, req)
+	}
 	if req.Method == "status.refresh" {
 		if err := CheckCommandNetwork(req, e.Config.Network, false); err != nil {
 			return nil, err
@@ -175,8 +179,9 @@ func (e *Engine) Command(ctx context.Context, req Request) (any, error) {
 		if err := e.refresh(ctx); err != nil {
 			return nil, err
 		}
-		if e.balances[o.Sell] < o.SellAmount+protocol.FundingFee {
-			return nil, fmt.Errorf("insufficient confirmed %s balance: need %d sats including the %d-sat funding fee; available %d sats", o.Sell, o.SellAmount+protocol.FundingFee, protocol.FundingFee, e.balances[o.Sell])
+		available := e.chainBalances(e.publicCoins())[o.Sell].UnlockedConfirmed
+		if available < o.SellAmount+protocol.FundingFee {
+			return nil, fmt.Errorf("insufficient unlocked confirmed %s balance: need %d sats including the %d-sat funding fee; available %d sats", o.Sell, o.SellAmount+protocol.FundingFee, protocol.FundingFee, available)
 		}
 		if len(e.s.Offers) >= 1000 {
 			return nil, errors.New("order capacity reached")

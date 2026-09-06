@@ -26,6 +26,7 @@ service DaemonService {
  rpc Mine(MineRequest) returns (google.protobuf.Empty) { option (google.api.http) = { post: "/v1/regtest/mine" body: "*" }; }
  rpc Faucet(FaucetRequest) returns (FaucetResponse) { option (google.api.http) = { post: "/v1/regtest/faucet" body: "*" }; }
  rpc GetRecovery(google.protobuf.Empty) returns (Recovery) { option (google.api.http) = { post: "/v1/wallet/recovery" body: "*" }; }
+ rpc PreflightFunds(FundsPreflightRequest) returns (FundsPreflight) { option (google.api.http) = { post: "/v1/wallet/preflight" body: "*" }; }
  rpc SendCoins(SendCoinsRequest) returns (WalletSend) { option (google.api.http) = { post: "/v1/wallet/send" body: "*" }; }
  rpc BackupWallet(google.protobuf.Empty) returns (Backup) { option (google.api.http) = { post: "/v1/wallet/backup" body: "*" }; }
  rpc CreateWallet(CreateWalletRequest) returns (Settings) { option (google.api.http) = { post: "/v1/wallets" body: "*" }; }
@@ -63,7 +64,24 @@ message FaucetResponse { string txid = 1; }
 message Outpoint { string txid = 1; uint32 vout = 2; }
 message WalletCoin {
  string chain = 1; string txid = 2; uint32 vout = 3; int64 amount = 4;
- string address = 5; int32 confirmations = 6; bool reserved = 7;
+ string address = 5; int32 confirmations = 6; bool reserved = 7; repeated CoinHold holds = 8;
+}
+// A coin may have multiple owners; its amount is counted once in reserved_confirmed.
+message CoinHold { string kind = 1; string id = 2; string reason = 3; bool cancellable = 4; }
+message ChainBalance {
+ int64 total_confirmed = 1; int64 unlocked_confirmed = 2; int64 reserved_confirmed = 3;
+ int64 unconfirmed = 4; // Below the network's required confirmation depth.
+ int64 htlc_locked = 5; // Observed unspent own contract principal, separate from deposit coins.
+ bool htlc_available = 6; // False means contract observations are unavailable, never zero by inference.
+}
+message FundsPreflightRequest {
+ string chain = 1; int64 amount = 2; int64 fee = 3; repeated Outpoint inputs = 4;
+ string expected_network = 5; // Inputs omitted selects the actual automatic funding candidate set.
+}
+message FundsPreflight {
+ string network = 1; string wallet = 2; repeated Outpoint inputs = 3;
+ string state = 4; // proven, not_proven, checking, unavailable (not_applicable for Blake).
+ string message = 5; bool sufficient = 6; int64 total = 7;
 }
 message SendCoinsRequest {
  string id = 1; string chain = 2; string destination = 3; int64 amount = 4;
@@ -112,6 +130,7 @@ message Status {
  map<string,uint32> heights = 6; bool paused = 7;
  repeated Offer orders = 8; repeated Swap swaps = 9; repeated TowerJob tower_jobs = 10;
  int32 pending_messages = 11; string last_error = 12; Tower tower = 13;
+ map<string,ChainBalance> funds = 20;
  repeated WalletCoin coins = 18; repeated WalletSend sends = 19;
  string network = 14;
  Tower own_watchtower = 15; repeated Tower watchtowers = 16; int64 funding_fee = 17;

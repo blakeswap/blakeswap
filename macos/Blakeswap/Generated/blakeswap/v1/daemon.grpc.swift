@@ -151,6 +151,19 @@ internal enum Blakeswap_V1_DaemonService: Sendable {
                 type: .unary
             )
         }
+        /// Namespace for "PreflightFunds" metadata.
+        internal enum PreflightFunds: Sendable {
+            /// Request type for "PreflightFunds".
+            internal typealias Input = Blakeswap_V1_FundsPreflightRequest
+            /// Response type for "PreflightFunds".
+            internal typealias Output = Blakeswap_V1_FundsPreflight
+            /// Descriptor for "PreflightFunds".
+            internal static let descriptor = GRPCCore.MethodDescriptor(
+                service: GRPCCore.ServiceDescriptor(fullyQualifiedService: "blakeswap.v1.DaemonService"),
+                method: "PreflightFunds",
+                type: .unary
+            )
+        }
         /// Namespace for "SendCoins" metadata.
         internal enum SendCoins: Sendable {
             /// Request type for "SendCoins".
@@ -306,6 +319,7 @@ internal enum Blakeswap_V1_DaemonService: Sendable {
             Mine.descriptor,
             Faucet.descriptor,
             GetRecovery.descriptor,
+            PreflightFunds.descriptor,
             SendCoins.descriptor,
             BackupWallet.descriptor,
             CreateWallet.descriptor,
@@ -524,6 +538,25 @@ extension Blakeswap_V1_DaemonService {
             deserializer: some GRPCCore.MessageDeserializer<Blakeswap_V1_Recovery>,
             options: GRPCCore.CallOptions,
             onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Blakeswap_V1_Recovery>) async throws -> Result
+        ) async throws -> Result where Result: Sendable
+
+        /// Call the "PreflightFunds" method.
+        ///
+        /// - Parameters:
+        ///   - request: A request containing a single `Blakeswap_V1_FundsPreflightRequest` message.
+        ///   - serializer: A serializer for `Blakeswap_V1_FundsPreflightRequest` messages.
+        ///   - deserializer: A deserializer for `Blakeswap_V1_FundsPreflight` messages.
+        ///   - options: Options to apply to this RPC.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
+        /// - Returns: The result of `handleResponse`.
+        func preflightFunds<Result>(
+            request: GRPCCore.ClientRequest<Blakeswap_V1_FundsPreflightRequest>,
+            serializer: some GRPCCore.MessageSerializer<Blakeswap_V1_FundsPreflightRequest>,
+            deserializer: some GRPCCore.MessageDeserializer<Blakeswap_V1_FundsPreflight>,
+            options: GRPCCore.CallOptions,
+            onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Blakeswap_V1_FundsPreflight>) async throws -> Result
         ) async throws -> Result where Result: Sendable
 
         /// Call the "SendCoins" method.
@@ -1045,6 +1078,36 @@ extension Blakeswap_V1_DaemonService {
             try await self.client.unary(
                 request: request,
                 descriptor: Blakeswap_V1_DaemonService.Method.GetRecovery.descriptor,
+                serializer: serializer,
+                deserializer: deserializer,
+                options: options,
+                onResponse: handleResponse
+            )
+        }
+
+        /// Call the "PreflightFunds" method.
+        ///
+        /// - Parameters:
+        ///   - request: A request containing a single `Blakeswap_V1_FundsPreflightRequest` message.
+        ///   - serializer: A serializer for `Blakeswap_V1_FundsPreflightRequest` messages.
+        ///   - deserializer: A deserializer for `Blakeswap_V1_FundsPreflight` messages.
+        ///   - options: Options to apply to this RPC.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
+        /// - Returns: The result of `handleResponse`.
+        internal func preflightFunds<Result>(
+            request: GRPCCore.ClientRequest<Blakeswap_V1_FundsPreflightRequest>,
+            serializer: some GRPCCore.MessageSerializer<Blakeswap_V1_FundsPreflightRequest>,
+            deserializer: some GRPCCore.MessageDeserializer<Blakeswap_V1_FundsPreflight>,
+            options: GRPCCore.CallOptions = .defaults,
+            onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Blakeswap_V1_FundsPreflight>) async throws -> Result = { response in
+                try response.message
+            }
+        ) async throws -> Result where Result: Sendable {
+            try await self.client.unary(
+                request: request,
+                descriptor: Blakeswap_V1_DaemonService.Method.PreflightFunds.descriptor,
                 serializer: serializer,
                 deserializer: deserializer,
                 options: options,
@@ -1637,6 +1700,31 @@ extension Blakeswap_V1_DaemonService.ClientProtocol {
         )
     }
 
+    /// Call the "PreflightFunds" method.
+    ///
+    /// - Parameters:
+    ///   - request: A request containing a single `Blakeswap_V1_FundsPreflightRequest` message.
+    ///   - options: Options to apply to this RPC.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
+    /// - Returns: The result of `handleResponse`.
+    internal func preflightFunds<Result>(
+        request: GRPCCore.ClientRequest<Blakeswap_V1_FundsPreflightRequest>,
+        options: GRPCCore.CallOptions = .defaults,
+        onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Blakeswap_V1_FundsPreflight>) async throws -> Result = { response in
+            try response.message
+        }
+    ) async throws -> Result where Result: Sendable {
+        try await self.preflightFunds(
+            request: request,
+            serializer: GRPCProtobuf.ProtobufSerializer<Blakeswap_V1_FundsPreflightRequest>(),
+            deserializer: GRPCProtobuf.ProtobufDeserializer<Blakeswap_V1_FundsPreflight>(),
+            options: options,
+            onResponse: handleResponse
+        )
+    }
+
     /// Call the "SendCoins" method.
     ///
     /// - Parameters:
@@ -2200,6 +2288,35 @@ extension Blakeswap_V1_DaemonService.ClientProtocol {
             metadata: metadata
         )
         return try await self.getRecovery(
+            request: request,
+            options: options,
+            onResponse: handleResponse
+        )
+    }
+
+    /// Call the "PreflightFunds" method.
+    ///
+    /// - Parameters:
+    ///   - message: request message to send.
+    ///   - metadata: Additional metadata to send, defaults to empty.
+    ///   - options: Options to apply to this RPC, defaults to `.defaults`.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
+    /// - Returns: The result of `handleResponse`.
+    internal func preflightFunds<Result>(
+        _ message: Blakeswap_V1_FundsPreflightRequest,
+        metadata: GRPCCore.Metadata = [:],
+        options: GRPCCore.CallOptions = .defaults,
+        onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Blakeswap_V1_FundsPreflight>) async throws -> Result = { response in
+            try response.message
+        }
+    ) async throws -> Result where Result: Sendable {
+        let request = GRPCCore.ClientRequest<Blakeswap_V1_FundsPreflightRequest>(
+            message: message,
+            metadata: metadata
+        )
+        return try await self.preflightFunds(
             request: request,
             options: options,
             onResponse: handleResponse

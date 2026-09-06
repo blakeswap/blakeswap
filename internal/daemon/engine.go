@@ -21,11 +21,15 @@ import (
 	"sort"
 	"strconv"
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
 type Engine struct {
 	mu            sync.Mutex
+	preflightBusy atomic.Bool
+	htlcBalances  map[chain.ID]int64
+	htlcAvailable map[chain.ID]bool
 	Config        Config
 	s             State
 	vault         *storage.Vault
@@ -199,6 +203,9 @@ func (e *Engine) refresh(ctx context.Context) error {
 
 // Complete wallet observations before publishing this chain's startup readiness.
 func (e *Engine) refreshChain(ctx context.Context, id chain.ID) error {
+	if e.htlcAvailable != nil {
+		e.htlcAvailable[id] = false
+	}
 	h, err := e.nodes[id].Height(ctx)
 	if err != nil {
 		return err
@@ -226,6 +233,7 @@ func (e *Engine) refreshChain(ctx context.Context, id chain.ID) error {
 		}
 	}
 	e.balances[id] = balance
+	e.refreshHTLCBalance(ctx, id)
 	return nil
 }
 func (e *Engine) Run(ctx context.Context) error {

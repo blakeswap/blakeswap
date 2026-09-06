@@ -49,6 +49,7 @@ account that can read those files.
 | CreateOffer | POST `/v1/offers` | Exact chain/amount pair, optional expiry, and maker-only private tower selection |
 | CancelOffer | DELETE `/v1/offers/{id}` | Cancel an unreserved local offer |
 | TakeOffer | POST `/v1/swaps` | Request a signed maker offer by maker key and ID, with independent taker-only tower selection |
+| PreflightFunds | POST `/v1/wallet/preflight` | Fresh fee-inclusive candidate funds and BTC replay readiness; advisory only |
 | SendCoins | POST `/v1/wallet/send` | Explicit coin selection, recipient, amount, total fee, and idempotent request ID |
 | GetRecovery | POST `/v1/wallet/recovery` | Explicit sensitive recovery phrase request |
 | BackupWallet | POST `/v1/wallet/backup` | Consistent encrypted state backup |
@@ -213,3 +214,45 @@ It returns `Status`; normal `GetStatus` reads the latest background snapshot.
 A request during an existing cycle waits for a subsequent cycle so the chain reads
 start after the refresh request. It can span two bounded 30-second cycles; the
 native refresh call allows 70 seconds and shows failures without switching wallets.
+
+### Available funds and replay preflight
+
+`Status.funds` contains exact per-chain satoshi amounts. `total_confirmed` is
+`unlocked_confirmed + reserved_confirmed`; `unconfirmed` includes every observed
+deposit coin below the required depth (2 on regtest, 6 on public networks).
+These deposit categories do not overlap. The legacy `balances` map remains total
+confirmed funds. Whole reserved inputs are counted once, even if multiple durable
+obligations reference one input. Pending change is never unlocked confirmed.
+
+`htlc_locked` is the observed unspent principal in this wallet's own swap funding
+outputs, separate from deposit coins. It is neither a spendable balance nor a
+prediction of swap proceeds. Read it only when `htlc_available` is true; lookup
+failure does not imply zero. Both mempool and confirmed unspent contracts are
+included. Spent funding inputs are no longer included in the deposit partition.
+
+`WalletCoin.holds` explains each reservation using an activity `kind` (`offer`,
+`swap`, or `send`), its local `id`, a reason, and whether the order is cancellable.
+Only `CancelOffer` can release an open order; signed funding and sends retain
+reservations even across restart or reorg until their inputs are observed spent.
+The native coin-control view links each hold to the owning activity and exposes
+safe open-order cancellation.
+
+`PreflightFunds`, HTTP `POST /v1/wallet/preflight`, CLI `wallet.preflight`, accepts
+`chain`, `amount`, `fee`, `expected_network`, and optional explicit `inputs`.
+Without inputs it evaluates the actual automatic funding candidate selection;
+with inputs it evaluates that exact set. Results bind `network`, `wallet`, the
+candidate `inputs`, `total`, and fee-inclusive `sufficient` status. Replay `state`
+is `proven`, `not_proven` under the bounded verifier, `checking` when another check
+is active, or `unavailable` for backend/observation failures. Blake reports
+`not_applicable`. One BTC-exclusive ancestor in the selected set suffices; shared
+inputs may accompany it. A missing indexer response never proves exclusivity.
+
+Preflight does not sign, reserve, or authorize a later action. Its two-second
+budget runs outside the settlement mutex with one concurrent check per wallet;
+proofs are never cached. Repeat after a connection recovery or chain change.
+Create/take/send still perform authoritative reservation/output checks, and BTC
+funding and sends still run the conservative ancestry proof before publication.
+Native forms discard checks after wallet, network, amount, fee, generation, or
+selected-input changes. BTC coins that remain unproven require independently
+split ancestry descended from a post-fork BTC coinbase; no splitting service is
+provided.

@@ -74,6 +74,10 @@ func Call(ctx context.Context, socket string, req daemon.Request) (json.RawMessa
 		p := &emptypb.Empty{}
 		in = p
 		invoke = func() (proto.Message, error) { return client.GetRecovery(ctx, p) }
+	case "wallet.preflight":
+		p := &pb.FundsPreflightRequest{}
+		in = p
+		invoke = func() (proto.Message, error) { return client.PreflightFunds(ctx, p) }
 	case "wallet.send":
 		p := &pb.SendCoinsRequest{}
 		in = p

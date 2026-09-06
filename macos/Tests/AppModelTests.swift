@@ -94,10 +94,14 @@ extension AppModelTests {
         for chain in ["btc", "blake"] {
             XCTAssertFalse(status.canSell(chain))
             XCTAssertNotNil(status.offerValidation(sell: chain, sellAmount: "100000", buyAmount: "100000"))
-            status.balances[chain] = 101_999
+            status.balances[chain] = 500_000
+            var funds = Blakeswap_V1_ChainBalance()
+            funds.unlockedConfirmed = 101_999
+            status.funds[chain] = funds
             XCTAssertFalse(status.canSell(chain))
             XCTAssertNotNil(status.offerValidation(sell: chain, sellAmount: "100000", buyAmount: "100000"))
-            status.balances[chain] = 102_000
+            funds.unlockedConfirmed = 102_000
+            status.funds[chain] = funds
             XCTAssertTrue(status.canSell(chain))
             XCTAssertNil(status.offerValidation(sell: chain, sellAmount: "100000", buyAmount: "100000"))
             XCTAssertNotNil(status.offerValidation(sell: chain, sellAmount: "100001", buyAmount: "100000"))
@@ -141,5 +145,26 @@ extension AppModelTests {
         XCTAssertEqual(model.settings?.wallets[0].name, "Renamed")
         status.network = "testnet"
         XCTAssertTrue(model.acceptSnapshot(status, settings: settings, profile: wallet.id, generation: model.generation))
+    }
+}
+
+
+extension AppModelTests {
+    func testPositiveTotalWithNoUnlockedFundsCannotCreateOffer() {
+        var status = DaemonStatus(); status.pubkey = "alice"; status.balances["btc"] = 500_000
+        var funds = Blakeswap_V1_ChainBalance(); funds.totalConfirmed = 500_000; funds.reservedConfirmed = 500_000
+        status.funds["btc"] = funds
+        XCTAssertFalse(status.canSell("btc"))
+        XCTAssertNotNil(status.offerValidation(sell: "btc", sellAmount: "100000", buyAmount: "100000"))
+    }
+
+    func testFundsPreflightKeyBindsWalletNetworkGenerationAndExactInputs() {
+        let initial = FundsCheckKey(profile: "alice", network: "mainnet", generation: 1, chain: "btc", amount: 100_000, fee: 2_000, inputs: ["a:0", "b:1"])
+        XCTAssertNotEqual(initial, FundsCheckKey(profile: "bob", network: "mainnet", generation: 1, chain: "btc", amount: 100_000, fee: 2_000, inputs: initial.inputs))
+        XCTAssertNotEqual(initial, FundsCheckKey(profile: "alice", network: "testnet", generation: 1, chain: "btc", amount: 100_000, fee: 2_000, inputs: initial.inputs))
+        XCTAssertNotEqual(initial, FundsCheckKey(profile: "alice", network: "mainnet", generation: 2, chain: "btc", amount: 100_000, fee: 2_000, inputs: initial.inputs))
+        XCTAssertNotEqual(initial, FundsCheckKey(profile: "alice", network: "mainnet", generation: 1, chain: "btc", amount: 100_001, fee: 2_000, inputs: initial.inputs))
+        XCTAssertNotEqual(initial, FundsCheckKey(profile: "alice", network: "mainnet", generation: 1, chain: "btc", amount: 100_000, fee: 2_001, inputs: initial.inputs))
+        XCTAssertNotEqual(initial, FundsCheckKey(profile: "alice", network: "mainnet", generation: 1, chain: "btc", amount: 100_000, fee: 2_000, inputs: ["a:1", "b:1"]))
     }
 }

@@ -154,7 +154,7 @@ Restoring stale snapshots is not generally safe automatic recovery. Previously s
 
 **Daemon disconnected:** the desktop reconnects automatically; inspect the app data directory's `desktop.log`; for the separate CLI fixture, use `python3 scripts/dev.py up` and inspect `.local/<name>.log`. Check Settings and the configured endpoint before changing networks. A locked desktop does not stop the daemon; a sleeping/offline machine can stop timely responses.
 
-**Insufficient balance:** on regtest RPC, use the test faucet from Wallet, then mine two blocks. On public networks, wait for confirmations and ensure BTC inputs meet replay-ancestry requirements. Confirmed balance excludes unconfirmed change and locked HTLCs. The displayed confirmed balance can include coins reserved by local open offers, trades, or sends. Coin control marks them locked; cancel an unreserved open order to release its coins. Local reservations prevent honest-client reuse, but remote offers are not proof of funds. Funding still verifies actual unspent coins.
+**Insufficient balance:** on regtest RPC, use the test faucet from Wallet, then mine two blocks. On public networks, wait for confirmations and ensure BTC inputs meet replay-ancestry requirements. Total confirmed funds include available and reserved deposit coins. The available amount excludes whole coins held by local orders, trades, or sends; awaiting-confirmation change is shown separately. Own unspent contract principal is a separate observation, not available funds. Coin control links each hold to its order, swap, or send; the activity view can cancel an unreserved open order to release its coins. Local reservations prevent honest-client reuse, but remote offers are not proof of funds. Funding still verifies actual unspent coins.
 
 **Awaiting durable tower receipt:** ensure the selected tower and at least one shared relay are running. The daemon will not fund a protected leg based solely on a relay acknowledgment. Expired headroom may require a fresh offer/swap rather than continuing stale terms.
 
@@ -244,9 +244,10 @@ choose **Review send**, then **Confirm and send** after checking the chain, netw
 destination, amount, fee and change. **Send selected minus fee** fills the amount
 with the selected total less the fee, leaving no change. Sending this to your own
 current receive address consolidates the selected coins; there is no automatic
-consolidation service. BTC sends still require replay-safe ancestry. The send screen
+consolidation service. The review checks the selected inputs and fee; BTC sends also check replay-safe ancestry. The send screen
 uses the displayed wallet and network throughout. The daemon checks them again.
-Locked coins are visible but cannot be selected. Cancel an open order to free its
+Locked coins are visible but cannot be selected. Open **View activity** on a hold
+to inspect its owning order, swap, or send and safely cancel an open order to free its
 coins; a reserved order has become a trade and cannot be cancelled to withdraw its
 funding. Pending sends also retain their inputs. The daemon persists the exact
 signed transaction before broadcast; ambiguous failures retry those same bytes.
@@ -279,3 +280,20 @@ the current address plus up to eight historical addresses per cycle, rotating
 through all old addresses. A late payment's balance can therefore take multiple
 cycles to appear in a large wallet. Selected inputs are checked directly on chain
 again before a funding transaction or send is signed.
+
+
+### BTC readiness and available funds
+
+Create, take, and send forms check fee-inclusive unlocked confirmed candidates.
+BTC readiness is **proven**, **not proven** by the bounded ancestry verifier,
+**checking**, or **unavailable**. A set containing one proven exclusive input can
+include shared-history inputs; each input need not be independently exclusive.
+If a chain or indexer is unavailable, restore both connections and choose **Check
+funds again**. A not-proven result may mean shared ancestry or bounded-proof
+exhaustion; use independently split BTC with a post-fork BTC coinbase ancestor,
+or select a suitable mixed set. There is no automatic splitting service.
+
+Checks use a two-second budget outside the settlement mutex and keep no proof
+cache. Wallet/network/form/input changes invalidate native readiness. A successful
+check does not reserve funds or guarantee future availability; the daemon keeps
+its authoritative output, reservation, and ancestry checks before funding.

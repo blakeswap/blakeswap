@@ -197,12 +197,28 @@ func TestRealSendsHonorCoinControlFeesAndOrderLocks(t *testing.T) {
 			}
 		}
 		p := SendRequest{ID: transport.RandomID(), Chain: id, Destination: h.engines["taker"].addresses[id], Amount: 1000000, Fee: 3500, Inputs: selected, ExpectedNetwork: "regtest"}
+		before := e.Status().Funds[id]
+		preflight, err := e.preflightFunds(h.ctx, fundsRequest(id, selected))
+		if err != nil || !preflight.Sufficient || (id == chain.BTC && preflight.State != "proven") {
+			t.Fatal("real preflight", preflight, err)
+		}
 		offer := h.command("maker", "offer.create", map[string]any{"sell": id, "sell_amount": 1000000, "buy_amount": 2000000}).(protocol.Offer)
+		held := e.Status().Funds[id]
+		if held.TotalConfirmed != before.TotalConfirmed || held.UnlockedConfirmed >= before.UnlockedConfirmed || held.ReservedConfirmed == 0 {
+			t.Fatal("offer partition", before, held)
+		}
+		preflight, err = e.preflightFunds(h.ctx, fundsRequest(id, selected))
+		if err != nil || preflight.Sufficient {
+			t.Fatal("held real input passed preflight", preflight, err)
+		}
 		raw, _ := json.Marshal(p)
 		if _, err := e.Command(h.ctx, Request{Method: "wallet.send", Params: raw}); err == nil {
 			t.Fatal("spent order-locked funds")
 		}
 		h.command("maker", "offer.cancel", map[string]string{"id": offer.ID})
+		if released := e.Status().Funds[id]; released.UnlockedConfirmed != before.UnlockedConfirmed || released.ReservedConfirmed != 0 {
+			t.Fatal("cancel partition", released)
+		}
 		result, err := e.Command(h.ctx, Request{Method: "wallet.send", Params: raw})
 		if err != nil {
 			t.Fatal(err)

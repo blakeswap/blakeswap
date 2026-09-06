@@ -236,3 +236,8 @@ func (s *Service) RefreshStatus(ctx context.Context, in *pb.RefreshStatusRequest
 	err := s.command(ctx, "status.refresh", in, out)
 	return out, err
 }
+
+func (s *Service) PreflightFunds(ctx context.Context, in *pb.FundsPreflightRequest) (*pb.FundsPreflight, error) {
+	out := &pb.FundsPreflight{}
+	return out, s.command(ctx, "wallet.preflight", in, out)
+}

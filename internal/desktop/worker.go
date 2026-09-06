@@ -22,6 +22,9 @@ type refreshResult struct {
 	err error
 }
 type walletWorker struct {
+	ctx      context.Context
+	advisory sync.WaitGroup
+	command  func(context.Context, daemon.Request) (any, error)
 	statusMu sync.Mutex
 	cancel   context.CancelFunc
 	done     chan struct{}
@@ -31,7 +34,12 @@ type walletWorker struct {
 
 func startWalletWorker(ctx context.Context, engine walletRuntime) *walletWorker {
 	ctx, cancel := context.WithCancel(ctx)
-	w := &walletWorker{cancel: cancel, done: make(chan struct{}), refresh: make(chan chan refreshResult, 64)}
+	w := &walletWorker{ctx: ctx, cancel: cancel, done: make(chan struct{}), refresh: make(chan chan refreshResult, 64)}
+	if runtime, ok := engine.(interface {
+		Command(context.Context, daemon.Request) (any, error)
+	}); ok {
+		w.command = runtime.Command
+	}
 	w.capture(engine, nil)
 	go w.run(ctx, engine)
 	return w
@@ -134,6 +142,7 @@ func (m *Manager) stopWorkers() {
 	}
 	for _, worker := range m.workers {
 		<-worker.done
+		worker.advisory.Wait()
 	}
 	m.workers = map[string]*walletWorker{}
 }
@@ -146,4 +155,37 @@ func (m *Manager) startWorkers(ctx context.Context) {
 			m.workers[id] = startWalletWorker(ctx, engine)
 		}
 	}
+}
+
+// Advisory reads may perform bounded chain IO but must not hold the global
+// lifecycle lock or wait for a post-read Tick snapshot. Register the call while
+// holding m.mu so stopping a worker can cancel and join every reader before its
+// engine/backends are closed. WaitGroup additions and lifecycle waits serialize
+// under that same lock; advisory completion never needs it.
+func (m *Manager) preflightFunds(ctx context.Context, profile string, req daemon.Request) (any, error) {
+	m.mu.Lock()
+	if err := daemon.CheckCommandNetwork(req, chain.Network(m.settings.ActiveNetwork), true); err != nil {
+		m.mu.Unlock()
+		return nil, err
+	}
+	worker := m.workers[profile]
+	if worker == nil || worker.command == nil || m.restart || m.stopped || m.settings.OnboardingStage != "" {
+		m.mu.Unlock()
+		return nil, status.Error(codes.Unavailable, "wallet is connecting; check Settings and connection status")
+	}
+	worker.advisory.Add(1)
+	m.mu.Unlock()
+	defer worker.advisory.Done()
+	call, cancel := context.WithCancel(ctx)
+	defer cancel()
+	stop := context.AfterFunc(worker.ctx, cancel)
+	defer stop()
+	if err := worker.ctx.Err(); err != nil {
+		return nil, err
+	}
+	result, err := worker.command(call, req)
+	if cancelled := call.Err(); cancelled != nil {
+		return nil, cancelled
+	}
+	return result, err
 }

@@ -205,7 +205,12 @@ struct ContentView: View {
                 Text(symbol(chain)).font(.caption2).foregroundStyle(.secondary)
             }
             Text(units(status.balances[chain] ?? 0)).font(.system(size: 28, weight: .medium, design: .rounded)).monospacedDigit()
-            Text("Confirmed balance").font(.caption).foregroundStyle(.secondary)
+            Text("Total confirmed").font(.caption).foregroundStyle(.secondary)
+            Text("Available: \(units(status.available(chain)))").font(.caption)
+            if let funds = status.funds[chain] {
+                Text("Reserved: \(units(funds.reservedConfirmed)) · Awaiting confirmations: \(units(funds.unconfirmed))").font(.caption2).foregroundStyle(.secondary)
+                Text(funds.htlcAvailable ? "Contract principal: \(units(funds.htlcLocked)) (separate)" : "Contract principal: observation unavailable").font(.caption2).foregroundStyle(.secondary)
+            }
         }.padding(22).frame(maxWidth: .infinity, alignment: .leading).background(panel, in: RoundedRectangle(cornerRadius: 14))
     }
     private func market(_ status: DaemonStatus) -> some View {
@@ -346,6 +351,11 @@ struct OfferSheet: View {
     @State private var protection = false
     @State private var towerID = ""
     @State private var validation: String?
+    @State private var checkedFunds: FundsCheckKey?
+    private var fundsReady: Bool {
+        checkedFunds == FundsCheckKey(profile: model.profile, network: model.network, generation: model.generation,
+                                     chain: sell, amount: Int64(sellAmount) ?? 0, fee: model.status?.offerFundingFee ?? 2_000)
+    }
     private var favorites: [String] { model.settings?.environments.first(where: { $0.network == model.network })?.favoriteWatchtowers ?? [] }
     private var towers: [Blakeswap_V1_Tower] {
         (model.status?.watchtowers ?? []).filter { favorites.contains($0.npub) && $0.expires > Int64(Date().timeIntervalSince1970) }
@@ -365,7 +375,7 @@ struct OfferSheet: View {
                     Text("Bitcoin (BTC)").tag("btc").disabled(!(model.status?.canSell("btc") ?? false))
                     Text("Bitcoin Blake2b (BLAKE)").tag("blake").disabled(!(model.status?.canSell("blake") ?? false))
                 }
-                Text("Available: \(model.status?.balances[sell] ?? 0) \(symbol(sell)) sats · Funding fee: \(model.status?.offerFundingFee ?? 2_000) sats").font(.caption).foregroundStyle(.secondary)
+                Text("Available: \(model.status?.available(sell) ?? 0) \(symbol(sell)) sats · Funding fee: \(model.status?.offerFundingFee ?? 2_000) sats").font(.caption).foregroundStyle(.secondary)
                 TextField("Sell amount (sats)", text: $sellAmount).accessibilityIdentifier("sell-amount")
                 TextField("Receive amount (sats)", text: $buyAmount).accessibilityIdentifier("buy-amount")
                 Toggle("Protect my side with a watchtower", isOn: $protection)
@@ -378,6 +388,7 @@ struct OfferSheet: View {
                     if towers.isEmpty { Text("Add a public watchtower to favorites in Settings. Its announcement must be available on your relays.").font(.caption).foregroundStyle(.secondary) }
                 }
             }.formStyle(.grouped)
+            FundsPreflightView(chain: sell, amount: Int64(sellAmount) ?? 0, fee: model.status?.offerFundingFee ?? 2_000, ready: $checkedFunds)
             Text("Your protection choice is private to you and your watchtower.").font(.caption).foregroundStyle(.secondary)
             Text(protection ? "The tower earns \(percentage(selectedTower?.bps ?? 0)) only when its delayed rescue transaction confirms. Claim yourself first to avoid that fee." : "Keep the app open to respond before the refund deadlines. Your side will have no tower protection.")
                 .font(.callout).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
@@ -388,10 +399,11 @@ struct OfferSheet: View {
                 Button("Cancel") { dismiss() }.keyboardShortcut(.cancelAction)
                 Spacer()
                 Button("Publish offer") {
-                    guard formError == nil, let a = Int64(sellAmount), let b = Int64(buyAmount) else { return }
+                    guard fundsReady, formError == nil, let a = Int64(sellAmount), let b = Int64(buyAmount) else { return }
                     let tower = protection ? selectedTower : nil
-                    Task { if await model.command("offer.create", ["sell": sell, "sell_amount": a, "buy_amount": b, "tower_bps": tower?.bps ?? 0, "tower_pubkey": tower?.pubkey ?? ""]) { dismiss() } else { validation = model.notice } }
-                }.buttonStyle(MintButton()).keyboardShortcut(.defaultAction).disabled(model.busy || formError != nil).accessibilityIdentifier("publish-offer")
+                    let checked = checkedFunds, selectedChain = sell
+                    Task { guard fundsReady, checked == checkedFunds else { return }; if await model.command("offer.create", ["sell": selectedChain, "sell_amount": a, "buy_amount": b, "tower_bps": tower?.bps ?? 0, "tower_pubkey": tower?.pubkey ?? ""]) { dismiss() } else { validation = model.notice } }
+                }.buttonStyle(MintButton()).keyboardShortcut(.defaultAction).disabled(model.busy || formError != nil || !fundsReady).accessibilityIdentifier("publish-offer")
             }
         }.padding(32).frame(width: 540)
         .task {

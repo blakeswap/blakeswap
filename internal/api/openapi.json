@@ -549,6 +549,38 @@
         ]
       }
     },
+    "/v1/wallet/preflight": {
+      "post": {
+        "operationId": "DaemonService_PreflightFunds",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1FundsPreflight"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/googleRpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/v1FundsPreflightRequest"
+            }
+          }
+        ],
+        "tags": [
+          "DaemonService"
+        ]
+      }
+    },
     "/v1/wallet/recovery": {
       "post": {
         "operationId": "DaemonService_GetRecovery",
@@ -747,6 +779,12 @@
         "tower": {
           "$ref": "#/definitions/v1Tower"
         },
+        "funds": {
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/definitions/v1ChainBalance"
+          }
+        },
         "coins": {
           "type": "array",
           "items": {
@@ -816,6 +854,37 @@
         }
       }
     },
+    "v1ChainBalance": {
+      "type": "object",
+      "properties": {
+        "total_confirmed": {
+          "type": "string",
+          "format": "int64"
+        },
+        "unlocked_confirmed": {
+          "type": "string",
+          "format": "int64"
+        },
+        "reserved_confirmed": {
+          "type": "string",
+          "format": "int64"
+        },
+        "unconfirmed": {
+          "type": "string",
+          "format": "int64",
+          "description": "Below the network's required confirmation depth."
+        },
+        "htlc_locked": {
+          "type": "string",
+          "format": "int64",
+          "description": "Observed unspent own contract principal, separate from deposit coins."
+        },
+        "htlc_available": {
+          "type": "boolean",
+          "description": "False means contract observations are unavailable, never zero by inference."
+        }
+      }
+    },
     "v1CheckNodeRequest": {
       "type": "object",
       "properties": {
@@ -841,6 +910,24 @@
           "type": "string"
         }
       }
+    },
+    "v1CoinHold": {
+      "type": "object",
+      "properties": {
+        "kind": {
+          "type": "string"
+        },
+        "id": {
+          "type": "string"
+        },
+        "reason": {
+          "type": "string"
+        },
+        "cancellable": {
+          "type": "boolean"
+        }
+      },
+      "description": "A coin may have multiple owners; its amount is counted once in reserved_confirmed."
     },
     "v1ConfirmFirstWalletRequest": {
       "type": "object",
@@ -997,6 +1084,65 @@
             "type": "integer",
             "format": "int64"
           }
+        }
+      }
+    },
+    "v1FundsPreflight": {
+      "type": "object",
+      "properties": {
+        "network": {
+          "type": "string"
+        },
+        "wallet": {
+          "type": "string"
+        },
+        "inputs": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/v1Outpoint"
+          }
+        },
+        "state": {
+          "type": "string",
+          "description": "proven, not_proven, checking, unavailable (not_applicable for Blake)."
+        },
+        "message": {
+          "type": "string"
+        },
+        "sufficient": {
+          "type": "boolean"
+        },
+        "total": {
+          "type": "string",
+          "format": "int64"
+        }
+      }
+    },
+    "v1FundsPreflightRequest": {
+      "type": "object",
+      "properties": {
+        "chain": {
+          "type": "string"
+        },
+        "amount": {
+          "type": "string",
+          "format": "int64"
+        },
+        "fee": {
+          "type": "string",
+          "format": "int64"
+        },
+        "inputs": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/v1Outpoint"
+          }
+        },
+        "expected_network": {
+          "type": "string",
+          "description": "Inputs omitted selects the actual automatic funding candidate set."
         }
       }
     },
@@ -1444,6 +1590,13 @@
         },
         "reserved": {
           "type": "boolean"
+        },
+        "holds": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/v1CoinHold"
+          }
         }
       }
     },

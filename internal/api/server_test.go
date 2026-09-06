@@ -35,7 +35,16 @@ func TestGRPCAndGatewayAuthenticationAndExactIntegers(t *testing.T) {
 		calls.Add(1)
 		switch r.Method {
 		case "status":
-			return daemon.Status{Name: "alice", Network: chain.Regtest, Balances: map[chain.ID]int64{chain.BTC: 9007199254740993}, Swaps: []daemon.PublicSwap{{ID: "test", Long: contract.HTLC{Chain: chain.BTC, Amount: 2000000, RefundHeight: 1800000000, TxID: "funding", Vout: 2}}}}, nil
+			return daemon.Status{Name: "alice", Network: chain.Regtest, Balances: map[chain.ID]int64{chain.BTC: 9007199254740993}, Funds: map[chain.ID]daemon.ChainBalance{chain.BTC: {TotalConfirmed: 9007199254740993, UnlockedConfirmed: 9007199254740990, ReservedConfirmed: 3, Unconfirmed: 7, HTLCLocked: 100000, HTLCAvailable: true}}, Coins: []daemon.PublicCoin{{Chain: chain.BTC, TxID: "coin", Amount: 3, Reserved: true, Holds: []daemon.CoinHold{{Kind: "offer", ID: "order", Reason: "Open order", Cancellable: true}}}}, Swaps: []daemon.PublicSwap{{ID: "test", Long: contract.HTLC{Chain: chain.BTC, Amount: 2000000, RefundHeight: 1800000000, TxID: "funding", Vout: 2}}}}, nil
+		case "wallet.preflight":
+			var p daemon.FundsPreflightRequest
+			if err := json.Unmarshal(r.Params, &p); err != nil {
+				t.Fatal(err)
+			}
+			if p.Chain != chain.BTC || p.Amount != 100000 || p.Fee != 2000 || len(p.Inputs) != 1 || p.Inputs[0].TxID != "candidate" {
+				t.Fatal("preflight request lost fields", p)
+			}
+			return daemon.FundsPreflight{Network: chain.Regtest, Wallet: "alice", Inputs: p.Inputs, State: "proven", Sufficient: true, Total: 102000, Message: "checked"}, nil
 		case "offer.create":
 			var p struct {
 				SellAmount int64 `json:"sell_amount"`
@@ -74,8 +83,15 @@ func TestGRPCAndGatewayAuthenticationAndExactIntegers(t *testing.T) {
 	if err != nil || result.Balances["btc"] != 9007199254740993 {
 		t.Fatal(result, err)
 	}
+	if funds := result.Funds["btc"]; funds == nil || funds.UnlockedConfirmed != 9007199254740990 || funds.ReservedConfirmed != 3 || !funds.HtlcAvailable || len(result.Coins) != 1 || len(result.Coins[0].Holds) != 1 || !result.Coins[0].Holds[0].Cancellable {
+		t.Fatal("funds API mapping", result)
+	}
 	if len(result.Swaps) != 1 || result.Swaps[0].Long.Amount != 2000000 || result.Swaps[0].Long.RefundLocktime != 1800000000 || result.Swaps[0].Long.Txid != "funding" || result.Swaps[0].Long.Vout != 2 {
 		t.Fatal("HTLC API mapping dropped fields", result.Swaps)
+	}
+	preflight, err := client.PreflightFunds(ctx, &pb.FundsPreflightRequest{Chain: "btc", Amount: 100000, Fee: 2000, Inputs: []*pb.Outpoint{{Txid: "candidate", Vout: 2}}, ExpectedNetwork: "regtest"})
+	if err != nil || !preflight.Sufficient || preflight.State != "proven" || preflight.Wallet != "alice" || preflight.Network != "regtest" || preflight.Total != 102000 || len(preflight.Inputs) != 1 || preflight.Inputs[0].Vout != 2 {
+		t.Fatal("preflight round trip", preflight, err)
 	}
 	for _, test := range []struct {
 		name, token, origin, host, path string
@@ -116,7 +132,8 @@ func TestGRPCAndGatewayAuthenticationAndExactIntegers(t *testing.T) {
 			}
 		})
 	}
-	if calls.Load() != 2 {
+	// Two status reads and the authenticated preflight are the only accepted calls.
+	if calls.Load() != 3 {
 		t.Fatalf("rejected calls reached engine: %d", calls.Load())
 	}
 	request, _ := http.NewRequest("POST", server.Endpoint.HTTP+"/v1/offers", bytes.NewBufferString(`{"sellAmount":"9007199254740993"}`))
