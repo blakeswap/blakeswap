@@ -363,7 +363,15 @@ of a fallback cannot bypass the publication requirements of its caller.
 `TestFailoverIncrementalScanKeepsHealthyEndpointAvailable` distinguishes RPC
 catch-up with completed-block progress from a stalled scan, including a reset
 cursor. Partial observations remain unavailable, wallet refresh stays usable,
-and the same source finishes its retained scan on a later cycle.
+and the same source finishes its retained scan on a later cycle. Both local and
+tower entry points are exercised. `TestIsolated*IncompleteScan*` uses real RPC and
+Electrum decoders with local fault servers: a valid public preimage precedes a
+later timeout, transport/mempool/history error, inclusion error or reorg check.
+Reloading the vault and removing the witness must still block owner refunds and
+permit authorized tower recovery only after a complete target scan. Sink failure
+and fallback-attempt tests cover the durability boundary. The real tower test
+forces a short initial RPC catch-up slice, asserts publication remains held and
+wallet readiness survives, then requires bounded, paced completion.
 
 With the exclusive isolated BTC/Blake2b fixture available, run:
 

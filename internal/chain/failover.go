@@ -186,6 +186,10 @@ func (p *Failover) do(ctx context.Context, fn func(context.Context, *endpointEnt
 			err = fn(c, entry)
 		}
 		cancel()
+		var sinkFailure *witnessSinkError
+		if errors.As(err, &sinkFailure) {
+			return err
+		}
 		var progress *scanProgressError
 		if errors.As(err, &progress) {
 			// Catch-up retained completed blocks on this endpoint. Its bounded
@@ -445,7 +449,7 @@ func (p *Failover) ConfirmedReceived(ctx context.Context, a string) (v bool, err
 func (p *Failover) Scan(ctx context.Context, start uint32, points []string) (v map[string]Observation, err error) {
 	err = p.do(ctx, func(c context.Context, e *endpointEntry) error {
 		var er error
-		v, er = e.scanner.Scan(c, start, points)
+		v, er = scanEndpoint(c, e.scanner, start, points)
 		return er
 	})
 	return
@@ -514,17 +518,30 @@ type failoverScanner struct {
 func (s *failoverScanner) Scan(ctx context.Context, start uint32, points []string) (out map[string]Observation, err error) {
 	err = s.pool.do(ctx, func(c context.Context, _ *endpointEntry) error {
 		var e error
-		scanner := s.scanners[s.pool.active]
-		rpc, incremental := scanner.(*Scanner)
-		var before uint64
-		if incremental {
-			before = rpc.progress
-		}
-		out, e = scanner.Scan(c, start, points)
-		if incremental && rpc.progress != before && c.Err() != nil && errors.Is(e, context.DeadlineExceeded) {
-			return &scanProgressError{cause: e}
-		}
+		out, e = scanEndpoint(c, s.scanners[s.pool.active], start, points)
 		return e
 	})
 	return
+}
+
+// Both local settlement and remote tower scans use endpoint-local cursors and
+// the same incomplete-work classification. Never return partial observations.
+func scanEndpoint(ctx context.Context, scanner SpendScanner, start uint32, points []string) (map[string]Observation, error) {
+	rpc, incremental := scanner.(*Scanner)
+	var before uint64
+	if incremental {
+		before = rpc.progress
+	}
+	out, err := scanner.Scan(ctx, start, points)
+	if err != nil {
+		var sinkFailure *witnessSinkError
+		if errors.As(err, &sinkFailure) {
+			return nil, err
+		}
+		if incremental && rpc.progress != before && ctx.Err() != nil && errors.Is(err, context.DeadlineExceeded) {
+			return nil, &scanProgressError{cause: err}
+		}
+		return nil, err
+	}
+	return out, nil
 }

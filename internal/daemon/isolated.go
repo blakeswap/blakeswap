@@ -10,6 +10,22 @@ import (
 	"github.com/blakeswap/blakeswap/internal/protocol"
 )
 
+// A partial snapshot can expose a public preimage before later IO fails. This
+// sink consumes only immutable witness facts; it never updates scan readiness,
+// spend confirmations, or funding availability. It also runs before failover can
+// replace the incomplete source's result with a different endpoint's snapshot.
+func (e *Engine) witnessContext(ctx context.Context, id chain.ID) context.Context {
+	return chain.WithSpendWitnessSink(ctx, func(w chain.SpendWitness) error {
+		facts := map[chain.ID]map[string]chain.Observation{id: {w.Outpoint: {Tx: w.Tx}}}
+		for _, s := range e.s.Swaps {
+			if err := e.rememberSwapWitnesses(s, facts); err != nil {
+				return err
+			}
+		}
+		return e.rememberTowerWitnesses(facts)
+	})
+}
+
 // A successful spend observation can be the only chance to learn a preimage.
 // Persist it before any unrelated lookup or refund eligibility check can return;
 // a later reorg must not erase a fact that this process already witnessed.
@@ -39,7 +55,7 @@ func (e *Engine) rememberSwapWitnesses(s *Swap, all map[chain.ID]map[string]chai
 	return nil
 }
 
-// These maps contain successful, validated scan results. Source switching may
+// These maps contain decoded witness facts or complete scan results. Source switching may
 // make their canonicality stale, but cannot make an already public preimage
 // private again. Target readiness is checked separately before any broadcast.
 func (e *Engine) rememberTowerWitnesses(all map[chain.ID]map[string]chain.Observation) error {

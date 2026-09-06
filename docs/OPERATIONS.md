@@ -371,3 +371,10 @@ the other chain is unavailable or a later source switch invalidates confirmation
 freshness. A tower can retain a witness while its claim target is offline, then
 use its existing authorized claim after the target returns. Readiness, locktime,
 and payout checks still apply to that publication.
+
+Spend scans synchronously save contract-validated public preimages as soon as
+transaction bytes are decoded, before later block, mempool, inclusion or header
+reads. Those immutable facts survive an incomplete scan, a failed endpoint
+attempt and a restart; they do not make its partial snapshot current. A storage
+failure stops publication and is never retried as an endpoint failure. Local and
+tower RPC scans share the same bounded catch-up classification.

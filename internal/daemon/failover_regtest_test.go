@@ -176,8 +176,12 @@ func tickUntilConnected(t *testing.T, e *Engine) {
 }
 func tickDegraded(t *testing.T, e *Engine) {
 	t.Helper()
+	tickDegradedContext(t, e, context.Background())
+}
+func tickDegradedContext(t *testing.T, e *Engine, parent context.Context) {
+	t.Helper()
 	started := time.Now()
-	ctx, cancel := context.WithTimeout(context.Background(), 12*time.Second)
+	ctx, cancel := context.WithTimeout(parent, 12*time.Second)
 	defer cancel()
 	if err := e.Tick(ctx); err == nil {
 		t.Fatal("partial failure missing from Tick diagnostic")
@@ -359,6 +363,30 @@ func TestRealIsolatedRefundWaitsForPeerObservation(t *testing.T) {
 	t.Logf("refund held safely through outage then confirmed %s long=%s short=%s", id, h.swap("taker", id).LongSpend, h.swap("maker", id).ShortSpend)
 }
 
+// Observe the first target scan after restart separately from wallet readiness.
+// A short first RPC slice deliberately exercises retained historical catch-up.
+type captureTowerScan struct {
+	chain.SpendScanner
+	firstBudget time.Duration
+	calls       int
+	result      map[string]chain.Observation
+	err         error
+}
+
+func (s *captureTowerScan) Scan(ctx context.Context, start uint32, points []string) (map[string]chain.Observation, error) {
+	s.calls++
+	if s.calls == 1 && s.firstBudget > 0 {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, s.firstBudget)
+		defer cancel()
+	}
+	result, err := s.SpendScanner.Scan(ctx, start, points)
+	if s.calls == 1 {
+		s.result, s.err = result, err
+	}
+	return result, err
+}
+
 func TestRealIsolatedTowerWitnessRecovery(t *testing.T) {
 	for _, sell := range []chain.ID{chain.BTC, chain.Blake} {
 		t.Run(string(sell), func(t *testing.T) {
@@ -403,10 +431,41 @@ func TestRealIsolatedTowerWitnessRecovery(t *testing.T) {
 			faults[target.Chain].setDown(false)
 			h.mine(target.Chain, maker.Terms.Takeover+1-h.height(target.Chain))
 			h.online("tower")
-			tickDegraded(t, h.engines["tower"])
-			state := h.engines["tower"].s.TowerJobs[jobID]
-			if state.Secret == "" || state.Broadcast == "" {
-				t.Fatal("tower lost observed secret across restart/outage", state.Error)
+			towerEngine := h.engines["tower"]
+			captured := &captureTowerScan{SpendScanner: towerEngine.towerScanners[target.Chain]}
+			if os.Getenv("BLAKESWAP_TEST_ELECTRUM") == "" {
+				captured.firstBudget = 200 * time.Millisecond
+			}
+			towerEngine.towerScanners[target.Chain] = captured
+			expectedSecret := towerEngine.s.TowerJobs[jobID].Secret
+			if expectedSecret == "" {
+				t.Fatal("durable witness missing before target catch-up")
+			}
+			tickDegraded(t, towerEngine)
+			state := towerEngine.s.TowerJobs[jobID]
+			if captured.firstBudget > 0 {
+				if captured.result != nil || captured.err == nil || !strings.Contains(captured.err.Error(), "block scan progress retained") {
+					t.Fatal("first target slice did not exercise bounded historical progress", captured.err)
+				}
+				if state.Broadcast != "" || state.Secret != expectedSecret || !towerEngine.fresh(target.Chain) {
+					t.Fatal("incomplete target scan published, lost witness, or poisoned wallet readiness", state.Error)
+				}
+				t.Logf("target %s scan retained progress and held publication: %v", target.Chain, captured.err)
+			}
+			// Catch-up intentionally spans worker cycles. Keep each existing tick
+			// bound and require eventual publication within both a wall deadline
+			// and a finite number of paced cycles; the witness must never vanish.
+			catchupCtx, cancelCatchup := context.WithTimeout(context.Background(), 30*time.Second)
+			defer cancelCatchup()
+			for cycle := 0; state.Broadcast == "" && cycle < 12 && catchupCtx.Err() == nil; cycle++ {
+				if state.Secret != expectedSecret {
+					t.Fatal("tower lost witness during target catch-up")
+				}
+				time.Sleep(100 * time.Millisecond)
+				tickDegradedContext(t, towerEngine, catchupCtx)
+			}
+			if state.Secret != expectedSecret || state.Broadcast == "" {
+				t.Fatal("tower failed bounded recovery after restart/outage", state.Error)
 			}
 			record, err := h.nodes[target.Chain].Transaction(h.ctx, state.Broadcast)
 			if err != nil {

@@ -584,6 +584,11 @@ func (e *Electrum) Scan(ctx context.Context, start uint32, outpoints []string) (
 				if !points[key] {
 					continue
 				}
+				// The preimage is already known even if inclusion, another
+				// history read, or the final reorg check later fails.
+				if err := emitSpendWitness(ctx, key, tx); err != nil {
+					return nil, err
+				}
 				if item.Height > 0 && item.Height <= int64(tip) {
 					t, err = e.inclusion(ctx, t, uint32(item.Height))
 					if err != nil {

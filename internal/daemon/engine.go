@@ -352,6 +352,9 @@ func (e *Engine) Tick(ctx context.Context) error {
 		}
 	}
 	observations, scanErr := e.scan(ctx)
+	if e.fatal != nil {
+		return e.fatal
+	}
 	var err error
 	if e.Config.Mode == "trader" {
 		ids := make([]string, 0, len(e.s.Swaps))
@@ -377,6 +380,9 @@ func (e *Engine) Tick(ctx context.Context) error {
 	// preserve the worker's overall deadline and each chain's cumulative budget.
 	e.refreshTowerJobs(ctx)
 	towerObservations, towerErr := e.scanTower(ctx)
+	if e.fatal != nil {
+		return e.fatal
+	}
 	towerErr = errors.Join(towerErr, e.advanceTower(ctx, towerObservations))
 	if towerErr != nil {
 		e.lastError = "watchtower: " + towerErr.Error()
@@ -629,6 +635,9 @@ func (e *Engine) fundReserved(ctx context.Context, c contract.HTLC, owner string
 	return tx, nil
 }
 func (e *Engine) publicationReady(id chain.ID, both bool) error {
+	if e.fatal != nil {
+		return e.fatal
+	}
 	if !e.fresh(id) || (both && (!e.fresh(chain.BTC) || !e.fresh(chain.Blake))) {
 		return errors.New("chain source changed; required publication observations are unavailable")
 	}
@@ -731,8 +740,11 @@ func (e *Engine) scan(ctx context.Context) (map[chain.ID]map[string]chain.Observ
 			continue
 		}
 		c, cancel := context.WithTimeout(ctx, chainWorkBudget)
-		result, err := e.scanners[id].Scan(c, starts[id], points[id])
+		result, err := e.scanners[id].Scan(e.witnessContext(c, id), starts[id], points[id])
 		cancel()
+		if e.fatal != nil {
+			return out, e.fatal
+		}
 		if err == nil {
 			accepted := map[chain.ID]map[string]chain.Observation{id: result}
 			for _, s := range e.s.Swaps {
@@ -793,8 +805,11 @@ func (e *Engine) scanTower(ctx context.Context) (map[chain.ID]map[string]chain.O
 			continue
 		}
 		scanCtx, cancel := context.WithTimeout(ctx, chainWorkBudget)
-		result, err := e.towerScanners[id].Scan(scanCtx, starts[id], points[id])
+		result, err := e.towerScanners[id].Scan(e.witnessContext(scanCtx, id), starts[id], points[id])
 		cancel()
+		if e.fatal != nil {
+			return out, e.fatal
+		}
 		if err != nil {
 			errs = append(errs, err)
 			continue

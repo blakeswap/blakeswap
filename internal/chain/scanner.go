@@ -104,6 +104,12 @@ func (s *Scanner) Scan(ctx context.Context, start uint32, outpoints []string) (m
 				if e != nil {
 					return nil, e
 				}
+				if parsed.TxHash().String() != tx.TxID {
+					return nil, fmt.Errorf("confirmed spender transaction ID mismatch")
+				}
+				if e := emitSpendWitness(ctx, key, parsed); e != nil {
+					return nil, e
+				}
 				s.confirmed[key] = Observation{tx.TxID, parsed, n, int(height - n + 1)}
 			}
 		}
@@ -156,6 +162,9 @@ func (s *Scanner) Scan(ctx context.Context, start uint32, outpoints []string) (m
 		for _, in := range tx.TxIn {
 			key := OutpointKey(in.PreviousOutPoint.Hash.String(), in.PreviousOutPoint.Index)
 			if set[key] {
+				if e := emitSpendWitness(ctx, key, tx); e != nil {
+					return nil, e
+				}
 				result[key] = Observation{id, tx, 0, 0}
 			}
 		}
