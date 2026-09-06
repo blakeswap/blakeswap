@@ -47,6 +47,32 @@ func assertSettledActivity(t *testing.T, h *harness, id string) {
 		if !funding.Movement || funding.Direction != "outgoing" || !funding.FeeKnown {
 			t.Fatal("funding activity missing", funding)
 		}
+		funded, err := h.nodes[funding.Chain].Transaction(h.ctx, funding.TxID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		fundedTx, err := contract.Parse(funded.Hex)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var inputTotal, outputTotal int64
+		for _, input := range fundedTx.TxIn {
+			previous, err := h.nodes[funding.Chain].Transaction(h.ctx, input.PreviousOutPoint.Hash.String())
+			if err != nil {
+				t.Fatal(err)
+			}
+			previousTx, err := contract.Parse(previous.Hex)
+			if err != nil || int(input.PreviousOutPoint.Index) >= len(previousTx.TxOut) {
+				t.Fatal("invalid funding input", err)
+			}
+			inputTotal += previousTx.TxOut[input.PreviousOutPoint.Index].Value
+		}
+		for _, output := range fundedTx.TxOut {
+			outputTotal += output.Value
+		}
+		if funding.Fee != inputTotal-outputTotal || funding.Amount != funding.Principal+funding.Fee {
+			t.Fatal("funding activity fee disagrees with actual transaction", funding, inputTotal-outputTotal)
+		}
 		for _, receipt := range h.engines[name].s.Activities {
 			if receipt.Kind == "receive" && receipt.GroupID == a.GroupID && receipt.Movement {
 				t.Fatal("settlement receipt counted twice", receipt)
@@ -67,6 +93,21 @@ func assertSettledActivity(t *testing.T, h *harness, id string) {
 			continue
 		}
 		key := "tower/" + jobID
+		matches := false
+		for _, raw := range job.Job.Templates {
+			tx, err := contract.Parse(raw)
+			if err == nil && tx.TxHash().String() == job.Broadcast {
+				matches = true
+			}
+		}
+		// TowerJob.Confirmed observes any spender, including an owner self-claim
+		// that earns the tower nothing. Only an authorized rescue is an earning.
+		if !matches {
+			if a := h.engines["tower"].s.Activities[key]; a.Status == "confirmed" {
+				t.Fatal("owner settlement misclassified as tower earnings", a)
+			}
+			continue
+		}
 		h.until("tower earning activity", func() bool { return h.engines["tower"].s.Activities[key].Status == "confirmed" }, func() { h.tick("tower") })
 		a := h.engines["tower"].s.Activities[key]
 		if a.Amount != protocol.Bounty(job.Job.Target.Amount, job.Job.BPS) || !a.Movement || a.FeePayer != "contract_owner" {
