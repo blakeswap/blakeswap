@@ -23,7 +23,7 @@ import (
 	"github.com/btcsuite/btcd/wire"
 )
 
-func partialRPCScanner(t *testing.T, incoming contract.HTLC, claim *wire.MsgTx, fault string) (chain.SpendScanner, *atomic.Bool) {
+func partialRPCScanner(t *testing.T, incoming contract.HTLC, claim *wire.MsgTx, fault string, beforeHeader ...func()) (chain.SpendScanner, *atomic.Bool) {
 	t.Helper()
 	var delivered atomic.Bool
 	endReads := 0
@@ -59,7 +59,7 @@ func partialRPCScanner(t *testing.T, incoming contract.HTLC, claim *wire.MsgTx, 
 			}
 			result = fmt.Sprintf("%064d", height)
 		case "getblock":
-			if fault == "mempool-spender" {
+			if fault == "mempool-spender" || fault == "mempool-tx-header" {
 				result = map[string]any{"tx": []any{}}
 				break
 			}
@@ -72,13 +72,27 @@ func partialRPCScanner(t *testing.T, incoming contract.HTLC, claim *wire.MsgTx, 
 				return
 			}
 			delivered.Store(true)
-			result = chain.Transaction{TxID: claim.TxHash().String(), Hex: contract.Hex(claim), Confirmations: 3}
+			record := chain.Transaction{TxID: claim.TxHash().String(), Hex: contract.Hex(claim), Confirmations: 3}
+			if fault == "tx-header" || fault == "tx-header-timeout" || fault == "mempool-tx-header" {
+				record.BlockHash = fmt.Sprintf("%064d", 100)
+			}
+			result = record
+		case "getblockheader":
+			for _, check := range beforeHeader {
+				check()
+			}
+			if fault == "tx-header-timeout" {
+				<-r.Context().Done()
+				return
+			}
+			http.Error(w, "injected transaction header lookup failure", 503)
+			return
 		case "gettxspendingprevout":
 			if fault == "mempool" {
 				http.Error(w, "injected mempool read error", 503)
 				return
 			}
-			if fault == "mempool-spender" {
+			if fault == "mempool-spender" || fault == "mempool-tx-header" {
 				result = []any{map[string]any{"txid": incoming.TxID, "vout": incoming.Vout, "spendingtxid": claim.TxHash().String()}, map[string]any{"txid": incoming.TxID, "vout": incoming.Vout, "spendingtxid": fmt.Sprintf("%064d", 42)}}
 			} else {
 				result = []any{}
@@ -198,7 +212,7 @@ func partialElectrumScanner(t *testing.T, incoming contract.HTLC, funding string
 
 func partialWitnessScenarios(t *testing.T, run func(*testing.T, string, string)) {
 	for _, backend := range []string{"rpc", "electrum"} {
-		faults := []string{"deadline", "transport", "mempool", "mempool-spender", "reorg"}
+		faults := []string{"deadline", "transport", "mempool", "mempool-spender", "tx-header", "tx-header-timeout", "mempool-tx-header", "reorg"}
 		if backend == "electrum" {
 			faults = []string{"inclusion", "later-history", "reorg"}
 		}
@@ -341,5 +355,38 @@ func TestIsolatedWitnessDurabilityFailureStopsPublication(t *testing.T) {
 	b.broadcast = func(string) (string, error) { t.Fatal("published after durability failure"); return "", nil }
 	if err := e.broadcast(context.Background(), incoming.Chain, contract.Hex(claim), false); err == nil {
 		t.Fatal("fatal durability state bypassed")
+	}
+}
+
+func TestIsolatedRPCWitnessDurableBeforeHeaderIO(t *testing.T) {
+	for _, role := range []string{"maker", "taker"} {
+		t.Run(role, func(t *testing.T) {
+			e, s, _, secret := isolatedFixture(t, role)
+			incoming := s.Short
+			if role == "maker" {
+				incoming = s.Long
+			}
+			key, _ := e.swapKey(incoming.Chain, s.ID)
+			claim, err := contract.Spend(incoming, key, e.scripts[incoming.Chain], 2000, false, 0, nil, 0, secret)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var checked atomic.Bool
+			scanner, _ := partialRPCScanner(t, incoming, claim, "tx-header", func() {
+				var saved State
+				if _, err := e.vault.Load(&saved); err != nil {
+					t.Error(err)
+					return
+				}
+				if saved.Swaps[s.ID] == nil || !saved.Swaps[s.ID].IncomingClaimSeen || !saved.Swaps[s.ID].SecretObserved {
+					t.Error("header IO began before witness was durable")
+				}
+				checked.Store(true)
+			})
+			e.scanners[incoming.Chain] = scanner
+			if _, err := e.scan(context.Background()); err == nil || !checked.Load() {
+				t.Fatal("header-error fixture not exercised", err)
+			}
+		})
 	}
 }

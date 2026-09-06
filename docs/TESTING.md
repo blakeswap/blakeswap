@@ -367,6 +367,9 @@ and the same source finishes its retained scan on a later cycle. Both local and
 tower entry points are exercised. `TestIsolated*IncompleteScan*` uses real RPC and
 Electrum decoders with local fault servers: a valid public preimage precedes a
 later timeout, transport/mempool/history error, inclusion error or reorg check.
+Confirmed raw replies include block hashes in the header-failure scenarios;
+owner and tower witnesses must be saved before the following header lookup,
+including when a mempool spender becomes confirmed between reads.
 Reloading the vault and removing the witness must still block owner refunds and
 permit authorized tower recovery only after a complete target scan. Sink failure
 and fallback-attempt tests cover the durability boundary. The real tower test

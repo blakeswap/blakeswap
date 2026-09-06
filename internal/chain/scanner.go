@@ -96,18 +96,8 @@ func (s *Scanner) Scan(ctx context.Context, start uint32, outpoints []string) (m
 				if !set[key] {
 					continue
 				}
-				raw, e := s.RPC.Transaction(ctx, tx.TxID)
+				parsed, e := s.spendTransaction(ctx, tx.TxID, set)
 				if e != nil {
-					return nil, e
-				}
-				parsed, e := parseRaw(raw.Hex)
-				if e != nil {
-					return nil, e
-				}
-				if parsed.TxHash().String() != tx.TxID {
-					return nil, fmt.Errorf("confirmed spender transaction ID mismatch")
-				}
-				if e := emitSpendWitness(ctx, key, parsed); e != nil {
 					return nil, e
 				}
 				s.confirmed[key] = Observation{tx.TxID, parsed, n, int(height - n + 1)}
@@ -145,26 +135,16 @@ func (s *Scanner) Scan(ctx context.Context, start uint32, outpoints []string) (m
 			continue
 		}
 		seen[id] = true
-		raw, e := s.RPC.Transaction(ctx, id)
+		tx, e := s.spendTransaction(ctx, id, set)
 		if e != nil {
 			if TransactionNotFound(e) {
 				continue
-			} // Evicted between the two calls.
+			} // Evicted between calls.
 			return nil, e
-		}
-		tx, e := parseRaw(raw.Hex)
-		if e != nil {
-			return nil, e
-		}
-		if tx.TxHash().String() != id {
-			return nil, fmt.Errorf("mempool spender transaction ID mismatch")
 		}
 		for _, in := range tx.TxIn {
 			key := OutpointKey(in.PreviousOutPoint.Hash.String(), in.PreviousOutPoint.Index)
 			if set[key] {
-				if e := emitSpendWitness(ctx, key, tx); e != nil {
-					return nil, e
-				}
 				result[key] = Observation{id, tx, 0, 0}
 			}
 		}
@@ -181,6 +161,32 @@ func (s *Scanner) Scan(ctx context.Context, start uint32, outpoints []string) (m
 		}
 	}
 	return result, nil
+}
+
+// Both block and mempool observations publish immutable facts at the earliest
+// validated raw-response boundary, before optional block-header metadata IO.
+func (s *Scanner) spendTransaction(ctx context.Context, id string, points map[string]bool) (*wire.MsgTx, error) {
+	var tx *wire.MsgTx
+	_, err := s.RPC.transaction(ctx, id, func(raw Transaction) error {
+		var err error
+		tx, err = parseRaw(raw.Hex)
+		if err != nil {
+			return err
+		}
+		if tx.TxHash().String() != id {
+			return fmt.Errorf("spender transaction ID mismatch")
+		}
+		for _, in := range tx.TxIn {
+			key := OutpointKey(in.PreviousOutPoint.Hash.String(), in.PreviousOutPoint.Index)
+			if points[key] {
+				if err := emitSpendWitness(ctx, key, tx); err != nil {
+					return err
+				}
+			}
+		}
+		return nil
+	})
+	return tx, err
 }
 
 func WireOutpoint(txid string, vout uint32) (wire.OutPoint, error) {
