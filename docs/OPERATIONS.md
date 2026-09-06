@@ -191,3 +191,42 @@ Mempool spend observation queries the watched outpoints with
 `gettxspendingprevout` and downloads only relevant spending transactions. It does
 not enumerate or download the public mempool. Confirmed block scanning and reorg
 checks remain separate.
+
+## Local regtest discovery
+
+From a source checkout, run `make regtest-nodes` for both chains, or
+`make regtest-btc` / `make regtest-blake` for one. These targets download the pinned,
+checksum-verified upstream nodes, start isolated regtest data under this checkout's
+`.local/`, prepare the faucet wallet, and register the actual endpoint/cookie paths.
+`make regtest-stop` stops this checkout's nodes. No public-network node is started.
+
+An empty RPC cookie field opts local regtest connections into automatic discovery.
+Fresh settings use it by default; obsolete generated paths are migrated when those
+files no longer exist. Explicit custom paths stay authoritative. Registration lives
+in `~/Library/Caches/Blakeswap/regtest-nodes.json` on macOS, outside wallet storage,
+so resetting onboarding or creating another wallet does not lose the node location.
+It records paths, never cookie contents. Restarting the launcher from a different
+checkout updates its registration. Non-listening endpoints produce a node-unreachable
+error with the Make command; reachable nodes without registration request a cookie.
+External/custom nodes can still be configured by endpoint and cookie file.
+
+Default ports are 19443 (BTC) and 29443 (Blake2b). `BLAKESWAP_BTC_RPC_PORT` and
+`BLAKESWAP_BLAKE_RPC_PORT` override launcher ports; set the matching endpoints in
+Settings when using custom ports. `BLAKESWAP_REGTEST_REGISTRY` overrides the registry
+path in both launcher and helper for isolated testing. Ordinary `scripts/local.py
+nodes` does not register anything unless `--register` is supplied.
+
+## Receiving and recovery
+
+The Wallet view can display a QR containing the exact current address, labeled
+with its chain and network. A confirmed receipt rotates only that chain's receive
+address; mempool transactions do not rotate it. Spendable balances retain the
+existing network confirmation policy. Earlier addresses continue receiving funds
+and remain included in balance and funding selection.
+
+Encrypted state backups preserve all allocated receive indexes. Phrase or older
+backup recovery scans confirmed receipt history, including spent outputs, from
+the saved index until it finds an unused address. Preserve current state backups:
+a phrase alone cannot reconstruct an address-use record erased by a reorg, nor
+recover pending swap state. Existing signed swap/tower transactions retain their
+original payout destinations.

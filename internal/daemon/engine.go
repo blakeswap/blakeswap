@@ -35,6 +35,7 @@ type Engine struct {
 	watch         map[chain.ID]chain.Backend
 	scanners      map[chain.ID]chain.SpendScanner
 	towerScanners map[chain.ID]chain.SpendScanner
+	receiveBook   map[chain.ID][]receiveAddress
 	addresses     map[chain.ID]string
 	scripts       map[chain.ID][]byte
 	heights       map[chain.ID]uint32
@@ -139,21 +140,9 @@ func Open(ctx context.Context, c Config) (*Engine, error) {
 			en.scanners[id] = r.(chain.SpendScanner)
 			en.towerScanners[id] = r.(chain.SpendScanner)
 		}
-		key, e := en.keys.Spending(id, "deposit")
-		if e != nil {
-			return fail(e)
+		if err := en.loadReceiveAddresses(ctx, id); err != nil {
+			return fail(err)
 		}
-		addr, script, e := wallet.AddressFor(c.Network, key.PubKey())
-		if e != nil {
-			return fail(e)
-		}
-		en.addresses[id] = addr
-		en.scripts[id] = script
-		w, e := r.Observe(ctx, "blakeswap-"+en.identity.Public().Hex()[:20], []string{addr})
-		if e != nil {
-			return fail(e)
-		}
-		en.watch[id] = w
 		if err := en.refreshChain(ctx, id); err != nil {
 			return fail(err)
 		}
@@ -164,9 +153,7 @@ func Open(ctx context.Context, c Config) (*Engine, error) {
 	if c.Mode == "tower" {
 		en.Config.Tower.PubKey = en.identity.Public().Hex()
 		en.Config.Tower.Scripts = map[chain.ID]string{}
-		for id, script := range en.scripts {
-			en.Config.Tower.Scripts[id] = hex.EncodeToString(script)
-		}
+		en.Config.Tower.Scripts = en.ownTower().Scripts
 		if en.Config.Tower.BPS < 1 || en.Config.Tower.BPS > 1000 {
 			return fail(errors.New("tower rate must be 1–1000 basis points"))
 		}
@@ -213,7 +200,10 @@ func (e *Engine) refreshChain(ctx context.Context, id chain.ID) error {
 		}
 		e.clocks[id] = stamp
 	}
-	coins, err := e.watch[id].Unspent(ctx, []string{e.addresses[id]})
+	if err := e.rotateReceiveAddress(ctx, id); err != nil {
+		return err
+	}
+	coins, err := e.watch[id].Unspent(ctx, e.receiveAddresses(id))
 	if err != nil {
 		return err
 	}
@@ -501,7 +491,7 @@ func (e *Engine) swapKeys(swapID string) (map[chain.ID]string, error) {
 	return keys, nil
 }
 func (e *Engine) fund(ctx context.Context, c contract.HTLC) (*wire.MsgTx, error) {
-	coins, err := e.watch[c.Chain].Unspent(ctx, []string{e.addresses[c.Chain]})
+	coins, err := e.watch[c.Chain].Unspent(ctx, e.receiveAddresses(c.Chain))
 	if err != nil {
 		return nil, err
 	}
@@ -549,11 +539,11 @@ func (e *Engine) fund(ctx context.Context, c contract.HTLC) (*wire.MsgTx, error)
 			break
 		}
 	}
-	key, err := e.keys.Spending(c.Chain, "deposit")
-	if err != nil {
-		return nil, err
+	keys := map[string]*btcec.PrivateKey{}
+	for _, address := range e.receiveBook[c.Chain] {
+		keys[hex.EncodeToString(address.script)] = address.key
 	}
-	tx, err := contract.Fund(c, selected, key, protocol.FundingFee)
+	tx, err := contract.FundWithKeys(c, selected, keys, e.scripts[c.Chain], protocol.FundingFee)
 	if err != nil {
 		return nil, err
 	}

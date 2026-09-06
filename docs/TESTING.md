@@ -212,3 +212,22 @@ BLAKESWAP_TEST_HELPER="$PWD/bin/Blakeswap.app/Contents/Resources/blakeswap" \
 `scripts/test-swift.sh` includes these tests alongside its configured regtest
 trade. AppModel tests also ensure backup completion clears recovery material and
 rejects delayed snapshots from an earlier setup step.
+
+## Receive addresses, local node discovery, and release packaging
+
+`TestReceive*` covers confirmed-only per-chain rotation, historical balances,
+repeated receipts, restart/reorg monotonicity, spent-history recovery, import
+failures, and persistence failure. `TestRealReceiveRotationSpendsMultipleHistoricalAddresses`
+broadcasts funding signed by multiple receive keys on both actual chains, checks
+change rotation, and reopens a counter-less state. It also runs through the Electrum
+bridge when `BLAKESWAP_TEST_ELECTRUM=1`. The contract tests verify both signature
+algorithms for mixed-key inputs. Native tests decode generated QR images to the
+exact address and check numeric rescue-fee rounding/bounds.
+
+Cookie discovery tests distinguish unreachable nodes from missing registrations,
+reload changed registrations, bind credentials to the selected endpoint, preserve
+explicit paths, and migrate obsolete generated defaults. `make test-local-nodes`
+checks launcher registration and per-chain Make targets. `make test-packaging`
+checks tag validation and bundle version metadata. Both run in CI. The macOS
+packages workflow builds, verifies DMGs and binary architectures, and runs native
+tests on Apple silicon and Intel for every PR before a release tag can publish.

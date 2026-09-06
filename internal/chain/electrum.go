@@ -605,3 +605,45 @@ func (e *Electrum) Scan(ctx context.Context, start uint32, outpoints []string) (
 	}
 	return result, nil
 }
+
+// ConfirmedReceived verifies a receipt even when all of its outputs were spent.
+func (e *Electrum) ConfirmedReceived(ctx context.Context, address string) (bool, error) {
+	a, err := btcutil.DecodeAddress(address, e.Network.Params())
+	if err != nil || !a.IsForNet(e.Network.Params()) {
+		return false, errors.New("wrong wallet address network")
+	}
+	script, err := txscript.PayToAddrScript(a)
+	if err != nil {
+		return false, err
+	}
+	history, err := e.history(ctx, script)
+	if err != nil {
+		return false, err
+	}
+	for _, item := range history {
+		if item.Height <= 0 {
+			continue
+		}
+		if item.Height > int64(^uint32(0)) {
+			return false, errors.New("invalid receipt height")
+		}
+		t, err := e.raw(ctx, item.TxID)
+		if err != nil {
+			return false, err
+		}
+		t, err = e.inclusion(ctx, t, uint32(item.Height))
+		if err != nil {
+			return false, err
+		}
+		tx, err := parseRaw(t.Hex)
+		if err != nil {
+			return false, err
+		}
+		for _, out := range tx.TxOut {
+			if t.Confirmations > 0 && out.Value > 0 && bytes.Equal(out.PkScript, script) {
+				return true, nil
+			}
+		}
+	}
+	return false, nil
+}

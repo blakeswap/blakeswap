@@ -81,9 +81,9 @@ existing on-chain obligations.
 
 ## Build and install
 
-Use an Apple Silicon Mac with Xcode/Swift 6.3 or compatible Swift 6 tooling,
-Python 3, and Go toolchain download support. Current scripts produce a host-arch
-build; a universal Intel/Apple Silicon artifact is not implemented.
+Use an Apple silicon or Intel Mac with compatible Swift 6.1+ tooling, Python 3,
+and Go toolchain download support. Each build contains a native UI and Go helper
+for its host architecture. GitHub builds separate arm64 and x86_64 DMGs.
 
 ```sh
 sh scripts/build-mac.sh
@@ -119,6 +119,29 @@ does not create signing identities or upload credentials. A failed notarization
 fails the build. `codesign --verify --deep --strict` and `hdiutil verify` run before
 success is reported. App installation in the build directory is an atomic move,
 so rebuilding cannot overwrite the executable vnode of a running copy.
+
+## GitHub release downloads
+
+Push a version tag such as `v0.3.0`, or publish a GitHub release for an existing
+version tag. The macOS packages workflow builds the tagged source on native
+Apple silicon and Intel runners, verifies both executables' architectures,
+runs native tests, and uploads these assets only after both jobs pass:
+
+- `Blakeswap-0.3.0-arm64.dmg` (Apple silicon)
+- `Blakeswap-0.3.0-x86_64.dmg` (Intel)
+- A SHA-256 checksum file for each DMG
+
+If the tag has no release, the workflow creates one; otherwise it attaches assets
+to the existing release without replacing its notes. Prerelease tags such as
+`v0.3.0-rc.1` produce prereleases. Both DMG filenames and app metadata derive from
+the tag. Pull requests build/test both architectures without publishing a release.
+For local builds, `BLAKESWAP_VERSION=v0.3.0 sh scripts/build-dmg.sh` overrides the
+version (otherwise an exact version tag or `0.2.0` is used).
+
+Hosted builds currently use ad-hoc signing. No Developer ID certificate or Apple
+notarization credentials are configured in this workflow; downloaded DMGs may
+be blocked by Gatekeeper. The existing local signing/notarization options above
+remain available.
 
 ## Explicit external regtest demonstration
 

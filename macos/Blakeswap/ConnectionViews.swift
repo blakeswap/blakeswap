@@ -20,7 +20,7 @@ struct ChainHeightIndicator: View {
 
 struct RegtestConnectionHelp: View {
     var body: some View {
-        Text("Regtest needs running Bitcoin and Bitcoin Blake2b nodes. Set each node’s RPC endpoint and choose the .cookie file in its data directory’s regtest folder. Default paths are suggestions; your nodes may store their data elsewhere.")
+        Text("Regtest needs running Bitcoin and Bitcoin Blake2b nodes. From a Blakeswap source checkout, run make regtest-nodes for both, or make regtest-btc / make regtest-blake for one chain. Leave the cookie field empty to discover these nodes automatically. For other nodes, set the endpoint and choose their .cookie file.")
             .font(.caption).foregroundStyle(.secondary)
     }
 }
@@ -31,7 +31,7 @@ struct RPCCookieField: View {
 
     var body: some View {
         HStack {
-            TextField("RPC cookie file", text: $path).textFieldStyle(.roundedBorder)
+            TextField("RPC cookie file (empty for local regtest discovery)", text: $path).textFieldStyle(.roundedBorder)
                 .accessibilityIdentifier("\(chain)-rpc-cookie")
             Button("Choose…") {
                 let panel = NSOpenPanel()

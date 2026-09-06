@@ -23,6 +23,13 @@ extension Blakeswap_V1_Swap: Identifiable {
 }
 extension Blakeswap_V1_Environment: Identifiable { var id: String { network } }
 extension Blakeswap_V1_Environment {
+    var rescueFeePercent: Double {
+        get { Double(rescueFeeBasisPoints) / 100 }
+        set {
+            guard newValue.isFinite else { return }
+            rescueFeeBasisPoints = Int64((min(10, max(0.01, newValue)) * 100).rounded())
+        }
+    }
     var rescueFeeBasisPoints: Int64 {
         get { rescueFeeBps == 0 ? 50 : rescueFeeBps }
         set { rescueFeeBps = newValue }

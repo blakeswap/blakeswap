@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Download pinned upstream nodes into a project-local cache; verify SHA256."""
-import hashlib, pathlib, platform, tarfile, tempfile, time, urllib.request
+import argparse, hashlib, pathlib, platform, tarfile, tempfile, time, urllib.request
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 CACHE = ROOT / ".cache" / "nodes"
@@ -16,8 +16,12 @@ def fetch(url, path):
             path.write_bytes(r.read())
 
 def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("chain", nargs="?", choices=list(RELEASES))
+    args = parser.parse_args()
     target = {("Darwin", "arm64"): "arm64-apple-darwin", ("Darwin", "x86_64"): "x86_64-apple-darwin", ("Linux", "x86_64"): "x86_64-linux-gnu", ("Linux", "aarch64"): "aarch64-linux-gnu"}[(platform.system(), platform.machine())]
     for name, (version, base) in RELEASES.items():
+        if args.chain and args.chain != name: continue
         dest = CACHE / name
         dest.mkdir(parents=True, exist_ok=True)
         sums = dest / "SHA256SUMS"

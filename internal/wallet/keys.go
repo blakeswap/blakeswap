@@ -11,6 +11,7 @@ import (
 	"github.com/btcsuite/btcd/chaincfg"
 	"github.com/btcsuite/btcd/txscript"
 	"github.com/tyler-smith/go-bip39"
+	"strconv"
 )
 
 type Keys struct {
@@ -63,6 +64,15 @@ func (k *Keys) Spending(id chain.ID, context string) (*btcec.PrivateKey, error) 
 		branch = 1
 	}
 	return k.Derive(branch, context)
+}
+
+// Receive preserves the original deposit key at index zero for existing wallets.
+func (k *Keys) Receive(id chain.ID, index uint32) (*btcec.PrivateKey, error) {
+	context := "deposit"
+	if index > 0 {
+		context += "/" + strconv.FormatUint(uint64(index), 10)
+	}
+	return k.Spending(id, context)
 }
 func (k *Keys) SetNetwork(n chain.Network)                 { k.network = n.Normalized() }
 func Address(pub *btcec.PublicKey) (string, []byte, error) { return AddressFor(chain.Regtest, pub) }

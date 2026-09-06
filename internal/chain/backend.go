@@ -36,6 +36,7 @@ type Backend interface {
 	Transaction(context.Context, string) (Transaction, error)
 	Observe(context.Context, string, []string) (Backend, error)
 	Unspent(context.Context, []string) ([]UTXO, error)
+	ConfirmedReceived(context.Context, string) (bool, error)
 	Coinbase(context.Context, uint32) (Transaction, error)
 	Close() error
 }

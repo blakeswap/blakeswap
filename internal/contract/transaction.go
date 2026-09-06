@@ -187,6 +187,17 @@ func sign(id chain.ID, tx *wire.MsgTx, index int, script []byte, spent []*wire.T
 
 // Fund consumes confirmed P2WPKH inputs to one HTLC and optional change.
 func Fund(c HTLC, coins []chain.UTXO, key *btcec.PrivateKey, fee int64) (*wire.MsgTx, error) {
+	pub := key.PubKey().SerializeCompressed()
+	own, err := txscript.NewScriptBuilder().AddOp(txscript.OP_0).AddData(btcutil.Hash160(pub)).Script()
+	if err != nil {
+		return nil, err
+	}
+	return FundWithKeys(c, coins, map[string]*btcec.PrivateKey{hex.EncodeToString(own): key}, own, fee)
+}
+
+// FundWithKeys signs each historical receive input with its own key and directs
+// change to the current receive script. Unknown scripts fail closed.
+func FundWithKeys(c HTLC, coins []chain.UTXO, keys map[string]*btcec.PrivateKey, changeScript []byte, fee int64) (*wire.MsgTx, error) {
 	script, e := c.PkScript()
 	if e != nil {
 		return nil, e
@@ -194,15 +205,8 @@ func Fund(c HTLC, coins []chain.UTXO, key *btcec.PrivateKey, fee int64) (*wire.M
 	if fee < 1 || fee > 1000000 || len(coins) < 1 || len(coins) > 50 {
 		return nil, errors.New("invalid funding policy")
 	}
-	pub := key.PubKey().SerializeCompressed()
-	kh := btcutil.Hash160(pub)
-	own, e := txscript.NewScriptBuilder().AddOp(txscript.OP_0).AddData(kh).Script()
-	if e != nil {
-		return nil, e
-	}
-	code, e := txscript.NewScriptBuilder().AddOp(txscript.OP_DUP).AddOp(txscript.OP_HASH160).AddData(kh).AddOp(txscript.OP_EQUALVERIFY).AddOp(txscript.OP_CHECKSIG).Script()
-	if e != nil {
-		return nil, e
+	if len(changeScript) != 22 || changeScript[0] != 0 || changeScript[1] != 20 {
+		return nil, errors.New("invalid change script")
 	}
 	tx := wire.NewMsgTx(2)
 	spent := []*wire.TxOut{}
@@ -214,6 +218,14 @@ func Fund(c HTLC, coins []chain.UTXO, key *btcec.PrivateKey, fee int64) (*wire.M
 			return nil, e
 		}
 		s, e := hex.DecodeString(coin.Script)
+		key := keys[coin.Script]
+		if key == nil {
+			return nil, errors.New("unknown funding key")
+		}
+		own, err := txscript.NewScriptBuilder().AddOp(txscript.OP_0).AddData(btcutil.Hash160(key.PubKey().SerializeCompressed())).Script()
+		if err != nil {
+			return nil, err
+		}
 		if e != nil || !bytes.Equal(s, own) || coin.Amount <= 0 || coin.Confirmations < 1 || seen[op] {
 			return nil, errors.New("invalid funding UTXO")
 		}
@@ -236,9 +248,15 @@ func Fund(c HTLC, coins []chain.UTXO, key *btcec.PrivateKey, fee int64) (*wire.M
 	}
 	tx.AddTxOut(wire.NewTxOut(c.Amount, script))
 	if change > 0 {
-		tx.AddTxOut(wire.NewTxOut(change, own))
+		tx.AddTxOut(wire.NewTxOut(change, changeScript))
 	}
 	for i := range tx.TxIn {
+		key := keys[coins[i].Script]
+		pub := key.PubKey().SerializeCompressed()
+		code, err := txscript.NewScriptBuilder().AddOp(txscript.OP_DUP).AddOp(txscript.OP_HASH160).AddData(btcutil.Hash160(pub)).AddOp(txscript.OP_EQUALVERIFY).AddOp(txscript.OP_CHECKSIG).Script()
+		if err != nil {
+			return nil, err
+		}
 		sig, e := sign(c.Chain, tx, i, code, spent, key)
 		if e != nil {
 			return nil, e

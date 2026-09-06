@@ -395,3 +395,32 @@ func TestBootstrapPublishesIndependentChainHeightsAndClearsStaleProgress(t *test
 		t.Fatal("failed bootstrap retained heights")
 	}
 }
+
+func TestRegtestDefaultsAndLegacyCookieMigration(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	s := Defaults()
+	if err := validate(s); err != nil {
+		t.Fatal(err)
+	}
+	env := environment(s, "regtest")
+	if env.Nodes["btc"].Cookie != "" || env.Nodes["blake"].Cookie != "" {
+		t.Fatal("fresh wallets must discover regtest cookies")
+	}
+	old := filepath.Join(home, "Library/Application Support/Bitcoin/regtest/.cookie")
+	env.Nodes["btc"].Cookie = old
+	env.Nodes["blake"].Cookie = filepath.Join(home, "custom/.cookie")
+	if !migrateRegtestCookies(s) || env.Nodes["btc"].Cookie != "" || env.Nodes["blake"].Cookie == "" {
+		t.Fatal("wrong legacy migration")
+	}
+	if err := os.MkdirAll(filepath.Dir(old), 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(old, []byte("local:test"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	env.Nodes["btc"].Cookie = old
+	if migrateRegtestCookies(s) {
+		t.Fatal("overrode a working path")
+	}
+}

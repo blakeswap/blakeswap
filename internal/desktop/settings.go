@@ -20,10 +20,9 @@ import (
 )
 
 func Defaults() *pb.Settings {
-	userDir, _ := os.UserHomeDir()
 	relays := []string{"wss://nos.lol", "wss://relay.primal.net", "wss://relay.ditto.pub"}
 	return &pb.Settings{ActiveNetwork: "mainnet", Revision: 1, OnboardingStage: "wallet", Wallets: []*pb.WalletProfile{{Id: "alice", Name: "Wallet 1"}}, Environments: []*pb.Environment{
-		{Network: "regtest", Nodes: map[string]*pb.Node{"btc": {Kind: "rpc", Url: "http://127.0.0.1:19443", Cookie: filepath.Join(userDir, "Library/Application Support/Bitcoin/regtest/.cookie")}, "blake": {Kind: "rpc", Url: "http://127.0.0.1:29443", Cookie: filepath.Join(userDir, "Library/Application Support/BitcoinBlake2b/regtest/.cookie")}}, Relays: append([]string(nil), relays...), Tower: &pb.Tower{}},
+		{Network: "regtest", Nodes: map[string]*pb.Node{"btc": {Kind: "rpc", Url: "http://127.0.0.1:19443"}, "blake": {Kind: "rpc", Url: "http://127.0.0.1:29443"}}, Relays: append([]string(nil), relays...), Tower: &pb.Tower{}},
 		{Network: "testnet", Nodes: map[string]*pb.Node{"btc": {Kind: "electrum", Url: "ssl://mempool.space:40002"}, "blake": {Kind: "electrum"}}, Relays: relays, Tower: &pb.Tower{}},
 		{Network: "mainnet", Nodes: map[string]*pb.Node{"btc": {Kind: "electrum", Url: "ssl://electrum.blockstream.info:50002"}, "blake": {Kind: "electrum", Url: "ssl://fulcrum.kilombino.com:17717", CertificateSha256: "506dadc710c5abaeb13191056c5aaf47035d30e08bd869f7b4fbe6e13745d5a7"}}, Relays: append([]string(nil), relays...), Tower: &pb.Tower{}},
 	}}
@@ -82,7 +81,9 @@ func validate(s *pb.Settings) error {
 			case "electrum":
 				b, err = chain.NewElectrum(chain.Network(env.Network), chain.ID(id), cfg.Url, cfg.CertificateSha256)
 			case "rpc":
-				if !filepath.IsAbs(cfg.Cookie) {
+				u, _ := url.Parse(cfg.Url)
+				auto := env.Network == "regtest" && cfg.Cookie == "" && u != nil && (u.Hostname() == "127.0.0.1" || u.Hostname() == "::1")
+				if !auto && !filepath.IsAbs(cfg.Cookie) {
 					return errors.New("RPC cookie path must be absolute")
 				}
 				b, err = chain.NewFor(chain.Network(env.Network), chain.ID(id), cfg.Url, cfg.Cookie)
@@ -161,6 +162,12 @@ func loadSettings(root string) (*pb.Settings, error) {
 		}
 		s.Revision++
 	}
+	// Retire only the old generated, nonexistent defaults. Explicit custom paths
+	// remain authoritative; users can clear them to opt into automatic discovery.
+	if migrateRegtestCookies(s) {
+		migrated = true
+		s.Revision++
+	}
 	if err := validate(s); err != nil {
 		return nil, err
 	}
@@ -224,4 +231,28 @@ func validateWalletName(name string) error {
 		}
 	}
 	return nil
+}
+
+func migrateRegtestCookies(s *pb.Settings) bool {
+	home, _ := os.UserHomeDir()
+	env := environment(s, "regtest")
+	if env == nil {
+		return false
+	}
+	changed := false
+	for id, directory := range map[string]string{"btc": "Bitcoin", "blake": "BitcoinBlake2b"} {
+		node := env.Nodes[id]
+		if node == nil || node.Kind != "rpc" || node.Cookie != filepath.Join(home, "Library/Application Support", directory, "regtest/.cookie") {
+			continue
+		}
+		endpoint, err := url.Parse(node.Url)
+		if err != nil || (endpoint.Hostname() != "127.0.0.1" && endpoint.Hostname() != "::1") {
+			continue
+		}
+		if _, err := os.Stat(node.Cookie); errors.Is(err, os.ErrNotExist) {
+			node.Cookie = ""
+			changed = true
+		}
+	}
+	return changed
 }

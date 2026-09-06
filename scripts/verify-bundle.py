@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Check the desktop distribution includes exactly the UI and wallet daemon."""
-import pathlib, plistlib, struct, sys
+import pathlib, plistlib, platform, struct, subprocess, sys
 app = pathlib.Path(sys.argv[1])
 with (app / 'Contents/Info.plist').open('rb') as file:
     info = plistlib.load(file)
@@ -22,3 +22,8 @@ for path in app.rglob('*'):
 expected = ['Contents/MacOS/Blakeswap', 'Contents/Resources/blakeswap']
 if sorted(found) != expected: raise SystemExit(f'Unexpected executables: {found}')
 print('Verified bundle: app icon, native UI and Go daemon')
+
+for name in expected:
+    arches = subprocess.check_output(["lipo", "-archs", str(app / name)], text=True).strip().split()
+    if arches != [platform.machine()]: raise SystemExit(f"Wrong architecture for {name}: {arches}")
+print(f"Verified both executables target {platform.machine()}")

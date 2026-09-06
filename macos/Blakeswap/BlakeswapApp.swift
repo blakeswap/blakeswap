@@ -297,10 +297,9 @@ struct ContentView: View {
             HStack(spacing: 16) { balanceCard("btc", status); balanceCard("blake", status) }
             ForEach(["btc", "blake"], id: \.self) { chain in
                 VStack(alignment: .leading, spacing: 14) {
-                    Text("Receive \(symbol(chain))").font(.headline)
-                    Text(status.addresses[chain] ?? "").font(.system(.body, design: .monospaced)).textSelection(.enabled)
+                    ReceiveAddressView(chain: chain, network: status.network, address: status.addresses[chain] ?? "")
+                        .id("\(status.name)/\(status.network)/\(chain)")
                     HStack {
-                        Button("Copy address") { NSPasteboard.general.clearContents(); NSPasteboard.general.setString(status.addresses[chain] ?? "", forType: .string) }
                         if model.isRegtest { Button("Add 1 test coin") { Task { await model.command("regtest.faucet", ["chain": chain, "amount": 100_000_000]) } }.disabled(model.busy)
                         Text("Mine 2 blocks to confirm deposits.").font(.caption).foregroundStyle(.secondary) }
                     }

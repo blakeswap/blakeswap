@@ -96,7 +96,11 @@ func (r *RPC) call(ctx context.Context, client *http.Client, method string, out 
 	if err != nil {
 		return err
 	}
-	cookie, err := os.ReadFile(r.Cookie)
+	cookiePath, err := r.cookiePath(ctx)
+	if err != nil {
+		return err
+	}
+	cookie, err := os.ReadFile(cookiePath)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
 			return fmt.Errorf("%s %s RPC cookie not found. Start your node and choose its cookie file in the connection settings: %w", r.Network, r.ID, err)
@@ -391,4 +395,23 @@ func (r *RPC) Unspent(ctx context.Context, addresses []string) ([]UTXO, error) {
 	var list []UTXO
 	e := r.Call(ctx, "listunspent", &list, 1, 9999999, addresses)
 	return list, e
+}
+
+// ConfirmedReceived includes spent receipts, so phrase/older-backup recovery can
+// advance past emptied addresses. Include immature coinbase receipts as well.
+func (r *RPC) ConfirmedReceived(ctx context.Context, address string) (bool, error) {
+	var receipts []struct {
+		Address string
+		Amount  Coins
+	}
+	err := r.Call(ctx, "listreceivedbyaddress", &receipts, 1, true, true, address, true)
+	if err != nil {
+		return false, err
+	}
+	for _, receipt := range receipts {
+		if receipt.Address == address && receipt.Amount > 0 {
+			return true, nil
+		}
+	}
+	return false, nil
 }

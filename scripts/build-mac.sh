@@ -1,6 +1,7 @@
 #!/bin/sh
 set -eu
 cd "$(dirname "$0")/.."
+python3 scripts/package-version.py >/dev/null
 install_path="$PWD/bin/Blakeswap.app"
 mkdir -p "$PWD/.cache" "$PWD/bin"
 stage_path=$(mktemp -d "$PWD/.cache/mac-build-XXXXXX")
@@ -38,6 +39,7 @@ cat > "$app_path/Contents/Info.plist" <<'PLIST'
 <key>LSApplicationCategoryType</key><string>public.app-category.finance</string>
 </dict></plist>
 PLIST
+python3 scripts/package-version.py "$app_path/Contents/Info.plist"
 identity=${BLAKESWAP_SIGN_IDENTITY:--}
 for executable in "$resources/blakeswap" "$app_path/Contents/MacOS/Blakeswap"; do
   if [ "$identity" = - ]; then codesign --force --sign - "$executable"
