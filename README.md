@@ -54,7 +54,10 @@ the payment. “Send selected minus fee” can consolidate selected coins to you
 current receive address. Open orders, active trades, and pending sends lock their
 funding coins; cancel an open order before withdrawing those coins. Saved sends
 retry the same signed transaction and show outgoing IDs, confirmations, and errors
-in Wallet. See [sending and coin control](docs/OPERATIONS.md#sending-and-coin-control).
+in Wallet. Balance cards distinguish total, available, reserved, and awaiting
+confirmation funds, with observed contract principal shown separately. Forms check
+fee-inclusive available inputs and BTC replay ancestry; coin-control activity links
+explain holds and permit safe open-order cancellation. See [sending and coin control](docs/OPERATIONS.md#sending-and-coin-control).
 
 ## Local regtest nodes
 
