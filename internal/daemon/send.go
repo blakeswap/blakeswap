@@ -300,6 +300,8 @@ func (e *Engine) advanceSends(ctx context.Context) {
 		}
 		id := ids[(start+i)%len(ids)]
 		e.sendCursor = id // Advance even when this lookup uses the remaining budget.
-		e.advanceSend(sendCtx, e.s.Sends[id])
+		if e.fresh(e.s.Sends[id].Chain) {
+			e.advanceSend(sendCtx, e.s.Sends[id])
+		}
 	}
 }

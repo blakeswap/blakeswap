@@ -30,6 +30,10 @@ type Engine struct {
 	tradeQuotes     map[string]TradeQuoteSnapshot
 	tradeConfirming map[string]bool
 	tradeQuoteBusy  atomic.Bool
+	chainFresh      map[chain.ID]bool
+	chainObserved   map[chain.ID]int64
+	chainErrors     map[chain.ID]string
+	chainGeneration map[chain.ID]uint64
 	feeQuoteBusy    atomic.Bool
 	preflightBusy   atomic.Bool
 	htlcBalances    map[chain.ID]int64
@@ -80,7 +84,7 @@ func Open(ctx context.Context, c Config) (*Engine, error) {
 	if e != nil {
 		return nil, e
 	}
-	en := &Engine{Config: c, vault: v, nodes: map[chain.ID]chain.Backend{}, watch: map[chain.ID]chain.Backend{}, scanners: map[chain.ID]chain.SpendScanner{}, addresses: map[chain.ID]string{}, scripts: map[chain.ID][]byte{}, heights: map[chain.ID]uint32{}, clocks: map[chain.ID]uint32{}, balances: map[chain.ID]int64{}}
+	en := &Engine{chainFresh: map[chain.ID]bool{}, chainObserved: map[chain.ID]int64{}, chainErrors: map[chain.ID]string{}, chainGeneration: map[chain.ID]uint64{}, Config: c, vault: v, nodes: map[chain.ID]chain.Backend{}, watch: map[chain.ID]chain.Backend{}, scanners: map[chain.ID]chain.SpendScanner{}, addresses: map[chain.ID]string{}, scripts: map[chain.ID][]byte{}, heights: map[chain.ID]uint32{}, clocks: map[chain.ID]uint32{}, balances: map[chain.ID]int64{}}
 	fail := func(err error) (*Engine, error) { en.Close(); return nil, err }
 	if _, e = v.Load(&en.s); e != nil {
 		return fail(e)
@@ -128,39 +132,34 @@ func Open(ctx context.Context, c Config) (*Engine, error) {
 		if !ok {
 			return fail(errors.New("both chains required"))
 		}
-		var r chain.Backend
-		var e error
-		if cfg.Kind == "electrum" {
-			r, e = chain.NewElectrum(c.Network, id, cfg.URL, cfg.CertificateSHA256)
-		} else if cfg.Kind == "rpc" || cfg.Kind == "" {
-			r, e = chain.NewFor(c.Network, id, cfg.URL, cfg.Cookie)
-		} else {
-			e = errors.New("unknown node backend")
-		}
-		if e != nil {
-			return fail(e)
-		}
-		en.nodes[id] = r
-		if e = r.Check(ctx); e != nil {
-			return fail(e)
-		}
-		en.nodes[id] = r
-		if rpc, ok := r.(*chain.RPC); ok {
-			en.scanners[id] = &chain.Scanner{RPC: rpc}
-			en.towerScanners[id] = &chain.Scanner{RPC: rpc}
-		} else {
-			en.scanners[id] = r.(chain.SpendScanner)
-			en.towerScanners[id] = r.(chain.SpendScanner)
-		}
-		if err := en.loadReceiveAddresses(ctx, id); err != nil {
+		r, err := chain.NewFailover(c.Network, id, cfg)
+		if err != nil {
 			return fail(err)
 		}
-		if err := en.refreshChain(ctx, id); err != nil {
-			return fail(err)
+		en.nodes[id] = r
+		en.scanners[id] = r
+		// Separate scanner state for local and remote obligations.
+		en.towerScanners[id] = r.NewScanner()
+		chainCtx, cancel := context.WithTimeout(ctx, chainWorkBudget)
+		err = en.loadReceiveAddresses(chainCtx, id)
+		if err == nil {
+			err = en.refreshChain(chainCtx, id)
 		}
-		if c.ChainReady != nil {
-			c.ChainReady(id, en.heights[id])
+		cancel()
+		if err != nil {
+			en.chainErrors[id] = err.Error()
+			en.lastError = fmt.Sprintf("%s unavailable: %v", id, err)
+		} else {
+			en.chainFresh[id] = true
+			en.chainObserved[id] = time.Now().Unix()
+			en.chainGeneration[id] = r.Generation()
+			if c.ChainReady != nil {
+				c.ChainReady(id, en.heights[id])
+			}
 		}
+	}
+	if ctx.Err() != nil {
+		return fail(ctx.Err())
 	}
 	if c.Mode == "tower" {
 		en.Config.Tower.PubKey = en.identity.Public().Hex()
@@ -195,14 +194,67 @@ func (e *Engine) save() error {
 	}
 	return nil
 }
+
+const chainWorkBudget = 5 * time.Second
+
+func (e *Engine) fresh(id chain.ID) bool {
+	if !e.chainFresh[id] {
+		return false
+	}
+	if p, ok := e.nodes[id].(*chain.Failover); ok {
+		return p.Generation() == e.chainGeneration[id]
+	}
+	return true
+}
 func (e *Engine) refresh(ctx context.Context) error {
+	if e.chainFresh == nil {
+		e.chainFresh = map[chain.ID]bool{}
+		e.chainErrors = map[chain.ID]string{}
+		e.chainObserved = map[chain.ID]int64{}
+		e.chainGeneration = map[chain.ID]uint64{}
+	}
+	var errs []error
 	for _, id := range []chain.ID{chain.BTC, chain.Blake} {
-		if err := e.refreshChain(ctx, id); err != nil {
-			return err
+		e.chainFresh[id] = false
+		c, cancel := context.WithTimeout(ctx, chainWorkBudget)
+		generation := uint64(0)
+		if p, ok := e.nodes[id].(*chain.Failover); ok {
+			generation = p.Generation()
+		}
+		if p, ok := e.nodes[id].(*chain.Failover); ok && p.Generation() != e.chainGeneration[id] {
+			if e.walletCoins != nil {
+				e.walletCoins[id] = nil
+			}
+		}
+		var err error
+		if e.watch[id] == nil {
+			err = e.loadReceiveAddresses(c, id)
+		}
+		if err == nil {
+			err = e.refreshChain(c, id)
+		}
+		if p, ok := e.nodes[id].(*chain.Failover); ok && p.Generation() != generation && generation != 0 {
+			if e.walletCoins != nil {
+				e.walletCoins[id] = nil
+			}
+			e.chainGeneration[id] = p.Generation()
+			err = errors.New("chain source changed; rebuilding complete wallet observation")
+		}
+		cancel()
+		if err != nil {
+			e.chainErrors[id] = err.Error()
+			errs = append(errs, fmt.Errorf("%s unavailable: %w", id, err))
+			continue
+		}
+		e.chainFresh[id] = true
+		e.chainErrors[id] = ""
+		e.chainObserved[id] = time.Now().Unix()
+		if p, ok := e.nodes[id].(*chain.Failover); ok {
+			e.chainGeneration[id] = p.Generation()
 		}
 	}
 	e.reconcileReservations()
-	return nil
+	return errors.Join(errs...)
 }
 
 // Complete wallet observations before publishing this chain's startup readiness.
@@ -261,14 +313,13 @@ func (e *Engine) Run(ctx context.Context) error {
 	}
 }
 func (e *Engine) Tick(ctx context.Context) error {
+	ctx = chain.WithWorkBudgets(ctx, 8*time.Second)
 	e.mu.Lock()
 	defer e.mu.Unlock()
 	if e.fatal != nil {
 		return e.fatal
 	}
-	if err := e.refresh(ctx); err != nil {
-		return err
-	}
+	refreshErr := e.refresh(ctx)
 	e.advanceSends(ctx)
 	if err := e.advertiseTower(); err != nil {
 		return err
@@ -300,10 +351,11 @@ func (e *Engine) Tick(ctx context.Context) error {
 			}
 		}
 	}
-	observations, err := e.scan(ctx)
-	if err != nil {
-		return err
+	observations, scanErr := e.scan(ctx)
+	if e.fatal != nil {
+		return e.fatal
 	}
+	var err error
 	if e.Config.Mode == "trader" {
 		ids := make([]string, 0, len(e.s.Swaps))
 		for id := range e.s.Swaps {
@@ -315,27 +367,31 @@ func (e *Engine) Tick(ctx context.Context) error {
 			if swap.Stage != "rejected" {
 				swap.Error = ""
 			}
-			if err := e.advanceSwap(ctx, swap, observations); err != nil {
+			swapCtx, cancel := context.WithTimeout(ctx, chainWorkBudget)
+			err := e.advanceSwap(swapCtx, swap, observations)
+			cancel()
+			if err != nil {
 				swap.Error = err.Error()
 			}
 		}
 	}
-	// Remote registrations have their own scan cursor and time budget. Their
-	// failures must not suppress our claims/refunds or durable message delivery.
-	towerCtx, cancelTower := context.WithTimeout(ctx, 5*time.Second)
-	e.refreshTowerJobs(towerCtx)
-	towerObservations, towerErr := e.scanTower(towerCtx)
-	if towerErr == nil {
-		towerErr = e.advanceTower(towerCtx, towerObservations)
+	// Remote registrations have separate cursors and per-chain work budgets.
+	// A shared shorter deadline would let the first chain starve the second;
+	// preserve the worker's overall deadline and each chain's cumulative budget.
+	e.refreshTowerJobs(ctx)
+	towerObservations, towerErr := e.scanTower(ctx)
+	if e.fatal != nil {
+		return e.fatal
 	}
-	cancelTower()
+	towerErr = errors.Join(towerErr, e.advanceTower(ctx, towerObservations))
 	if towerErr != nil {
 		e.lastError = "watchtower: " + towerErr.Error()
 	}
 	if err = e.save(); err != nil {
 		return err
 	}
-	return e.flush(ctx)
+	flushErr := e.flush(ctx)
+	return errors.Join(refreshErr, scanErr, flushErr)
 }
 func (e *Engine) ingestOffer(event nostr.Event) {
 	o, err := protocol.DecodeOffer(event, time.Now().Unix())
@@ -578,13 +634,37 @@ func (e *Engine) fundReserved(ctx context.Context, c contract.HTLC, owner string
 	}
 	return tx, nil
 }
-func (e *Engine) broadcast(ctx context.Context, id chain.ID, raw string) error {
+func (e *Engine) publicationReady(id chain.ID, both bool) error {
+	if e.fatal != nil {
+		return e.fatal
+	}
+	if !e.fresh(id) || (both && (!e.fresh(chain.BTC) || !e.fresh(chain.Blake))) {
+		return errors.New("chain source changed; required publication observations are unavailable")
+	}
+	return nil
+}
+
+func (e *Engine) broadcast(ctx context.Context, id chain.ID, raw string, both bool) error {
 	tx, err := contract.Parse(raw)
 	if err != nil {
 		return err
 	}
 	r := e.nodes[id]
-	if _, err = r.Broadcast(ctx, raw); err != nil {
+	guard := func() error {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		return e.publicationReady(id, both)
+	}
+	if err := guard(); err != nil {
+		return err
+	}
+	if guarded, ok := r.(chain.GuardedBroadcaster); ok {
+		_, err = guarded.BroadcastGuarded(ctx, raw, guard)
+	} else {
+		_, err = r.Broadcast(ctx, raw)
+	}
+	if err != nil {
 		known, lookup := r.Transaction(ctx, tx.TxHash().String())
 		if lookup == nil && known.Confirmations >= 0 {
 			return nil
@@ -654,14 +734,37 @@ func (e *Engine) scan(ctx context.Context) (map[chain.ID]map[string]chain.Observ
 		}
 	}
 	out := map[chain.ID]map[string]chain.Observation{}
+	var errs []error
 	for _, id := range []chain.ID{chain.BTC, chain.Blake} {
-		result, err := e.scanners[id].Scan(ctx, starts[id], points[id])
+		if !e.fresh(id) {
+			continue
+		}
+		c, cancel := context.WithTimeout(ctx, chainWorkBudget)
+		result, err := e.scanners[id].Scan(e.witnessContext(c, id), starts[id], points[id])
+		cancel()
+		if e.fatal != nil {
+			return out, e.fatal
+		}
+		if err == nil {
+			accepted := map[chain.ID]map[string]chain.Observation{id: result}
+			for _, s := range e.s.Swaps {
+				if err := e.rememberSwapWitnesses(s, accepted); err != nil {
+					return out, err
+				}
+			}
+		}
+		if err == nil && !e.fresh(id) {
+			err = errors.New("chain source changed during observation; retrying complete refresh")
+		}
 		if err != nil {
-			return nil, err
+			e.chainFresh[id] = false
+			e.chainErrors[id] = err.Error()
+			errs = append(errs, fmt.Errorf("%s scan: %w", id, err))
+			continue
 		}
 		out[id] = result
 	}
-	return out, nil
+	return out, errors.Join(errs...)
 }
 
 func (e *Engine) scanTower(ctx context.Context) (map[chain.ID]map[string]chain.Observation, error) {
@@ -692,16 +795,33 @@ func (e *Engine) scanTower(ctx context.Context) (map[chain.ID]map[string]chain.O
 		}
 	}
 	out := map[chain.ID]map[string]chain.Observation{}
+	var errs []error
 	for _, id := range []chain.ID{chain.BTC, chain.Blake} {
+		if !e.fresh(id) {
+			continue
+		}
 		if len(points[id]) == 0 {
 			out[id] = map[string]chain.Observation{}
 			continue
 		}
-		result, err := e.towerScanners[id].Scan(ctx, starts[id], points[id])
+		scanCtx, cancel := context.WithTimeout(ctx, chainWorkBudget)
+		result, err := e.towerScanners[id].Scan(e.witnessContext(scanCtx, id), starts[id], points[id])
+		cancel()
+		if e.fatal != nil {
+			return out, e.fatal
+		}
 		if err != nil {
-			return nil, err
+			errs = append(errs, err)
+			continue
+		}
+		if err := e.rememberTowerWitnesses(map[chain.ID]map[string]chain.Observation{id: result}); err != nil {
+			return out, err
+		}
+		if !e.fresh(id) {
+			errs = append(errs, fmt.Errorf("%s tower scan source changed; refreshing recovery evidence", id))
+			continue
 		}
 		out[id] = result
 	}
-	return out, nil
+	return out, errors.Join(errs...)
 }

@@ -58,6 +58,9 @@ func (e *Engine) bumpTransaction(ctx context.Context, raw json.RawMessage) (Bump
 		return BumpResult{}, errors.New("legacy claim has no authorized replacement budget; retain its signed transaction")
 	}
 	if p.Kind == "claim" {
+		if err := e.checkClaimAcceleration(ctx, s); err != nil {
+			return BumpResult{}, err
+		}
 		if err := e.prepareClaimVariants(s); err != nil {
 			return BumpResult{}, err
 		}
@@ -128,6 +131,9 @@ func (e *Engine) bumpTransaction(ctx context.Context, raw json.RawMessage) (Bump
 			return BumpResult{}, err
 		}
 	}
+	if err := e.publicationReady(target.Chain, p.Kind == "refund" || !s.SecretObserved); err != nil {
+		return BumpResult{}, err
+	}
 	if index > current {
 		*attempt = index * 3
 	}
@@ -141,7 +147,7 @@ func (e *Engine) bumpTransaction(ctx context.Context, raw json.RawMessage) (Bump
 		return BumpResult{}, err
 	}
 	result := BumpResult{TxID: tx.TxHash().String(), Fee: p.Fee, State: "broadcast"}
-	if err := e.broadcast(ctx, target.Chain, variants[index]); err != nil {
+	if err := e.broadcast(ctx, target.Chain, variants[index], p.Kind == "refund" || !s.SecretObserved); err != nil {
 		result.State = "saved"
 		result.Error = err.Error()
 	}
@@ -151,6 +157,12 @@ func (e *Engine) bumpTransaction(ctx context.Context, raw json.RawMessage) (Bump
 // The UI stage can predate a peer claim or a reorg. Manual acceleration must
 // observe the same two-output safety conditions as automatic refund recovery.
 func (e *Engine) checkRefundAcceleration(ctx context.Context, s *Swap, own contract.HTLC) error {
+	if s.IncomingClaimSeen {
+		return errors.New("incoming contract was previously claimed; refund acceleration remains unsafe after a reorg")
+	}
+	if !e.fresh(chain.BTC) || !e.fresh(chain.Blake) {
+		return errors.New("refund acceleration requires current observations of both chains")
+	}
 	if own.TxID == "" {
 		return errors.New("refund has no funded outpoint")
 	}
@@ -168,8 +180,17 @@ func (e *Engine) checkRefundAcceleration(ctx context.Context, s *Swap, own contr
 		return errors.New("refund is not eligible yet; refresh chain status")
 	}
 	all, err := e.scan(ctx)
+	if witnessErr := e.rememberSwapWitnesses(s, all); witnessErr != nil {
+		return witnessErr
+	}
 	if err != nil {
 		return err
+	}
+	if _, ok := all[chain.BTC]; !ok {
+		return errors.New("Bitcoin spend observation unavailable")
+	}
+	if _, ok := all[chain.Blake]; !ok {
+		return errors.New("Blake2b spend observation unavailable")
 	}
 	ownObs, ownSpent := observation(all, own)
 	if !refundReplaceable(own, ownSpent, ownObs) {
@@ -183,9 +204,91 @@ func (e *Engine) checkRefundAcceleration(ctx context.Context, s *Swap, own contr
 		if obs.Tx == nil {
 			return errors.New("incoming settlement is unknown; refresh before accelerating")
 		}
-		if _, claimed := contract.ExtractSecret(incoming, obs.Tx); claimed {
+		if secret, claimed := contract.ExtractSecret(incoming, obs.Tx); claimed {
+			s.Secret, s.SecretObserved, s.SecretExposed, s.IncomingClaimSeen = hex.EncodeToString(secret), true, true, true
+			if err := e.save(); err != nil {
+				return err
+			}
 			return errors.New("incoming contract was claimed; await the counterparty claim instead of refunding")
 		}
+	}
+	return nil
+}
+
+// A saved claim can still be private after a crash before its first broadcast.
+// Manual acceleration must never bypass the cross-chain first-revelation gate.
+func (e *Engine) checkClaimAcceleration(ctx context.Context, s *Swap) error {
+	target := s.Short
+	if s.Role == "maker" {
+		target = s.Long
+	}
+	if !e.fresh(target.Chain) {
+		return errors.New("claim acceleration requires a current target-chain observation")
+	}
+	all, scanErr := e.scan(ctx)
+	if err := e.rememberSwapWitnesses(s, all); err != nil {
+		return err
+	}
+	if _, ok := all[target.Chain]; !ok {
+		if scanErr != nil {
+			return scanErr
+		}
+		return errors.New("claim target spend observation unavailable")
+	}
+	if !s.SecretObserved {
+		if s.Role != "taker" || !e.fresh(chain.BTC) || !e.fresh(chain.Blake) {
+			return errors.New("first revelation requires both chains; a privately signed claim is not a witnessed secret")
+		}
+		if scanErr != nil || all[chain.BTC] == nil || all[chain.Blake] == nil {
+			return errors.New("first revelation requires both current spend observations")
+		}
+		for _, id := range []chain.ID{chain.BTC, chain.Blake} {
+			clock, err := e.nodes[id].Height(ctx)
+			if err == nil && e.Config.Network != chain.Regtest {
+				clock, err = e.nodes[id].MedianTime(ctx)
+			}
+			if err != nil {
+				return err
+			}
+			e.clocks[id] = clock
+		}
+		for _, c := range []contract.HTLC{s.Long, s.Short} {
+			ready, err := e.funded(ctx, c)
+			if err != nil {
+				return err
+			}
+			if !ready {
+				return errors.New("first revelation requires both confirmed agreed outputs")
+			}
+		}
+		return e.gate(s.Terms, "reveal")
+	}
+	// A witnessed secret may be reused with the target alone, including a saved
+	// higher-fee variant. Verify its exact funding output before publishing it.
+	out, err := e.nodes[target.Chain].Output(ctx, target.TxID, target.Vout)
+	if err != nil {
+		return err
+	}
+	if !e.fresh(target.Chain) {
+		return errors.New("claim source changed; refresh target evidence")
+	}
+	if out == nil {
+		// A mempool claim consumes this output; current spend scanning below
+		// establishes whether that spend reveals the same agreed preimage.
+		obs, spent := observation(all, target)
+		if spent && obs.Tx != nil && obs.Confirmations == 0 {
+			if _, claimed := contract.ExtractSecret(target, obs.Tx); claimed {
+				return nil
+			}
+		}
+		return errors.New("claim target unavailable or already spent")
+	}
+	script, err := target.PkScript()
+	if err != nil {
+		return err
+	}
+	if int64(out.Value) != target.Amount || out.Script.Hex != hex.EncodeToString(script) || out.Confirmations < e.Config.Network.Confirmations() {
+		return errors.New("claim target differs from confirmed agreed contract")
 	}
 	return nil
 }
@@ -340,8 +443,13 @@ func (e *Engine) broadcastOwner(ctx context.Context, s *Swap, id chain.ID, refun
 		cancel()
 		if suggested > index {
 			index = suggested
-			*attempt = index * 3
 		}
+	}
+	if err := e.publicationReady(id, refund || !s.SecretObserved); err != nil {
+		return err
+	}
+	if s.OwnerFeeCap > 0 && *attempt < index*3 {
+		*attempt = index * 3
 	}
 	if refund {
 		s.RefundVariant = index
@@ -355,7 +463,7 @@ func (e *Engine) broadcastOwner(ctx context.Context, s *Swap, id chain.ID, refun
 	if err := e.save(); err != nil {
 		return err
 	}
-	return e.broadcast(ctx, id, variants[index])
+	return e.broadcast(ctx, id, variants[index], refund || !s.SecretObserved)
 }
 
 func estimatedTier(estimate chain.FeeEstimate, variants []string) int {

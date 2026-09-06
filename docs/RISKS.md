@@ -73,8 +73,14 @@ header downloads. The wallet does not build and validate the full header
 chain, difficulty transitions, or most-work selection. A malicious indexer can
 omit spends or histories, present a stale/private branch, or misrepresent which
 valid block is canonical. That can undermine confirmation checks, replay ancestry,
-and timely preimage detection. One server per chain is configured; there is no
-multi-operator quorum or automatic server failover. For consensus validation under
+and timely preimage detection. Ordered, validated endpoint failover improves
+availability but supplies no multi-operator quorum or Byzantine agreement. A
+secondary must agree with the last observed tip; conflicting or lagging sources
+are held for reconciliation. During a peer-chain outage, refunds, new funding,
+and first revelation remain blocked. An isolated claim requires a preimage
+already observed in a contract witness and fresh target-chain evidence. This
+conservative policy can delay refunds; it never treats missing peer data as
+proof that an incoming claim did not happen. For consensus validation under
 your control, configure your own fully validating node. An RPC server is also a
 trusted observation source if you do not control it.
 

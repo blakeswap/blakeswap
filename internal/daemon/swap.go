@@ -89,11 +89,17 @@ func (e *Engine) advanceSwap(ctx context.Context, s *Swap, all map[chain.ID]map[
 		e.expirePendingRequest(s, time.Now().Unix())
 		return nil
 	}
+	if err := e.rememberSwapWitnesses(s, all); err != nil {
+		return err
+	}
 	if err := s.Terms.Validate(); err != nil {
 		return err
 	}
 	if (s.Stage == "expired before maker funding" && s.ShortFunding == "") || (s.Stage == "expired before funding" && s.LongFunding == "") {
 		return nil // Safe expiry is final even if a reorg moves the clock back.
+	}
+	if !e.fresh(chain.BTC) || !e.fresh(chain.Blake) {
+		return e.advanceIsolatedSwap(ctx, s, all)
 	}
 	// Reconcile prepared transactions even in older snapshots whose broadcast
 	// succeeded before the sent flag was saved. Lookup errors are not absence.
@@ -117,7 +123,7 @@ func (e *Engine) advanceSwap(ctx context.Context, s *Swap, all map[chain.ID]map[
 				if err = e.save(); err != nil {
 					return err
 				}
-				if err = e.broadcast(ctx, fundingChain, raw); err != nil {
+				if err = e.broadcast(ctx, fundingChain, raw, true); err != nil {
 					return err
 				}
 			}
@@ -142,19 +148,6 @@ func (e *Engine) advanceSwap(ctx context.Context, s *Swap, all map[chain.ID]map[
 	if shortSpent {
 		s.ShortSpend = shortObs.TxID
 		s.ShortConfirmations = shortObs.Confirmations
-	}
-	// Secret knowledge is monotonic, even when the revealing tx is evicted/reorged.
-	for _, pair := range []struct {
-		c  contract.HTLC
-		o  chain.Observation
-		ok bool
-	}{{s.Long, longObs, longSpent}, {s.Short, shortObs, shortSpent}} {
-		if pair.ok {
-			if secret, ok := contract.ExtractSecret(pair.c, pair.o.Tx); ok {
-				s.Secret = hex.EncodeToString(secret)
-				s.SecretExposed = true
-			}
-		}
 	}
 	for _, job := range s.Jobs {
 		obs, ok := observation(all, job.Target)
@@ -307,12 +300,15 @@ func (e *Engine) advanceSwap(ctx context.Context, s *Swap, all map[chain.ID]map[
 				return errors.New("taker funding no longer confirmed")
 			}
 		}
+		if err := e.gate(s.Terms, phase); err != nil {
+			return err
+		}
 		// Commit publication and its peer notification together before sending
 		// anything. A crash or ambiguous broadcast response must remain resumable.
 		if err := e.recordFunding(s); err != nil {
 			return err
 		}
-		if err := e.broadcast(ctx, id, raw); err != nil {
+		if err := e.broadcast(ctx, id, raw, true); err != nil {
 			return err
 		}
 		s.Stage = "funding broadcast"
@@ -383,7 +379,7 @@ func (e *Engine) advanceSwap(ctx context.Context, s *Swap, all map[chain.ID]map[
 	if incomingSpent && incomingObs.Confirmations >= e.Config.Network.Confirmations() {
 		s.Stage = "awaiting counterparty claim"
 	}
-	if refundReplaceable(own, ownSpent, ownObs) && own.TxID != "" && e.eligible(own.Chain, own.RefundHeight) && len(s.SelfRefunds) > 0 {
+	if e.fresh(chain.BTC) && e.fresh(chain.Blake) && !s.IncomingClaimSeen && refundReplaceable(own, ownSpent, ownObs) && own.TxID != "" && e.eligible(own.Chain, own.RefundHeight) && len(s.SelfRefunds) > 0 {
 		if incomingSpent {
 			if _, claimed := contract.ExtractSecret(incoming, incomingObs.Tx); claimed {
 				s.Stage = "awaiting counterparty claim"
@@ -417,6 +413,9 @@ func (e *Engine) recordFunding(s *Swap) error {
 	return e.save()
 }
 func (e *Engine) advanceTower(ctx context.Context, all map[chain.ID]map[string]chain.Observation) error {
+	if err := e.rememberTowerWitnesses(all); err != nil {
+		return err
+	}
 	estimates := map[chain.ID]chain.FeeEstimate{}
 	for _, state := range e.s.TowerJobs {
 		job := state.Job
@@ -424,8 +423,20 @@ func (e *Engine) advanceTower(ctx context.Context, all map[chain.ID]map[string]c
 			continue
 		}
 		state.Error = ""
+		if !e.fresh(job.Target.Chain) || (job.Kind == "refund" && (!e.fresh(chain.BTC) || !e.fresh(chain.Blake))) {
+			state.Error = "chain observations unavailable; recovery held"
+			continue
+		}
 		if err := job.Validate(e.ownTower().Scripts, job.BPS); err != nil {
 			state.Error = err.Error()
+			continue
+		}
+		if _, ok := all[job.Target.Chain]; !ok {
+			state.Error = "target-chain scan unavailable"
+			continue
+		}
+		if job.Kind == "refund" && (all[chain.BTC] == nil || all[chain.Blake] == nil) {
+			state.Error = "peer-chain scan unavailable; refund held"
 			continue
 		}
 		obs, spent := observation(all, job.Target)
@@ -434,13 +445,6 @@ func (e *Engine) advanceTower(ctx context.Context, all map[chain.ID]map[string]c
 			state.Confirmed = obs.Confirmations
 			state.Broadcast = obs.TxID
 			continue
-		}
-		if job.Observe != nil {
-			if obs, ok := observation(all, *job.Observe); ok {
-				if secret, ok := contract.ExtractSecret(*job.Observe, obs.Tx); ok {
-					state.Secret = hex.EncodeToString(secret)
-				}
-			}
 		}
 		if !e.eligible(job.Target.Chain, job.Lock) || (job.Kind == "claim" && state.Secret == "") {
 			continue
@@ -465,6 +469,10 @@ func (e *Engine) advanceTower(ctx context.Context, all map[chain.ID]map[string]c
 		if suggested := estimatedTier(estimate, job.Templates); suggested > index {
 			index = suggested
 			state.Attempt = index * 3
+		}
+		if !e.fresh(job.Target.Chain) || (job.Kind == "refund" && (!e.fresh(chain.BTC) || !e.fresh(chain.Blake))) {
+			state.Error = "chain source changed during fee selection; refresh recovery evidence"
+			continue
 		}
 		tx, err := contract.Parse(job.Templates[index])
 		if err != nil {
@@ -494,7 +502,7 @@ func (e *Engine) advanceTower(ctx context.Context, all map[chain.ID]map[string]c
 		if err = e.save(); err != nil {
 			return err
 		}
-		if err = e.broadcast(ctx, job.Target.Chain, contract.Hex(tx)); err != nil {
+		if err = e.broadcast(ctx, job.Target.Chain, contract.Hex(tx), job.Kind == "refund"); err != nil {
 			state.Error = err.Error()
 		} else {
 			state.Broadcast = tx.TxHash().String()
@@ -504,6 +512,9 @@ func (e *Engine) advanceTower(ctx context.Context, all map[chain.ID]map[string]c
 }
 
 func (e *Engine) eligible(id chain.ID, lock uint32) bool {
+	if !e.fresh(id) {
+		return false
+	}
 	if lock >= protocol.TimeLockThreshold {
 		return e.clocks[id] > lock
 	}
@@ -511,6 +522,9 @@ func (e *Engine) eligible(id chain.ID, lock uint32) bool {
 }
 
 func (e *Engine) gate(t *protocol.Terms, phase string) error {
+	if !e.fresh(chain.BTC) || !e.fresh(chain.Blake) {
+		return errors.New("both chains require fresh observations")
+	}
 	if e.Config.Network != chain.Regtest {
 		for _, id := range []chain.ID{chain.BTC, chain.Blake} {
 			if t.StartHeights[id] > e.heights[id] {
@@ -531,6 +545,9 @@ func (e *Engine) refreshTowerJobs(ctx context.Context) {
 			continue
 		}
 		target := state.Job.Target
+		if !e.fresh(target.Chain) {
+			continue
+		}
 		tx, err := e.nodes[target.Chain].Transaction(ctx, target.TxID)
 		if chain.TransactionNotFound(err) {
 			deadline := uint64(target.RefundHeight) + uint64(protocol.RefundDelay(e.Config.Network))

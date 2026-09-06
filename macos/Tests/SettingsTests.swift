@@ -33,6 +33,21 @@ final class SettingsTests: XCTestCase {
         XCTAssertEqual(environment.rescueFeeBasisPoints, 1000)
     }
 
+    func testOrderedFallbacksAndReadinessRoundTrip() throws {
+        var primary = NodeSettings(); primary.kind = "rpc"; primary.url = "http://127.0.0.1:19443"; primary.cookie = "/tmp/fixture.cookie"
+        var secondary = NodeSettings(); secondary.kind = "electrum"; secondary.url = "ssl://secondary.example:50002"; secondary.certificateSha256 = String(repeating: "ab", count: 32)
+        primary.fallbacks = [secondary]
+        let restored = try NodeSettings(serializedBytes: primary.serializedData())
+        XCTAssertEqual(restored.fallbacks, [secondary]); XCTAssertEqual(restored.cookie, primary.cookie)
+        var status = DaemonStatus(); status.heights["btc"] = 123
+        var connection = Blakeswap_V1_ChainConnection(); connection.ready = false; connection.lastObservation = 100
+        status.connections["btc"] = connection
+        let snapshot = try DaemonStatus(serializedBytes: status.serializedData())
+        XCTAssertEqual(snapshot.heights["btc"], 123)
+        XCTAssertEqual(snapshot.connections["btc"]?.ready, false)
+        XCTAssertEqual(snapshot.connections["btc"]?.lastObservation, 100)
+    }
+
     @MainActor
     func testPartialChainReadinessAndNetworkSwitch() {
         let model = AppModel()

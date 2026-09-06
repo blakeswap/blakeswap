@@ -193,8 +193,8 @@ struct ContentView: View {
     private var footer: some View {
         HStack(spacing: 18) {
             Label("Queued messages: \(model.status?.pendingMessages ?? 0)", systemImage: "envelope")
-            ChainHeightIndicator(chain: "btc", height: model.status?.heights["btc"])
-            ChainHeightIndicator(chain: "blake", height: model.status?.heights["blake"])
+            ChainHeightIndicator(chain: "btc", height: model.status?.heights["btc"], ready: model.status?.connections["btc"]?.ready)
+            ChainHeightIndicator(chain: "blake", height: model.status?.heights["blake"], ready: model.status?.connections["blake"]?.ready)
             Spacer()
             if model.isRegtest { Button("Mine 2 blocks on both chains") { Task { await model.command("regtest.mine", ["blocks": 2]) } }
                 .disabled(model.busy || model.status == nil).accessibilityIdentifier("mine-blocks") }
@@ -209,7 +209,7 @@ struct ContentView: View {
                 Text(symbol(chain)).font(.caption2).foregroundStyle(.secondary)
             }
             Text(units(status.balances[chain] ?? 0)).font(.system(size: 28, weight: .medium, design: .rounded)).monospacedDigit()
-            Text("Total confirmed").font(.caption).foregroundStyle(.secondary)
+            Text(status.connections[chain]?.ready == false ? "Last observed total · currently unavailable" : "Total confirmed").font(.caption).foregroundStyle(.secondary)
             Text("Available: \(units(status.available(chain)))").font(.caption)
             if let funds = status.funds[chain] {
                 Text("Reserved: \(units(funds.reservedConfirmed)) · Awaiting confirmations: \(units(funds.unconfirmed))").font(.caption2).foregroundStyle(.secondary)

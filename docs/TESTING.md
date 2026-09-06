@@ -326,3 +326,74 @@ private minimal journal permissions/overwrite protection. It injects typed
 responses into the production review model; it is not a claim of automated
 pixel-level UI coverage. Build the bundle and use its helper for startup tests as
 described by `scripts/test-swift.sh`.
+
+## Endpoint interruption and isolated recovery
+
+`TestFailover*` covers ordered routing, timeout budgets/backoff, wrong-network
+admission failure, stale/conflicting tips, recovery after a legitimate reorg,
+proof errors, TLS pin mismatch, watch-history provenance, cancellation and
+identical retry after an ambiguous broadcast. `TestIsolated*` covers private
+secrets and crash-before-first-broadcast claims, persistence of witnessed
+preimages, missing target scans/outputs, healthy-chain signed-send progress,
+and permanent refund suppression after an observed incoming claim is reorged.
+Settings/API/native tests preserve ordered fallback fields and distinguish stale
+values from current readiness.
+
+Integrated fee regressions preserve estimate provenance, owner caps, signed
+variants and destinations through failover. Manual acceleration cannot publish a
+privately saved claim during a peer outage. Witness-ordering regressions reopen
+the encrypted state immediately after a failed funding lookup or rejected refund,
+then remove the witness and verify that refund suppression remains durable.
+Terminal-history tests preserve completed/refunded rows and network switching
+during unrelated outages, while fresh reorg evidence reopens the obligation.
+Owner/tower fee selection must recheck source freshness before broadcasting.
+Accepted-scan tests change source readiness during/between chain scans and verify
+durable immutable witness knowledge. Tower tests observe only the peer chain,
+reopen the vault, remove the witness and recover using the target alone.
+`TestRealIsolatedTowerWitnessRecovery` repeats that handoff and revealing-block
+reorg against actual BTC/Blake2b targets through RPC and Electrum fixtures.
+A repeated-tick tower budget regression stalls BTC scanning and verifies that
+an eligible Blake claim still progresses while a Blake refund remains held.
+Refunds require successful current scans of both chains, including after source
+changes. The overall worker deadline continues to stop publication.
+`TestPublication*` covers peer changes during fee selection, the second spend
+scan, variant lookup and the last maker-funding lookup.
+`TestFailoverBroadcastGuardRechecksAfterEndpointSwitch` verifies that admission
+of a fallback cannot bypass the publication requirements of its caller.
+`TestFailoverIncrementalScanKeepsHealthyEndpointAvailable` distinguishes RPC
+catch-up with completed-block progress from a stalled scan, including a reset
+cursor. Partial observations remain unavailable, wallet refresh stays usable,
+and the same source finishes its retained scan on a later cycle. Both local and
+tower entry points are exercised. `TestIsolated*IncompleteScan*` uses real RPC and
+Electrum decoders with local fault servers: a valid public preimage precedes a
+later timeout, transport/mempool/history error, inclusion error or reorg check.
+Confirmed raw replies include block hashes in the header-failure scenarios;
+owner and tower witnesses must be saved before the following header lookup,
+including when a mempool spender becomes confirmed between reads.
+Reloading the vault and removing the witness must still block owner refunds and
+permit authorized tower recovery only after a complete target scan. Sink failure
+and fallback-attempt tests cover the durability boundary. The real tower test
+forces a short initial RPC catch-up slice, asserts publication remains held and
+wallet readiness survives, then requires bounded, paced completion.
+
+With the exclusive isolated BTC/Blake2b fixture available, run:
+
+```sh
+BLAKESWAP_REGTEST=/path/to/isolated-fixture \
+  sh scripts/go.sh test -count=1 -p=1 -run 'TestRealEndpointFailover|TestRealIsolated' -v ./internal/daemon
+BLAKESWAP_TEST_ELECTRUM=1 BLAKESWAP_REGTEST=/path/to/isolated-fixture \
+  sh scripts/go.sh test -count=1 -p=1 -run 'TestRealEndpointFailover|TestRealIsolated' -v ./internal/daemon
+```
+
+The RPC tests inject HTTP endpoint outages; the Electrum tests close actual TCP
+connections. Both fixtures use real node consensus and no public funds. Cases
+cover settlement in both directions after primary loss, blocked first
+revelation during a peer outage, persisted-witness claims while only the target
+chain is reachable, and refunds held until peer observation returns. Run the
+existing asynchronous settlement/refund/reorg matrix as a regression too.
+
+The Electrum real-chain harness waits for a successful tick and fresh observations
+of both chains after switching to a new local indexer. A cold bridge can exceed
+an initial request budget while building history; setup logs that cause and
+requires readiness within 20 seconds before creating an offer. Trade, refund and
+settlement assertions and production timeouts remain unchanged.

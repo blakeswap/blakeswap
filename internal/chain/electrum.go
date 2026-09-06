@@ -55,6 +55,9 @@ func NewElectrum(network Network, id ID, endpoint, pin string) (*Electrum, error
 		return nil, errors.New("public Electrum connections require TLS")
 	}
 	if pin != "" {
+		if u.Scheme != "ssl" {
+			return nil, errors.New("certificate pin requires a TLS endpoint")
+		}
 		b, e := hex.DecodeString(pin)
 		if e != nil || len(b) != 32 {
 			return nil, errors.New("certificate SHA256 must be 32 bytes in hex")
@@ -580,6 +583,11 @@ func (e *Electrum) Scan(ctx context.Context, start uint32, outpoints []string) (
 				key := OutpointKey(in.PreviousOutPoint.Hash.String(), in.PreviousOutPoint.Index)
 				if !points[key] {
 					continue
+				}
+				// The preimage is already known even if inclusion, another
+				// history read, or the final reorg check later fails.
+				if err := emitSpendWitness(ctx, key, tx); err != nil {
+					return nil, err
 				}
 				if item.Height > 0 && item.Height <= int64(tip) {
 					t, err = e.inclusion(ctx, t, uint32(item.Height))
