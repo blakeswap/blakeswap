@@ -20,7 +20,12 @@ final class AppModel: ObservableObject {
     @Published var busy = false
     @Published var recovery: String?
     @Published var setupWallet: Blakeswap_V1_FirstWallet?
-    let root = DaemonProcess.shared.root
+    private let daemon: DaemonProcess
+    let root: String
+    init(daemon: DaemonProcess? = nil) {
+        self.daemon = daemon ?? .shared
+        root = self.daemon.root
+    }
     private var refreshing = false
     var network: String { settings?.activeNetwork ?? status?.network ?? "mainnet" }
     var isRegtest: Bool { network == "regtest" }
@@ -41,17 +46,19 @@ final class AppModel: ObservableObject {
         if !nextSettings.wallets.isEmpty, !nextSettings.wallets.contains(where: { $0.id == profile }) { selectProfile(nextSettings.wallets[0].id) }
         return matching
     }
-    func start() { do { try DaemonProcess.shared.start() } catch { connectionError = error.localizedDescription } }
     func refresh() async {
         guard !refreshing else { return }; refreshing = true; defer { refreshing = false }
-        start() // Idempotent while running; restarts an exited helper automatically.
         let selected = profile, expected = generation
         do {
+            try daemon.start() // Idempotent while running; restarts an exited helper automatically.
+            try await daemon.waitUntilReady(profile: selected)
             let raw = try await DaemonRPC.call(root: root, profile: selected, method: "status")
             let next = try DaemonStatus(serializedBytes: raw)
             let settingsRaw = try await DaemonRPC.call(root: root, profile: selected, method: "settings.get")
             let nextSettings = try AppSettings(serializedBytes: settingsRaw)
             if acceptSnapshot(next, settings: nextSettings, profile: selected, generation: expected) { connectionError = nil }
+        } catch is CancellationError {
+            // Closing the app while its helper starts is not a connection failure.
         } catch { if selected == profile && expected == generation { connectionError = error.localizedDescription } }
     }
     @discardableResult

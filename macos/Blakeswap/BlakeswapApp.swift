@@ -11,7 +11,6 @@ struct BlakeswapApp: App {
                 .frame(minWidth: 1060, minHeight: 730)
                 .preferredColorScheme(.dark)
                 .task {
-                    model.start()
                     NSApp.activate(ignoringOtherApps: true)
                     while !Task.isCancelled {
                         await model.refresh()
