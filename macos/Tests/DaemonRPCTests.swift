@@ -110,6 +110,12 @@ final class DaemonRPCTests: XCTestCase {
             if swaps.first?.stage == "completed" {
                 let alice = try await status("alice")
                 let makerSwap = try XCTUnwrap(alice.swaps.first(where: { $0.id == taken.id }))
+                // Independent workers publish at different times. Observe Alice's
+                // next background snapshot without requesting a processing cycle.
+                guard makerSwap.stage == "completed" else {
+                    try await Task.sleep(nanoseconds: 500_000_000)
+                    continue
+                }
                 swaps.append(makerSwap)
                 XCTAssertEqual(makerSwap.stage, "completed")
                 for swap in swaps {
