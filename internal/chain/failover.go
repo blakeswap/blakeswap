@@ -186,6 +186,13 @@ func (p *Failover) do(ctx context.Context, fn func(context.Context, *endpointEnt
 			err = fn(c, entry)
 		}
 		cancel()
+		var progress *scanProgressError
+		if errors.As(err, &progress) {
+			// Catch-up retained completed blocks on this endpoint. Its bounded
+			// work slice is incomplete, not evidence of a broken transport.
+			// Keep observations unavailable until the complete scan succeeds.
+			return err
+		}
 		if ctx.Err() != nil {
 			entry.validated = false
 			return ctx.Err()
@@ -492,6 +499,13 @@ func (p *Failover) NewScanner() SpendScanner {
 	return &failoverScanner{pool: p, scanners: scanners}
 }
 
+type scanProgressError struct{ cause error }
+
+func (e *scanProgressError) Error() string {
+	return "chain history catch-up incomplete; block scan progress retained"
+}
+func (e *scanProgressError) Unwrap() error { return e.cause }
+
 type failoverScanner struct {
 	pool     *Failover
 	scanners []SpendScanner
@@ -500,7 +514,16 @@ type failoverScanner struct {
 func (s *failoverScanner) Scan(ctx context.Context, start uint32, points []string) (out map[string]Observation, err error) {
 	err = s.pool.do(ctx, func(c context.Context, _ *endpointEntry) error {
 		var e error
-		out, e = s.scanners[s.pool.active].Scan(c, start, points)
+		scanner := s.scanners[s.pool.active]
+		rpc, incremental := scanner.(*Scanner)
+		var before uint64
+		if incremental {
+			before = rpc.progress
+		}
+		out, e = scanner.Scan(c, start, points)
+		if incremental && rpc.progress != before && c.Err() != nil && errors.Is(e, context.DeadlineExceeded) {
+			return &scanProgressError{cause: e}
+		}
 		return e
 	})
 	return

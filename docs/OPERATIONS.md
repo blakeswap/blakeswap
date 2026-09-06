@@ -321,7 +321,11 @@ work per cycle, and wallet refresh/local/tower scans each have a five-second
 limit per chain. Tower work shares the overall worker deadline, so a stalled
 first-chain scan cannot exhaust a shorter shared tower deadline. Relay time and
 the other chain do not consume that chain’s allowance. Long RPC history imports continue independently,
-with shutdown cancelling and joining them before closing transports.
+with shutdown cancelling and joining them before closing transports. An RPC
+spend scan that reaches its time limit after reading more complete blocks keeps
+its endpoint-local cursor and leaves endpoint health intact. Its incomplete
+observations cannot authorize actions; the next cycle resumes catch-up. A stalled
+scan with no completed-block progress still triggers endpoint failure/backoff.
 
 A candidate must pass the configured network/genesis/fork rules, transport
 security, and its own configured certificate pin before use. Pins require TLS;

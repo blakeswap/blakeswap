@@ -19,6 +19,7 @@ type Observation struct {
 	Confirmations int
 }
 type Scanner struct {
+	progress  uint64 // Completed block reads, monotonic across cursor resets.
 	RPC       *RPC
 	cursor    uint32
 	tip       string
@@ -108,6 +109,7 @@ func (s *Scanner) Scan(ctx context.Context, start uint32, outpoints []string) (m
 		}
 		s.cursor = n
 		s.tip = hash
+		s.progress++
 	}
 	for key, obs := range s.confirmed {
 		obs.Confirmations = int(height - obs.Height + 1)

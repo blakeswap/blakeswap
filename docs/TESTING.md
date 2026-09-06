@@ -360,6 +360,10 @@ changes. The overall worker deadline continues to stop publication.
 scan, variant lookup and the last maker-funding lookup.
 `TestFailoverBroadcastGuardRechecksAfterEndpointSwitch` verifies that admission
 of a fallback cannot bypass the publication requirements of its caller.
+`TestFailoverIncrementalScanKeepsHealthyEndpointAvailable` distinguishes RPC
+catch-up with completed-block progress from a stalled scan, including a reset
+cursor. Partial observations remain unavailable, wallet refresh stays usable,
+and the same source finishes its retained scan on a later cycle.
 
 With the exclusive isolated BTC/Blake2b fixture available, run:
 
