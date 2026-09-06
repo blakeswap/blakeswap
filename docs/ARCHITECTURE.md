@@ -109,7 +109,7 @@ settled. Indexer errors never count as proof that a transaction is absent.
 
 ## Private protection and independent wallet workers
 
-New v2 offers and accepted terms contain no watchtower selection. Provider choices
+New offers and accepted terms contain no watchtower selection. Provider choices
 live in the owner’s encrypted offer/swap state, with jobs encrypted only to that
 provider. The local API and native orderbook show a protection label only to the
 maker; takers independently choose their own optional refund provider.

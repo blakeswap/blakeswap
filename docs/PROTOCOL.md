@@ -1,4 +1,4 @@
-# Atomic swap protocol v2
+# Atomic swap protocol
 
 ## Scope and roles
 
@@ -27,7 +27,7 @@ The claim witness is `[signature, s, 0x01, witnessScript]`. The refund witness i
 
 All application-generated transactions are version 2. Inputs use sequence `0xfffffffd`, making `nLockTime` effective and signaling replacement. Funding consumes confirmed local P2WPKH coins, creates the HTLC at output 0, and returns non-dust change to the chain's local deposit key. No spending key crosses node RPC. Refunds are signed and persisted before funding is broadcast.
 
-BTC signatures use BIP-143 and hash byte `0x01`. Blake2b signatures use hash byte `0x21` and the fork's `UnifiedSighash` tagged hash. The implementation supports only ALL and SegWit v0. It commits to every input outpoint, spent value/script, input sequence, output, transaction version, and locktime; the unified message zero-extends locktime to five bytes. None, Single, AnyoneCanPay, Taproot, and custom script modes are outside v2.
+BTC signatures use BIP-143 and hash byte `0x01`. Blake2b signatures use hash byte `0x21` and the fork's `UnifiedSighash` tagged hash. The implementation supports only ALL and SegWit v0. It commits to every input outpoint, spent value/script, input sequence, output, transaction version, and locktime; the unified message zero-extends locktime to five bytes. None, Single, AnyoneCanPay, Taproot, and custom script modes are outside this protocol.
 
 The two contracts share `H` but have different keys and assets:
 
@@ -154,7 +154,7 @@ Refund rescue jobs similarly spend the party's own HTLC after the refund thresho
 
 ## Messaging and crash recovery
 
-Public offers use addressable kind `38481` and carry `version: 2`. Their public
+Public offers use addressable kind `38481`. Their public
 schema contains only network, ID, maker, amounts, asset, expiry, status, and
 reservation. Both protected and unprotected offers omit all protection fields.
 The maker’s authenticated local API overlays its own saved choice; other wallets
@@ -162,13 +162,14 @@ receive no provider or protection information, including for cached legacy offer
 Only encrypted jobs and receipts disclose an order’s protection to its provider.
 Provider directory announcements describe a service, not which orders use it.
 
-On upgrade, stored legacy offers are republished in v2 without protection fields,
-and stale offer retries are removed before relay IO. Old disclosures already
-stored by third parties cannot be erased. New trades require v2 offers and v2
-terms; older clients must upgrade. Previously accepted v1 swaps retain their
-original terms, message digests, jobs, and receipt validation to settle safely.
-Existing public blockchain rescue transactions can still reveal a provider payout
-when a rescue is actually executed; this change hides the prior protection choice.
+This is a protocol hardcut for the unreleased app. Retired offers containing
+protection fields are rejected; no version negotiation or legacy swap path is
+provided. Cached own offers from the retired schema are withdrawn and stale
+publication retries are removed before relay IO. Create those offers again after
+updating. Wallet keys and balances are retained. Prior disclosures stored by
+third parties cannot be erased. Public blockchain rescue transactions can still
+reveal a provider payout when a rescue is actually executed; this change hides
+the prior protection choice.
 
 Latest `created_at` wins within `(kind, author, d)`, with the lexicographically lower event ID breaking equal-time ties. Status changes publish `reserved`, `cancelled`, or `filled`. Local expiry is enforced even if a relay retains an old event. A relay deletion request is never treated as revoking an on-chain capability.
 

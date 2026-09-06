@@ -1050,7 +1050,6 @@ func (x *Backup) GetPath() string {
 
 type Offer struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	Version       int32                  `protobuf:"varint,12,opt,name=version,proto3" json:"version,omitempty"` // Public protocol version. Tower fields below are maker-local only.
 	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
 	Maker         string                 `protobuf:"bytes,2,opt,name=maker,proto3" json:"maker,omitempty"`
 	Sell          string                 `protobuf:"bytes,3,opt,name=sell,proto3" json:"sell,omitempty"`
@@ -1094,13 +1093,6 @@ func (x *Offer) ProtoReflect() protoreflect.Message {
 // Deprecated: Use Offer.ProtoReflect.Descriptor instead.
 func (*Offer) Descriptor() ([]byte, []int) {
 	return file_blakeswap_v1_daemon_proto_rawDescGZIP(), []int{16}
-}
-
-func (x *Offer) GetVersion() int32 {
-	if x != nil {
-		return x.Version
-	}
-	return 0
 }
 
 func (x *Offer) GetId() string {
@@ -2638,9 +2630,8 @@ const file_blakeswap_v1_daemon_proto_rawDesc = "" +
 	"\bmnemonic\x18\x01 \x01(\tR\bmnemonic\x12\x18\n" +
 	"\awarning\x18\x02 \x01(\tR\awarning\"\x1c\n" +
 	"\x06Backup\x12\x12\n" +
-	"\x04path\x18\x01 \x01(\tR\x04path\"\xd1\x02\n" +
-	"\x05Offer\x12\x18\n" +
-	"\aversion\x18\f \x01(\x05R\aversion\x12\x0e\n" +
+	"\x04path\x18\x01 \x01(\tR\x04path\"\xb7\x02\n" +
+	"\x05Offer\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x14\n" +
 	"\x05maker\x18\x02 \x01(\tR\x05maker\x12\x12\n" +
 	"\x04sell\x18\x03 \x01(\tR\x04sell\x12\x1f\n" +

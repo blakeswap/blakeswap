@@ -77,7 +77,6 @@ message WalletSend {
 message Recovery { string mnemonic = 1; string warning = 2; }
 message Backup { string path = 1; }
 message Offer {
- int32 version = 12; // Public protocol version. Tower fields below are maker-local only.
  string id = 1; string maker = 2; string sell = 3;
  int64 sell_amount = 4; int64 buy_amount = 5; int64 tower_bps = 6;
  int64 expires = 7; string status = 8; string reservation = 9; string network = 10; Tower tower = 11;

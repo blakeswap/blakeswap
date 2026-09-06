@@ -303,12 +303,6 @@ nonisolated struct Blakeswap_V1_Offer: @unchecked Sendable {
   // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
   // methods supported on all messages.
 
-  /// Public protocol version. Tower fields below are maker-local only.
-  var version: Int32 {
-    get {_storage._version}
-    set {_uniqueStorage()._version = newValue}
-  }
-
   var id: String {
     get {_storage._id}
     set {_uniqueStorage()._id = newValue}
@@ -1599,10 +1593,9 @@ nonisolated extension Blakeswap_V1_Backup: SwiftProtobuf.Message, SwiftProtobuf.
 
 nonisolated extension Blakeswap_V1_Offer: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   static let protoMessageName: String = _protobuf_package + ".Offer"
-  static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}id\0\u{1}maker\0\u{1}sell\0\u{3}sell_amount\0\u{3}buy_amount\0\u{3}tower_bps\0\u{1}expires\0\u{1}status\0\u{1}reservation\0\u{1}network\0\u{1}tower\0\u{1}version\0")
+  static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}id\0\u{1}maker\0\u{1}sell\0\u{3}sell_amount\0\u{3}buy_amount\0\u{3}tower_bps\0\u{1}expires\0\u{1}status\0\u{1}reservation\0\u{1}network\0\u{1}tower\0")
 
   fileprivate class _StorageClass {
-    var _version: Int32 = 0
     var _id: String = String()
     var _maker: String = String()
     var _sell: String = String()
@@ -1624,7 +1617,6 @@ nonisolated extension Blakeswap_V1_Offer: SwiftProtobuf.Message, SwiftProtobuf._
     private init() {}
 
     init(copying source: _StorageClass) {
-      _version = source._version
       _id = source._id
       _maker = source._maker
       _sell = source._sell
@@ -1665,7 +1657,6 @@ nonisolated extension Blakeswap_V1_Offer: SwiftProtobuf.Message, SwiftProtobuf._
         case 9: try { try decoder.decodeSingularStringField(value: &_storage._reservation) }()
         case 10: try { try decoder.decodeSingularStringField(value: &_storage._network) }()
         case 11: try { try decoder.decodeSingularMessageField(value: &_storage._tower) }()
-        case 12: try { try decoder.decodeSingularInt32Field(value: &_storage._version) }()
         default: break
         }
       }
@@ -1711,9 +1702,6 @@ nonisolated extension Blakeswap_V1_Offer: SwiftProtobuf.Message, SwiftProtobuf._
       try { if let v = _storage._tower {
         try visitor.visitSingularMessageField(value: v, fieldNumber: 11)
       } }()
-      if _storage._version != 0 {
-        try visitor.visitSingularInt32Field(value: _storage._version, fieldNumber: 12)
-      }
     }
     try unknownFields.traverse(visitor: &visitor)
   }
@@ -1723,7 +1711,6 @@ nonisolated extension Blakeswap_V1_Offer: SwiftProtobuf.Message, SwiftProtobuf._
       let storagesAreEqual: Bool = withExtendedLifetime((lhs._storage, rhs._storage)) { (_args: (_StorageClass, _StorageClass)) in
         let _storage = _args.0
         let rhs_storage = _args.1
-        if _storage._version != rhs_storage._version {return false}
         if _storage._id != rhs_storage._id {return false}
         if _storage._maker != rhs_storage._maker {return false}
         if _storage._sell != rhs_storage._sell {return false}

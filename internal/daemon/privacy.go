@@ -1,20 +1,18 @@
 package daemon
 
 import (
+	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"github.com/blakeswap/blakeswap/internal/chain"
 	"time"
 
 	"github.com/blakeswap/blakeswap/internal/protocol"
 	"github.com/blakeswap/blakeswap/internal/transport"
 )
 
-// protection is local to this wallet. Legacy accepted swaps retain their exact
-// signed policy; v2 never derives our protection from the counterparty's terms.
+// Protection belongs only to this wallet's encrypted local state.
 func (s *Swap) protection() protocol.Tower {
-	if s.Terms != nil && s.Terms.Version == 1 {
-		return protocol.Tower{PubKey: s.Terms.Tower, Scripts: s.Terms.TowerScripts, BPS: s.Terms.Offer().TowerBPS}
-	}
 	if s.Protection != nil {
 		return *s.Protection
 	}
@@ -54,30 +52,41 @@ func (e *Engine) selectProtection(o protocol.Offer, bps int64, pubkey string) (p
 	if err := o.Validate(time.Now().Unix()); err != nil {
 		return protocol.Tower{}, err
 	}
-	return e.selectedTower(o)
+	tower, err := e.selectedTower(o)
+	if err != nil {
+		return protocol.Tower{}, err
+	}
+	if tower.BPS > 0 {
+		if tower.PubKey == e.identity.Public().Hex() {
+			return protocol.Tower{}, errors.New("select an independent watchtower")
+		}
+		for _, id := range []chain.ID{chain.BTC, chain.Blake} {
+			script, err := hex.DecodeString(tower.Scripts[id])
+			if err != nil || len(script) != 22 || script[0] != 0 || script[1] != 20 {
+				return protocol.Tower{}, errors.New("invalid tower payout")
+			}
+		}
+	}
+	return tower, nil
 }
 
-// Run before any relay IO. Replace legacy publications, including pending
-// retries, without altering accepted contracts or their recovery capabilities.
-func (e *Engine) migrateOfferPrivacy() error {
+// Withdraw cached offers from the retired public schema before relay IO. This
+// is cache hygiene, not protocol negotiation or support for legacy swaps.
+func (e *Engine) scrubOfferCache() error {
 	if e.s.OfferTowers == nil {
 		e.s.OfferTowers = map[string]protocol.Tower{}
 	}
 	for _, event := range e.s.Offers {
+		if !retiredOfferContent(event.Content) {
+			continue
+		}
 		var o protocol.Offer
 		if err := json.Unmarshal([]byte(event.Content), &o); err != nil {
 			return err
 		}
-		if o.Version == 2 {
-			continue
-		}
-		tower, err := e.selectedTower(o)
-		if err != nil && o.Status == "open" && o.Expires > time.Now().Unix() {
-			return err
-		}
-		if err == nil {
-			e.s.OfferTowers[o.ID] = tower
-		}
+		o.Status = "cancelled"
+		delete(e.s.OfferTowers, o.ID)
+		delete(e.s.CoinReservations, "offer/"+o.ID)
 		if err := e.publishOffer(o); err != nil {
 			return err
 		}
@@ -86,10 +95,22 @@ func (e *Engine) migrateOfferPrivacy() error {
 		if d.Event.Kind != transport.OfferKind {
 			continue
 		}
-		var o protocol.Offer
-		if json.Unmarshal([]byte(d.Event.Content), &o) != nil || o.Version != 2 {
+		if retiredOfferContent(d.Event.Content) {
 			delete(e.s.Outbox, id)
 		}
 	}
+	for id, event := range e.s.Book {
+		if _, err := protocol.DecodeOffer(event, time.Now().Unix()); err != nil {
+			delete(e.s.Book, id)
+		}
+	}
 	return nil
+}
+
+func retiredOfferContent(content string) bool {
+	var fields map[string]json.RawMessage
+	if json.Unmarshal([]byte(content), &fields) != nil {
+		return true
+	}
+	return fields["tower"] != nil || fields["tower_bps"] != nil || fields["version"] != nil
 }

@@ -3,7 +3,6 @@ package daemon
 import (
 	"context"
 	"encoding/hex"
-	"encoding/json"
 	"fmt"
 	"testing"
 	"time"
@@ -217,7 +216,7 @@ func TestPreparedFundingReconciliationHonorsDeadlineAndLookupErrors(t *testing.T
 				e.keys = keys
 				maker, taker := nostr.Generate(), nostr.Generate()
 				offer := protocol.Offer{ID: transport.RandomID(), Maker: maker.Public().Hex(), Sell: chain.BTC, SellAmount: 1000000, BuyAmount: 2000000, Expires: time.Now().Unix() + 3600, Status: "open"}
-				raw, _ := json.Marshal(offer)
+				raw, _ := offer.PublicJSON()
 				event := nostr.Event{Kind: transport.OfferKind, CreatedAt: nostr.Now(), Tags: nostr.Tags{{"d", offer.ID}, {"t", transport.Namespace}}, Content: string(raw)}
 				if err := transport.Sign(&event, maker); err != nil {
 					t.Fatal(err)
@@ -232,7 +231,7 @@ func TestPreparedFundingReconciliationHonorsDeadlineAndLookupErrors(t *testing.T
 					pubkeys[c] = hex.EncodeToString(key.PubKey().SerializeCompressed())
 				}
 				request := protocol.Request{ID: id, OfferEvent: event, Taker: taker.Public().Hex(), Hash: transport.RandomID(), Keys: pubkeys}
-				terms, err := protocol.NewTerms(request, pubkeys, map[chain.ID]uint32{chain.BTC: 100, chain.Blake: 100}, "", nil)
+				terms, err := protocol.NewTerms(request, pubkeys, map[chain.ID]uint32{chain.BTC: 100, chain.Blake: 100})
 				if err != nil {
 					t.Fatal(err)
 				}

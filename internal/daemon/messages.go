@@ -118,9 +118,6 @@ func (e *Engine) handle(from string, m transport.Message) error {
 			}
 			return e.queue(from, "accepted", m.SwapID, existing.Terms)
 		}
-		if o.Version != 2 {
-			return e.queue(from, "rejected", request.ID, map[string]string{"reason": "maker must republish this legacy offer"})
-		}
 		owned, ok := e.s.Offers[o.ID]
 		var current protocol.Offer
 		currentErr := json.Unmarshal([]byte(owned.Content), &current)
@@ -141,7 +138,7 @@ func (e *Engine) handle(from string, m transport.Message) error {
 		if err != nil {
 			return err
 		}
-		terms, err := protocol.NewTermsWithClocks(request, keys, e.heights, e.clocks, "", nil)
+		terms, err := protocol.NewTermsWithClocks(request, keys, e.heights, e.clocks)
 		if err != nil {
 			return err
 		}
@@ -195,9 +192,6 @@ func (e *Engine) handle(from string, m transport.Message) error {
 		}
 		if s.Terms == nil && (e.expirePendingRequest(s, time.Now().Unix()) || terminalSwap(s)) {
 			return nil // Acknowledge stale acceptance without reviving released funds.
-		}
-		if s.Terms == nil && terms.Version != 2 {
-			return errors.New("new swaps require private v2 terms")
 		}
 		if s.Terms != nil {
 			if protocol.Digest(s.Terms) != protocol.Digest(terms) {

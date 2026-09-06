@@ -4,6 +4,11 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"github.com/blakeswap/blakeswap/internal/storage"
+	"google.golang.org/protobuf/proto"
+	"os"
+	"path/filepath"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -124,5 +129,69 @@ func TestRefreshDuringCycleWaitsForReadsStartedAfterRequest(t *testing.T) {
 	stopWorker(stopped)
 	if _, err := stopped.check(context.Background()); !errors.Is(err, context.Canceled) {
 		t.Fatal("refresh survived stopped wallet", err)
+	}
+}
+
+func TestNetworkSwitchJoinsWorkersBeforeCheckingNewObligations(t *testing.T) {
+	root := t.TempDir()
+	settings := configuredDefaults()
+	settings.Wallets = []*pb.WalletProfile{{Id: "alice", Name: "Alice"}}
+	settings.ActiveNetwork = "regtest"
+	walletDir := filepath.Join(root, "wallets", "alice")
+	if err := os.MkdirAll(filepath.Join(walletDir, "regtest"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	password := []byte("network-switch-test-password")
+	if err := os.WriteFile(filepath.Join(walletDir, "vault.password"), password, 0600); err != nil {
+		t.Fatal(err)
+	}
+	entered, cancelled, release := make(chan struct{}), make(chan struct{}), make(chan struct{})
+	f := &workerFixture{name: "alice", tick: func(ctx context.Context) error {
+		close(entered)
+		<-ctx.Done()
+		close(cancelled)
+		<-release
+		// Model a registration that finishes persisting as the cycle is cancelled.
+		v, err := storage.Open(filepath.Join(walletDir, "regtest", "state.db"), password)
+		if err != nil {
+			return err
+		}
+		defer v.Close()
+		return v.Save(daemon.State{TowerJobs: map[string]*daemon.TowerJob{"job": {}}})
+	}}
+	w := startWalletWorker(context.Background(), f)
+	defer stopWorker(w)
+	<-entered
+	m := &Manager{root: root, settings: settings, workers: map[string]*walletWorker{"alice": w}, engines: map[string]*daemon.Engine{}}
+	next := proto.Clone(settings).(*pb.Settings)
+	next.ActiveNetwork = "mainnet"
+	result := make(chan error, 1)
+	go func() { _, err := m.writeSettings(context.Background(), next); result <- err }()
+	select {
+	case <-cancelled:
+	case err := <-result:
+		close(release)
+		t.Fatalf("switch raced ahead of worker: %v", err)
+	case <-time.After(2 * time.Second):
+		close(release)
+		t.Fatal("switch failed to quiesce wallet")
+	}
+	select {
+	case <-result:
+		close(release)
+		t.Fatal("switch failed to join wallet")
+	default:
+	}
+	close(release)
+	select {
+	case err := <-result:
+		if err == nil || !strings.Contains(err.Error(), "watchtower jobs are still active") {
+			t.Fatal("late obligation bypassed network guard", err)
+		}
+		if m.settings.ActiveNetwork != "regtest" || m.restart {
+			t.Fatal("rejected switch changed active network")
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("switch did not finish after worker joined")
 	}
 }

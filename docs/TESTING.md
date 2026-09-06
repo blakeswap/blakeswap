@@ -239,8 +239,9 @@ workflow without building DMGs.
 Privacy regressions inspect public offer content and every status publication,
 decrypt peer negotiation to verify it contains no protection fields, test all four
 independent on/off combinations, and verify jobs decrypt only for their provider.
-Encrypted-state reloads preserve each local choice. Legacy migration removes
-publication retries while preserving the exact digest of accepted v1 terms.
+Encrypted-state reloads preserve each local choice. Cache cleanup withdraws retired offers and removes stale publication retries
+without depending on the old configured provider. Retired public fields are
+rejected without version negotiation.
 The existing real-chain protection scenarios now explicitly select both wallets’
 providers and still verify receipt-gated funding, takeover, refunds, and reorgs.
 

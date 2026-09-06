@@ -220,7 +220,16 @@ func (m *Manager) writeSettings(ctx context.Context, next *pb.Settings) (*pb.Set
 	// Release bootstrap vaults before changing their runtime or checking obligations.
 	// Display-name edits need no engine restart or bootstrap cancellation.
 	if runtimeChanged {
+		// No wallet may acquire a new obligation between the safety check and
+		// committing the network switch. Resume old workers if the save fails.
+		m.stopWorkers()
 		m.stopOpening()
+		defer func() {
+			if !m.restart && m.runtimeCtx != nil {
+				m.startWorkers(m.runtimeCtx)
+				m.publishView()
+			}
+		}()
 	}
 	if next.ActiveNetwork != m.settings.ActiveNetwork {
 		for _, wallet := range m.settings.Wallets {
@@ -299,13 +308,7 @@ func (m *Manager) command(ctx context.Context, profile string, req daemon.Reques
 }
 func (m *Manager) closeNetwork() {
 	m.stopOpening()
-	for _, worker := range m.workers {
-		worker.cancel()
-	}
-	for _, worker := range m.workers {
-		<-worker.done
-	}
-	m.workers = map[string]*walletWorker{}
+	m.stopWorkers()
 	for _, e := range m.engines {
 		_ = e.Close()
 	}
@@ -378,14 +381,7 @@ func (m *Manager) run(ctx context.Context) error {
 		if len(m.engines) == len(m.settings.Wallets) && len(m.openings) == 0 {
 			m.lastError = ""
 		}
-		if m.workers == nil {
-			m.workers = map[string]*walletWorker{}
-		}
-		for id, engine := range m.engines {
-			if m.workers[id] == nil {
-				m.workers[id] = startWalletWorker(ctx, engine)
-			}
-		}
+		m.startWorkers(ctx)
 		m.publishView()
 		m.mu.Unlock()
 		select {

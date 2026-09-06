@@ -1,7 +1,6 @@
 package protocol
 
 import (
-	"encoding/json"
 	"fiatjaf.com/nostr"
 	"github.com/blakeswap/blakeswap/internal/chain"
 	"github.com/blakeswap/blakeswap/internal/transport"
@@ -16,7 +15,7 @@ func publicSample(t *testing.T, n chain.Network, sell chain.ID) Terms {
 	offer.Network = n
 	offer.Maker = maker.Public().Hex()
 	offer.Sell = sell
-	raw, _ := json.Marshal(offer)
+	raw, _ := offer.PublicJSON()
 	event := nostr.Event{Kind: transport.OfferKind, CreatedAt: nostr.Now(), Tags: nostr.Tags{{"d", offer.ID}, {"t", n.Namespace()}}, Content: string(raw)}
 	if err := transport.Sign(&event, maker); err != nil {
 		t.Fatal(err)
@@ -24,7 +23,7 @@ func publicSample(t *testing.T, n chain.Network, sell chain.ID) Terms {
 	request := old.Request
 	request.OfferEvent = event
 	now := uint32(time.Now().Unix())
-	terms, err := NewTermsWithClocks(request, old.MakerKeys, map[chain.ID]uint32{chain.BTC: n.ForkHeight() + 1000, chain.Blake: n.ForkHeight() + 20000}, map[chain.ID]uint32{chain.BTC: now - 3600, chain.Blake: now - 1200}, "", nil)
+	terms, err := NewTermsWithClocks(request, old.MakerKeys, map[chain.ID]uint32{chain.BTC: n.ForkHeight() + 1000, chain.Blake: n.ForkHeight() + 20000}, map[chain.ID]uint32{chain.BTC: now - 3600, chain.Blake: now - 1200})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -110,7 +109,7 @@ func TestSignedOfferCannotCrossNetworkNamespace(t *testing.T) {
 	key := nostr.Generate()
 	offer := terms.Offer()
 	offer.Maker = key.Public().Hex()
-	raw, _ := json.Marshal(offer)
+	raw, _ := offer.PublicJSON()
 	event := nostr.Event{Kind: transport.OfferKind, CreatedAt: nostr.Now(), Tags: nostr.Tags{{"d", offer.ID}, {"t", chain.Testnet.Namespace()}}, Content: string(raw)}
 	if err := transport.Sign(&event, key); err != nil {
 		t.Fatal(err)

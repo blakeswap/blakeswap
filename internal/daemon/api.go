@@ -147,7 +147,6 @@ func (e *Engine) Command(ctx context.Context, req Request) (any, error) {
 		if err := json.Unmarshal(req.Params, &o); err != nil {
 			return nil, err
 		}
-		o.Version = 2
 		o.Network = e.Config.Network
 		o.ID = transport.RandomID()
 		o.Maker = e.identity.Public().Hex()
@@ -247,9 +246,6 @@ func (e *Engine) Command(ctx context.Context, req Request) (any, error) {
 		}
 		if o.Status != "open" || o.Maker == e.identity.Public().Hex() {
 			return nil, errors.New("offer not available to take")
-		}
-		if o.Version != 2 {
-			return nil, errors.New("maker must upgrade and republish this legacy offer")
 		}
 		tower, err := e.selectProtection(o, p.TowerBPS, p.TowerPubKey)
 		if err != nil {

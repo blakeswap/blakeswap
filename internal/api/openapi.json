@@ -1072,11 +1072,6 @@
     "v1Offer": {
       "type": "object",
       "properties": {
-        "version": {
-          "type": "integer",
-          "format": "int32",
-          "description": "Public protocol version. Tower fields below are maker-local only."
-        },
         "id": {
           "type": "string"
         },

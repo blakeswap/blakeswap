@@ -195,7 +195,7 @@ transactions retain their input locks and existing settlement obligations.
 `CreateOffer.tower_bps/tower_pubkey` select protection for the maker only.
 `TakeOffer.tower_bps/tower_pubkey` independently select the taker’s refund
 protection. Zero disables that wallet’s protection; neither selection is relayed
-to the counterparty. `Offer.version` identifies public protocol v2. Order tower
+to the counterparty. Order tower
 fields are populated only for the authenticated local maker wallet.
 
 `RefreshStatus` (`POST /v1/status/refresh`, CLI `status.refresh`) requires

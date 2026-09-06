@@ -8,7 +8,6 @@ import (
 	"testing"
 	"time"
 
-	"fiatjaf.com/nostr"
 	"github.com/blakeswap/blakeswap/internal/chain"
 	"github.com/blakeswap/blakeswap/internal/protocol"
 	"github.com/blakeswap/blakeswap/internal/transport"
@@ -39,7 +38,7 @@ func TestOfferProtectionStaysLocalAcrossPublicationAndRestart(t *testing.T) {
 		o := privacyOffer(t, maker, bps)
 		event := maker.s.Offers[o.ID]
 		assertNoProtection(t, event.Content)
-		if got, err := protocol.DecodeOffer(event, time.Now().Unix()); err != nil || got.Version != 2 || got.TowerBPS != 0 || got.Tower != nil {
+		if got, err := protocol.DecodeOffer(event, time.Now().Unix()); err != nil || got.TowerBPS != 0 || got.Tower != nil {
 			t.Fatal("invalid private offer", err)
 		}
 		if got := maker.Status().Orders[0]; got.TowerBPS != bps {
@@ -126,7 +125,7 @@ func TestPrivateProtectionDoesNotReachCounterparty(t *testing.T) {
 				}
 			}
 			ms, ts := maker.s.Swaps[id], taker.s.Swaps[id]
-			if ms.Terms.Version != 2 || ts.Terms == nil || protocol.Digest(ms.Terms) != protocol.Digest(ts.Terms) {
+			if ts.Terms == nil || protocol.Digest(ms.Terms) != protocol.Digest(ts.Terms) {
 				t.Fatal("parties did not agree to private terms")
 			}
 			if ms.protection().BPS != makerBPS || ts.protection().BPS != takerBPS {
@@ -177,39 +176,27 @@ func TestPrivateProtectionDoesNotReachCounterparty(t *testing.T) {
 	}
 }
 
-func TestLegacyOfferMigrationKeepsAcceptedTermsAndRemovesRetryLeaks(t *testing.T) {
+func TestRetiredOfferCacheIsWithdrawnWithoutProviderConfig(t *testing.T) {
 	maker, _, _ := sendFixture(t)
-	provider := discoveryEngine(t)
-	maker.Config.Tower = provider.ownTower()
+	maker.Config.Tower = discoveryEngine(t).ownTower()
 	o := privacyOffer(t, maker, 50)
-	o.Version = 0
 	o.Tower = nil
-	raw, _ := json.Marshal(o)
-	legacy := maker.s.Offers[o.ID]
-	legacy.Content = string(raw)
-	if err := transport.Sign(&legacy, maker.identity); err != nil {
+	raw, _ := json.Marshal(o) // Retired schema published tower_bps.
+	old := maker.s.Offers[o.ID]
+	old.Content = string(raw)
+	if err := transport.Sign(&old, maker.identity); err != nil {
 		t.Fatal(err)
 	}
-	maker.s.Offers[o.ID], maker.s.Book[o.Maker+":"+o.ID] = legacy, legacy
+	maker.s.Offers[o.ID], maker.s.Book[o.Maker+":"+o.ID] = old, old
+	maker.queueEvent(old)
+	maker.Config.Tower = protocol.Tower{}
 	maker.s.OfferTowers = nil
-	maker.queueEvent(legacy)
-	// An already accepted v1 swap keeps its signed wire encoding and policy.
-	keys, _ := maker.swapKeys(transport.RandomID())
-	r := protocol.Request{ID: transport.RandomID(), OfferEvent: legacy, Taker: nostr.Generate().Public().Hex(), Hash: transport.RandomID(), Keys: keys}
-	terms, err := protocol.NewTerms(r, keys, map[chain.ID]uint32{chain.BTC: 200, chain.Blake: 200}, maker.Config.Tower.PubKey, maker.Config.Tower.Scripts)
-	if err != nil {
-		t.Fatal(err)
+	if err := maker.scrubOfferCache(); err != nil {
+		t.Fatal("cache cleanup blocked wallet startup", err)
 	}
-	maker.s.Swaps[r.ID] = &Swap{ID: r.ID, Role: "maker", Request: r, Terms: &terms}
-	before := protocol.Digest(terms)
-	if err := maker.migrateOfferPrivacy(); err != nil {
-		t.Fatal(err)
-	}
-	if protocol.Digest(maker.s.Swaps[r.ID].Terms) != before || maker.s.Swaps[r.ID].protection().BPS != 50 {
-		t.Fatal("legacy accepted contract changed")
-	}
-	if maker.Status().Orders[0].TowerBPS != 50 {
-		t.Fatal("migration lost local maker policy")
+	current, err := protocol.DecodeOffer(maker.s.Offers[o.ID], time.Now().Unix())
+	if err != nil || current.Status != "cancelled" {
+		t.Fatal("retired offer not withdrawn", err)
 	}
 	for _, d := range maker.s.Outbox {
 		if d.Event.Kind == transport.OfferKind {
@@ -217,16 +204,12 @@ func TestLegacyOfferMigrationKeepsAcceptedTermsAndRemovesRetryLeaks(t *testing.T
 		}
 	}
 	observer, _, _ := sendFixture(t)
-	observer.ingestOffer(legacy)
-	if observer.Status().Orders[0].Tower != nil || observer.Status().Orders[0].TowerBPS != 0 {
-		t.Fatal("legacy API disclosure")
+	observer.ingestOffer(old)
+	if len(observer.Status().Orders) != 0 {
+		t.Fatal("retired public offer accepted")
 	}
-	raw, _ = json.Marshal(map[string]string{"maker": o.Maker, "id": o.ID})
-	if _, err := observer.Command(context.Background(), Request{Method: "swap.take", Params: raw}); err == nil {
-		t.Fatal("new legacy trade accepted")
-	}
-	after := maker.s.Offers[o.ID].ID
-	if err := maker.migrateOfferPrivacy(); err != nil || maker.s.Offers[o.ID].ID != after {
-		t.Fatal("migration not idempotent", err)
+	before := maker.s.Offers[o.ID].ID
+	if err := maker.scrubOfferCache(); err != nil || maker.s.Offers[o.ID].ID != before {
+		t.Fatal("cache cleanup is not idempotent", err)
 	}
 }

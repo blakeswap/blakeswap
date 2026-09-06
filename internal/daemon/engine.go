@@ -162,7 +162,7 @@ func Open(ctx context.Context, c Config) (*Engine, error) {
 			return fail(errors.New("tower rate must be 1–1000 basis points"))
 		}
 	}
-	if err := en.migrateOfferPrivacy(); err != nil {
+	if err := en.scrubOfferCache(); err != nil {
 		return fail(err)
 	}
 	en.reconcileReservations()
@@ -471,20 +471,7 @@ func (e *Engine) receive(event nostr.Event) error {
 	return e.save()
 }
 func (e *Engine) publishOffer(o protocol.Offer) error {
-	o.Version = 2
-	// Explicit public schema: no fee, provider, quote, or protection flag.
-	raw, err := json.Marshal(struct {
-		Version     int           `json:"version"`
-		Network     chain.Network `json:"network"`
-		ID          string        `json:"id"`
-		Maker       string        `json:"maker"`
-		Sell        chain.ID      `json:"sell"`
-		SellAmount  int64         `json:"sell_amount"`
-		BuyAmount   int64         `json:"buy_amount"`
-		Expires     int64         `json:"expires"`
-		Status      string        `json:"status"`
-		Reservation string        `json:"reservation,omitempty"`
-	}{o.Version, o.Network, o.ID, o.Maker, o.Sell, o.SellAmount, o.BuyAmount, o.Expires, o.Status, o.Reservation})
+	raw, err := o.PublicJSON()
 	if err != nil {
 		return err
 	}

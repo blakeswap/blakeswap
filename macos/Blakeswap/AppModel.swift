@@ -48,7 +48,7 @@ final class AppModel: ObservableObject {
         return matching
     }
     func refresh() async {
-        guard !refreshing else { return }; refreshing = true; defer { refreshing = false }
+        guard !refreshing, !checkingSwaps else { return }; refreshing = true; defer { refreshing = false }
         let selected = profile, expected = generation
         do {
             try daemon.start() // Idempotent while running; restarts an exited helper automatically.
@@ -62,9 +62,14 @@ final class AppModel: ObservableObject {
             // Closing the app while its helper starts is not a connection failure.
         } catch { if selected == profile && expected == generation { connectionError = error.localizedDescription } }
     }
-    func refreshSwaps() async {
-        guard !checkingSwaps else { return }
+    func beginSwapRefresh() -> Bool {
+        guard !checkingSwaps else { return false }
+        generation &+= 1 // Invalidate polling responses that started before this check.
         checkingSwaps = true
+        return true
+    }
+    func refreshSwaps() async {
+        guard beginSwapRefresh() else { return }
         defer { checkingSwaps = false }
         let selected = profile, expected = generation
         let currentNetwork = network

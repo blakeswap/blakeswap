@@ -127,3 +127,23 @@ func (m *Manager) refreshStatus(ctx context.Context, profile string, req daemon.
 	}
 	return worker.check(ctx)
 }
+
+func (m *Manager) stopWorkers() {
+	for _, worker := range m.workers {
+		worker.cancel()
+	}
+	for _, worker := range m.workers {
+		<-worker.done
+	}
+	m.workers = map[string]*walletWorker{}
+}
+func (m *Manager) startWorkers(ctx context.Context) {
+	if m.workers == nil {
+		m.workers = map[string]*walletWorker{}
+	}
+	for id, engine := range m.engines {
+		if m.workers[id] == nil {
+			m.workers[id] = startWalletWorker(ctx, engine)
+		}
+	}
+}
