@@ -376,14 +376,14 @@ func (e *Engine) advanceSwap(ctx context.Context, s *Swap, all map[chain.ID]map[
 		if err := e.save(); err != nil {
 			return err
 		}
-		if err := e.broadcast(ctx, incoming.Chain, s.SelfClaim); err != nil {
+		if err := e.broadcastOwner(ctx, s, incoming.Chain, false); err != nil {
 			return err
 		}
 	}
 	if incomingSpent && incomingObs.Confirmations >= e.Config.Network.Confirmations() {
 		s.Stage = "awaiting counterparty claim"
 	}
-	if !ownSpent && own.TxID != "" && e.eligible(own.Chain, own.RefundHeight) && len(s.SelfRefunds) > 0 {
+	if (!ownSpent || ownObs.Confirmations == 0) && own.TxID != "" && e.eligible(own.Chain, own.RefundHeight) && len(s.SelfRefunds) > 0 {
 		if incomingSpent {
 			if _, claimed := contract.ExtractSecret(incoming, incomingObs.Tx); claimed {
 				s.Stage = "awaiting counterparty claim"
@@ -394,7 +394,7 @@ func (e *Engine) advanceSwap(ctx context.Context, s *Swap, all map[chain.ID]map[
 		if err := e.save(); err != nil {
 			return err
 		}
-		return e.broadcast(ctx, own.Chain, s.SelfRefunds[0])
+		return e.broadcastOwner(ctx, s, own.Chain, true)
 	}
 	return revealError
 }
@@ -466,6 +466,16 @@ func (e *Engine) advanceTower(ctx context.Context, all map[chain.ID]map[string]c
 			if err = contract.FillSecret(job.Target, tx, secret); err != nil {
 				return err
 			}
+		}
+		id := tx.TxHash().String()
+		found := false
+		for _, previous := range state.Variants {
+			if previous == id {
+				found = true
+			}
+		}
+		if !found {
+			state.Variants = append(state.Variants, id)
 		}
 		state.LastAttempt = time.Now().Unix()
 		state.Attempt++

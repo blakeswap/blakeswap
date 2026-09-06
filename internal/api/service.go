@@ -241,3 +241,12 @@ func (s *Service) PreflightFunds(ctx context.Context, in *pb.FundsPreflightReque
 	out := &pb.FundsPreflight{}
 	return out, s.command(ctx, "wallet.preflight", in, out)
 }
+
+func (s *Service) QuoteFee(ctx context.Context, in *pb.FeeQuoteRequest) (*pb.FeeQuote, error) {
+	out := &pb.FeeQuote{}
+	return out, s.command(ctx, "fee.quote", in, out)
+}
+func (s *Service) BumpTransaction(ctx context.Context, in *pb.BumpRequest) (*pb.BumpResult, error) {
+	out := &pb.BumpResult{}
+	return out, s.command(ctx, "transaction.bump", in, out)
+}

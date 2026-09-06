@@ -537,7 +537,7 @@ func (e *Engine) fundReserved(ctx context.Context, c contract.HTLC, owner string
 		}
 		selected = append(selected, coin)
 		total += int64(coin.Amount)
-		change := total - c.Amount - protocol.FundingFee
+		change := total - c.Amount - e.fundingFee(owner)
 		if change == 0 || change >= contract.Dust {
 			break
 		}
@@ -546,7 +546,24 @@ func (e *Engine) fundReserved(ctx context.Context, c contract.HTLC, owner string
 	for _, address := range e.receiveBook[c.Chain] {
 		keys[hex.EncodeToString(address.script)] = address.key
 	}
-	tx, err := contract.FundWithKeys(c, selected, keys, e.scripts[c.Chain], protocol.FundingFee)
+	if policy, ok := e.s.FundingFees[owner]; ok && policy.Rate > 0 {
+		scripts := [][]byte{make([]byte, 34)}
+		if total > c.Amount+policy.FundingFee {
+			scripts = append(scripts, e.scripts[c.Chain])
+		}
+		vsize, err := contract.PaymentVSize(len(selected), scripts...)
+		if err != nil {
+			return nil, err
+		}
+		minimum, err := contract.FeeForVSize(policy.Rate, vsize)
+		if err != nil {
+			return nil, err
+		}
+		if policy.FundingFee < minimum {
+			return nil, errors.New("funding input count changed beyond the reviewed fee; funding remains blocked with reservations intact")
+		}
+	}
+	tx, err := contract.FundWithKeys(c, selected, keys, e.scripts[c.Chain], e.fundingFee(owner))
 	if err != nil {
 		return nil, err
 	}

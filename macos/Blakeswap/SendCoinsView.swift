@@ -14,7 +14,7 @@ extension Blakeswap_V1_WalletCoin {
 }
 
 struct SendPlan {
-    let request: Blakeswap_V1_SendCoinsRequest
+    var request: Blakeswap_V1_SendCoinsRequest
     let total: Int64
     var change: Int64 { total - request.amount - request.fee }
 
@@ -60,6 +60,9 @@ struct SendCoinsView: View {
     @State private var amount = ""
     @State private var fee = "1000"
     @State private var selection = Set<String>()
+    @State private var maximumFee = "20000"
+    @State private var automaticFee = false
+    @State private var feeReview: FeeReview?
     @State private var reviewed: SendPlan?
     @State private var error: String?
     @State private var submitting = false
@@ -76,6 +79,13 @@ struct SendCoinsView: View {
     private var coins: [Blakeswap_V1_WalletCoin] { matchingWallet ? (model.status?.coins ?? []).filter { $0.chain == context.chain } : [] }
     private var selectedAmount: Int64 { coins.filter { selection.contains($0.outpointID) }.reduce(0) { $0 + $1.amount } }
 
+    private var selectedInputs: [Blakeswap_V1_Outpoint] {
+        coins.filter { selection.contains($0.outpointID) }.map { coin in
+            var point = Blakeswap_V1_Outpoint(); point.txid = coin.txid; point.vout = coin.vout; return point
+        }
+    }
+    private var feeKey: String { feeReviewKey(profile: context.profile, network: context.network, kind: "send", chain: context.chain, amount: amount, destination: destination, fee: fee, automatic: automaticFee, generation: model.generation, inputs: selectedInputs) }
+    private var currentQuote: FeeReview? { feeReview?.key == feeKey ? feeReview : nil }
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
             Text("Send \(symbol(context.chain))").font(.title2.bold())
@@ -85,9 +95,10 @@ struct SendCoinsView: View {
                 .accessibilityIdentifier("send-destination").disabled(reviewed != nil)
             HStack {
                 VStack(alignment: .leading) { Text("Amount (sats)"); TextField("Amount", text: $amount).textFieldStyle(.roundedBorder) }
-                VStack(alignment: .leading) { Text("Network fee (sats)"); TextField("Total fee", text: $fee).textFieldStyle(.roundedBorder) }
+                VStack(alignment: .leading) { Text("Maximum replacement fee (sats)"); TextField("Maximum fee", text: $maximumFee).textFieldStyle(.roundedBorder) }
             }
             .disabled(reviewed != nil)
+            FeeQuoteControl(kind: "send", chain: context.chain, amount: amount, destination: destination, inputs: selectedInputs, fee: $fee, automatic: $automaticFee, review: $feeReview).disabled(reviewed != nil)
             Text("Coin control").font(.headline)
             Text("Locked coins belong to an open order, active trade, or pending send. Cancel an open order to unlock its coins.")
                 .font(.caption).foregroundStyle(.secondary)
@@ -115,7 +126,7 @@ struct SendCoinsView: View {
                 Text("Selected: \(selectedAmount) sats")
                 Spacer()
                 Button("Send selected minus fee") {
-                    if let networkFee = Int64(fee), networkFee > 0, selectedAmount > networkFee { amount = String(selectedAmount - networkFee) }
+                    if let networkFee = currentQuote?.quote.fee ?? Int64(fee), networkFee > 0, selectedAmount > networkFee { amount = String(selectedAmount - networkFee) }
                 }
             }
             .disabled(reviewed != nil)
@@ -126,7 +137,7 @@ struct SendCoinsView: View {
                 Text(reviewed.request.destination).font(.body.monospaced()).textSelection(.enabled)
                 Text("Network fee: \(reviewed.request.fee) sats · Change to your wallet: \(reviewed.change) sats")
                 FundsPreflightView(chain: context.chain, amount: reviewed.request.amount, fee: reviewed.request.fee, inputs: reviewed.request.inputs, ready: $checkedFunds)
-                Text("This payment cannot be reversed after broadcast.").font(.caption).foregroundStyle(.secondary)
+                Text("Authorized replacement maximum: \(reviewed.request.maxFee) sats. Extra fees use only change. This payment cannot be reversed after broadcast.").font(.caption).foregroundStyle(.secondary)
                 HStack {
                     Button("Back") { self.reviewed = nil }
                     Spacer()
@@ -137,7 +148,13 @@ struct SendCoinsView: View {
                     Button("Cancel") { dismiss() }
                     Spacer()
                     Button("Review send") {
-                        do { reviewed = try SendPlan(context: context, destination: destination, amount: amount, fee: fee, coins: coins, selection: selection); error = nil }
+                        do {
+                            guard let quote = currentQuote, let cap = Int64(maximumFee), cap >= quote.quote.fee, cap <= 1_000_000 else { throw RPCError.message("Review a valid fee and set its replacement maximum (up to 1,000,000 sats).") }
+                            var plan = try SendPlan(context: context, destination: destination, amount: amount, fee: String(quote.quote.fee), coins: coins, selection: selection)
+                            plan.request.maxFee = cap
+                            if quote.automatic { plan.request.rateSatKvb = quote.quote.estimate.rateSatKvb; plan.request.feeTimestamp = quote.quote.estimate.timestamp }
+                            reviewed = plan; error = nil
+                        }
                         catch { self.error = error.localizedDescription }
                     }.buttonStyle(.borderedProminent)
                 }

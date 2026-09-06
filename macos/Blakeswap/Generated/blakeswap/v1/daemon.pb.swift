@@ -65,6 +65,14 @@ nonisolated struct Blakeswap_V1_CreateOfferRequest: Sendable {
   // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
   // methods supported on all messages.
 
+  var fundingFee: Int64 = 0
+
+  var rateSatKvb: Int64 = 0
+
+  var feeTimestamp: Int64 = 0
+
+  var ownerFeeCap: Int64 = 0
+
   /// Selected discovered provider; ignored when protection is off.
   var towerPubkey: String = String()
 
@@ -106,6 +114,14 @@ nonisolated struct Blakeswap_V1_TakeOfferRequest: Sendable {
   // SwiftProtobuf.Message conformance is added in an extension below. See the
   // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
   // methods supported on all messages.
+
+  var fundingFee: Int64 = 0
+
+  var rateSatKvb: Int64 = 0
+
+  var feeTimestamp: Int64 = 0
+
+  var ownerFeeCap: Int64 = 0
 
   var maker: String = String()
 
@@ -315,6 +331,13 @@ nonisolated struct Blakeswap_V1_SendCoinsRequest: Sendable {
   // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
   // methods supported on all messages.
 
+  /// Original replacement cap; zero disables fee increases.
+  var maxFee: Int64 = 0
+
+  var rateSatKvb: Int64 = 0
+
+  var feeTimestamp: Int64 = 0
+
   var id: String = String()
 
   var chain: String = String()
@@ -338,6 +361,12 @@ nonisolated struct Blakeswap_V1_WalletSend: Sendable {
   // SwiftProtobuf.Message conformance is added in an extension below. See the
   // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
   // methods supported on all messages.
+
+  var state: String = String()
+
+  var maxFee: Int64 = 0
+
+  var variants: [Blakeswap_V1_TransactionVariant] = []
 
   var id: String = String()
 
@@ -493,6 +522,46 @@ nonisolated struct Blakeswap_V1_Swap: @unchecked Sendable {
   // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
   // methods supported on all messages.
 
+  var claimFee: Int64 {
+    get {_storage._claimFee}
+    set {_uniqueStorage()._claimFee = newValue}
+  }
+
+  var refundFee: Int64 {
+    get {_storage._refundFee}
+    set {_uniqueStorage()._refundFee = newValue}
+  }
+
+  var claimTxid: String {
+    get {_storage._claimTxid}
+    set {_uniqueStorage()._claimTxid = newValue}
+  }
+
+  var refundTxid: String {
+    get {_storage._refundTxid}
+    set {_uniqueStorage()._refundTxid = newValue}
+  }
+
+  var ownerFeeCap: Int64 {
+    get {_storage._ownerFeeCap}
+    set {_uniqueStorage()._ownerFeeCap = newValue}
+  }
+
+  var fundingFee: Int64 {
+    get {_storage._fundingFee}
+    set {_uniqueStorage()._fundingFee = newValue}
+  }
+
+  var claimVariants: [String] {
+    get {_storage._claimVariants}
+    set {_uniqueStorage()._claimVariants = newValue}
+  }
+
+  var refundVariants: [String] {
+    get {_storage._refundVariants}
+    set {_uniqueStorage()._refundVariants = newValue}
+  }
+
   var id: String {
     get {_storage._id}
     set {_uniqueStorage()._id = newValue}
@@ -628,6 +697,8 @@ nonisolated struct Blakeswap_V1_TowerJob: Sendable {
   // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
   // methods supported on all messages.
 
+  var variants: [String] = []
+
   var id: String = String()
 
   var swapID: String = String()
@@ -655,6 +726,11 @@ nonisolated struct Blakeswap_V1_Status: @unchecked Sendable {
   // SwiftProtobuf.Message conformance is added in an extension below. See the
   // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
   // methods supported on all messages.
+
+  var feeLimits: Dictionary<String,Blakeswap_V1_FeeLimits> {
+    get {_storage._feeLimits}
+    set {_uniqueStorage()._feeLimits = newValue}
+  }
 
   var name: String {
     get {_storage._name}
@@ -1004,6 +1080,198 @@ nonisolated struct Blakeswap_V1_CheckNodeResponse: Sendable {
   init() {}
 }
 
+/// Rates are native chain satoshis per 1000 virtual bytes, rounded upward.
+nonisolated struct Blakeswap_V1_FeeEstimate: Sendable {
+  // SwiftProtobuf.Message conformance is added in an extension below. See the
+  // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
+  // methods supported on all messages.
+
+  var requestedTarget: UInt32 = 0
+
+  var chain: String = String()
+
+  var rateSatKvb: Int64 = 0
+
+  var target: UInt32 = 0
+
+  var timestamp: Int64 = 0
+
+  var source: String = String()
+
+  var state: String = String()
+
+  var error: String = String()
+
+  var unknownFields = SwiftProtobuf.UnknownStorage()
+
+  init() {}
+}
+
+nonisolated struct Blakeswap_V1_FeeLimits: Sendable {
+  // SwiftProtobuf.Message conformance is added in an extension below. See the
+  // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
+  // methods supported on all messages.
+
+  var send: Int64 = 0
+
+  var funding: Int64 = 0
+
+  var owner: Int64 = 0
+
+  var tower: Int64 = 0
+
+  var unknownFields = SwiftProtobuf.UnknownStorage()
+
+  init() {}
+}
+
+nonisolated struct Blakeswap_V1_FeeQuoteRequest: Sendable {
+  // SwiftProtobuf.Message conformance is added in an extension below. See the
+  // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
+  // methods supported on all messages.
+
+  var kind: String = String()
+
+  var chain: String = String()
+
+  var destination: String = String()
+
+  var amount: Int64 = 0
+
+  var fee: Int64 = 0
+
+  var target: UInt32 = 0
+
+  var inputs: [Blakeswap_V1_Outpoint] = []
+
+  var expectedNetwork: String = String()
+
+  var unknownFields = SwiftProtobuf.UnknownStorage()
+
+  init() {}
+}
+
+nonisolated struct Blakeswap_V1_FeeQuote: @unchecked Sendable {
+  // SwiftProtobuf.Message conformance is added in an extension below. See the
+  // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
+  // methods supported on all messages.
+
+  var estimate: Blakeswap_V1_FeeEstimate {
+    get {_storage._estimate ?? Blakeswap_V1_FeeEstimate()}
+    set {_uniqueStorage()._estimate = newValue}
+  }
+  /// Returns true if `estimate` has been explicitly set.
+  var hasEstimate: Bool {_storage._estimate != nil}
+  /// Clears the value of `estimate`. Subsequent reads from it will return its default value.
+  mutating func clearEstimate() {_uniqueStorage()._estimate = nil}
+
+  var limits: Blakeswap_V1_FeeLimits {
+    get {_storage._limits ?? Blakeswap_V1_FeeLimits()}
+    set {_uniqueStorage()._limits = newValue}
+  }
+  /// Returns true if `limits` has been explicitly set.
+  var hasLimits: Bool {_storage._limits != nil}
+  /// Clears the value of `limits`. Subsequent reads from it will return its default value.
+  mutating func clearLimits() {_uniqueStorage()._limits = nil}
+
+  var fee: Int64 {
+    get {_storage._fee}
+    set {_uniqueStorage()._fee = newValue}
+  }
+
+  var amount: Int64 {
+    get {_storage._amount}
+    set {_uniqueStorage()._amount = newValue}
+  }
+
+  var change: Int64 {
+    get {_storage._change}
+    set {_uniqueStorage()._change = newValue}
+  }
+
+  var total: Int64 {
+    get {_storage._total}
+    set {_uniqueStorage()._total = newValue}
+  }
+
+  var vsize: Int64 {
+    get {_storage._vsize}
+    set {_uniqueStorage()._vsize = newValue}
+  }
+
+  var inputs: [Blakeswap_V1_Outpoint] {
+    get {_storage._inputs}
+    set {_uniqueStorage()._inputs = newValue}
+  }
+
+  var error: String {
+    get {_storage._error}
+    set {_uniqueStorage()._error = newValue}
+  }
+
+  var unknownFields = SwiftProtobuf.UnknownStorage()
+
+  init() {}
+
+  fileprivate var _storage = _StorageClass.defaultInstance
+}
+
+nonisolated struct Blakeswap_V1_TransactionVariant: Sendable {
+  // SwiftProtobuf.Message conformance is added in an extension below. See the
+  // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
+  // methods supported on all messages.
+
+  var txid: String = String()
+
+  var fee: Int64 = 0
+
+  var confirmations: Int32 = 0
+
+  var submitted: Bool = false
+
+  var unknownFields = SwiftProtobuf.UnknownStorage()
+
+  init() {}
+}
+
+nonisolated struct Blakeswap_V1_BumpRequest: Sendable {
+  // SwiftProtobuf.Message conformance is added in an extension below. See the
+  // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
+  // methods supported on all messages.
+
+  var id: String = String()
+
+  var kind: String = String()
+
+  var fee: Int64 = 0
+
+  var expectedTxid: String = String()
+
+  var expectedNetwork: String = String()
+
+  var unknownFields = SwiftProtobuf.UnknownStorage()
+
+  init() {}
+}
+
+nonisolated struct Blakeswap_V1_BumpResult: Sendable {
+  // SwiftProtobuf.Message conformance is added in an extension below. See the
+  // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
+  // methods supported on all messages.
+
+  var txid: String = String()
+
+  var fee: Int64 = 0
+
+  var state: String = String()
+
+  var error: String = String()
+
+  var unknownFields = SwiftProtobuf.UnknownStorage()
+
+  init() {}
+}
+
 // MARK: - Code below here is support for the SwiftProtobuf runtime.
 
 fileprivate nonisolated let _protobuf_package = "blakeswap.v1"
@@ -1110,7 +1378,7 @@ nonisolated extension Blakeswap_V1_SetPausedRequest: SwiftProtobuf.Message, Swif
 
 nonisolated extension Blakeswap_V1_CreateOfferRequest: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   static let protoMessageName: String = _protobuf_package + ".CreateOfferRequest"
-  static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}sell\0\u{3}sell_amount\0\u{3}buy_amount\0\u{3}tower_bps\0\u{1}expires\0\u{3}expected_network\0\u{3}tower_pubkey\0")
+  static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}sell\0\u{3}sell_amount\0\u{3}buy_amount\0\u{3}tower_bps\0\u{1}expires\0\u{3}expected_network\0\u{3}tower_pubkey\0\u{3}funding_fee\0\u{3}rate_sat_kvb\0\u{3}fee_timestamp\0\u{3}owner_fee_cap\0")
 
   mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
     while let fieldNumber = try decoder.nextFieldNumber() {
@@ -1125,6 +1393,10 @@ nonisolated extension Blakeswap_V1_CreateOfferRequest: SwiftProtobuf.Message, Sw
       case 5: try { try decoder.decodeSingularInt64Field(value: &self.expires) }()
       case 6: try { try decoder.decodeSingularStringField(value: &self.expectedNetwork) }()
       case 7: try { try decoder.decodeSingularStringField(value: &self.towerPubkey) }()
+      case 8: try { try decoder.decodeSingularInt64Field(value: &self.fundingFee) }()
+      case 9: try { try decoder.decodeSingularInt64Field(value: &self.rateSatKvb) }()
+      case 10: try { try decoder.decodeSingularInt64Field(value: &self.feeTimestamp) }()
+      case 11: try { try decoder.decodeSingularInt64Field(value: &self.ownerFeeCap) }()
       default: break
       }
     }
@@ -1152,10 +1424,26 @@ nonisolated extension Blakeswap_V1_CreateOfferRequest: SwiftProtobuf.Message, Sw
     if !self.towerPubkey.isEmpty {
       try visitor.visitSingularStringField(value: self.towerPubkey, fieldNumber: 7)
     }
+    if self.fundingFee != 0 {
+      try visitor.visitSingularInt64Field(value: self.fundingFee, fieldNumber: 8)
+    }
+    if self.rateSatKvb != 0 {
+      try visitor.visitSingularInt64Field(value: self.rateSatKvb, fieldNumber: 9)
+    }
+    if self.feeTimestamp != 0 {
+      try visitor.visitSingularInt64Field(value: self.feeTimestamp, fieldNumber: 10)
+    }
+    if self.ownerFeeCap != 0 {
+      try visitor.visitSingularInt64Field(value: self.ownerFeeCap, fieldNumber: 11)
+    }
     try unknownFields.traverse(visitor: &visitor)
   }
 
   static func ==(lhs: Blakeswap_V1_CreateOfferRequest, rhs: Blakeswap_V1_CreateOfferRequest) -> Bool {
+    if lhs.fundingFee != rhs.fundingFee {return false}
+    if lhs.rateSatKvb != rhs.rateSatKvb {return false}
+    if lhs.feeTimestamp != rhs.feeTimestamp {return false}
+    if lhs.ownerFeeCap != rhs.ownerFeeCap {return false}
     if lhs.towerPubkey != rhs.towerPubkey {return false}
     if lhs.sell != rhs.sell {return false}
     if lhs.expectedNetwork != rhs.expectedNetwork {return false}
@@ -1205,7 +1493,7 @@ nonisolated extension Blakeswap_V1_CancelOfferRequest: SwiftProtobuf.Message, Sw
 
 nonisolated extension Blakeswap_V1_TakeOfferRequest: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   static let protoMessageName: String = _protobuf_package + ".TakeOfferRequest"
-  static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}maker\0\u{1}id\0\u{3}expected_network\0\u{3}tower_bps\0\u{3}tower_pubkey\0")
+  static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}maker\0\u{1}id\0\u{3}expected_network\0\u{3}tower_bps\0\u{3}tower_pubkey\0\u{3}funding_fee\0\u{3}rate_sat_kvb\0\u{3}fee_timestamp\0\u{3}owner_fee_cap\0")
 
   mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
     while let fieldNumber = try decoder.nextFieldNumber() {
@@ -1218,6 +1506,10 @@ nonisolated extension Blakeswap_V1_TakeOfferRequest: SwiftProtobuf.Message, Swif
       case 3: try { try decoder.decodeSingularStringField(value: &self.expectedNetwork) }()
       case 4: try { try decoder.decodeSingularInt64Field(value: &self.towerBps) }()
       case 5: try { try decoder.decodeSingularStringField(value: &self.towerPubkey) }()
+      case 6: try { try decoder.decodeSingularInt64Field(value: &self.fundingFee) }()
+      case 7: try { try decoder.decodeSingularInt64Field(value: &self.rateSatKvb) }()
+      case 8: try { try decoder.decodeSingularInt64Field(value: &self.feeTimestamp) }()
+      case 9: try { try decoder.decodeSingularInt64Field(value: &self.ownerFeeCap) }()
       default: break
       }
     }
@@ -1239,10 +1531,26 @@ nonisolated extension Blakeswap_V1_TakeOfferRequest: SwiftProtobuf.Message, Swif
     if !self.towerPubkey.isEmpty {
       try visitor.visitSingularStringField(value: self.towerPubkey, fieldNumber: 5)
     }
+    if self.fundingFee != 0 {
+      try visitor.visitSingularInt64Field(value: self.fundingFee, fieldNumber: 6)
+    }
+    if self.rateSatKvb != 0 {
+      try visitor.visitSingularInt64Field(value: self.rateSatKvb, fieldNumber: 7)
+    }
+    if self.feeTimestamp != 0 {
+      try visitor.visitSingularInt64Field(value: self.feeTimestamp, fieldNumber: 8)
+    }
+    if self.ownerFeeCap != 0 {
+      try visitor.visitSingularInt64Field(value: self.ownerFeeCap, fieldNumber: 9)
+    }
     try unknownFields.traverse(visitor: &visitor)
   }
 
   static func ==(lhs: Blakeswap_V1_TakeOfferRequest, rhs: Blakeswap_V1_TakeOfferRequest) -> Bool {
+    if lhs.fundingFee != rhs.fundingFee {return false}
+    if lhs.rateSatKvb != rhs.rateSatKvb {return false}
+    if lhs.feeTimestamp != rhs.feeTimestamp {return false}
+    if lhs.ownerFeeCap != rhs.ownerFeeCap {return false}
     if lhs.maker != rhs.maker {return false}
     if lhs.id != rhs.id {return false}
     if lhs.expectedNetwork != rhs.expectedNetwork {return false}
@@ -1705,7 +2013,7 @@ nonisolated extension Blakeswap_V1_FundsPreflight: SwiftProtobuf.Message, SwiftP
 
 nonisolated extension Blakeswap_V1_SendCoinsRequest: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   static let protoMessageName: String = _protobuf_package + ".SendCoinsRequest"
-  static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}id\0\u{1}chain\0\u{1}destination\0\u{1}amount\0\u{1}fee\0\u{1}inputs\0\u{3}expected_network\0")
+  static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}id\0\u{1}chain\0\u{1}destination\0\u{1}amount\0\u{1}fee\0\u{1}inputs\0\u{3}expected_network\0\u{3}max_fee\0\u{3}rate_sat_kvb\0\u{3}fee_timestamp\0")
 
   mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
     while let fieldNumber = try decoder.nextFieldNumber() {
@@ -1720,6 +2028,9 @@ nonisolated extension Blakeswap_V1_SendCoinsRequest: SwiftProtobuf.Message, Swif
       case 5: try { try decoder.decodeSingularInt64Field(value: &self.fee) }()
       case 6: try { try decoder.decodeRepeatedMessageField(value: &self.inputs) }()
       case 7: try { try decoder.decodeSingularStringField(value: &self.expectedNetwork) }()
+      case 8: try { try decoder.decodeSingularInt64Field(value: &self.maxFee) }()
+      case 9: try { try decoder.decodeSingularInt64Field(value: &self.rateSatKvb) }()
+      case 10: try { try decoder.decodeSingularInt64Field(value: &self.feeTimestamp) }()
       default: break
       }
     }
@@ -1747,10 +2058,22 @@ nonisolated extension Blakeswap_V1_SendCoinsRequest: SwiftProtobuf.Message, Swif
     if !self.expectedNetwork.isEmpty {
       try visitor.visitSingularStringField(value: self.expectedNetwork, fieldNumber: 7)
     }
+    if self.maxFee != 0 {
+      try visitor.visitSingularInt64Field(value: self.maxFee, fieldNumber: 8)
+    }
+    if self.rateSatKvb != 0 {
+      try visitor.visitSingularInt64Field(value: self.rateSatKvb, fieldNumber: 9)
+    }
+    if self.feeTimestamp != 0 {
+      try visitor.visitSingularInt64Field(value: self.feeTimestamp, fieldNumber: 10)
+    }
     try unknownFields.traverse(visitor: &visitor)
   }
 
   static func ==(lhs: Blakeswap_V1_SendCoinsRequest, rhs: Blakeswap_V1_SendCoinsRequest) -> Bool {
+    if lhs.maxFee != rhs.maxFee {return false}
+    if lhs.rateSatKvb != rhs.rateSatKvb {return false}
+    if lhs.feeTimestamp != rhs.feeTimestamp {return false}
     if lhs.id != rhs.id {return false}
     if lhs.chain != rhs.chain {return false}
     if lhs.destination != rhs.destination {return false}
@@ -1765,7 +2088,7 @@ nonisolated extension Blakeswap_V1_SendCoinsRequest: SwiftProtobuf.Message, Swif
 
 nonisolated extension Blakeswap_V1_WalletSend: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   static let protoMessageName: String = _protobuf_package + ".WalletSend"
-  static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}id\0\u{1}chain\0\u{1}txid\0\u{1}destination\0\u{1}amount\0\u{1}fee\0\u{1}change\0\u{1}confirmations\0\u{1}error\0\u{1}submitted\0")
+  static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}id\0\u{1}chain\0\u{1}txid\0\u{1}destination\0\u{1}amount\0\u{1}fee\0\u{1}change\0\u{1}confirmations\0\u{1}error\0\u{1}submitted\0\u{1}state\0\u{3}max_fee\0\u{1}variants\0")
 
   mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
     while let fieldNumber = try decoder.nextFieldNumber() {
@@ -1783,6 +2106,9 @@ nonisolated extension Blakeswap_V1_WalletSend: SwiftProtobuf.Message, SwiftProto
       case 8: try { try decoder.decodeSingularInt32Field(value: &self.confirmations) }()
       case 9: try { try decoder.decodeSingularStringField(value: &self.error) }()
       case 10: try { try decoder.decodeSingularBoolField(value: &self.submitted) }()
+      case 11: try { try decoder.decodeSingularStringField(value: &self.state) }()
+      case 12: try { try decoder.decodeSingularInt64Field(value: &self.maxFee) }()
+      case 13: try { try decoder.decodeRepeatedMessageField(value: &self.variants) }()
       default: break
       }
     }
@@ -1819,10 +2145,22 @@ nonisolated extension Blakeswap_V1_WalletSend: SwiftProtobuf.Message, SwiftProto
     if self.submitted != false {
       try visitor.visitSingularBoolField(value: self.submitted, fieldNumber: 10)
     }
+    if !self.state.isEmpty {
+      try visitor.visitSingularStringField(value: self.state, fieldNumber: 11)
+    }
+    if self.maxFee != 0 {
+      try visitor.visitSingularInt64Field(value: self.maxFee, fieldNumber: 12)
+    }
+    if !self.variants.isEmpty {
+      try visitor.visitRepeatedMessageField(value: self.variants, fieldNumber: 13)
+    }
     try unknownFields.traverse(visitor: &visitor)
   }
 
   static func ==(lhs: Blakeswap_V1_WalletSend, rhs: Blakeswap_V1_WalletSend) -> Bool {
+    if lhs.state != rhs.state {return false}
+    if lhs.maxFee != rhs.maxFee {return false}
+    if lhs.variants != rhs.variants {return false}
     if lhs.id != rhs.id {return false}
     if lhs.chain != rhs.chain {return false}
     if lhs.txid != rhs.txid {return false}
@@ -2110,9 +2448,17 @@ nonisolated extension Blakeswap_V1_HTLC: SwiftProtobuf.Message, SwiftProtobuf._M
 
 nonisolated extension Blakeswap_V1_Swap: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   static let protoMessageName: String = _protobuf_package + ".Swap"
-  static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}id\0\u{1}role\0\u{1}stage\0\u{1}error\0\u{1}long\0\u{1}short\0\u{3}long_spend\0\u{3}short_spend\0\u{3}long_confirmations\0\u{3}short_confirmations\0\u{3}tower_paid\0\u{3}tower_payments\0\u{3}tower_ready\0\u{3}tower_enabled\0\u{3}secret_revealed\0\u{1}takeover\0\u{3}reveal_before\0")
+  static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}id\0\u{1}role\0\u{1}stage\0\u{1}error\0\u{1}long\0\u{1}short\0\u{3}long_spend\0\u{3}short_spend\0\u{3}long_confirmations\0\u{3}short_confirmations\0\u{3}tower_paid\0\u{3}tower_payments\0\u{3}tower_ready\0\u{3}tower_enabled\0\u{3}secret_revealed\0\u{1}takeover\0\u{3}reveal_before\0\u{3}owner_fee_cap\0\u{3}funding_fee\0\u{3}claim_variants\0\u{3}refund_variants\0\u{3}claim_fee\0\u{3}refund_fee\0\u{3}claim_txid\0\u{3}refund_txid\0")
 
   fileprivate class _StorageClass {
+    var _claimFee: Int64 = 0
+    var _refundFee: Int64 = 0
+    var _claimTxid: String = String()
+    var _refundTxid: String = String()
+    var _ownerFeeCap: Int64 = 0
+    var _fundingFee: Int64 = 0
+    var _claimVariants: [String] = []
+    var _refundVariants: [String] = []
     var _id: String = String()
     var _role: String = String()
     var _stage: String = String()
@@ -2140,6 +2486,14 @@ nonisolated extension Blakeswap_V1_Swap: SwiftProtobuf.Message, SwiftProtobuf._M
     private init() {}
 
     init(copying source: _StorageClass) {
+      _claimFee = source._claimFee
+      _refundFee = source._refundFee
+      _claimTxid = source._claimTxid
+      _refundTxid = source._refundTxid
+      _ownerFeeCap = source._ownerFeeCap
+      _fundingFee = source._fundingFee
+      _claimVariants = source._claimVariants
+      _refundVariants = source._refundVariants
       _id = source._id
       _role = source._role
       _stage = source._stage
@@ -2192,6 +2546,14 @@ nonisolated extension Blakeswap_V1_Swap: SwiftProtobuf.Message, SwiftProtobuf._M
         case 15: try { try decoder.decodeSingularBoolField(value: &_storage._secretRevealed) }()
         case 16: try { try decoder.decodeSingularUInt32Field(value: &_storage._takeover) }()
         case 17: try { try decoder.decodeSingularUInt32Field(value: &_storage._revealBefore) }()
+        case 18: try { try decoder.decodeSingularInt64Field(value: &_storage._ownerFeeCap) }()
+        case 19: try { try decoder.decodeSingularInt64Field(value: &_storage._fundingFee) }()
+        case 20: try { try decoder.decodeRepeatedStringField(value: &_storage._claimVariants) }()
+        case 21: try { try decoder.decodeRepeatedStringField(value: &_storage._refundVariants) }()
+        case 22: try { try decoder.decodeSingularInt64Field(value: &_storage._claimFee) }()
+        case 23: try { try decoder.decodeSingularInt64Field(value: &_storage._refundFee) }()
+        case 24: try { try decoder.decodeSingularStringField(value: &_storage._claimTxid) }()
+        case 25: try { try decoder.decodeSingularStringField(value: &_storage._refundTxid) }()
         default: break
         }
       }
@@ -2255,6 +2617,30 @@ nonisolated extension Blakeswap_V1_Swap: SwiftProtobuf.Message, SwiftProtobuf._M
       if _storage._revealBefore != 0 {
         try visitor.visitSingularUInt32Field(value: _storage._revealBefore, fieldNumber: 17)
       }
+      if _storage._ownerFeeCap != 0 {
+        try visitor.visitSingularInt64Field(value: _storage._ownerFeeCap, fieldNumber: 18)
+      }
+      if _storage._fundingFee != 0 {
+        try visitor.visitSingularInt64Field(value: _storage._fundingFee, fieldNumber: 19)
+      }
+      if !_storage._claimVariants.isEmpty {
+        try visitor.visitRepeatedStringField(value: _storage._claimVariants, fieldNumber: 20)
+      }
+      if !_storage._refundVariants.isEmpty {
+        try visitor.visitRepeatedStringField(value: _storage._refundVariants, fieldNumber: 21)
+      }
+      if _storage._claimFee != 0 {
+        try visitor.visitSingularInt64Field(value: _storage._claimFee, fieldNumber: 22)
+      }
+      if _storage._refundFee != 0 {
+        try visitor.visitSingularInt64Field(value: _storage._refundFee, fieldNumber: 23)
+      }
+      if !_storage._claimTxid.isEmpty {
+        try visitor.visitSingularStringField(value: _storage._claimTxid, fieldNumber: 24)
+      }
+      if !_storage._refundTxid.isEmpty {
+        try visitor.visitSingularStringField(value: _storage._refundTxid, fieldNumber: 25)
+      }
     }
     try unknownFields.traverse(visitor: &visitor)
   }
@@ -2264,6 +2650,14 @@ nonisolated extension Blakeswap_V1_Swap: SwiftProtobuf.Message, SwiftProtobuf._M
       let storagesAreEqual: Bool = withExtendedLifetime((lhs._storage, rhs._storage)) { (_args: (_StorageClass, _StorageClass)) in
         let _storage = _args.0
         let rhs_storage = _args.1
+        if _storage._claimFee != rhs_storage._claimFee {return false}
+        if _storage._refundFee != rhs_storage._refundFee {return false}
+        if _storage._claimTxid != rhs_storage._claimTxid {return false}
+        if _storage._refundTxid != rhs_storage._refundTxid {return false}
+        if _storage._ownerFeeCap != rhs_storage._ownerFeeCap {return false}
+        if _storage._fundingFee != rhs_storage._fundingFee {return false}
+        if _storage._claimVariants != rhs_storage._claimVariants {return false}
+        if _storage._refundVariants != rhs_storage._refundVariants {return false}
         if _storage._id != rhs_storage._id {return false}
         if _storage._role != rhs_storage._role {return false}
         if _storage._stage != rhs_storage._stage {return false}
@@ -2362,7 +2756,7 @@ nonisolated extension Blakeswap_V1_Tower: SwiftProtobuf.Message, SwiftProtobuf._
 
 nonisolated extension Blakeswap_V1_TowerJob: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   static let protoMessageName: String = _protobuf_package + ".TowerJob"
-  static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}id\0\u{3}swap_id\0\u{1}kind\0\u{1}chain\0\u{3}eligible_height\0\u{1}broadcast\0\u{1}confirmations\0\u{3}secret_observed\0\u{1}error\0")
+  static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}id\0\u{3}swap_id\0\u{1}kind\0\u{1}chain\0\u{3}eligible_height\0\u{1}broadcast\0\u{1}confirmations\0\u{3}secret_observed\0\u{1}error\0\u{1}variants\0")
 
   mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
     while let fieldNumber = try decoder.nextFieldNumber() {
@@ -2379,6 +2773,7 @@ nonisolated extension Blakeswap_V1_TowerJob: SwiftProtobuf.Message, SwiftProtobu
       case 7: try { try decoder.decodeSingularInt32Field(value: &self.confirmations) }()
       case 8: try { try decoder.decodeSingularBoolField(value: &self.secretObserved) }()
       case 9: try { try decoder.decodeSingularStringField(value: &self.error) }()
+      case 10: try { try decoder.decodeRepeatedStringField(value: &self.variants) }()
       default: break
       }
     }
@@ -2412,10 +2807,14 @@ nonisolated extension Blakeswap_V1_TowerJob: SwiftProtobuf.Message, SwiftProtobu
     if !self.error.isEmpty {
       try visitor.visitSingularStringField(value: self.error, fieldNumber: 9)
     }
+    if !self.variants.isEmpty {
+      try visitor.visitRepeatedStringField(value: self.variants, fieldNumber: 10)
+    }
     try unknownFields.traverse(visitor: &visitor)
   }
 
   static func ==(lhs: Blakeswap_V1_TowerJob, rhs: Blakeswap_V1_TowerJob) -> Bool {
+    if lhs.variants != rhs.variants {return false}
     if lhs.id != rhs.id {return false}
     if lhs.swapID != rhs.swapID {return false}
     if lhs.kind != rhs.kind {return false}
@@ -2432,9 +2831,10 @@ nonisolated extension Blakeswap_V1_TowerJob: SwiftProtobuf.Message, SwiftProtobu
 
 nonisolated extension Blakeswap_V1_Status: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   static let protoMessageName: String = _protobuf_package + ".Status"
-  static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}name\0\u{1}mode\0\u{1}pubkey\0\u{1}addresses\0\u{1}balances\0\u{1}heights\0\u{1}paused\0\u{1}orders\0\u{1}swaps\0\u{3}tower_jobs\0\u{3}pending_messages\0\u{3}last_error\0\u{1}tower\0\u{1}network\0\u{3}own_watchtower\0\u{1}watchtowers\0\u{3}funding_fee\0\u{1}coins\0\u{1}sends\0\u{1}funds\0")
+  static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}name\0\u{1}mode\0\u{1}pubkey\0\u{1}addresses\0\u{1}balances\0\u{1}heights\0\u{1}paused\0\u{1}orders\0\u{1}swaps\0\u{3}tower_jobs\0\u{3}pending_messages\0\u{3}last_error\0\u{1}tower\0\u{1}network\0\u{3}own_watchtower\0\u{1}watchtowers\0\u{3}funding_fee\0\u{1}coins\0\u{1}sends\0\u{1}funds\0\u{3}fee_limits\0")
 
   fileprivate class _StorageClass {
+    var _feeLimits: Dictionary<String,Blakeswap_V1_FeeLimits> = [:]
     var _name: String = String()
     var _mode: String = String()
     var _pubkey: String = String()
@@ -2465,6 +2865,7 @@ nonisolated extension Blakeswap_V1_Status: SwiftProtobuf.Message, SwiftProtobuf.
     private init() {}
 
     init(copying source: _StorageClass) {
+      _feeLimits = source._feeLimits
       _name = source._name
       _mode = source._mode
       _pubkey = source._pubkey
@@ -2523,6 +2924,7 @@ nonisolated extension Blakeswap_V1_Status: SwiftProtobuf.Message, SwiftProtobuf.
         case 18: try { try decoder.decodeRepeatedMessageField(value: &_storage._coins) }()
         case 19: try { try decoder.decodeRepeatedMessageField(value: &_storage._sends) }()
         case 20: try { try decoder.decodeMapField(fieldType: SwiftProtobuf._ProtobufMessageMap<SwiftProtobuf.ProtobufString,Blakeswap_V1_ChainBalance>.self, value: &_storage._funds) }()
+        case 21: try { try decoder.decodeMapField(fieldType: SwiftProtobuf._ProtobufMessageMap<SwiftProtobuf.ProtobufString,Blakeswap_V1_FeeLimits>.self, value: &_storage._feeLimits) }()
         default: break
         }
       }
@@ -2595,6 +2997,9 @@ nonisolated extension Blakeswap_V1_Status: SwiftProtobuf.Message, SwiftProtobuf.
       if !_storage._funds.isEmpty {
         try visitor.visitMapField(fieldType: SwiftProtobuf._ProtobufMessageMap<SwiftProtobuf.ProtobufString,Blakeswap_V1_ChainBalance>.self, value: _storage._funds, fieldNumber: 20)
       }
+      if !_storage._feeLimits.isEmpty {
+        try visitor.visitMapField(fieldType: SwiftProtobuf._ProtobufMessageMap<SwiftProtobuf.ProtobufString,Blakeswap_V1_FeeLimits>.self, value: _storage._feeLimits, fieldNumber: 21)
+      }
     }
     try unknownFields.traverse(visitor: &visitor)
   }
@@ -2604,6 +3009,7 @@ nonisolated extension Blakeswap_V1_Status: SwiftProtobuf.Message, SwiftProtobuf.
       let storagesAreEqual: Bool = withExtendedLifetime((lhs._storage, rhs._storage)) { (_args: (_StorageClass, _StorageClass)) in
         let _storage = _args.0
         let rhs_storage = _args.1
+        if _storage._feeLimits != rhs_storage._feeLimits {return false}
         if _storage._name != rhs_storage._name {return false}
         if _storage._mode != rhs_storage._mode {return false}
         if _storage._pubkey != rhs_storage._pubkey {return false}
@@ -3105,6 +3511,447 @@ nonisolated extension Blakeswap_V1_CheckNodeResponse: SwiftProtobuf.Message, Swi
   static func ==(lhs: Blakeswap_V1_CheckNodeResponse, rhs: Blakeswap_V1_CheckNodeResponse) -> Bool {
     if lhs.height != rhs.height {return false}
     if lhs.trust != rhs.trust {return false}
+    if lhs.unknownFields != rhs.unknownFields {return false}
+    return true
+  }
+}
+
+nonisolated extension Blakeswap_V1_FeeEstimate: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+  static let protoMessageName: String = _protobuf_package + ".FeeEstimate"
+  static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}chain\0\u{3}rate_sat_kvb\0\u{1}target\0\u{1}timestamp\0\u{1}source\0\u{1}state\0\u{1}error\0\u{3}requested_target\0")
+
+  mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
+    while let fieldNumber = try decoder.nextFieldNumber() {
+      // The use of inline closures is to circumvent an issue where the compiler
+      // allocates stack space for every case branch when no optimizations are
+      // enabled. https://github.com/apple/swift-protobuf/issues/1034
+      switch fieldNumber {
+      case 1: try { try decoder.decodeSingularStringField(value: &self.chain) }()
+      case 2: try { try decoder.decodeSingularInt64Field(value: &self.rateSatKvb) }()
+      case 3: try { try decoder.decodeSingularUInt32Field(value: &self.target) }()
+      case 4: try { try decoder.decodeSingularInt64Field(value: &self.timestamp) }()
+      case 5: try { try decoder.decodeSingularStringField(value: &self.source) }()
+      case 6: try { try decoder.decodeSingularStringField(value: &self.state) }()
+      case 7: try { try decoder.decodeSingularStringField(value: &self.error) }()
+      case 8: try { try decoder.decodeSingularUInt32Field(value: &self.requestedTarget) }()
+      default: break
+      }
+    }
+  }
+
+  func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+    if !self.chain.isEmpty {
+      try visitor.visitSingularStringField(value: self.chain, fieldNumber: 1)
+    }
+    if self.rateSatKvb != 0 {
+      try visitor.visitSingularInt64Field(value: self.rateSatKvb, fieldNumber: 2)
+    }
+    if self.target != 0 {
+      try visitor.visitSingularUInt32Field(value: self.target, fieldNumber: 3)
+    }
+    if self.timestamp != 0 {
+      try visitor.visitSingularInt64Field(value: self.timestamp, fieldNumber: 4)
+    }
+    if !self.source.isEmpty {
+      try visitor.visitSingularStringField(value: self.source, fieldNumber: 5)
+    }
+    if !self.state.isEmpty {
+      try visitor.visitSingularStringField(value: self.state, fieldNumber: 6)
+    }
+    if !self.error.isEmpty {
+      try visitor.visitSingularStringField(value: self.error, fieldNumber: 7)
+    }
+    if self.requestedTarget != 0 {
+      try visitor.visitSingularUInt32Field(value: self.requestedTarget, fieldNumber: 8)
+    }
+    try unknownFields.traverse(visitor: &visitor)
+  }
+
+  static func ==(lhs: Blakeswap_V1_FeeEstimate, rhs: Blakeswap_V1_FeeEstimate) -> Bool {
+    if lhs.requestedTarget != rhs.requestedTarget {return false}
+    if lhs.chain != rhs.chain {return false}
+    if lhs.rateSatKvb != rhs.rateSatKvb {return false}
+    if lhs.target != rhs.target {return false}
+    if lhs.timestamp != rhs.timestamp {return false}
+    if lhs.source != rhs.source {return false}
+    if lhs.state != rhs.state {return false}
+    if lhs.error != rhs.error {return false}
+    if lhs.unknownFields != rhs.unknownFields {return false}
+    return true
+  }
+}
+
+nonisolated extension Blakeswap_V1_FeeLimits: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+  static let protoMessageName: String = _protobuf_package + ".FeeLimits"
+  static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}send\0\u{1}funding\0\u{1}owner\0\u{1}tower\0")
+
+  mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
+    while let fieldNumber = try decoder.nextFieldNumber() {
+      // The use of inline closures is to circumvent an issue where the compiler
+      // allocates stack space for every case branch when no optimizations are
+      // enabled. https://github.com/apple/swift-protobuf/issues/1034
+      switch fieldNumber {
+      case 1: try { try decoder.decodeSingularInt64Field(value: &self.send) }()
+      case 2: try { try decoder.decodeSingularInt64Field(value: &self.funding) }()
+      case 3: try { try decoder.decodeSingularInt64Field(value: &self.owner) }()
+      case 4: try { try decoder.decodeSingularInt64Field(value: &self.tower) }()
+      default: break
+      }
+    }
+  }
+
+  func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+    if self.send != 0 {
+      try visitor.visitSingularInt64Field(value: self.send, fieldNumber: 1)
+    }
+    if self.funding != 0 {
+      try visitor.visitSingularInt64Field(value: self.funding, fieldNumber: 2)
+    }
+    if self.owner != 0 {
+      try visitor.visitSingularInt64Field(value: self.owner, fieldNumber: 3)
+    }
+    if self.tower != 0 {
+      try visitor.visitSingularInt64Field(value: self.tower, fieldNumber: 4)
+    }
+    try unknownFields.traverse(visitor: &visitor)
+  }
+
+  static func ==(lhs: Blakeswap_V1_FeeLimits, rhs: Blakeswap_V1_FeeLimits) -> Bool {
+    if lhs.send != rhs.send {return false}
+    if lhs.funding != rhs.funding {return false}
+    if lhs.owner != rhs.owner {return false}
+    if lhs.tower != rhs.tower {return false}
+    if lhs.unknownFields != rhs.unknownFields {return false}
+    return true
+  }
+}
+
+nonisolated extension Blakeswap_V1_FeeQuoteRequest: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+  static let protoMessageName: String = _protobuf_package + ".FeeQuoteRequest"
+  static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}kind\0\u{1}chain\0\u{1}destination\0\u{1}amount\0\u{1}fee\0\u{1}target\0\u{1}inputs\0\u{3}expected_network\0")
+
+  mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
+    while let fieldNumber = try decoder.nextFieldNumber() {
+      // The use of inline closures is to circumvent an issue where the compiler
+      // allocates stack space for every case branch when no optimizations are
+      // enabled. https://github.com/apple/swift-protobuf/issues/1034
+      switch fieldNumber {
+      case 1: try { try decoder.decodeSingularStringField(value: &self.kind) }()
+      case 2: try { try decoder.decodeSingularStringField(value: &self.chain) }()
+      case 3: try { try decoder.decodeSingularStringField(value: &self.destination) }()
+      case 4: try { try decoder.decodeSingularInt64Field(value: &self.amount) }()
+      case 5: try { try decoder.decodeSingularInt64Field(value: &self.fee) }()
+      case 6: try { try decoder.decodeSingularUInt32Field(value: &self.target) }()
+      case 7: try { try decoder.decodeRepeatedMessageField(value: &self.inputs) }()
+      case 8: try { try decoder.decodeSingularStringField(value: &self.expectedNetwork) }()
+      default: break
+      }
+    }
+  }
+
+  func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+    if !self.kind.isEmpty {
+      try visitor.visitSingularStringField(value: self.kind, fieldNumber: 1)
+    }
+    if !self.chain.isEmpty {
+      try visitor.visitSingularStringField(value: self.chain, fieldNumber: 2)
+    }
+    if !self.destination.isEmpty {
+      try visitor.visitSingularStringField(value: self.destination, fieldNumber: 3)
+    }
+    if self.amount != 0 {
+      try visitor.visitSingularInt64Field(value: self.amount, fieldNumber: 4)
+    }
+    if self.fee != 0 {
+      try visitor.visitSingularInt64Field(value: self.fee, fieldNumber: 5)
+    }
+    if self.target != 0 {
+      try visitor.visitSingularUInt32Field(value: self.target, fieldNumber: 6)
+    }
+    if !self.inputs.isEmpty {
+      try visitor.visitRepeatedMessageField(value: self.inputs, fieldNumber: 7)
+    }
+    if !self.expectedNetwork.isEmpty {
+      try visitor.visitSingularStringField(value: self.expectedNetwork, fieldNumber: 8)
+    }
+    try unknownFields.traverse(visitor: &visitor)
+  }
+
+  static func ==(lhs: Blakeswap_V1_FeeQuoteRequest, rhs: Blakeswap_V1_FeeQuoteRequest) -> Bool {
+    if lhs.kind != rhs.kind {return false}
+    if lhs.chain != rhs.chain {return false}
+    if lhs.destination != rhs.destination {return false}
+    if lhs.amount != rhs.amount {return false}
+    if lhs.fee != rhs.fee {return false}
+    if lhs.target != rhs.target {return false}
+    if lhs.inputs != rhs.inputs {return false}
+    if lhs.expectedNetwork != rhs.expectedNetwork {return false}
+    if lhs.unknownFields != rhs.unknownFields {return false}
+    return true
+  }
+}
+
+nonisolated extension Blakeswap_V1_FeeQuote: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+  static let protoMessageName: String = _protobuf_package + ".FeeQuote"
+  static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}estimate\0\u{1}limits\0\u{1}fee\0\u{1}amount\0\u{1}change\0\u{1}total\0\u{1}vsize\0\u{1}inputs\0\u{1}error\0")
+
+  fileprivate class _StorageClass {
+    var _estimate: Blakeswap_V1_FeeEstimate? = nil
+    var _limits: Blakeswap_V1_FeeLimits? = nil
+    var _fee: Int64 = 0
+    var _amount: Int64 = 0
+    var _change: Int64 = 0
+    var _total: Int64 = 0
+    var _vsize: Int64 = 0
+    var _inputs: [Blakeswap_V1_Outpoint] = []
+    var _error: String = String()
+
+      // This property is used as the initial default value for new instances of the type.
+      // The type itself is protecting the reference to its storage via CoW semantics.
+      // This will force a copy to be made of this reference when the first mutation occurs;
+      // hence, it is safe to mark this as `nonisolated(unsafe)`.
+      static nonisolated(unsafe) let defaultInstance = _StorageClass()
+
+    private init() {}
+
+    init(copying source: _StorageClass) {
+      _estimate = source._estimate
+      _limits = source._limits
+      _fee = source._fee
+      _amount = source._amount
+      _change = source._change
+      _total = source._total
+      _vsize = source._vsize
+      _inputs = source._inputs
+      _error = source._error
+    }
+  }
+
+  fileprivate mutating func _uniqueStorage() -> _StorageClass {
+    if !isKnownUniquelyReferenced(&_storage) {
+      _storage = _StorageClass(copying: _storage)
+    }
+    return _storage
+  }
+
+  mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
+    _ = _uniqueStorage()
+    try withExtendedLifetime(_storage) { (_storage: _StorageClass) in
+      while let fieldNumber = try decoder.nextFieldNumber() {
+        // The use of inline closures is to circumvent an issue where the compiler
+        // allocates stack space for every case branch when no optimizations are
+        // enabled. https://github.com/apple/swift-protobuf/issues/1034
+        switch fieldNumber {
+        case 1: try { try decoder.decodeSingularMessageField(value: &_storage._estimate) }()
+        case 2: try { try decoder.decodeSingularMessageField(value: &_storage._limits) }()
+        case 3: try { try decoder.decodeSingularInt64Field(value: &_storage._fee) }()
+        case 4: try { try decoder.decodeSingularInt64Field(value: &_storage._amount) }()
+        case 5: try { try decoder.decodeSingularInt64Field(value: &_storage._change) }()
+        case 6: try { try decoder.decodeSingularInt64Field(value: &_storage._total) }()
+        case 7: try { try decoder.decodeSingularInt64Field(value: &_storage._vsize) }()
+        case 8: try { try decoder.decodeRepeatedMessageField(value: &_storage._inputs) }()
+        case 9: try { try decoder.decodeSingularStringField(value: &_storage._error) }()
+        default: break
+        }
+      }
+    }
+  }
+
+  func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+    try withExtendedLifetime(_storage) { (_storage: _StorageClass) in
+      // The use of inline closures is to circumvent an issue where the compiler
+      // allocates stack space for every if/case branch local when no optimizations
+      // are enabled. https://github.com/apple/swift-protobuf/issues/1034 and
+      // https://github.com/apple/swift-protobuf/issues/1182
+      try { if let v = _storage._estimate {
+        try visitor.visitSingularMessageField(value: v, fieldNumber: 1)
+      } }()
+      try { if let v = _storage._limits {
+        try visitor.visitSingularMessageField(value: v, fieldNumber: 2)
+      } }()
+      if _storage._fee != 0 {
+        try visitor.visitSingularInt64Field(value: _storage._fee, fieldNumber: 3)
+      }
+      if _storage._amount != 0 {
+        try visitor.visitSingularInt64Field(value: _storage._amount, fieldNumber: 4)
+      }
+      if _storage._change != 0 {
+        try visitor.visitSingularInt64Field(value: _storage._change, fieldNumber: 5)
+      }
+      if _storage._total != 0 {
+        try visitor.visitSingularInt64Field(value: _storage._total, fieldNumber: 6)
+      }
+      if _storage._vsize != 0 {
+        try visitor.visitSingularInt64Field(value: _storage._vsize, fieldNumber: 7)
+      }
+      if !_storage._inputs.isEmpty {
+        try visitor.visitRepeatedMessageField(value: _storage._inputs, fieldNumber: 8)
+      }
+      if !_storage._error.isEmpty {
+        try visitor.visitSingularStringField(value: _storage._error, fieldNumber: 9)
+      }
+    }
+    try unknownFields.traverse(visitor: &visitor)
+  }
+
+  static func ==(lhs: Blakeswap_V1_FeeQuote, rhs: Blakeswap_V1_FeeQuote) -> Bool {
+    if lhs._storage !== rhs._storage {
+      let storagesAreEqual: Bool = withExtendedLifetime((lhs._storage, rhs._storage)) { (_args: (_StorageClass, _StorageClass)) in
+        let _storage = _args.0
+        let rhs_storage = _args.1
+        if _storage._estimate != rhs_storage._estimate {return false}
+        if _storage._limits != rhs_storage._limits {return false}
+        if _storage._fee != rhs_storage._fee {return false}
+        if _storage._amount != rhs_storage._amount {return false}
+        if _storage._change != rhs_storage._change {return false}
+        if _storage._total != rhs_storage._total {return false}
+        if _storage._vsize != rhs_storage._vsize {return false}
+        if _storage._inputs != rhs_storage._inputs {return false}
+        if _storage._error != rhs_storage._error {return false}
+        return true
+      }
+      if !storagesAreEqual {return false}
+    }
+    if lhs.unknownFields != rhs.unknownFields {return false}
+    return true
+  }
+}
+
+nonisolated extension Blakeswap_V1_TransactionVariant: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+  static let protoMessageName: String = _protobuf_package + ".TransactionVariant"
+  static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}txid\0\u{1}fee\0\u{1}confirmations\0\u{1}submitted\0")
+
+  mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
+    while let fieldNumber = try decoder.nextFieldNumber() {
+      // The use of inline closures is to circumvent an issue where the compiler
+      // allocates stack space for every case branch when no optimizations are
+      // enabled. https://github.com/apple/swift-protobuf/issues/1034
+      switch fieldNumber {
+      case 1: try { try decoder.decodeSingularStringField(value: &self.txid) }()
+      case 2: try { try decoder.decodeSingularInt64Field(value: &self.fee) }()
+      case 3: try { try decoder.decodeSingularInt32Field(value: &self.confirmations) }()
+      case 4: try { try decoder.decodeSingularBoolField(value: &self.submitted) }()
+      default: break
+      }
+    }
+  }
+
+  func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+    if !self.txid.isEmpty {
+      try visitor.visitSingularStringField(value: self.txid, fieldNumber: 1)
+    }
+    if self.fee != 0 {
+      try visitor.visitSingularInt64Field(value: self.fee, fieldNumber: 2)
+    }
+    if self.confirmations != 0 {
+      try visitor.visitSingularInt32Field(value: self.confirmations, fieldNumber: 3)
+    }
+    if self.submitted != false {
+      try visitor.visitSingularBoolField(value: self.submitted, fieldNumber: 4)
+    }
+    try unknownFields.traverse(visitor: &visitor)
+  }
+
+  static func ==(lhs: Blakeswap_V1_TransactionVariant, rhs: Blakeswap_V1_TransactionVariant) -> Bool {
+    if lhs.txid != rhs.txid {return false}
+    if lhs.fee != rhs.fee {return false}
+    if lhs.confirmations != rhs.confirmations {return false}
+    if lhs.submitted != rhs.submitted {return false}
+    if lhs.unknownFields != rhs.unknownFields {return false}
+    return true
+  }
+}
+
+nonisolated extension Blakeswap_V1_BumpRequest: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+  static let protoMessageName: String = _protobuf_package + ".BumpRequest"
+  static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}id\0\u{1}kind\0\u{1}fee\0\u{3}expected_txid\0\u{3}expected_network\0")
+
+  mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
+    while let fieldNumber = try decoder.nextFieldNumber() {
+      // The use of inline closures is to circumvent an issue where the compiler
+      // allocates stack space for every case branch when no optimizations are
+      // enabled. https://github.com/apple/swift-protobuf/issues/1034
+      switch fieldNumber {
+      case 1: try { try decoder.decodeSingularStringField(value: &self.id) }()
+      case 2: try { try decoder.decodeSingularStringField(value: &self.kind) }()
+      case 3: try { try decoder.decodeSingularInt64Field(value: &self.fee) }()
+      case 4: try { try decoder.decodeSingularStringField(value: &self.expectedTxid) }()
+      case 5: try { try decoder.decodeSingularStringField(value: &self.expectedNetwork) }()
+      default: break
+      }
+    }
+  }
+
+  func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+    if !self.id.isEmpty {
+      try visitor.visitSingularStringField(value: self.id, fieldNumber: 1)
+    }
+    if !self.kind.isEmpty {
+      try visitor.visitSingularStringField(value: self.kind, fieldNumber: 2)
+    }
+    if self.fee != 0 {
+      try visitor.visitSingularInt64Field(value: self.fee, fieldNumber: 3)
+    }
+    if !self.expectedTxid.isEmpty {
+      try visitor.visitSingularStringField(value: self.expectedTxid, fieldNumber: 4)
+    }
+    if !self.expectedNetwork.isEmpty {
+      try visitor.visitSingularStringField(value: self.expectedNetwork, fieldNumber: 5)
+    }
+    try unknownFields.traverse(visitor: &visitor)
+  }
+
+  static func ==(lhs: Blakeswap_V1_BumpRequest, rhs: Blakeswap_V1_BumpRequest) -> Bool {
+    if lhs.id != rhs.id {return false}
+    if lhs.kind != rhs.kind {return false}
+    if lhs.fee != rhs.fee {return false}
+    if lhs.expectedTxid != rhs.expectedTxid {return false}
+    if lhs.expectedNetwork != rhs.expectedNetwork {return false}
+    if lhs.unknownFields != rhs.unknownFields {return false}
+    return true
+  }
+}
+
+nonisolated extension Blakeswap_V1_BumpResult: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+  static let protoMessageName: String = _protobuf_package + ".BumpResult"
+  static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}txid\0\u{1}fee\0\u{1}state\0\u{1}error\0")
+
+  mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
+    while let fieldNumber = try decoder.nextFieldNumber() {
+      // The use of inline closures is to circumvent an issue where the compiler
+      // allocates stack space for every case branch when no optimizations are
+      // enabled. https://github.com/apple/swift-protobuf/issues/1034
+      switch fieldNumber {
+      case 1: try { try decoder.decodeSingularStringField(value: &self.txid) }()
+      case 2: try { try decoder.decodeSingularInt64Field(value: &self.fee) }()
+      case 3: try { try decoder.decodeSingularStringField(value: &self.state) }()
+      case 4: try { try decoder.decodeSingularStringField(value: &self.error) }()
+      default: break
+      }
+    }
+  }
+
+  func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+    if !self.txid.isEmpty {
+      try visitor.visitSingularStringField(value: self.txid, fieldNumber: 1)
+    }
+    if self.fee != 0 {
+      try visitor.visitSingularInt64Field(value: self.fee, fieldNumber: 2)
+    }
+    if !self.state.isEmpty {
+      try visitor.visitSingularStringField(value: self.state, fieldNumber: 3)
+    }
+    if !self.error.isEmpty {
+      try visitor.visitSingularStringField(value: self.error, fieldNumber: 4)
+    }
+    try unknownFields.traverse(visitor: &visitor)
+  }
+
+  static func ==(lhs: Blakeswap_V1_BumpResult, rhs: Blakeswap_V1_BumpResult) -> Bool {
+    if lhs.txid != rhs.txid {return false}
+    if lhs.fee != rhs.fee {return false}
+    if lhs.state != rhs.state {return false}
+    if lhs.error != rhs.error {return false}
     if lhs.unknownFields != rhs.unknownFields {return false}
     return true
   }

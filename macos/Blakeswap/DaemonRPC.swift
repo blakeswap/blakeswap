@@ -83,6 +83,14 @@ enum DaemonRPC {
                 let request = try Blakeswap_V1_FundsPreflightRequest(jsonUTF8Data: payload)
                 let response = try await service.preflightFunds(request, metadata: metadata, options: options)
                 return try response.serializedData()
+            case "fee.quote":
+                let request = try Blakeswap_V1_FeeQuoteRequest(jsonUTF8Data: payload)
+                let response = try await service.quoteFee(request, metadata: metadata, options: options)
+                return try response.serializedData()
+            case "transaction.bump":
+                let request = try Blakeswap_V1_BumpRequest(jsonUTF8Data: payload)
+                let response = try await service.bumpTransaction(request, metadata: metadata, options: options)
+                return try response.serializedData()
             case "wallet.send":
                 let request = try Blakeswap_V1_SendCoinsRequest(jsonUTF8Data: payload)
                 let response = try await service.sendCoins(request, metadata: metadata, options: options)
