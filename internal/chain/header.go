@@ -83,7 +83,7 @@ func HeaderHash(h []byte) (chainhash.Hash, error) {
 	}
 	return out, nil
 }
-func verifyHeaderWork(h []byte) error {
+func verifyHeaderWork(h []byte, network Network) error {
 	hash, err := HeaderHash(h)
 	if err != nil {
 		return err
@@ -102,6 +102,11 @@ func verifyHeaderWork(h []byte) error {
 	}
 	if target.Sign() <= 0 || target.BitLen() > 256 {
 		return errors.New("invalid proof of work target")
+	}
+	// Both algorithms use the network's consensus limit, including after the
+	// Blake2b activation target shift. Testnet4 shares Testnet3's PoW limit.
+	if !network.Valid() || target.Cmp(network.Params().PowLimit) > 0 {
+		return errors.New("proof of work target exceeds network limit")
 	}
 	value, _ := new(big.Int).SetString(hash.String(), 16)
 	if value.Cmp(target) > 0 {

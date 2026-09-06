@@ -59,7 +59,11 @@ file, requires wallet/transaction-index support, and checks genesis, network nam
 header format, and active Blake2b deployment. Electrum uses TLS for public servers
 or plaintext only on literal loopback, with CA validation or an explicit certificate
 pin. It checks genesis, the fork checkpoint/rule set, header format and individual
-proof of work, raw transaction IDs/outputs, and merkle inclusion. It queries script
+proof of work within the network limit, raw transaction IDs/outputs, and merkle
+inclusion. Confirmation counts require a continuous sequence of headers from the
+transaction's block to the subscribed tip, fetched in bounded batches; completed
+ranges are cached with endpoint checks before reuse. Median time requires eleven
+linked headers and a stable tip. It queries script
 history for relevant confirmed and mempool spends, and detects changed headers
 during observations. It does not validate the full difficulty/chainwork history:
 canonicality, completeness, and availability remain trust in the configured

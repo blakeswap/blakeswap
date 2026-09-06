@@ -22,11 +22,11 @@ func TestNetworkIdentitiesAndBlakeCheckpoint(t *testing.T) {
 	if err != nil || hash.String() != "0000000000000050c1e5f69672f459293be14f46e5a494e7a8c8541396f18eeb" {
 		t.Fatal(hash, err)
 	}
-	if err = verifyHeaderWork(header); err != nil {
+	if err = verifyHeaderWork(header, Mainnet); err != nil {
 		t.Fatal(err)
 	}
 	header[36] ^= 1
-	if verifyHeaderWork(header) == nil {
+	if verifyHeaderWork(header, Mainnet) == nil {
 		t.Fatal("tampered merkle root retained proof of work")
 	}
 }

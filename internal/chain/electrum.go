@@ -36,6 +36,8 @@ type Electrum struct {
 	conn     net.Conn
 	reader   *bufio.Reader
 	seq      uint64
+	rangeMu  sync.Mutex
+	ranges   map[uint32]headerRange
 }
 
 func NewElectrum(network Network, id ID, endpoint, pin string) (*Electrum, error) {
@@ -181,33 +183,42 @@ func (e *Electrum) header(ctx context.Context, height uint32) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	expected := 80
+	return b, e.validateHeader(b, height)
+}
+func (e *Electrum) headerSize(height uint32) int {
 	if e.ID == Blake && height >= e.Network.ForkHeight() {
-		expected = 164
+		return 164
 	}
+	return 80
+}
+func (e *Electrum) validateHeader(b []byte, height uint32) error {
+	expected := e.headerSize(height)
 	if len(b) != expected {
-		return nil, fmt.Errorf("%s header at %d has %d bytes, expected %d; wrong chain or incompatible indexer", e.ID, height, len(b), expected)
+		return fmt.Errorf("%s header at %d has %d bytes, expected %d; wrong chain or incompatible indexer", e.ID, height, len(b), expected)
 	}
 	v2 := binary.LittleEndian.Uint32(b[:4])&0x80000000 != 0
 	if v2 != (expected == 164) {
-		return nil, errors.New("header version mismatch")
+		return errors.New("header version mismatch")
 	}
 	if expected == 164 && binary.LittleEndian.Uint32(b[128:132]) != height {
-		return nil, errors.New("Blake2b header height mismatch")
+		return errors.New("Blake2b header height mismatch")
 	}
-	if err := verifyHeaderWork(b); err != nil {
-		return nil, err
+	if err := verifyHeaderWork(b, e.Network); err != nil {
+		return err
+	}
+	if height == 0 && chainhash.DoubleHashH(b).String() != e.Network.Genesis() {
+		return errors.New("Electrum genesis header mismatch")
 	}
 	if e.ID == Blake && e.Network == Mainnet && height == e.Network.ForkHeight() {
 		hash, err := HeaderHash(b)
 		if err != nil {
-			return nil, err
+			return err
 		}
 		if hash.String() != "0000000000000050c1e5f69672f459293be14f46e5a494e7a8c8541396f18eeb" {
-			return nil, errors.New("Blake2b checkpoint mismatch")
+			return errors.New("Blake2b checkpoint mismatch")
 		}
 	}
-	return b, nil
+	return nil
 }
 func (e *Electrum) Check(ctx context.Context) error {
 	var features struct {
@@ -238,21 +249,25 @@ func (e *Electrum) Check(ctx context.Context) error {
 	return err
 }
 func (e *Electrum) Height(ctx context.Context) (uint32, error) {
+	height, _, err := e.tip(ctx)
+	return height, err
+}
+func (e *Electrum) tip(ctx context.Context) (uint32, []byte, error) {
 	var tip struct {
 		Height uint32 `json:"height"`
 		Hex    string `json:"hex"`
 	}
 	if err := e.Call(ctx, "blockchain.headers.subscribe", &tip); err != nil {
-		return 0, err
+		return 0, nil, err
 	}
 	header, err := e.header(ctx, tip.Height)
 	if err != nil {
-		return 0, err
+		return 0, nil, err
 	}
 	if hex.EncodeToString(header) != tip.Hex {
-		return 0, errors.New("Electrum tip changed during read")
+		return 0, nil, errors.New("Electrum tip changed during read")
 	}
-	return tip.Height, nil
+	return tip.Height, header, nil
 }
 func (e *Electrum) Broadcast(ctx context.Context, raw string) (string, error) {
 	tx, err := parseRaw(raw)
@@ -345,12 +360,15 @@ func (e *Electrum) inclusion(ctx context.Context, t Transaction, height uint32) 
 	if !bytes.Equal(h[:], header[36:68]) {
 		return t, errors.New("transaction merkle inclusion mismatch")
 	}
-	tip, err := e.Height(ctx)
+	tip, tipHeader, err := e.tip(ctx)
 	if err != nil {
 		return t, err
 	}
 	if tip < height {
 		return t, errors.New("transaction height above tip")
+	}
+	if err := e.connectHeaders(ctx, height, header, tip, tipHeader); err != nil {
+		return t, err
 	}
 	// A repeated header read catches reorgs while the proof was being checked.
 	current, err := e.header(ctx, height)
@@ -359,6 +377,13 @@ func (e *Electrum) inclusion(ctx context.Context, t Transaction, height uint32) 
 	}
 	if !bytes.Equal(header, current) {
 		return t, errors.New("chain changed during merkle verification")
+	}
+	currentTip, err := e.header(ctx, tip)
+	if err != nil {
+		return t, err
+	}
+	if !bytes.Equal(tipHeader, currentTip) {
+		return t, errors.New("tip changed during merkle verification")
 	}
 	t.Height = height
 	t.Confirmations = int(tip - height + 1)

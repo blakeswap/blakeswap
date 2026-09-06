@@ -1,6 +1,7 @@
 package chain
 
 import (
+	"bytes"
 	"context"
 	"encoding/binary"
 	"errors"
@@ -15,7 +16,7 @@ func (r *RPC) MedianTime(ctx context.Context) (uint32, error) {
 	return info.MedianTime, err
 }
 func (e *Electrum) MedianTime(ctx context.Context) (uint32, error) {
-	height, err := e.Height(ctx)
+	height, tip, err := e.tip(ctx)
 	if err != nil {
 		return 0, err
 	}
@@ -23,16 +24,31 @@ func (e *Electrum) MedianTime(ctx context.Context) (uint32, error) {
 		return 0, errors.New("chain too short for median time")
 	}
 	var times []uint32
+	child := tip
 	for i := uint32(0); i < 11; i++ {
 		h, err := e.header(ctx, height-i)
 		if err != nil {
 			return 0, err
 		}
+		if i == 0 && !bytes.Equal(h, tip) {
+			return 0, errors.New("chain changed during median time read")
+		}
+		if i > 0 && !linkedHeaders(h, child) {
+			return 0, errors.New("disconnected median time headers")
+		}
+		child = h
 		stamp := binary.LittleEndian.Uint32(h[68:72])
 		if len(h) == 164 && h[110]&4 != 0 {
 			stamp += binary.LittleEndian.Uint32(h[104:108])
 		}
 		times = append(times, stamp)
+	}
+	current, err := e.header(ctx, height)
+	if err != nil {
+		return 0, err
+	}
+	if !bytes.Equal(current, tip) {
+		return 0, errors.New("chain changed during median time read")
 	}
 	sort.Slice(times, func(i, j int) bool { return times[i] < times[j] })
 	return times[5], nil

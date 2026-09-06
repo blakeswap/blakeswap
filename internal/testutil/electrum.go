@@ -170,6 +170,23 @@ func (b *ElectrumBridge) call(ctx context.Context, method string, params []json.
 		return n
 	}
 	switch method {
+	case "blockchain.block.headers":
+		height, err := b.rpc.Height(ctx)
+		if err != nil {
+			return nil, err
+		}
+		var raw string
+		var count uint32
+		for h := num(0); h <= height && count < num(1); h++ {
+			n, _ := json.Marshal(h)
+			header, err := b.call(ctx, "blockchain.block.header", []json.RawMessage{n})
+			if err != nil {
+				return nil, err
+			}
+			raw += header.(string)
+			count++
+		}
+		return map[string]any{"count": count, "hex": raw, "max": 2016}, nil
 	case "server.features":
 		return map[string]any{"genesis_hash": chain.Regtest.Genesis(), "hash_function": "sha256"}, nil
 	case "blockchain.block.header":
