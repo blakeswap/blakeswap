@@ -154,12 +154,11 @@ func Open(ctx context.Context, c Config) (*Engine, error) {
 			return fail(e)
 		}
 		en.watch[id] = w
+		if err := en.refreshChain(ctx, id); err != nil {
+			return fail(err)
+		}
 		if c.ChainReady != nil {
-			height, err := r.Height(ctx)
-			if err != nil {
-				return fail(err)
-			}
-			c.ChainReady(id, height)
+			c.ChainReady(id, en.heights[id])
 		}
 	}
 	if c.Mode == "tower" {
@@ -171,9 +170,6 @@ func Open(ctx context.Context, c Config) (*Engine, error) {
 		if en.Config.Tower.BPS < 1 || en.Config.Tower.BPS > 1000 {
 			return fail(errors.New("tower rate must be 1–1000 basis points"))
 		}
-	}
-	if e = en.refresh(ctx); e != nil {
-		return fail(e)
 	}
 	return en, nil
 }
@@ -195,31 +191,39 @@ func (e *Engine) save() error {
 }
 func (e *Engine) refresh(ctx context.Context) error {
 	for _, id := range []chain.ID{chain.BTC, chain.Blake} {
-		h, err := e.nodes[id].Height(ctx)
-		if err != nil {
+		if err := e.refreshChain(ctx, id); err != nil {
 			return err
 		}
-		e.heights[id] = h
-		e.clocks[id] = h
-		if e.Config.Network != chain.Regtest {
-			stamp, err := e.nodes[id].MedianTime(ctx)
-			if err != nil {
-				return err
-			}
-			e.clocks[id] = stamp
-		}
-		coins, err := e.watch[id].Unspent(ctx, []string{e.addresses[id]})
-		if err != nil {
-			return err
-		}
-		var balance int64
-		for _, coin := range coins {
-			if coin.Confirmations >= e.Config.Network.Confirmations() {
-				balance += int64(coin.Amount)
-			}
-		}
-		e.balances[id] = balance
 	}
+	return nil
+}
+
+// Complete wallet observations before publishing this chain's startup readiness.
+func (e *Engine) refreshChain(ctx context.Context, id chain.ID) error {
+	h, err := e.nodes[id].Height(ctx)
+	if err != nil {
+		return err
+	}
+	e.heights[id] = h
+	e.clocks[id] = h
+	if e.Config.Network != chain.Regtest {
+		stamp, err := e.nodes[id].MedianTime(ctx)
+		if err != nil {
+			return err
+		}
+		e.clocks[id] = stamp
+	}
+	coins, err := e.watch[id].Unspent(ctx, []string{e.addresses[id]})
+	if err != nil {
+		return err
+	}
+	var balance int64
+	for _, coin := range coins {
+		if coin.Confirmations >= e.Config.Network.Confirmations() {
+			balance += int64(coin.Amount)
+		}
+	}
+	e.balances[id] = balance
 	return nil
 }
 func (e *Engine) Run(ctx context.Context) error {
