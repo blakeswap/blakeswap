@@ -352,6 +352,9 @@ durable immutable witness knowledge. Tower tests observe only the peer chain,
 reopen the vault, remove the witness and recover using the target alone.
 `TestRealIsolatedTowerWitnessRecovery` repeats that handoff and revealing-block
 reorg against actual BTC/Blake2b targets through RPC and Electrum fixtures.
+A repeated-tick tower budget regression stalls BTC scanning and verifies that
+an eligible Blake claim still progresses, while the overall worker deadline
+continues to stop publication.
 
 With the exclusive isolated BTC/Blake2b fixture available, run:
 

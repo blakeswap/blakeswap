@@ -317,8 +317,10 @@ Use **Test connection** / **Test fallback** for each candidate, then save Settin
 An active healthy secondary remains selected; restart/reconfiguration begins at
 the primary again. Backoff is 2–32 seconds after errors. Transport attempts are
 bounded to two seconds; each chain has eight seconds of cumulative backend
-work per cycle, and wallet refresh/local scan phases each have a five-second
-limit. Relay time and the other chain do not consume that chain’s allowance. Long RPC history imports continue independently,
+work per cycle, and wallet refresh/local/tower scans each have a five-second
+limit per chain. Tower work shares the overall worker deadline, so a stalled
+first-chain scan cannot exhaust a shorter shared tower deadline. Relay time and
+the other chain do not consume that chain’s allowance. Long RPC history imports continue independently,
 with shutdown cancelling and joining them before closing transports.
 
 A candidate must pass the configured network/genesis/fork rules, transport

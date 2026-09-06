@@ -372,13 +372,12 @@ func (e *Engine) Tick(ctx context.Context) error {
 			}
 		}
 	}
-	// Remote registrations have their own scan cursor and time budget. Their
-	// failures must not suppress our claims/refunds or durable message delivery.
-	towerCtx, cancelTower := context.WithTimeout(ctx, 5*time.Second)
-	e.refreshTowerJobs(towerCtx)
-	towerObservations, towerErr := e.scanTower(towerCtx)
-	towerErr = errors.Join(towerErr, e.advanceTower(towerCtx, towerObservations))
-	cancelTower()
+	// Remote registrations have separate cursors and per-chain work budgets.
+	// A shared shorter deadline would let the first chain starve the second;
+	// preserve the worker's overall deadline and each chain's cumulative budget.
+	e.refreshTowerJobs(ctx)
+	towerObservations, towerErr := e.scanTower(ctx)
+	towerErr = errors.Join(towerErr, e.advanceTower(ctx, towerObservations))
 	if towerErr != nil {
 		e.lastError = "watchtower: " + towerErr.Error()
 	}
@@ -772,7 +771,9 @@ func (e *Engine) scanTower(ctx context.Context) (map[chain.ID]map[string]chain.O
 			out[id] = map[string]chain.Observation{}
 			continue
 		}
-		result, err := e.towerScanners[id].Scan(ctx, starts[id], points[id])
+		scanCtx, cancel := context.WithTimeout(ctx, chainWorkBudget)
+		result, err := e.towerScanners[id].Scan(scanCtx, starts[id], points[id])
+		cancel()
 		if err != nil {
 			errs = append(errs, err)
 			continue

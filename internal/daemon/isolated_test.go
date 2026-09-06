@@ -32,6 +32,76 @@ type callbackRecoveryScanner struct {
 	beforeReturn func()
 }
 
+type blockedTowerScanner struct{ calls int }
+
+func (s *blockedTowerScanner) Scan(ctx context.Context, _ uint32, _ []string) (map[string]chain.Observation, error) {
+	s.calls++
+	<-ctx.Done()
+	return nil, ctx.Err()
+}
+
+type liveTowerScanner struct{ calls int }
+
+func (s *liveTowerScanner) Scan(ctx context.Context, _ uint32, _ []string) (map[string]chain.Observation, error) {
+	s.calls++
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	return map[string]chain.Observation{}, nil
+}
+
+func TestIsolatedTowerWorkBudgetsKeepHealthyChainProgressing(t *testing.T) {
+	e, s, b, secret := isolatedFixture(t, "maker")
+	target, observe := s.Long, s.Short
+	if target.Chain != chain.Blake || observe.Chain != chain.BTC {
+		t.Fatal("fixture ordering changed")
+	}
+	tower := e.ownTower()
+	s.Protection = &tower
+	job, err := e.makeJob(s, target, "claim", &observe, s.Terms.Takeover)
+	if err != nil {
+		t.Fatal(err)
+	}
+	e.s.Swaps = map[string]*Swap{}
+	state := &TowerJob{Job: job, Secret: hex.EncodeToString(secret), FundingSeen: true}
+	e.s.TowerJobs = map[string]*TowerJob{job.ID: state}
+	b.coins = nil
+	e.nodes[chain.BTC] = &recoveryClockBackend{Backend: e.watch[chain.BTC]}
+	e.nodes[chain.Blake] = &recoveryClockBackend{Backend: b}
+	e.Config.Relays = nil
+	e.scanners = map[chain.ID]chain.SpendScanner{chain.BTC: &recordingScanner{}, chain.Blake: &recordingScanner{}}
+	blocked, live := &blockedTowerScanner{}, &liveTowerScanner{}
+	e.towerScanners = map[chain.ID]chain.SpendScanner{chain.BTC: blocked, chain.Blake: live}
+	broadcasts := 0
+	b.broadcast = func(raw string) (string, error) {
+		broadcasts++
+		tx, err := contract.Parse(raw)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, ok := contract.ExtractSecret(target, tx); !ok {
+			t.Fatal("wrong recovery transaction")
+		}
+		return tx.TxHash().String(), nil
+	}
+	for cycle := 0; cycle < 2; cycle++ {
+		state.LastAttempt = 0
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		_ = e.Tick(ctx)
+		cancel()
+		if broadcasts != cycle+1 || live.calls != cycle+1 || blocked.calls != cycle+1 {
+			t.Fatal("slow BTC tower work starved healthy Blake recovery", broadcasts, live.calls, blocked.calls)
+		}
+	}
+	state.LastAttempt = 0
+	ctx, cancel := context.WithTimeout(context.Background(), time.Millisecond)
+	defer cancel()
+	_ = e.Tick(ctx)
+	if ctx.Err() == nil || broadcasts != 2 {
+		t.Fatal("overall worker deadline did not stop recovery publication")
+	}
+}
+
 func (s *callbackRecoveryScanner) Scan(context.Context, uint32, []string) (map[string]chain.Observation, error) {
 	if s.beforeReturn != nil {
 		s.beforeReturn()
