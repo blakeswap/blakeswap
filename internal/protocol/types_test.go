@@ -26,13 +26,13 @@ func sample(t testing.TB) Terms {
 		return m
 	}
 	offer := Offer{ID: transport.RandomID(), Maker: maker.Public().Hex(), Sell: chain.BTC, SellAmount: 1000000, BuyAmount: 2000000, Expires: time.Now().Unix() + 3600, Status: "open"}
-	raw, _ := json.Marshal(offer)
+	raw, _ := offer.PublicJSON()
 	event := nostr.Event{Kind: transport.OfferKind, CreatedAt: nostr.Now(), Tags: nostr.Tags{{"d", offer.ID}, {"t", transport.Namespace}}, Content: string(raw)}
 	if e := transport.Sign(&event, maker); e != nil {
 		t.Fatal(e)
 	}
 	r := Request{ID: transport.RandomID(), OfferEvent: event, Taker: taker.Public().Hex(), Hash: transport.RandomID(), Keys: keys()}
-	terms, e := NewTerms(r, keys(), map[chain.ID]uint32{chain.BTC: 100, chain.Blake: 1000}, "", nil)
+	terms, e := NewTerms(r, keys(), map[chain.ID]uint32{chain.BTC: 100, chain.Blake: 1000})
 	if e != nil {
 		t.Fatal(e)
 	}
@@ -85,11 +85,40 @@ func TestBountyRoundingAndEconomicBounds(t *testing.T) {
 	o := sample(t).Offer()
 	o.TowerBPS = 50
 	o.SellAmount = 100000
-	if o.Validate(time.Now().Unix()) == nil {
+	if ValidateRescueAmounts(o.TowerBPS, o.SellAmount, o.BuyAmount) == nil {
 		t.Fatal("dust bounty accepted")
 	}
 	o.SellAmount = 120000
-	if e := o.Validate(time.Now().Unix()); e != nil {
+	if e := ValidateRescueAmounts(o.TowerBPS, o.SellAmount, o.BuyAmount); e != nil {
 		t.Fatal(e)
+	}
+}
+
+func TestPublicOfferRejectsRetiredProtectionFields(t *testing.T) {
+	terms := sample(t)
+	key := nostr.Generate()
+	o := terms.Offer()
+	o.Maker = key.Public().Hex()
+	raw, _ := o.PublicJSON()
+	var fields map[string]any
+	_ = json.Unmarshal(raw, &fields)
+	event := terms.Request.OfferEvent
+	for _, field := range []string{"tower", "tower_bps", "version"} {
+		fields[field] = 0
+		raw, _ := json.Marshal(fields)
+		event.Content = string(raw)
+		if err := transport.Sign(&event, key); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := DecodeOffer(event, time.Now().Unix()); err == nil {
+			t.Fatal("retired public field accepted", field)
+		}
+		delete(fields, field)
+	}
+	raw, _ = json.Marshal(terms)
+	var shared map[string]any
+	_ = json.Unmarshal(raw, &shared)
+	if shared["tower"] != nil || shared["tower_scripts"] != nil {
+		t.Fatal("shared terms disclose protection")
 	}
 }

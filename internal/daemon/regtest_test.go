@@ -239,7 +239,7 @@ func (h *harness) fundBoth(sell chain.ID, bps int64) string {
 	h.tick("maker")
 	h.offline("maker")
 	h.tick("taker")
-	result := h.command("taker", "swap.take", map[string]string{"maker": o.Maker, "id": o.ID}).(map[string]string)
+	result := h.command("taker", "swap.take", map[string]any{"maker": o.Maker, "id": o.ID, "tower_bps": bps}).(map[string]string)
 	id := result["id"]
 	// The taker's request is likewise saved before any network transmission.
 	h.offline("taker")

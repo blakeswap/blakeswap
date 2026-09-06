@@ -17,6 +17,7 @@ option (grpc.gateway.protoc_gen_openapiv2.options.openapiv2_swagger) = {
 
 service DaemonService {
  rpc GetStatus(google.protobuf.Empty) returns (Status) { option (google.api.http) = { get: "/v1/status" }; }
+ rpc RefreshStatus(RefreshStatusRequest) returns (Status) { option (google.api.http) = { post: "/v1/status/refresh" body: "*" }; }
  rpc ResolveWatchtower(ResolveWatchtowerRequest) returns (google.protobuf.Empty) { option (google.api.http) = { post: "/v1/watchtowers/resolve" body: "*" }; }
  rpc SetPaused(SetPausedRequest) returns (Status) { option (google.api.http) = { put: "/v1/pause" body: "*" }; }
  rpc CreateOffer(CreateOfferRequest) returns (Offer) { option (google.api.http) = { post: "/v1/offers" body: "*" }; }
@@ -37,6 +38,7 @@ service DaemonService {
  rpc UpdateSettings(Settings) returns (Settings) { option (google.api.http) = { put: "/v1/settings" body: "*" }; }
  rpc CheckNode(CheckNodeRequest) returns (CheckNodeResponse) { option (google.api.http) = { post: "/v1/settings/check-node" body: "*" }; }
 }
+message RefreshStatusRequest { string expected_network = 1; }
 message ResolveWatchtowerRequest { string pubkey = 1; string expected_network = 2; }
 message SetPausedRequest { bool paused = 1; string expected_network = 2; }
 message CreateOfferRequest {
@@ -49,7 +51,11 @@ message CreateOfferRequest {
  int64 expires = 5; // Unix seconds; zero means 24 hours.
 }
 message CancelOfferRequest { string id = 1; string expected_network = 2; }
-message TakeOfferRequest { string maker = 1; string id = 2; string expected_network = 3; }
+message TakeOfferRequest {
+ string maker = 1; string id = 2; string expected_network = 3;
+ int64 tower_bps = 4; // This wallet's private protection; zero disables it.
+ string tower_pubkey = 5; // Selected discovered provider, never sent to the maker.
+}
 message TakeOfferResponse { string id = 1; }
 message MineRequest { string chain = 1; uint32 blocks = 2; string expected_network = 3; }
 message FaucetRequest { string chain = 1; int64 amount = 2; string expected_network = 3; }

@@ -27,6 +27,8 @@ final class AppModel: ObservableObject {
         root = self.daemon.root
     }
     private var refreshing = false
+    @Published private(set) var swapRefreshGeneration: UInt64?
+    var checkingSwaps: Bool { swapRefreshGeneration == generation }
     var network: String { settings?.activeNetwork ?? status?.network ?? "mainnet" }
     var isRegtest: Bool { network == "regtest" }
     func invalidateSnapshot() { generation &+= 1; snapshot.status = nil; recovery = nil }
@@ -47,7 +49,7 @@ final class AppModel: ObservableObject {
         return matching
     }
     func refresh() async {
-        guard !refreshing else { return }; refreshing = true; defer { refreshing = false }
+        guard !refreshing, !checkingSwaps else { return }; refreshing = true; defer { refreshing = false }
         let selected = profile, expected = generation
         do {
             try daemon.start() // Idempotent while running; restarts an exited helper automatically.
@@ -61,6 +63,28 @@ final class AppModel: ObservableObject {
             // Closing the app while its helper starts is not a connection failure.
         } catch { if selected == profile && expected == generation { connectionError = error.localizedDescription } }
     }
+    func beginSwapRefresh() -> Bool {
+        guard !checkingSwaps else { return false }
+        generation &+= 1 // Invalidate polling responses that started before this check.
+        swapRefreshGeneration = generation
+        return true
+    }
+    func finishSwapRefresh(_ expected: UInt64) {
+        if swapRefreshGeneration == expected { swapRefreshGeneration = nil }
+    }
+    func refreshSwaps() async {
+        guard beginSwapRefresh() else { return }
+        let selected = profile, expected = generation
+        defer { finishSwapRefresh(expected) }
+        let currentNetwork = network
+        do {
+            let raw = try await DaemonRPC.call(root: root, profile: selected, method: "status.refresh", params: ["expected_network": currentNetwork])
+            let next = try DaemonStatus(serializedBytes: raw)
+            guard let currentSettings = settings else { return }
+            if acceptSnapshot(next, settings: currentSettings, profile: selected, generation: expected) { connectionError = nil }
+        } catch { if selected == profile && expected == generation { connectionError = error.localizedDescription } }
+    }
+
     @discardableResult
     func loadSettings() async -> AppSettings? {
         let selected = profile, expected = generation

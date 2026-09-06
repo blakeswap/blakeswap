@@ -106,3 +106,18 @@ bounded scan budget after local swap advancement. New registrations must fit the
 current funding horizon. Never-seen, explicitly absent funding transactions retire
 after the contract's refund grace; observed funding remains an obligation until
 settled. Indexer errors never count as proof that a transaction is absent.
+
+## Private protection and independent wallet workers
+
+New offers and accepted terms contain no watchtower selection. Provider choices
+live in the owner’s encrypted offer/swap state, with jobs encrypted only to that
+provider. The local API and native orderbook show a protection label only to the
+maker; takers independently choose their own optional refund provider.
+
+Every configured wallet on the active network has an independent background worker
+and immutable status snapshot. A slow wallet does not delay another wallet’s next
+cycle or status publication. Wallet selection is a UI concern. All workers continue
+accepting requests and settling swaps until the application exits; shutdown or
+network reconfiguration cancels and joins them before closing wallet databases.
+The Swaps refresh action requests a full cycle whose reads start after the request,
+then returns its snapshot. Routine status reads remain immediate and cached.

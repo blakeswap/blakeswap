@@ -16,11 +16,11 @@ func (e *Engine) makeJob(s *Swap, c contract.HTLC, kind string, observe *contrac
 	if err != nil {
 		return protocol.Job{}, err
 	}
-	towerScript, err := hex.DecodeString(s.Terms.TowerScripts[c.Chain])
+	towerScript, err := hex.DecodeString(s.protection().Scripts[c.Chain])
 	if err != nil {
 		return protocol.Job{}, err
 	}
-	job := protocol.Job{Network: e.Config.Network, SwapID: s.ID, Owner: e.identity.Public().Hex(), TermsHash: protocol.Digest(s.Terms), Kind: kind, Target: c, Observe: observe, ScanFrom: 1, Lock: lock, BPS: s.Terms.Offer().TowerBPS, Payout: hex.EncodeToString(e.scripts[c.Chain]), TowerScript: hex.EncodeToString(towerScript)}
+	job := protocol.Job{Network: e.Config.Network, SwapID: s.ID, Owner: e.identity.Public().Hex(), TermsHash: protocol.Digest(s.Terms), Kind: kind, Target: c, Observe: observe, ScanFrom: 1, Lock: lock, BPS: s.protection().BPS, Payout: hex.EncodeToString(e.scripts[c.Chain]), TowerScript: hex.EncodeToString(towerScript)}
 	if e.Config.Network != chain.Regtest {
 		job.ScanFrom = s.Terms.StartHeights[c.Chain]
 		if observe != nil {
@@ -35,7 +35,7 @@ func (e *Engine) makeJob(s *Swap, c contract.HTLC, kind string, observe *contrac
 		}
 		job.Templates = append(job.Templates, contract.Hex(tx))
 	}
-	return job, job.Validate(s.Terms.TowerScripts, job.BPS)
+	return job, job.Validate(s.protection().Scripts, job.BPS)
 }
 func (e *Engine) prepare(s *Swap, own contract.HTLC) error {
 	key, err := e.swapKey(own.Chain, s.ID)
@@ -49,7 +49,7 @@ func (e *Engine) prepare(s *Swap, own contract.HTLC) error {
 		}
 		s.SelfRefunds = append(s.SelfRefunds, contract.Hex(tx))
 	}
-	if s.Terms.Offer().TowerBPS > 0 {
+	if s.protection().BPS > 0 {
 		refund, err := e.makeJob(s, own, "refund", nil, own.RefundHeight+protocol.RefundDelay(e.Config.Network))
 		if err != nil {
 			return err
@@ -64,7 +64,7 @@ func (e *Engine) prepare(s *Swap, own contract.HTLC) error {
 			s.Jobs = append(s.Jobs, claim)
 		}
 		for _, job := range s.Jobs {
-			if err = e.queue(s.Terms.Tower, "tower-job", s.ID, job); err != nil {
+			if err = e.queue(s.protection().PubKey, "tower-job", s.ID, job); err != nil {
 				return err
 			}
 		}
@@ -274,7 +274,7 @@ func (e *Engine) advanceSwap(ctx context.Context, s *Swap, all map[chain.ID]map[
 		if len(s.SelfRefunds) != len(protocol.RescueFees) {
 			return errors.New("funding blocked: refund bundle is incomplete")
 		}
-		if s.Terms.Offer().TowerBPS > 0 {
+		if s.protection().BPS > 0 {
 			expected := 1
 			if s.Role == "maker" {
 				expected = 2

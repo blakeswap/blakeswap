@@ -268,7 +268,7 @@ func TestPendingTakeExpiryUnlocksCoinsAndRefusesLateAcceptance(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	terms, err := protocol.NewTerms(swap.Request, makerKeys, e.heights, "", nil)
+	terms, err := protocol.NewTerms(swap.Request, makerKeys, e.heights)
 	if err != nil {
 		t.Fatal(err)
 	}

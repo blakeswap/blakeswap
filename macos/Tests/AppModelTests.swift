@@ -3,6 +3,39 @@ import XCTest
 
 final class AppModelTests: XCTestCase {
     @MainActor
+    func testSwitchingWalletKeepsPollingAndNewRefreshIndependent() {
+        let model = AppModel()
+        XCTAssertTrue(model.beginSwapRefresh())
+        let aliceRefresh = model.generation
+        model.selectProfile("bob")
+        XCTAssertFalse(model.checkingSwaps, "Alice's pending check must not block Bob's polling")
+        XCTAssertTrue(model.beginSwapRefresh())
+        let bobRefresh = model.generation
+        model.finishSwapRefresh(aliceRefresh)
+        XCTAssertTrue(model.checkingSwaps, "Alice's completion must not clear Bob's pending check")
+        model.finishSwapRefresh(bobRefresh)
+        XCTAssertFalse(model.checkingSwaps)
+    }
+
+    @MainActor
+    func testManualRefreshRejectsOlderPollWithoutClearingVisibleSwap() {
+        let model = AppModel()
+        var settings = AppSettings(); settings.activeNetwork = "regtest"; settings.revision = 1
+        var old = DaemonStatus(); old.name = "alice"; old.network = "regtest"
+        var swap = Swap(); swap.id = "swap"; swap.stage = "awaiting chain confirmations"
+        old.swaps = [swap]
+        XCTAssertTrue(model.acceptSnapshot(old, settings: settings, profile: "alice", generation: model.generation))
+        let pollingGeneration = model.generation
+        XCTAssertTrue(model.beginSwapRefresh())
+        XCTAssertFalse(model.beginSwapRefresh())
+        XCTAssertEqual(model.status?.swaps.first?.stage, "awaiting chain confirmations")
+        var fresh = old; fresh.swaps[0].stage = "completed"
+        XCTAssertTrue(model.acceptSnapshot(fresh, settings: settings, profile: "alice", generation: model.generation))
+        XCTAssertFalse(model.acceptSnapshot(old, settings: settings, profile: "alice", generation: pollingGeneration))
+        XCTAssertEqual(model.status?.swaps.first?.stage, "completed")
+    }
+
+    @MainActor
     func testOnboardingDiscardsRecoveryWhenBackupCompletesAndRejectsStaleStage() {
         let model = AppModel()
         var settings = AppSettings(); settings.activeNetwork = "mainnet"; settings.revision = 2; settings.onboardingStage = "backup"

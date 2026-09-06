@@ -33,6 +33,7 @@ type Manager struct {
 	root       string
 	settings   *pb.Settings
 	engines    map[string]*daemon.Engine
+	workers    map[string]*walletWorker
 	configs    map[string]daemon.Config
 	lastError  string
 	restart    bool
@@ -80,10 +81,11 @@ type networkResult struct {
 type desktopView struct {
 	settings *pb.Settings
 	statuses map[string]json.RawMessage
+	workers  map[string]*walletWorker
 }
 
 func (m *Manager) publishView() {
-	v := &desktopView{settings: proto.Clone(m.settings).(*pb.Settings), statuses: map[string]json.RawMessage{}}
+	v := &desktopView{settings: proto.Clone(m.settings).(*pb.Settings), statuses: map[string]json.RawMessage{}, workers: map[string]*walletWorker{}}
 	for _, wallet := range m.settings.Wallets {
 		profile := wallet.Id
 		s := daemon.Status{Name: profile, Mode: "trader", Network: chain.Network(m.settings.ActiveNetwork), LastError: m.lastError}
@@ -91,6 +93,11 @@ func (m *Manager) publishView() {
 			s.Heights = job.readyHeights()
 		}
 		if e := m.engines[profile]; e != nil && !m.restart {
+			if worker := m.workers[profile]; worker != nil {
+				v.workers[profile] = worker
+				v.statuses[profile] = worker.read()
+				continue
+			}
 			s = e.Status()
 			if m.lastError != "" {
 				s.LastError = m.lastError
@@ -213,7 +220,16 @@ func (m *Manager) writeSettings(ctx context.Context, next *pb.Settings) (*pb.Set
 	// Release bootstrap vaults before changing their runtime or checking obligations.
 	// Display-name edits need no engine restart or bootstrap cancellation.
 	if runtimeChanged {
+		// No wallet may acquire a new obligation between the safety check and
+		// committing the network switch. Resume old workers if the save fails.
+		m.stopWorkers()
 		m.stopOpening()
+		defer func() {
+			if !m.restart && m.runtimeCtx != nil {
+				m.startWorkers(m.runtimeCtx)
+				m.publishView()
+			}
+		}()
 	}
 	if next.ActiveNetwork != m.settings.ActiveNetwork {
 		for _, wallet := range m.settings.Wallets {
@@ -244,8 +260,14 @@ func (m *Manager) writeSettings(ctx context.Context, next *pb.Settings) (*pb.Set
 	return proto.Clone(saved).(*pb.Settings), nil
 }
 func (m *Manager) command(ctx context.Context, profile string, req daemon.Request) (any, error) {
+	if req.Method == "status.refresh" {
+		return m.refreshStatus(ctx, profile, req)
+	}
 	if req.Method == "status" {
 		if view := m.view.Load(); view != nil {
+			if worker := view.workers[profile]; worker != nil {
+				return worker.read(), nil
+			}
 			return view.statuses[profile], nil
 		}
 	}
@@ -278,11 +300,15 @@ func (m *Manager) command(ctx context.Context, profile string, req daemon.Reques
 		return s, nil
 	}
 	result, err := e.Command(ctx, req)
+	if worker := m.workers[profile]; worker != nil {
+		worker.capture(e, nil)
+	}
 	m.publishView()
 	return result, err
 }
 func (m *Manager) closeNetwork() {
 	m.stopOpening()
+	m.stopWorkers()
 	for _, e := range m.engines {
 		_ = e.Close()
 	}
@@ -344,7 +370,6 @@ func (m *Manager) run(ctx context.Context) error {
 			return nil
 		}
 		m.mu.Lock()
-		cycle, cancel := context.WithTimeout(ctx, 30*time.Second)
 		if m.restart {
 			m.closeNetwork()
 			m.configs = map[string]daemon.Config{}
@@ -356,27 +381,7 @@ func (m *Manager) run(ctx context.Context) error {
 		if len(m.engines) == len(m.settings.Wallets) && len(m.openings) == 0 {
 			m.lastError = ""
 		}
-		// Each wallet gets the whole cycle budget. A slow provider for one wallet
-		// must not consume the time available for the other wallets' settlements.
-		var ticks sync.WaitGroup
-		failures := make(chan error, len(m.engines))
-		for _, wallet := range m.settings.Wallets {
-			if e := m.engines[wallet.Id]; e != nil {
-				ticks.Add(1)
-				go func() {
-					defer ticks.Done()
-					if err := e.Tick(cycle); err != nil {
-						failures <- err
-					}
-				}()
-			}
-		}
-		ticks.Wait()
-		close(failures)
-		for err := range failures {
-			m.lastError = err.Error()
-		}
-		cancel()
+		m.startWorkers(ctx)
 		m.publishView()
 		m.mu.Unlock()
 		select {

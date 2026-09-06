@@ -233,3 +233,20 @@ packages workflow builds, verifies DMGs and binary architectures, and runs nativ
 tests on Apple silicon and Intel when a version tag or release is published.
 Pull requests and main-branch pushes keep Go validation in the separate CI
 workflow without building DMGs.
+
+## Order privacy and wallet background progress
+
+Privacy regressions inspect public offer content and every status publication,
+decrypt peer negotiation to verify it contains no protection fields, test all four
+independent on/off combinations, and verify jobs decrypt only for their provider.
+Encrypted-state reloads preserve each local choice. Cache cleanup withdraws retired offers and removes stale publication retries
+without depending on the old configured provider. Retired public fields are
+rejected without version negotiation.
+The existing real-chain protection scenarios now explicitly select both wallets’
+providers and still verify receipt-gated funding, takeover, refunds, and reorgs.
+
+Worker regressions hold one wallet’s chain operation while another continues
+background cycles, publishes status, and responds to manual refresh. They cover a
+refresh arriving during an older cycle, stale network bindings, and worker shutdown.
+Native tests verify maker-only protection labels and complete a two-chain swap
+while polling only Bob, then verify the manual refresh result after mining.

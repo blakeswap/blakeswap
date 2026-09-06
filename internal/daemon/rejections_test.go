@@ -17,7 +17,7 @@ func TestRealCancellationReservationAndReceiptBinding(t *testing.T) {
 			if scenario == "cancel-before-request" {
 				h.command("maker", "offer.cancel", map[string]string{"id": o.ID})
 			}
-			first := h.command("taker", "swap.take", map[string]string{"maker": o.Maker, "id": o.ID}).(map[string]string)["id"]
+			first := h.command("taker", "swap.take", map[string]any{"maker": o.Maker, "id": o.ID, "tower_bps": 50}).(map[string]string)["id"]
 
 			if scenario == "two-takers-one-reservation" {
 				raw, _ := json.Marshal(map[string]string{"maker": o.Maker, "id": o.ID})
@@ -51,18 +51,18 @@ func TestRealCancellationReservationAndReceiptBinding(t *testing.T) {
 			}
 			receipt.Digest = transport.RandomID()
 			message.Body, _ = json.Marshal(receipt)
-			if err := h.engines["taker"].handle(winner.Terms.Tower, message); err == nil {
+			if err := h.engines["taker"].handle(winner.protection().PubKey, message); err == nil {
 				t.Fatal("receipt for altered template accepted")
 			}
 			// Mutating a bounty or locktime cannot be acknowledged as the original job.
 			bad := job
 			bad.Lock--
-			if bad.Validate(winner.Terms.TowerScripts, 50) == nil {
+			if bad.Validate(winner.protection().Scripts, 50) == nil {
 				t.Fatal("early tower job accepted")
 			}
 			bad = job
 			bad.Payout = job.TowerScript
-			if bad.Validate(winner.Terms.TowerScripts, 50) == nil {
+			if bad.Validate(winner.protection().Scripts, 50) == nil {
 				t.Fatal("redirected payout accepted")
 			}
 		})

@@ -130,19 +130,19 @@ func (e *Engine) handle(from string, m transport.Message) error {
 		if e.balances[o.Sell] < o.SellAmount+protocol.FundingFee {
 			return e.queue(from, "rejected", request.ID, map[string]string{"reason": "maker lacks confirmed balance"})
 		}
-		tower, err := e.selectedTower(o)
-		if err != nil {
-			return err
+		tower, ok := e.s.OfferTowers[o.ID]
+		if !ok {
+			return errors.New("local offer protection policy is missing")
 		}
 		keys, err := e.swapKeys(request.ID)
 		if err != nil {
 			return err
 		}
-		terms, err := protocol.NewTermsWithClocks(request, keys, e.heights, e.clocks, tower.PubKey, tower.Scripts)
+		terms, err := protocol.NewTermsWithClocks(request, keys, e.heights, e.clocks)
 		if err != nil {
 			return err
 		}
-		s := &Swap{ID: request.ID, Role: "maker", Request: request, Terms: &terms, Long: terms.Long, Short: terms.Short, Receipts: map[string]protocol.Receipt{}, Stage: "awaiting taker funding"}
+		s := &Swap{ID: request.ID, Role: "maker", Protection: &tower, Request: request, Terms: &terms, Long: terms.Long, Short: terms.Short, Receipts: map[string]protocol.Receipt{}, Stage: "awaiting taker funding"}
 		e.s.Swaps[s.ID] = s
 		o.Status = "reserved"
 		o.Reservation = s.ID
@@ -193,13 +193,6 @@ func (e *Engine) handle(from string, m transport.Message) error {
 		if s.Terms == nil && (e.expirePendingRequest(s, time.Now().Unix()) || terminalSwap(s)) {
 			return nil // Acknowledge stale acceptance without reviving released funds.
 		}
-		tower, err := e.selectedTower(terms.Offer())
-		if err != nil {
-			return err
-		}
-		if terms.Offer().TowerBPS > 0 && (terms.Tower != tower.PubKey || terms.Offer().TowerBPS != tower.BPS || protocol.Digest(terms.TowerScripts) != protocol.Digest(tower.Scripts)) {
-			return errors.New("unapproved tower quote")
-		}
 		if s.Terms != nil {
 			if protocol.Digest(s.Terms) != protocol.Digest(terms) {
 				return errors.New("terms changed after acceptance")
@@ -216,7 +209,7 @@ func (e *Engine) handle(from string, m transport.Message) error {
 		return errors.New("message before accepted terms")
 	}
 	if m.Type == "tower-receipt" {
-		if from != s.Terms.Tower {
+		if from != s.protection().PubKey {
 			return errors.New("receipt from unselected tower")
 		}
 		var receipt protocol.Receipt

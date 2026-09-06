@@ -162,6 +162,9 @@ func Open(ctx context.Context, c Config) (*Engine, error) {
 			return fail(errors.New("tower rate must be 1–1000 basis points"))
 		}
 	}
+	if err := en.scrubOfferCache(); err != nil {
+		return fail(err)
+	}
 	en.reconcileReservations()
 	if err := en.save(); err != nil {
 		return fail(err)
@@ -468,7 +471,7 @@ func (e *Engine) receive(event nostr.Event) error {
 	return e.save()
 }
 func (e *Engine) publishOffer(o protocol.Offer) error {
-	raw, err := json.Marshal(o)
+	raw, err := o.PublicJSON()
 	if err != nil {
 		return err
 	}
@@ -480,6 +483,11 @@ func (e *Engine) publishOffer(o protocol.Offer) error {
 	event := nostr.Event{Kind: transport.OfferKind, CreatedAt: at, Tags: nostr.Tags{{"d", o.ID}, {"t", e.Config.Network.Namespace()}, {"expiration", strconv.FormatInt(o.Expires, 10)}}, Content: string(raw)}
 	if err = transport.Sign(&event, e.identity); err != nil {
 		return err
+	}
+	for id, d := range e.s.Outbox {
+		if d.Event.Kind == transport.OfferKind && transport.Tag(d.Event, "d") == o.ID {
+			delete(e.s.Outbox, id)
+		}
 	}
 	e.s.Offers[o.ID] = event
 	e.ingestOffer(event)
