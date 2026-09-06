@@ -123,7 +123,7 @@ func (e *Engine) advanceSwap(ctx context.Context, s *Swap, all map[chain.ID]map[
 				if err = e.save(); err != nil {
 					return err
 				}
-				if err = e.broadcast(ctx, fundingChain, raw); err != nil {
+				if err = e.broadcast(ctx, fundingChain, raw, true); err != nil {
 					return err
 				}
 			}
@@ -300,12 +300,15 @@ func (e *Engine) advanceSwap(ctx context.Context, s *Swap, all map[chain.ID]map[
 				return errors.New("taker funding no longer confirmed")
 			}
 		}
+		if err := e.gate(s.Terms, phase); err != nil {
+			return err
+		}
 		// Commit publication and its peer notification together before sending
 		// anything. A crash or ambiguous broadcast response must remain resumable.
 		if err := e.recordFunding(s); err != nil {
 			return err
 		}
-		if err := e.broadcast(ctx, id, raw); err != nil {
+		if err := e.broadcast(ctx, id, raw, true); err != nil {
 			return err
 		}
 		s.Stage = "funding broadcast"
@@ -499,7 +502,7 @@ func (e *Engine) advanceTower(ctx context.Context, all map[chain.ID]map[string]c
 		if err = e.save(); err != nil {
 			return err
 		}
-		if err = e.broadcast(ctx, job.Target.Chain, contract.Hex(tx)); err != nil {
+		if err = e.broadcast(ctx, job.Target.Chain, contract.Hex(tx), job.Kind == "refund"); err != nil {
 			state.Error = err.Error()
 		} else {
 			state.Broadcast = tx.TxHash().String()

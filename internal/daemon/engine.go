@@ -628,13 +628,34 @@ func (e *Engine) fundReserved(ctx context.Context, c contract.HTLC, owner string
 	}
 	return tx, nil
 }
-func (e *Engine) broadcast(ctx context.Context, id chain.ID, raw string) error {
+func (e *Engine) publicationReady(id chain.ID, both bool) error {
+	if !e.fresh(id) || (both && (!e.fresh(chain.BTC) || !e.fresh(chain.Blake))) {
+		return errors.New("chain source changed; required publication observations are unavailable")
+	}
+	return nil
+}
+
+func (e *Engine) broadcast(ctx context.Context, id chain.ID, raw string, both bool) error {
 	tx, err := contract.Parse(raw)
 	if err != nil {
 		return err
 	}
 	r := e.nodes[id]
-	if _, err = r.Broadcast(ctx, raw); err != nil {
+	guard := func() error {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		return e.publicationReady(id, both)
+	}
+	if err := guard(); err != nil {
+		return err
+	}
+	if guarded, ok := r.(chain.GuardedBroadcaster); ok {
+		_, err = guarded.BroadcastGuarded(ctx, raw, guard)
+	} else {
+		_, err = r.Broadcast(ctx, raw)
+	}
+	if err != nil {
 		known, lookup := r.Transaction(ctx, tx.TxHash().String())
 		if lookup == nil && known.Confirmations >= 0 {
 			return nil

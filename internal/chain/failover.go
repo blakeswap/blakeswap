@@ -190,7 +190,8 @@ func (p *Failover) do(ctx context.Context, fn func(context.Context, *endpointEnt
 			entry.validated = false
 			return ctx.Err()
 		}
-		if TransactionNotFound(err) {
+		var held *broadcastGuardError
+		if TransactionNotFound(err) || errors.As(err, &held) {
 			return err
 		}
 		p.mu.Lock()
@@ -290,8 +291,26 @@ func (p *Failover) MedianTime(ctx context.Context) (v uint32, err error) {
 	})
 	return
 }
-func (p *Failover) Broadcast(ctx context.Context, raw string) (v string, err error) {
+
+// GuardedBroadcaster rechecks caller authorization after endpoint admission and
+// before every write attempt. A source switch must not silently carry prior
+// multi-chain observations into a publication on a new endpoint.
+type GuardedBroadcaster interface {
+	BroadcastGuarded(context.Context, string, func() error) (string, error)
+}
+
+type broadcastGuardError struct{ error }
+
+func (p *Failover) Broadcast(ctx context.Context, raw string) (string, error) {
+	return p.BroadcastGuarded(ctx, raw, nil)
+}
+func (p *Failover) BroadcastGuarded(ctx context.Context, raw string, guard func() error) (v string, err error) {
 	err = p.do(ctx, func(c context.Context, e *endpointEntry) error {
+		if guard != nil {
+			if err := guard(); err != nil {
+				return &broadcastGuardError{err}
+			}
+		}
 		var er error
 		v, er = e.backend.Broadcast(c, raw)
 		return er

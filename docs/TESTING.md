@@ -356,6 +356,10 @@ A repeated-tick tower budget regression stalls BTC scanning and verifies that
 an eligible Blake claim still progresses while a Blake refund remains held.
 Refunds require successful current scans of both chains, including after source
 changes. The overall worker deadline continues to stop publication.
+`TestPublication*` covers peer changes during fee selection, the second spend
+scan, variant lookup and the last maker-funding lookup.
+`TestFailoverBroadcastGuardRechecksAfterEndpointSwitch` verifies that admission
+of a fallback cannot bypass the publication requirements of its caller.
 
 With the exclusive isolated BTC/Blake2b fixture available, run:
 

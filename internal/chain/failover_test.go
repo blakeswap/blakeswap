@@ -307,3 +307,38 @@ func TestFailoverPerChainBudgetCannotStarveHealthyChain(t *testing.T) {
 		t.Fatal("unavailable chain consumed the healthy chain budget", err)
 	}
 }
+
+func TestFailoverBroadcastGuardRechecksAfterEndpointSwitch(t *testing.T) {
+	primary, secondary := &failoverBackend{height: 100, hash: "tip"}, &failoverBackend{height: 100, hash: "tip"}
+	p := testPool(primary, secondary)
+	if _, err := p.Height(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	generation := p.Generation()
+	primary.blocked = true
+	guardCalls := 0
+	guard := func() error {
+		guardCalls++
+		if p.Generation() != generation {
+			return errors.New("refresh publication evidence")
+		}
+		return nil
+	}
+	if _, err := p.BroadcastGuarded(context.Background(), "same signed bytes", guard); err == nil {
+		t.Fatal("guarded failover published")
+	}
+	if primary.broadcasts != 1 || secondary.broadcasts != 0 || guardCalls != 2 {
+		t.Fatal("guard did not stop switched endpoint", primary.broadcasts, secondary.broadcasts, guardCalls)
+	}
+	if p.Status().Endpoints[1].Error != "" {
+		t.Fatal("caller authorization failure marked healthy endpoint invalid")
+	}
+	// A later fresh observation can authorize the exact saved bytes on this source.
+	generation = p.Generation()
+	if _, err := p.BroadcastGuarded(context.Background(), "same signed bytes", guard); err != nil {
+		t.Fatal(err)
+	}
+	if secondary.broadcasts != 1 || secondary.raw != "same signed bytes" {
+		t.Fatal("authorized retry changed")
+	}
+}

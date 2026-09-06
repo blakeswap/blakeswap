@@ -131,8 +131,8 @@ func (e *Engine) bumpTransaction(ctx context.Context, raw json.RawMessage) (Bump
 			return BumpResult{}, err
 		}
 	}
-	if !e.fresh(target.Chain) {
-		return BumpResult{}, errors.New("settlement source changed; refresh before accelerating")
+	if err := e.publicationReady(target.Chain, p.Kind == "refund" || !s.SecretObserved); err != nil {
+		return BumpResult{}, err
 	}
 	if index > current {
 		*attempt = index * 3
@@ -147,7 +147,7 @@ func (e *Engine) bumpTransaction(ctx context.Context, raw json.RawMessage) (Bump
 		return BumpResult{}, err
 	}
 	result := BumpResult{TxID: tx.TxHash().String(), Fee: p.Fee, State: "broadcast"}
-	if err := e.broadcast(ctx, target.Chain, variants[index]); err != nil {
+	if err := e.broadcast(ctx, target.Chain, variants[index], p.Kind == "refund" || !s.SecretObserved); err != nil {
 		result.State = "saved"
 		result.Error = err.Error()
 	}
@@ -443,8 +443,13 @@ func (e *Engine) broadcastOwner(ctx context.Context, s *Swap, id chain.ID, refun
 		cancel()
 		if suggested > index {
 			index = suggested
-			*attempt = index * 3
 		}
+	}
+	if err := e.publicationReady(id, refund || !s.SecretObserved); err != nil {
+		return err
+	}
+	if s.OwnerFeeCap > 0 && *attempt < index*3 {
+		*attempt = index * 3
 	}
 	if refund {
 		s.RefundVariant = index
@@ -455,13 +460,10 @@ func (e *Engine) broadcastOwner(ctx context.Context, s *Swap, id chain.ID, refun
 	if s.OwnerFeeCap > 0 && *attempt < len(variants)*3 {
 		*attempt++
 	}
-	if !e.fresh(id) {
-		return errors.New("settlement source changed during fee selection; refresh target evidence")
-	}
 	if err := e.save(); err != nil {
 		return err
 	}
-	return e.broadcast(ctx, id, variants[index])
+	return e.broadcast(ctx, id, variants[index], refund || !s.SecretObserved)
 }
 
 func estimatedTier(estimate chain.FeeEstimate, variants []string) int {

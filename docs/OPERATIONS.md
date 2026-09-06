@@ -336,7 +336,10 @@ server to clear an error. This routing is not most-work validation or a quorum.
 
 Header caches, watch-only history imports and scan cursors belong to individual
 endpoints. Switching sources invalidates the combined wallet observation and
-requires a complete refresh before trading. Settings shows the active source,
+requires a complete refresh before trading. Publication requirements are checked
+after the final validation read and again after endpoint selection inside each
+broadcast attempt. A source switch holds the attempt until a complete refresh;
+previously signed wallet-send retries retain their existing policy. Settings shows the active source,
 each endpoint's last error/retry time, and failover count. Public status retains
 last observed heights/balances with `connections[chain].ready=false`; the native
 balance card labels those values as old observations. Unavailable data is never
