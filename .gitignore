@@ -8,3 +8,4 @@ coverage.out
 *.prof
 __pycache__/
 *.py[cod]
+/tickets/
