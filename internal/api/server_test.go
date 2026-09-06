@@ -132,7 +132,8 @@ func TestGRPCAndGatewayAuthenticationAndExactIntegers(t *testing.T) {
 			}
 		})
 	}
-	if calls.Load() != 2 {
+	// Two status reads and the authenticated preflight are the only accepted calls.
+	if calls.Load() != 3 {
 		t.Fatalf("rejected calls reached engine: %d", calls.Load())
 	}
 	request, _ := http.NewRequest("POST", server.Endpoint.HTTP+"/v1/offers", bytes.NewBufferString(`{"sellAmount":"9007199254740993"}`))
