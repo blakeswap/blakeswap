@@ -44,6 +44,14 @@ type Delivery struct {
 	Published   bool        `json:"published"`
 }
 type Swap struct {
+	ClaimVariant       int                         `json:"claim_variant,omitempty"`
+	RefundVariant      int                         `json:"refund_variant,omitempty"`
+	OwnerFeeCap        int64                       `json:"owner_fee_cap,omitempty"`
+	SelfClaims         []string                    `json:"self_claims,omitempty"`
+	ClaimAttempt       int                         `json:"claim_attempt,omitempty"`
+	RefundAttempt      int                         `json:"refund_attempt,omitempty"`
+	ClaimLastAttempt   int64                       `json:"claim_last_attempt,omitempty"`
+	RefundLastAttempt  int64                       `json:"refund_last_attempt,omitempty"`
 	Protection         *protocol.Tower             `json:"protection,omitempty"`
 	ID                 string                      `json:"id"`
 	Role               string                      `json:"role"`
@@ -71,6 +79,7 @@ type Swap struct {
 	TowerPayments      map[chain.ID]int64          `json:"tower_payments"`
 }
 type TowerJob struct {
+	Variants    []string     `json:"variants,omitempty"`
 	FundingSeen bool         `json:"funding_seen,omitempty"`
 	Expired     bool         `json:"expired,omitempty"`
 	Job         protocol.Job `json:"job"`
@@ -82,6 +91,7 @@ type TowerJob struct {
 	Error       string       `json:"error,omitempty"`
 }
 type State struct {
+	FundingFees      map[string]FeeSelection    `json:"funding_fees,omitempty"`
 	OfferTowers      map[string]protocol.Tower  `json:"offer_towers,omitempty"`
 	CoinReservations map[string]CoinReservation `json:"coin_reservations,omitempty"`
 	Sends            map[string]*WalletSend     `json:"sends,omitempty"`
@@ -102,6 +112,14 @@ type State struct {
 	EventTime        nostr.Timestamp            `json:"event_time"`
 }
 type PublicSwap struct {
+	ClaimFee           int64              `json:"claim_fee"`
+	RefundFee          int64              `json:"refund_fee"`
+	ClaimTxID          string             `json:"claim_txid"`
+	RefundTxID         string             `json:"refund_txid"`
+	OwnerFeeCap        int64              `json:"owner_fee_cap"`
+	FundingFee         int64              `json:"funding_fee"`
+	ClaimVariants      []string           `json:"claim_variants"`
+	RefundVariants     []string           `json:"refund_variants"`
 	ID                 string             `json:"id"`
 	Role               string             `json:"role"`
 	Stage              string             `json:"stage"`
@@ -121,6 +139,7 @@ type PublicSwap struct {
 	RevealBefore       uint32             `json:"reveal_before"`
 }
 type Status struct {
+	FeeLimits       map[chain.ID]FeeLimits    `json:"fee_limits"`
 	Funds           map[chain.ID]ChainBalance `json:"funds"`
 	Coins           []PublicCoin              `json:"coins"`
 	Sends           []PublicSend              `json:"sends"`

@@ -127,7 +127,7 @@ func (e *Engine) handle(from string, m transport.Message) error {
 		if !ok || currentErr != nil || current.Status != "open" || owned.ID != request.OfferEvent.ID {
 			return e.queue(from, "rejected", request.ID, map[string]string{"reason": "order is unavailable or changed"})
 		}
-		if e.balances[o.Sell] < o.SellAmount+protocol.FundingFee {
+		if e.balances[o.Sell] < o.SellAmount+e.fundingFee("offer/"+o.ID) {
 			return e.queue(from, "rejected", request.ID, map[string]string{"reason": "maker lacks confirmed balance"})
 		}
 		tower, ok := e.s.OfferTowers[o.ID]
@@ -143,6 +143,9 @@ func (e *Engine) handle(from string, m transport.Message) error {
 			return err
 		}
 		s := &Swap{ID: request.ID, Role: "maker", Protection: &tower, Request: request, Terms: &terms, Long: terms.Long, Short: terms.Short, Receipts: map[string]protocol.Receipt{}, Stage: "awaiting taker funding"}
+		if policy, ok := e.s.FundingFees["offer/"+o.ID]; ok {
+			s.OwnerFeeCap = policy.OwnerFeeCap
+		}
 		e.s.Swaps[s.ID] = s
 		o.Status = "reserved"
 		o.Reservation = s.ID

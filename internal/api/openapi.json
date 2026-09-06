@@ -20,6 +20,38 @@
     "application/json"
   ],
   "paths": {
+    "/v1/fees/quote": {
+      "post": {
+        "operationId": "DaemonService_QuoteFee",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1FeeQuote"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/googleRpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/v1FeeQuoteRequest"
+            }
+          }
+        ],
+        "tags": [
+          "DaemonService"
+        ]
+      }
+    },
     "/v1/offers": {
       "post": {
         "operationId": "DaemonService_CreateOffer",
@@ -516,6 +548,38 @@
         ]
       }
     },
+    "/v1/transactions/bump": {
+      "post": {
+        "operationId": "DaemonService_BumpTransaction",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1BumpResult"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/googleRpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/v1BumpRequest"
+            }
+          }
+        ],
+        "tags": [
+          "DaemonService"
+        ]
+      }
+    },
     "/v1/wallet/backup": {
       "post": {
         "operationId": "DaemonService_BackupWallet",
@@ -716,6 +780,12 @@
     "blakeswapV1Status": {
       "type": "object",
       "properties": {
+        "fee_limits": {
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/definitions/v1FeeLimits"
+          }
+        },
         "name": {
           "type": "string"
         },
@@ -854,6 +924,45 @@
         }
       }
     },
+    "v1BumpRequest": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "kind": {
+          "type": "string"
+        },
+        "fee": {
+          "type": "string",
+          "format": "int64"
+        },
+        "expected_txid": {
+          "type": "string"
+        },
+        "expected_network": {
+          "type": "string"
+        }
+      }
+    },
+    "v1BumpResult": {
+      "type": "object",
+      "properties": {
+        "txid": {
+          "type": "string"
+        },
+        "fee": {
+          "type": "string",
+          "format": "int64"
+        },
+        "state": {
+          "type": "string"
+        },
+        "error": {
+          "type": "string"
+        }
+      }
+    },
     "v1ChainBalance": {
       "type": "object",
       "properties": {
@@ -947,6 +1056,22 @@
     "v1CreateOfferRequest": {
       "type": "object",
       "properties": {
+        "funding_fee": {
+          "type": "string",
+          "format": "int64"
+        },
+        "rate_sat_kvb": {
+          "type": "string",
+          "format": "int64"
+        },
+        "fee_timestamp": {
+          "type": "string",
+          "format": "int64"
+        },
+        "owner_fee_cap": {
+          "type": "string",
+          "format": "int64"
+        },
         "tower_pubkey": {
           "type": "string",
           "description": "Selected discovered provider; ignored when protection is off."
@@ -1065,6 +1190,138 @@
       "type": "object",
       "properties": {
         "txid": {
+          "type": "string"
+        }
+      }
+    },
+    "v1FeeEstimate": {
+      "type": "object",
+      "properties": {
+        "requested_target": {
+          "type": "integer",
+          "format": "int64"
+        },
+        "chain": {
+          "type": "string"
+        },
+        "rate_sat_kvb": {
+          "type": "string",
+          "format": "int64"
+        },
+        "target": {
+          "type": "integer",
+          "format": "int64"
+        },
+        "timestamp": {
+          "type": "string",
+          "format": "int64"
+        },
+        "source": {
+          "type": "string"
+        },
+        "state": {
+          "type": "string"
+        },
+        "error": {
+          "type": "string"
+        }
+      },
+      "description": "Rates are native chain satoshis per 1000 virtual bytes, rounded upward."
+    },
+    "v1FeeLimits": {
+      "type": "object",
+      "properties": {
+        "send": {
+          "type": "string",
+          "format": "int64"
+        },
+        "funding": {
+          "type": "string",
+          "format": "int64"
+        },
+        "owner": {
+          "type": "string",
+          "format": "int64"
+        },
+        "tower": {
+          "type": "string",
+          "format": "int64"
+        }
+      }
+    },
+    "v1FeeQuote": {
+      "type": "object",
+      "properties": {
+        "estimate": {
+          "$ref": "#/definitions/v1FeeEstimate"
+        },
+        "limits": {
+          "$ref": "#/definitions/v1FeeLimits"
+        },
+        "fee": {
+          "type": "string",
+          "format": "int64"
+        },
+        "amount": {
+          "type": "string",
+          "format": "int64"
+        },
+        "change": {
+          "type": "string",
+          "format": "int64"
+        },
+        "total": {
+          "type": "string",
+          "format": "int64"
+        },
+        "vsize": {
+          "type": "string",
+          "format": "int64"
+        },
+        "inputs": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/v1Outpoint"
+          }
+        },
+        "error": {
+          "type": "string"
+        }
+      }
+    },
+    "v1FeeQuoteRequest": {
+      "type": "object",
+      "properties": {
+        "kind": {
+          "type": "string"
+        },
+        "chain": {
+          "type": "string"
+        },
+        "destination": {
+          "type": "string"
+        },
+        "amount": {
+          "type": "string",
+          "format": "int64"
+        },
+        "fee": {
+          "type": "string",
+          "format": "int64"
+        },
+        "target": {
+          "type": "integer",
+          "format": "int64"
+        },
+        "inputs": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/v1Outpoint"
+          }
+        },
+        "expected_network": {
           "type": "string"
         }
       }
@@ -1323,6 +1580,19 @@
     "v1SendCoinsRequest": {
       "type": "object",
       "properties": {
+        "max_fee": {
+          "type": "string",
+          "format": "int64",
+          "description": "Original replacement cap; zero disables fee increases."
+        },
+        "rate_sat_kvb": {
+          "type": "string",
+          "format": "int64"
+        },
+        "fee_timestamp": {
+          "type": "string",
+          "format": "int64"
+        },
         "id": {
           "type": "string"
         },
@@ -1398,6 +1668,40 @@
     "v1Swap": {
       "type": "object",
       "properties": {
+        "claim_fee": {
+          "type": "string",
+          "format": "int64"
+        },
+        "refund_fee": {
+          "type": "string",
+          "format": "int64"
+        },
+        "claim_txid": {
+          "type": "string"
+        },
+        "refund_txid": {
+          "type": "string"
+        },
+        "owner_fee_cap": {
+          "type": "string",
+          "format": "int64"
+        },
+        "funding_fee": {
+          "type": "string",
+          "format": "int64"
+        },
+        "claim_variants": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "refund_variants": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
         "id": {
           "type": "string"
         },
@@ -1463,6 +1767,22 @@
     "v1TakeOfferRequest": {
       "type": "object",
       "properties": {
+        "funding_fee": {
+          "type": "string",
+          "format": "int64"
+        },
+        "rate_sat_kvb": {
+          "type": "string",
+          "format": "int64"
+        },
+        "fee_timestamp": {
+          "type": "string",
+          "format": "int64"
+        },
+        "owner_fee_cap": {
+          "type": "string",
+          "format": "int64"
+        },
         "maker": {
           "type": "string"
         },
@@ -1533,6 +1853,12 @@
     "v1TowerJob": {
       "type": "object",
       "properties": {
+        "variants": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
         "id": {
           "type": "string"
         },
@@ -1561,6 +1887,25 @@
         },
         "error": {
           "type": "string"
+        }
+      }
+    },
+    "v1TransactionVariant": {
+      "type": "object",
+      "properties": {
+        "txid": {
+          "type": "string"
+        },
+        "fee": {
+          "type": "string",
+          "format": "int64"
+        },
+        "confirmations": {
+          "type": "integer",
+          "format": "int32"
+        },
+        "submitted": {
+          "type": "boolean"
         }
       }
     },
@@ -1614,6 +1959,20 @@
     "v1WalletSend": {
       "type": "object",
       "properties": {
+        "state": {
+          "type": "string"
+        },
+        "max_fee": {
+          "type": "string",
+          "format": "int64"
+        },
+        "variants": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/v1TransactionVariant"
+          }
+        },
         "id": {
           "type": "string"
         },

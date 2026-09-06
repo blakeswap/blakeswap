@@ -22,7 +22,7 @@ run or security review. Later feature work must update the corresponding limits.
 | Private independent protection and stable provider payouts | [Local protection](../internal/daemon/privacy.go), [provider discovery](../internal/daemon/discovery.go), [protocol](PROTOCOL.md) |
 | API names and request fields | [Protobuf service](../api/proto/blakeswap/v1/daemon.proto), [API reference](API.md) |
 | Both Mac architectures, native release tests, ad-hoc signing | [Workflow](../.github/workflows/release.yml), [build/signing script](../scripts/build-dmg.sh), [packaging limits](PACKAGING.md) |
-| Manual/fixed fees, bounded history, replay/observer trust, password files, stale recovery, whole-offer v1 swaps, no independent audit | [Risks](RISKS.md), [economics](ECONOMICS.md), [recovery](OPERATIONS.md#backups) |
+| Bounded fee allowances, unsupported funding acceleration, bounded history, replay/observer trust, password files, stale recovery, whole-offer v1 swaps, no independent audit | [Risks](RISKS.md), [economics](ECONOMICS.md), [recovery](OPERATIONS.md#backups) |
 
 ## Initial regtest milestone — September 5, 2026
 

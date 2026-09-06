@@ -376,14 +376,14 @@ func (e *Engine) advanceSwap(ctx context.Context, s *Swap, all map[chain.ID]map[
 		if err := e.save(); err != nil {
 			return err
 		}
-		if err := e.broadcast(ctx, incoming.Chain, s.SelfClaim); err != nil {
+		if err := e.broadcastOwner(ctx, s, incoming.Chain, false); err != nil {
 			return err
 		}
 	}
 	if incomingSpent && incomingObs.Confirmations >= e.Config.Network.Confirmations() {
 		s.Stage = "awaiting counterparty claim"
 	}
-	if !ownSpent && own.TxID != "" && e.eligible(own.Chain, own.RefundHeight) && len(s.SelfRefunds) > 0 {
+	if refundReplaceable(own, ownSpent, ownObs) && own.TxID != "" && e.eligible(own.Chain, own.RefundHeight) && len(s.SelfRefunds) > 0 {
 		if incomingSpent {
 			if _, claimed := contract.ExtractSecret(incoming, incomingObs.Tx); claimed {
 				s.Stage = "awaiting counterparty claim"
@@ -394,7 +394,7 @@ func (e *Engine) advanceSwap(ctx context.Context, s *Swap, all map[chain.ID]map[
 		if err := e.save(); err != nil {
 			return err
 		}
-		return e.broadcast(ctx, own.Chain, s.SelfRefunds[0])
+		return e.broadcastOwner(ctx, s, own.Chain, true)
 	}
 	return revealError
 }
@@ -417,6 +417,7 @@ func (e *Engine) recordFunding(s *Swap) error {
 	return e.save()
 }
 func (e *Engine) advanceTower(ctx context.Context, all map[chain.ID]map[string]chain.Observation) error {
+	estimates := map[chain.ID]chain.FeeEstimate{}
 	for _, state := range e.s.TowerJobs {
 		job := state.Job
 		if state.Expired {
@@ -454,6 +455,17 @@ func (e *Engine) advanceTower(ctx context.Context, all map[chain.ID]map[string]c
 		if index >= len(job.Templates) {
 			index = len(job.Templates) - 1
 		}
+		estimate, ok := estimates[job.Target.Chain]
+		if !ok {
+			feeCtx, cancel := context.WithTimeout(ctx, 500*time.Millisecond)
+			estimate = e.estimateFee(feeCtx, job.Target.Chain, 2)
+			cancel()
+			estimates[job.Target.Chain] = estimate
+		}
+		if suggested := estimatedTier(estimate, job.Templates); suggested > index {
+			index = suggested
+			state.Attempt = index * 3
+		}
 		tx, err := contract.Parse(job.Templates[index])
 		if err != nil {
 			return err
@@ -466,6 +478,16 @@ func (e *Engine) advanceTower(ctx context.Context, all map[chain.ID]map[string]c
 			if err = contract.FillSecret(job.Target, tx, secret); err != nil {
 				return err
 			}
+		}
+		id := tx.TxHash().String()
+		found := false
+		for _, previous := range state.Variants {
+			if previous == id {
+				found = true
+			}
+		}
+		if !found {
+			state.Variants = append(state.Variants, id)
 		}
 		state.LastAttempt = time.Now().Unix()
 		state.Attempt++
@@ -530,4 +552,17 @@ func (e *Engine) refreshTowerJobs(ctx context.Context) {
 			state.FundingSeen = true
 		}
 	}
+}
+
+// A pending owner refund may be replaced. A peer claim in the mempool is not
+// an invitation to race it with our refund after learning its secret.
+func refundReplaceable(c contract.HTLC, spent bool, obs chain.Observation) bool {
+	if !spent {
+		return true
+	}
+	if obs.Confirmations != 0 || obs.Tx == nil {
+		return false
+	}
+	_, claim := contract.ExtractSecret(c, obs.Tx)
+	return !claim
 }

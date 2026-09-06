@@ -170,6 +170,18 @@ func (b *ElectrumBridge) call(ctx context.Context, method string, params []json.
 		return n
 	}
 	switch method {
+	case "blockchain.estimatefee":
+		var reply struct {
+			Rate   json.Number `json:"feerate"`
+			Errors []string    `json:"errors"`
+		}
+		if err := b.rpc.Call(ctx, "estimatesmartfee", &reply, num(0), "CONSERVATIVE"); err != nil {
+			return nil, err
+		}
+		if len(reply.Errors) > 0 || reply.Rate == "" {
+			return -1, nil
+		}
+		return reply.Rate, nil
 	case "blockchain.block.headers":
 		height, err := b.rpc.Height(ctx)
 		if err != nil {

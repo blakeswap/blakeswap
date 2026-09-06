@@ -282,3 +282,19 @@ wallet/network/form/input context. `TestRealFundsContractPrincipalAndPendingChan
 and `TestRealSendsHonorCoinControlFeesAndOrderLocks` exercise these categories and
 preflight with actual BTC and Blake2b nodes; run the latter with the Electrum
 fixture as well.
+
+## Fee policies and replacement recovery
+
+[Fee tests](../internal/chain/fees_test.go) verify exact bounded parsing for both
+backend methods, effective RPC targets and stale/unavailable responses. Contract
+size tests cover 1, 2, and 50 inputs with P2WPKH/P2PKH/P2WSH output lengths. Daemon
+regressions cover fee consent, dust and limits, duplicate bumps, persisted variants,
+ambiguous broadcasts, restart, earlier-variant confirmations and deep reorgs.
+
+`TestRealSendFeeAccelerationBothChains` exercises below-relay rejection, restart,
+authorized replacement, RBF, confirmation, invalidation and reconsideration on
+actual BTC/Blake2b. `TestRealSettlementFeeVariantsKeepFundingAndPayoutAuthorization`
+checks all three claim/refund/tower fee tiers and preserves signed original
+recovery and payout invariants. Set `BLAKESWAP_TEST_ELECTRUM=1` for the daemon's
+Electrum matrix. These require the exclusive isolated regtest fixture; ordinary
+unit passes with skipped real tests are not two-chain evidence.

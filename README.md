@@ -49,7 +49,7 @@ trust assumptions.
 
 Wallet provides a QR for each chain’s current receive address and advances it after
 a confirmed receipt while continuing to watch historical addresses. Send supports
-individual coin selection, a manual total network fee, and review/confirmation of
+individual coin selection, chain-specific fee estimates or manual totals, and review/confirmation of
 the payment. “Send selected minus fee” can consolidate selected coins to your own
 current receive address. Open orders, active trades, and pending sends lock their
 funding coins; cancel an open order before withdrawing those coins. Saved sends

@@ -20,6 +20,7 @@ func (e *Engine) status() Status {
 	s := Status{Network: e.Config.Network, Name: e.Config.Name, Mode: e.Config.Mode, PubKey: e.identity.Public().Hex(), Addresses: map[chain.ID]string{}, Balances: map[chain.ID]int64{}, Heights: map[chain.ID]uint32{}, Paused: e.s.Paused, Orders: []protocol.Offer{}, Swaps: []PublicSwap{}, TowerJobs: []map[string]any{}, LastError: e.lastError, Tower: e.Config.Tower}
 	s.OwnWatchtower = e.ownTower()
 	s.FundingFee = protocol.FundingFee
+	s.FeeLimits = map[chain.ID]FeeLimits{chain.BTC: feeLimits(chain.BTC), chain.Blake: feeLimits(chain.Blake)}
 	s.Watchtowers = []protocol.Tower{}
 	for _, event := range e.s.Towers {
 		if tower, err := protocol.DecodeTower(event, e.Config.Network, time.Now().Unix()); err == nil {
@@ -59,6 +60,15 @@ func (e *Engine) status() Status {
 	sort.Slice(s.Orders, func(i, j int) bool { return s.Orders[i].ID < s.Orders[j].ID })
 	for _, swap := range e.s.Swaps {
 		p := PublicSwap{ID: swap.ID, Role: swap.Role, Stage: swap.Stage, Error: swap.Error, Long: swap.Long, Short: swap.Short, LongSpend: swap.LongSpend, ShortSpend: swap.ShortSpend, LongConfirmations: swap.LongConfirmations, ShortConfirmations: swap.ShortConfirmations, TowerPaid: swap.TowerPaid, TowerReady: towerReady(swap), SecretRevealed: swap.SecretExposed}
+		p.OwnerFeeCap = swap.OwnerFeeCap
+		p.FundingFee = e.fundingFee("swap/" + swap.ID)
+		if swap.Role == "maker" && swap.Terms != nil {
+			p.FundingFee = e.fundingFee("offer/" + swap.Terms.Offer().ID)
+		}
+		p.ClaimVariants = transactionIDs(swap.SelfClaims)
+		p.ClaimTxID, p.ClaimFee = settlementVariant(swap.SelfClaims, swap.ClaimVariant, swap.Long, swap.Short, swap.Role == "maker")
+		p.RefundTxID, p.RefundFee = settlementVariant(swap.SelfRefunds, swap.RefundVariant, swap.Long, swap.Short, swap.Role != "maker")
+		p.RefundVariants = transactionIDs(swap.SelfRefunds)
 		p.TowerPayments = map[chain.ID]int64{}
 		for id, amount := range swap.TowerPayments {
 			p.TowerPayments[id] = amount
@@ -75,7 +85,7 @@ func (e *Engine) status() Status {
 	}
 	sort.Slice(s.Swaps, func(i, j int) bool { return s.Swaps[i].ID < s.Swaps[j].ID })
 	for _, state := range e.s.TowerJobs {
-		s.TowerJobs = append(s.TowerJobs, map[string]any{"id": state.Job.ID, "swap_id": state.Job.SwapID, "kind": state.Job.Kind, "chain": state.Job.Target.Chain, "eligible_height": state.Job.Lock, "broadcast": state.Broadcast, "confirmations": state.Confirmed, "secret_observed": state.Secret != "", "error": state.Error})
+		s.TowerJobs = append(s.TowerJobs, map[string]any{"id": state.Job.ID, "swap_id": state.Job.SwapID, "kind": state.Job.Kind, "chain": state.Job.Target.Chain, "eligible_height": state.Job.Lock, "broadcast": state.Broadcast, "confirmations": state.Confirmed, "secret_observed": state.Secret != "", "error": state.Error, "variants": state.Variants})
 	}
 	for _, d := range e.s.Outbox {
 		if !d.IsAck {
@@ -86,12 +96,15 @@ func (e *Engine) status() Status {
 	s.Funds = e.chainBalances(s.Coins)
 	s.Sends = []PublicSend{}
 	for _, send := range e.s.Sends {
-		s.Sends = append(s.Sends, send.PublicSend)
+		s.Sends = append(s.Sends, send.public())
 	}
 	sort.Slice(s.Sends, func(i, j int) bool { return s.Sends[i].ID < s.Sends[j].ID })
 	return s
 }
 func (e *Engine) Command(ctx context.Context, req Request) (any, error) {
+	if req.Method == "fee.quote" {
+		return e.quoteFee(ctx, req.Params)
+	}
 	if req.Method == "wallet.preflight" {
 		return e.preflightFunds(ctx, req)
 	}
@@ -118,6 +131,8 @@ func (e *Engine) Command(ctx context.Context, req Request) (any, error) {
 	switch req.Method {
 	case "status":
 		return e.status(), nil
+	case "transaction.bump":
+		return e.bumpTransaction(ctx, req.Params)
 	case "wallet.send":
 		return e.sendCoins(ctx, req.Params)
 	case "tower.resolve":
@@ -179,15 +194,28 @@ func (e *Engine) Command(ctx context.Context, req Request) (any, error) {
 		if err := e.refresh(ctx); err != nil {
 			return nil, err
 		}
+		if err := e.selectFundingFee(req.Params, "offer/"+o.ID, o.Sell); err != nil {
+			return nil, err
+		}
+		defer func() {
+			if _, ok := e.s.Offers[o.ID]; !ok {
+				delete(e.s.FundingFees, "offer/"+o.ID)
+				delete(e.s.CoinReservations, "offer/"+o.ID)
+			}
+		}()
+		fee := e.fundingFee("offer/" + o.ID)
 		available := e.chainBalances(e.publicCoins())[o.Sell].UnlockedConfirmed
-		if available < o.SellAmount+protocol.FundingFee {
-			return nil, fmt.Errorf("insufficient unlocked confirmed %s balance: need %d sats including the %d-sat funding fee; available %d sats", o.Sell, o.SellAmount+protocol.FundingFee, protocol.FundingFee, available)
+		if available < o.SellAmount+fee {
+			return nil, fmt.Errorf("insufficient unlocked confirmed %s balance: need %d sats including the %d-sat funding fee; available %d sats", o.Sell, o.SellAmount+fee, fee, available)
 		}
 		if len(e.s.Offers) >= 1000 {
 			return nil, errors.New("order capacity reached")
 		}
-		if err := e.reserveCoins("offer/"+o.ID, o.Sell, o.SellAmount+protocol.FundingFee); err != nil {
+		if err := e.reserveCoins("offer/"+o.ID, o.Sell, o.SellAmount+fee); err != nil {
 			delete(e.s.CoinReservations, "offer/"+o.ID)
+			return nil, err
+		}
+		if err := e.validateFundingReview("offer/"+o.ID, o.Sell); err != nil {
 			return nil, err
 		}
 		if e.s.OfferTowers == nil {
@@ -274,10 +302,20 @@ func (e *Engine) Command(ctx context.Context, req Request) (any, error) {
 		if err := e.refresh(ctx); err != nil {
 			return nil, err
 		}
-		if err := e.reserveCoins("swap/"+id, o.Sell.Other(), o.BuyAmount+protocol.FundingFee); err != nil {
+		if err := e.selectFundingFee(req.Params, "swap/"+id, o.Sell.Other()); err != nil {
+			return nil, err
+		}
+		if err := e.reserveCoins("swap/"+id, o.Sell.Other(), o.BuyAmount+e.fundingFee("swap/"+id)); err != nil {
+			delete(e.s.CoinReservations, "swap/"+id)
+			delete(e.s.FundingFees, "swap/"+id)
+			return nil, err
+		}
+		if err := e.validateFundingReview("swap/"+id, o.Sell.Other()); err != nil {
+			delete(e.s.FundingFees, "swap/"+id)
 			delete(e.s.CoinReservations, "swap/"+id)
 			return nil, err
 		}
+		s.OwnerFeeCap = e.s.FundingFees["swap/"+id].OwnerFeeCap
 		e.s.Swaps[id] = s
 		if err = e.queue(o.Maker, "request", id, request); err != nil {
 			return nil, err

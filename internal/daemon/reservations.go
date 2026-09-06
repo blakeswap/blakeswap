@@ -115,11 +115,11 @@ func (e *Engine) reconcileReservations() {
 			continue
 		}
 		if o.Status == "open" && o.Expires > time.Now().Unix() {
-			active["offer/"+id] = need{o.Sell, o.SellAmount + protocol.FundingFee}
+			active["offer/"+id] = need{o.Sell, o.SellAmount + e.fundingFee("offer/"+id)}
 		}
 		if o.Status == "reserved" {
 			if s := e.s.Swaps[o.Reservation]; s != nil && !terminalSwap(s) && s.ShortFunding == "" {
-				active["offer/"+id] = need{o.Sell, o.SellAmount + protocol.FundingFee}
+				active["offer/"+id] = need{o.Sell, o.SellAmount + e.fundingFee("offer/"+id)}
 			}
 		}
 	}
@@ -130,7 +130,7 @@ func (e *Engine) reconcileReservations() {
 		}
 		var o protocol.Offer
 		if json.Unmarshal([]byte(s.Request.OfferEvent.Content), &o) == nil {
-			active["swap/"+id] = need{o.Sell.Other(), o.BuyAmount + protocol.FundingFee}
+			active["swap/"+id] = need{o.Sell.Other(), o.BuyAmount + e.fundingFee("swap/"+id)}
 		}
 	}
 	for owner := range e.s.CoinReservations {

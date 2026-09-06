@@ -156,7 +156,7 @@ final class AppModel: ObservableObject {
         defer { busy = false }
         do {
             var bound = params
-            if ["tower.resolve", "offer.create", "offer.cancel", "swap.take", "pause", "regtest.mine", "regtest.faucet"].contains(method) {
+            if ["fee.quote", "transaction.bump", "tower.resolve", "offer.create", "offer.cancel", "swap.take", "pause", "regtest.mine", "regtest.faucet"].contains(method) {
                 bound["expected_network"] = status?.network ?? network
             }
             let raw = try await DaemonRPC.call(root: root, profile: selected, method: method, params: bound)

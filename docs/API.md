@@ -256,3 +256,19 @@ Native forms discard checks after wallet, network, amount, fee, generation, or
 selected-input changes. BTC coins that remain unproven require independently
 split ancestry descended from a post-fork BTC coinbase; no splitting service is
 provided.
+
+## Fee review and acceleration
+
+`QuoteFee` (`fee.quote`, `POST /v1/fees/quote`) returns per-chain native sat/kvB
+estimates, freshness/source/targets, exact fee/change/principal, input selection
+and a conservative vsize bound. Manual `fee` stays available without estimates.
+Use the reviewed total in `SendCoins.fee` or create/take `funding_fee`, and carry
+`rate_sat_kvb`/`fee_timestamp` when selecting an estimate. Funds preflight uses
+that same fee. `max_fee` on a send and `owner_fee_cap=20000` on create/take are
+explicit pre-funding authorizations; omitted caps preserve base-only behavior.
+
+`BumpTransaction` (`transaction.bump`, `POST /v1/transactions/bump`) requires
+activity ID, kind, higher total fee, expected current transaction ID and network.
+Send status retains all variants and a separate state; swap status exposes
+current owner settlement fees/IDs and authorized variants. Funding acceleration
+is refused. See [the complete fee contract and recovery limits](FEES.md).

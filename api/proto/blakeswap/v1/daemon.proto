@@ -27,6 +27,8 @@ service DaemonService {
  rpc Faucet(FaucetRequest) returns (FaucetResponse) { option (google.api.http) = { post: "/v1/regtest/faucet" body: "*" }; }
  rpc GetRecovery(google.protobuf.Empty) returns (Recovery) { option (google.api.http) = { post: "/v1/wallet/recovery" body: "*" }; }
  rpc PreflightFunds(FundsPreflightRequest) returns (FundsPreflight) { option (google.api.http) = { post: "/v1/wallet/preflight" body: "*" }; }
+ rpc QuoteFee(FeeQuoteRequest) returns (FeeQuote) { option (google.api.http) = { post: "/v1/fees/quote" body: "*" }; }
+ rpc BumpTransaction(BumpRequest) returns (BumpResult) { option (google.api.http) = { post: "/v1/transactions/bump" body: "*" }; }
  rpc SendCoins(SendCoinsRequest) returns (WalletSend) { option (google.api.http) = { post: "/v1/wallet/send" body: "*" }; }
  rpc BackupWallet(google.protobuf.Empty) returns (Backup) { option (google.api.http) = { post: "/v1/wallet/backup" body: "*" }; }
  rpc CreateWallet(CreateWalletRequest) returns (Settings) { option (google.api.http) = { post: "/v1/wallets" body: "*" }; }
@@ -43,6 +45,7 @@ message RefreshStatusRequest { string expected_network = 1; }
 message ResolveWatchtowerRequest { string pubkey = 1; string expected_network = 2; }
 message SetPausedRequest { bool paused = 1; string expected_network = 2; }
 message CreateOfferRequest {
+ int64 funding_fee = 8; int64 rate_sat_kvb = 9; int64 fee_timestamp = 10; int64 owner_fee_cap = 11;
  string tower_pubkey = 7; // Selected discovered provider; ignored when protection is off.
  string sell = 1; // btc or blake.
  string expected_network = 6; // Must match the active desktop network.
@@ -53,6 +56,7 @@ message CreateOfferRequest {
 }
 message CancelOfferRequest { string id = 1; string expected_network = 2; }
 message TakeOfferRequest {
+ int64 funding_fee = 6; int64 rate_sat_kvb = 7; int64 fee_timestamp = 8; int64 owner_fee_cap = 9;
  string maker = 1; string id = 2; string expected_network = 3;
  int64 tower_bps = 4; // This wallet's private protection; zero disables it.
  string tower_pubkey = 5; // Selected discovered provider, never sent to the maker.
@@ -84,10 +88,13 @@ message FundsPreflight {
  string message = 5; bool sufficient = 6; int64 total = 7;
 }
 message SendCoinsRequest {
+ int64 max_fee = 8; // Original replacement cap; zero disables fee increases.
+ int64 rate_sat_kvb = 9; int64 fee_timestamp = 10;
  string id = 1; string chain = 2; string destination = 3; int64 amount = 4;
  int64 fee = 5; repeated Outpoint inputs = 6; string expected_network = 7;
 }
 message WalletSend {
+ string state = 11; int64 max_fee = 12; repeated TransactionVariant variants = 13;
  string id = 1; string chain = 2; string txid = 3; string destination = 4;
  int64 amount = 5; int64 fee = 6; int64 change = 7; int32 confirmations = 8;
  string error = 9; bool submitted = 10;
@@ -106,6 +113,8 @@ message HTLC {
  int64 amount = 6; string txid = 7; uint32 vout = 8;
 }
 message Swap {
+ int64 claim_fee = 22; int64 refund_fee = 23; string claim_txid = 24; string refund_txid = 25;
+ int64 owner_fee_cap = 18; int64 funding_fee = 19; repeated string claim_variants = 20; repeated string refund_variants = 21;
  string id = 1; string role = 2; string stage = 3; string error = 4;
  HTLC long = 5; HTLC short = 6; string long_spend = 7; string short_spend = 8;
  int32 long_confirmations = 9; int32 short_confirmations = 10; int64 tower_paid = 11;
@@ -120,11 +129,13 @@ message Tower {
  string event = 8; // Signed provider announcement pinned to a protected offer.
 }
 message TowerJob {
+ repeated string variants = 10;
  string id = 1; string swap_id = 2; string kind = 3; string chain = 4;
  uint32 eligible_height = 5; string broadcast = 6; int32 confirmations = 7;
  bool secret_observed = 8; string error = 9;
 }
 message Status {
+ map<string,FeeLimits> fee_limits = 21;
  string name = 1; string mode = 2; string pubkey = 3;
  map<string,string> addresses = 4; map<string,int64> balances = 5;
  map<string,uint32> heights = 6; bool paused = 7;
@@ -169,3 +180,22 @@ message Settings {
 }
 message CheckNodeRequest { string network = 1; string chain = 2; Node node = 3; }
 message CheckNodeResponse { uint32 height = 1; string trust = 2; }
+
+// Rates are native chain satoshis per 1000 virtual bytes, rounded upward.
+message FeeEstimate {
+ uint32 requested_target = 8;
+ string chain = 1; int64 rate_sat_kvb = 2; uint32 target = 3; int64 timestamp = 4;
+ string source = 5; string state = 6; string error = 7;
+}
+message FeeLimits { int64 send = 1; int64 funding = 2; int64 owner = 3; int64 tower = 4; }
+message FeeQuoteRequest {
+ string kind = 1; string chain = 2; string destination = 3; int64 amount = 4;
+ int64 fee = 5; uint32 target = 6; repeated Outpoint inputs = 7; string expected_network = 8;
+}
+message FeeQuote {
+ FeeEstimate estimate = 1; FeeLimits limits = 2; int64 fee = 3; int64 amount = 4;
+ int64 change = 5; int64 total = 6; int64 vsize = 7; repeated Outpoint inputs = 8; string error = 9;
+}
+message TransactionVariant { string txid = 1; int64 fee = 2; int32 confirmations = 3; bool submitted = 4; }
+message BumpRequest { string id = 1; string kind = 2; int64 fee = 3; string expected_txid = 4; string expected_network = 5; }
+message BumpResult { string txid = 1; int64 fee = 2; string state = 3; string error = 4; }

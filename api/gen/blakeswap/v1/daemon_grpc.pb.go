@@ -31,6 +31,8 @@ const (
 	DaemonService_Faucet_FullMethodName             = "/blakeswap.v1.DaemonService/Faucet"
 	DaemonService_GetRecovery_FullMethodName        = "/blakeswap.v1.DaemonService/GetRecovery"
 	DaemonService_PreflightFunds_FullMethodName     = "/blakeswap.v1.DaemonService/PreflightFunds"
+	DaemonService_QuoteFee_FullMethodName           = "/blakeswap.v1.DaemonService/QuoteFee"
+	DaemonService_BumpTransaction_FullMethodName    = "/blakeswap.v1.DaemonService/BumpTransaction"
 	DaemonService_SendCoins_FullMethodName          = "/blakeswap.v1.DaemonService/SendCoins"
 	DaemonService_BackupWallet_FullMethodName       = "/blakeswap.v1.DaemonService/BackupWallet"
 	DaemonService_CreateWallet_FullMethodName       = "/blakeswap.v1.DaemonService/CreateWallet"
@@ -59,6 +61,8 @@ type DaemonServiceClient interface {
 	Faucet(ctx context.Context, in *FaucetRequest, opts ...grpc.CallOption) (*FaucetResponse, error)
 	GetRecovery(ctx context.Context, in *emptypb.Empty, opts ...grpc.CallOption) (*Recovery, error)
 	PreflightFunds(ctx context.Context, in *FundsPreflightRequest, opts ...grpc.CallOption) (*FundsPreflight, error)
+	QuoteFee(ctx context.Context, in *FeeQuoteRequest, opts ...grpc.CallOption) (*FeeQuote, error)
+	BumpTransaction(ctx context.Context, in *BumpRequest, opts ...grpc.CallOption) (*BumpResult, error)
 	SendCoins(ctx context.Context, in *SendCoinsRequest, opts ...grpc.CallOption) (*WalletSend, error)
 	BackupWallet(ctx context.Context, in *emptypb.Empty, opts ...grpc.CallOption) (*Backup, error)
 	CreateWallet(ctx context.Context, in *CreateWalletRequest, opts ...grpc.CallOption) (*Settings, error)
@@ -190,6 +194,26 @@ func (c *daemonServiceClient) PreflightFunds(ctx context.Context, in *FundsPrefl
 	return out, nil
 }
 
+func (c *daemonServiceClient) QuoteFee(ctx context.Context, in *FeeQuoteRequest, opts ...grpc.CallOption) (*FeeQuote, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(FeeQuote)
+	err := c.cc.Invoke(ctx, DaemonService_QuoteFee_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *daemonServiceClient) BumpTransaction(ctx context.Context, in *BumpRequest, opts ...grpc.CallOption) (*BumpResult, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(BumpResult)
+	err := c.cc.Invoke(ctx, DaemonService_BumpTransaction_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *daemonServiceClient) SendCoins(ctx context.Context, in *SendCoinsRequest, opts ...grpc.CallOption) (*WalletSend, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(WalletSend)
@@ -315,6 +339,8 @@ type DaemonServiceServer interface {
 	Faucet(context.Context, *FaucetRequest) (*FaucetResponse, error)
 	GetRecovery(context.Context, *emptypb.Empty) (*Recovery, error)
 	PreflightFunds(context.Context, *FundsPreflightRequest) (*FundsPreflight, error)
+	QuoteFee(context.Context, *FeeQuoteRequest) (*FeeQuote, error)
+	BumpTransaction(context.Context, *BumpRequest) (*BumpResult, error)
 	SendCoins(context.Context, *SendCoinsRequest) (*WalletSend, error)
 	BackupWallet(context.Context, *emptypb.Empty) (*Backup, error)
 	CreateWallet(context.Context, *CreateWalletRequest) (*Settings, error)
@@ -368,6 +394,12 @@ func (UnimplementedDaemonServiceServer) GetRecovery(context.Context, *emptypb.Em
 }
 func (UnimplementedDaemonServiceServer) PreflightFunds(context.Context, *FundsPreflightRequest) (*FundsPreflight, error) {
 	return nil, status.Error(codes.Unimplemented, "method PreflightFunds not implemented")
+}
+func (UnimplementedDaemonServiceServer) QuoteFee(context.Context, *FeeQuoteRequest) (*FeeQuote, error) {
+	return nil, status.Error(codes.Unimplemented, "method QuoteFee not implemented")
+}
+func (UnimplementedDaemonServiceServer) BumpTransaction(context.Context, *BumpRequest) (*BumpResult, error) {
+	return nil, status.Error(codes.Unimplemented, "method BumpTransaction not implemented")
 }
 func (UnimplementedDaemonServiceServer) SendCoins(context.Context, *SendCoinsRequest) (*WalletSend, error) {
 	return nil, status.Error(codes.Unimplemented, "method SendCoins not implemented")
@@ -621,6 +653,42 @@ func _DaemonService_PreflightFunds_Handler(srv interface{}, ctx context.Context,
 	return interceptor(ctx, in, info, handler)
 }
 
+func _DaemonService_QuoteFee_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(FeeQuoteRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DaemonServiceServer).QuoteFee(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: DaemonService_QuoteFee_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DaemonServiceServer).QuoteFee(ctx, req.(*FeeQuoteRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _DaemonService_BumpTransaction_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(BumpRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DaemonServiceServer).BumpTransaction(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: DaemonService_BumpTransaction_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DaemonServiceServer).BumpTransaction(ctx, req.(*BumpRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _DaemonService_SendCoins_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(SendCoinsRequest)
 	if err := dec(in); err != nil {
@@ -869,6 +937,14 @@ var DaemonService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "PreflightFunds",
 			Handler:    _DaemonService_PreflightFunds_Handler,
+		},
+		{
+			MethodName: "QuoteFee",
+			Handler:    _DaemonService_QuoteFee_Handler,
+		},
+		{
+			MethodName: "BumpTransaction",
+			Handler:    _DaemonService_BumpTransaction_Handler,
 		},
 		{
 			MethodName: "SendCoins",
