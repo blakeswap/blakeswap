@@ -858,6 +858,11 @@
             "type": "string"
           },
           "description": "Provider npubs, scoped to this network."
+        },
+        "rescue_fee_bps": {
+          "type": "string",
+          "format": "int64",
+          "description": "Own wallets' rescue rate: 1–1000 basis points; 0 retains the 50 bps default."
         }
       }
     },

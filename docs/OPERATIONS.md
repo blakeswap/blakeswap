@@ -65,9 +65,25 @@ paths are under your standard Bitcoin/BitcoinBlake2b application-support
 folders; update them for your own datadirs. No automatic node discovery or node
 process ownership is implied.
 
+Regtest requires both external nodes to be running. In Settings or onboarding,
+use **Choose…** beside each RPC cookie path to select the hidden `.cookie` file
+from that node's `regtest` data folder. The default application-support paths do
+not apply to custom datadirs. For nodes started with `scripts/local.py nodes`,
+use the checkout's `.local/btc/regtest/.cookie` and
+`.local/blake/regtest/.cookie`, with the script's configured RPC ports. Test both
+connections and save Settings. Selecting a trading network also shows that
+network's connection settings. BTC and BLAKE each show a loading indicator until
+their own connection and wallet history are ready, then display the observed height.
+
 The **Check connection** action reads chain identity/height and displays the
-observation trust model. It does not fund an address or post a Nostr offer. Every wallet also serves watchtower jobs while open, at a 50 basis-point (0.50%)
-rescue fee. Public listing is **off by default**. Settings exposes a network-specific
+observation trust model. It does not fund an address or post a Nostr offer. Every wallet also serves watchtower jobs while open, at a default 50 basis-point (0.50%)
+rescue fee. Settings → Watchtowers configures that fee per network from 0.01% to
+10.00% in 0.01% steps, applying to every local wallet on that network. Save to
+refresh signed public and private quotes. Accepted rescue jobs and retries keep
+their agreed fee; new registrations must match the current quote. Legacy settings
+without `rescue_fee_bps` (or with zero) retain the 0.50% default. The own rescue fee
+is independent of a selected external provider's quote.
+Public listing is **off by default**. Settings exposes a network-specific
 npub with Copy and a **Show my watchtower in the public list** toggle. Save settings
 to apply it. Opting out publishes a signed withdrawal when previously public;
 relays may retain historical announcements.

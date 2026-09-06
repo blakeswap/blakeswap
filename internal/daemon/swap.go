@@ -398,7 +398,7 @@ func (e *Engine) advanceTower(ctx context.Context, all map[chain.ID]map[string]c
 			continue
 		}
 		state.Error = ""
-		if err := job.Validate(e.ownTower().Scripts, e.ownTower().BPS); err != nil {
+		if err := job.Validate(e.ownTower().Scripts, job.BPS); err != nil {
 			state.Error = err.Error()
 			continue
 		}

@@ -1,9 +1,25 @@
 package chain
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
+	"os"
+	"path/filepath"
+	"strings"
 	"testing"
 )
+
+func TestMissingRPCCookieExplainsConnectionSetup(t *testing.T) {
+	r, err := NewFor(Regtest, BTC, "http://127.0.0.1:1", filepath.Join(t.TempDir(), "regtest", ".cookie"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = r.Check(context.Background())
+	if !errors.Is(err, os.ErrNotExist) || !strings.Contains(err.Error(), "regtest btc RPC cookie not found") || !strings.Contains(err.Error(), "choose its cookie file") {
+		t.Fatal("missing cookie did not explain how to connect", err)
+	}
+}
 
 func TestExactAmounts(t *testing.T) {
 	for _, s := range []string{"0.00000001", "21000000.00000000", "1.23456789", "-0.00000001", "0.00000000"} {

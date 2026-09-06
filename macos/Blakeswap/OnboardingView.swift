@@ -201,12 +201,13 @@ struct OnboardingView: View {
                     }.buttonStyle(.plain).disabled(model.busy).accessibilityIdentifier("setup-network-\(network)")
                 }
             }
+            if draft.activeNetwork == "regtest" { RegtestConnectionHelp() }
             ForEach(["btc", "blake"], id: \.self) { chain in
                 VStack(alignment: .leading, spacing: 12) {
                     Text(chain == "btc" ? "Bitcoin" : "Bitcoin Blake2b").font(.headline)
                     Picker("Connection", selection: node(chain).kind) { Text("Electrum").tag("electrum"); Text("Full-node RPC").tag("rpc") }
                     TextField("Server endpoint", text: node(chain).url).textFieldStyle(.roundedBorder).accessibilityIdentifier("setup-\(chain)-endpoint")
-                    if node(chain).wrappedValue.kind == "rpc" { TextField("RPC cookie file", text: node(chain).cookie).textFieldStyle(.roundedBorder) }
+                    if node(chain).wrappedValue.kind == "rpc" { RPCCookieField(path: node(chain).cookie, chain: chain) }
                     else { DisclosureGroup("Certificate pin (optional)") { TextField("Certificate SHA256", text: node(chain).certificateSha256).textFieldStyle(.roundedBorder) }.font(.caption) }
                     if let result = checkResults[chain] { Text(result).font(.caption).foregroundStyle(.secondary) }
                 }.padding(20).background(panel, in: RoundedRectangle(cornerRadius: 14))

@@ -69,7 +69,11 @@ func (e *Engine) handle(from string, m transport.Message) error {
 		if job.Owner != from || m.SwapID != job.SwapID {
 			return errors.New("job sender mismatch")
 		}
-		if err := job.Validate(e.ownTower().Scripts, e.ownTower().BPS); err != nil {
+		bps := e.ownTower().BPS
+		if existing := e.s.TowerJobs[job.ID]; existing != nil {
+			bps = existing.Job.BPS // An identical retry must still receive its durable receipt.
+		}
+		if err := job.Validate(e.ownTower().Scripts, bps); err != nil {
 			return err
 		}
 		if len(e.s.TowerJobs) >= 1000 && e.s.TowerJobs[job.ID] == nil {

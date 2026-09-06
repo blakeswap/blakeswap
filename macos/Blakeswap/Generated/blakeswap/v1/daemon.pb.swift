@@ -604,6 +604,9 @@ nonisolated struct Blakeswap_V1_Environment: Sendable {
   /// Provider npubs, scoped to this network.
   var favoriteWatchtowers: [String] = []
 
+  /// Own wallets' rescue rate: 1–1000 basis points; 0 retains the 50 bps default.
+  var rescueFeeBps: Int64 = 0
+
   var unknownFields = SwiftProtobuf.UnknownStorage()
 
   init() {}
@@ -1954,7 +1957,7 @@ nonisolated extension Blakeswap_V1_Node: SwiftProtobuf.Message, SwiftProtobuf._M
 
 nonisolated extension Blakeswap_V1_Environment: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   static let protoMessageName: String = _protobuf_package + ".Environment"
-  static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}network\0\u{1}nodes\0\u{1}relays\0\u{1}tower\0\u{4}\u{2}favorite_watchtowers\0\u{3}public_watchtower\0\u{c}\u{5}\u{1}")
+  static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}network\0\u{1}nodes\0\u{1}relays\0\u{1}tower\0\u{4}\u{2}favorite_watchtowers\0\u{3}public_watchtower\0\u{3}rescue_fee_bps\0\u{c}\u{5}\u{1}")
 
   mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
     while let fieldNumber = try decoder.nextFieldNumber() {
@@ -1968,6 +1971,7 @@ nonisolated extension Blakeswap_V1_Environment: SwiftProtobuf.Message, SwiftProt
       case 4: try { try decoder.decodeSingularMessageField(value: &self._tower) }()
       case 6: try { try decoder.decodeRepeatedStringField(value: &self.favoriteWatchtowers) }()
       case 7: try { try decoder.decodeSingularBoolField(value: &self.publicWatchtower) }()
+      case 8: try { try decoder.decodeSingularInt64Field(value: &self.rescueFeeBps) }()
       default: break
       }
     }
@@ -1996,6 +2000,9 @@ nonisolated extension Blakeswap_V1_Environment: SwiftProtobuf.Message, SwiftProt
     if self.publicWatchtower != false {
       try visitor.visitSingularBoolField(value: self.publicWatchtower, fieldNumber: 7)
     }
+    if self.rescueFeeBps != 0 {
+      try visitor.visitSingularInt64Field(value: self.rescueFeeBps, fieldNumber: 8)
+    }
     try unknownFields.traverse(visitor: &visitor)
   }
 
@@ -2006,6 +2013,7 @@ nonisolated extension Blakeswap_V1_Environment: SwiftProtobuf.Message, SwiftProt
     if lhs._tower != rhs._tower {return false}
     if lhs.publicWatchtower != rhs.publicWatchtower {return false}
     if lhs.favoriteWatchtowers != rhs.favoriteWatchtowers {return false}
+    if lhs.rescueFeeBps != rhs.rescueFeeBps {return false}
     if lhs.unknownFields != rhs.unknownFields {return false}
     return true
   }

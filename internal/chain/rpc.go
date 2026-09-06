@@ -98,7 +98,10 @@ func (r *RPC) call(ctx context.Context, client *http.Client, method string, out 
 	}
 	cookie, err := os.ReadFile(r.Cookie)
 	if err != nil {
-		return err
+		if errors.Is(err, os.ErrNotExist) {
+			return fmt.Errorf("%s %s RPC cookie not found. Start your node and choose its cookie file in the connection settings: %w", r.Network, r.ID, err)
+		}
+		return fmt.Errorf("%s %s RPC cookie cannot be read; check the file permissions: %w", r.Network, r.ID, err)
 	}
 	user, pass, ok := strings.Cut(strings.TrimSpace(string(cookie)), ":")
 	if !ok {

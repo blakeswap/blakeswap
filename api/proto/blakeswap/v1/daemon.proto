@@ -108,6 +108,7 @@ message Environment {
  reserved 5;
  bool public_watchtower = 7; // Off by default; private npub lookup remains available.
  repeated string favorite_watchtowers = 6; // Provider npubs, scoped to this network.
+ int64 rescue_fee_bps = 8; // Own wallets' rescue rate: 1–1000 basis points; 0 retains the 50 bps default.
 }
 message WalletProfile { string id = 1; string name = 2; }
 message CreateWalletRequest { string name = 1; uint64 revision = 2; }

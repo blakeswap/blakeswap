@@ -17,6 +17,8 @@ type NodeConfig struct {
 }
 type TowerConfig = protocol.Tower
 type Config struct {
+	RescueFeeBPS        int64                   `json:"rescue_fee_bps,omitempty"`
+	ChainReady          func(chain.ID, uint32)  `json:"-"`
 	PublicWatchtower    bool                    `json:"public_watchtower"`
 	FavoriteWatchtowers []string                `json:"favorite_watchtowers,omitempty"`
 	InitialMnemonic     string                  `json:"-"`

@@ -52,6 +52,9 @@ func Open(ctx context.Context, c Config) (*Engine, error) {
 	if c.Mode != "trader" && c.Mode != "tower" {
 		return nil, errors.New("mode must be trader or tower")
 	}
+	if c.RescueFeeBPS < 0 || c.RescueFeeBPS > 1000 {
+		return nil, errors.New("rescue fee must be 1–1000 basis points (0 uses the default)")
+	}
 	if len(c.Relays) < 1 || len(c.Relays) > 3 {
 		return nil, errors.New("configure one to three relay URLs")
 	}
@@ -151,6 +154,12 @@ func Open(ctx context.Context, c Config) (*Engine, error) {
 			return fail(e)
 		}
 		en.watch[id] = w
+		if err := en.refreshChain(ctx, id); err != nil {
+			return fail(err)
+		}
+		if c.ChainReady != nil {
+			c.ChainReady(id, en.heights[id])
+		}
 	}
 	if c.Mode == "tower" {
 		en.Config.Tower.PubKey = en.identity.Public().Hex()
@@ -161,9 +170,6 @@ func Open(ctx context.Context, c Config) (*Engine, error) {
 		if en.Config.Tower.BPS < 1 || en.Config.Tower.BPS > 1000 {
 			return fail(errors.New("tower rate must be 1–1000 basis points"))
 		}
-	}
-	if e = en.refresh(ctx); e != nil {
-		return fail(e)
 	}
 	return en, nil
 }
@@ -185,31 +191,39 @@ func (e *Engine) save() error {
 }
 func (e *Engine) refresh(ctx context.Context) error {
 	for _, id := range []chain.ID{chain.BTC, chain.Blake} {
-		h, err := e.nodes[id].Height(ctx)
-		if err != nil {
+		if err := e.refreshChain(ctx, id); err != nil {
 			return err
 		}
-		e.heights[id] = h
-		e.clocks[id] = h
-		if e.Config.Network != chain.Regtest {
-			stamp, err := e.nodes[id].MedianTime(ctx)
-			if err != nil {
-				return err
-			}
-			e.clocks[id] = stamp
-		}
-		coins, err := e.watch[id].Unspent(ctx, []string{e.addresses[id]})
-		if err != nil {
-			return err
-		}
-		var balance int64
-		for _, coin := range coins {
-			if coin.Confirmations >= e.Config.Network.Confirmations() {
-				balance += int64(coin.Amount)
-			}
-		}
-		e.balances[id] = balance
 	}
+	return nil
+}
+
+// Complete wallet observations before publishing this chain's startup readiness.
+func (e *Engine) refreshChain(ctx context.Context, id chain.ID) error {
+	h, err := e.nodes[id].Height(ctx)
+	if err != nil {
+		return err
+	}
+	e.heights[id] = h
+	e.clocks[id] = h
+	if e.Config.Network != chain.Regtest {
+		stamp, err := e.nodes[id].MedianTime(ctx)
+		if err != nil {
+			return err
+		}
+		e.clocks[id] = stamp
+	}
+	coins, err := e.watch[id].Unspent(ctx, []string{e.addresses[id]})
+	if err != nil {
+		return err
+	}
+	var balance int64
+	for _, coin := range coins {
+		if coin.Confirmations >= e.Config.Network.Confirmations() {
+			balance += int64(coin.Amount)
+		}
+	}
+	e.balances[id] = balance
 	return nil
 }
 func (e *Engine) Run(ctx context.Context) error {
@@ -649,7 +663,8 @@ func (e *Engine) scanTower(ctx context.Context) (map[chain.ID]map[string]chain.O
 		if j.Expired {
 			continue
 		}
-		if err := j.Job.Validate(e.ownTower().Scripts, e.ownTower().BPS); err != nil {
+		// Accepted jobs retain their signed rate when the provider changes its quote.
+		if err := j.Job.Validate(e.ownTower().Scripts, j.Job.BPS); err != nil {
 			j.Error = err.Error()
 			continue
 		}

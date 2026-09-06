@@ -41,12 +41,35 @@ type Manager struct {
 	runtimeCtx context.Context
 	runtimeDir string
 	servers    map[string]*api.Server
+	chainReady func(chain.ID, uint32)
 }
 
 type networkOpening struct {
-	cancel context.CancelFunc
-	done   chan networkResult
+	cancel  context.CancelFunc
+	done    chan networkResult
+	mu      sync.Mutex
+	heights map[chain.ID]uint32
 }
+
+func (n *networkOpening) chainReady(id chain.ID, height uint32) {
+	n.mu.Lock()
+	defer n.mu.Unlock()
+	if n.heights == nil {
+		n.heights = map[chain.ID]uint32{}
+	}
+	n.heights[id] = height
+}
+
+func (n *networkOpening) readyHeights() map[chain.ID]uint32 {
+	n.mu.Lock()
+	defer n.mu.Unlock()
+	heights := map[chain.ID]uint32{}
+	for id, height := range n.heights {
+		heights[id] = height
+	}
+	return heights
+}
+
 type networkResult struct {
 	manager *Manager
 	err     error
@@ -64,6 +87,9 @@ func (m *Manager) publishView() {
 	for _, wallet := range m.settings.Wallets {
 		profile := wallet.Id
 		s := daemon.Status{Name: profile, Mode: "trader", Network: chain.Network(m.settings.ActiveNetwork), LastError: m.lastError}
+		if job := m.openings[profile]; job != nil && !m.restart {
+			s.Heights = job.readyHeights()
+		}
 		if e := m.engines[profile]; e != nil && !m.restart {
 			s = e.Status()
 			if m.lastError != "" {
@@ -305,6 +331,7 @@ func (m *Manager) connect(ctx context.Context) {
 		worker := &Manager{root: m.root, settings: pending, engines: map[string]*daemon.Engine{}, configs: map[string]daemon.Config{}}
 		openingCtx, cancel := context.WithCancel(ctx)
 		job := &networkOpening{cancel: cancel, done: make(chan networkResult, 1)}
+		worker.chainReady = job.chainReady
 		m.openings[profile.Id] = job
 		m.lastError = "Connecting; RPC wallet history may still be synchronizing"
 		go func() { err := worker.openNetwork(openingCtx); job.done <- networkResult{worker, err} }()
@@ -378,6 +405,7 @@ func (m *Manager) openNetwork(ctx context.Context) error {
 			return err
 		}
 		cfg.Tower = tower
+		cfg.ChainReady = m.chainReady
 		m.configs[profile] = cfg
 		if m.engines[profile] != nil {
 			continue
@@ -398,6 +426,7 @@ func (m *Manager) config(profile string, env *pb.Environment) (daemon.Config, er
 		return daemon.Config{}, err
 	}
 	c := daemon.Config{PublicWatchtower: env.PublicWatchtower, FavoriteWatchtowers: append([]string(nil), env.FavoriteWatchtowers...), Name: profile, Mode: "trader", Network: chain.Network(env.Network), InitialMnemonic: mnemonic, DataDir: filepath.Join(walletDir, env.Network), PasswordFile: password, Relays: append([]string(nil), env.Relays...), Nodes: map[chain.ID]daemon.NodeConfig{}}
+	c.RescueFeeBPS = env.RescueFeeBps
 	for _, id := range []chain.ID{chain.BTC, chain.Blake} {
 		n := env.Nodes[string(id)]
 		if n == nil || n.Url == "" {

@@ -68,10 +68,16 @@ final class OnboardingTests: XCTestCase {
         }
         let finished = try AppSettings(serializedBytes: await call(root, "onboarding.finish", connected))
         XCTAssertEqual(finished.onboardingStage, "")
+        var feeSettings = finished
+        let regtest = try XCTUnwrap(feeSettings.environments.firstIndex { $0.network == "regtest" })
+        feeSettings.environments[regtest].rescueFeeBasisPoints = 125
+        let savedFee = try AppSettings(serializedBytes: await call(root, "settings.update", feeSettings))
+        XCTAssertEqual(savedFee.environments[regtest].rescueFeeBasisPoints, 125)
         do { _ = try await call(root, "onboarding.get", Google_Protobuf_Empty()); XCTFail("Setup secret remained available after completion") } catch {}
         processes[1].terminate(); processes[1].waitUntilExit()
         let reopened = try await start(root)
         XCTAssertEqual(reopened.onboardingStage, "")
+        XCTAssertEqual(reopened.environments[regtest].rescueFeeBasisPoints, 125)
         processes[2].terminate(); processes[2].waitUntilExit()
 
         let phraseRoot = directory.appendingPathComponent("phrase").path
