@@ -410,6 +410,9 @@ func (e *Engine) recordFunding(s *Swap) error {
 	return e.save()
 }
 func (e *Engine) advanceTower(ctx context.Context, all map[chain.ID]map[string]chain.Observation) error {
+	if err := e.rememberTowerWitnesses(all); err != nil {
+		return err
+	}
 	estimates := map[chain.ID]chain.FeeEstimate{}
 	for _, state := range e.s.TowerJobs {
 		job := state.Job
@@ -435,13 +438,6 @@ func (e *Engine) advanceTower(ctx context.Context, all map[chain.ID]map[string]c
 			state.Confirmed = obs.Confirmations
 			state.Broadcast = obs.TxID
 			continue
-		}
-		if job.Observe != nil {
-			if obs, ok := observation(all, *job.Observe); ok {
-				if secret, ok := contract.ExtractSecret(*job.Observe, obs.Tx); ok {
-					state.Secret = hex.EncodeToString(secret)
-				}
-			}
 		}
 		if !e.eligible(job.Target.Chain, job.Lock) || (job.Kind == "claim" && state.Secret == "") {
 			continue

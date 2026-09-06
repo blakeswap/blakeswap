@@ -27,6 +27,130 @@ type switchingEstimateBackend struct {
 
 type recoveryClockBackend struct{ chain.Backend }
 
+type callbackRecoveryScanner struct {
+	observations map[string]chain.Observation
+	beforeReturn func()
+}
+
+func (s *callbackRecoveryScanner) Scan(context.Context, uint32, []string) (map[string]chain.Observation, error) {
+	if s.beforeReturn != nil {
+		s.beforeReturn()
+	}
+	return s.observations, nil
+}
+
+func TestIsolatedAcceptedScanKeepsWitnessAcrossLaterSourceChange(t *testing.T) {
+	for _, role := range []string{"maker", "taker"} {
+		for _, timing := range []string{"before_accept", "during_second_scan"} {
+			t.Run(role+"/"+timing, func(t *testing.T) {
+				sell := chain.BTC
+				if role == "maker" {
+					sell = chain.Blake
+				}
+				e, s, _, secret := isolatedFixtureSell(t, role, sell)
+				incoming, own := s.Short, s.Long
+				if role == "maker" {
+					incoming, own = s.Long, s.Short
+				}
+				if incoming.Chain != chain.BTC {
+					t.Fatal("fixture must scan incoming first")
+				}
+				key, _ := e.swapKey(incoming.Chain, s.ID)
+				claim, err := contract.Spend(incoming, key, e.scripts[incoming.Chain], 2000, false, 0, nil, 0, secret)
+				if err != nil {
+					t.Fatal(err)
+				}
+				e.chainFresh[chain.BTC], e.chainFresh[chain.Blake] = true, true
+				first := &callbackRecoveryScanner{observations: map[string]chain.Observation{chain.OutpointKey(incoming.TxID, incoming.Vout): {Tx: claim, TxID: claim.TxHash().String()}}}
+				second := &callbackRecoveryScanner{observations: map[string]chain.Observation{}}
+				if timing == "before_accept" {
+					first.beforeReturn = func() { e.chainFresh[chain.BTC] = false }
+				} else {
+					second.beforeReturn = func() {
+						var saved State
+						if _, err := e.vault.Load(&saved); err != nil {
+							t.Fatal(err)
+						}
+						if !saved.Swaps[s.ID].IncomingClaimSeen {
+							t.Fatal("accepted witness was not durable before second-chain IO")
+						}
+						e.chainFresh[chain.BTC] = false
+					}
+				}
+				e.scanners = map[chain.ID]chain.SpendScanner{chain.BTC: first, chain.Blake: second}
+				_, _ = e.scan(context.Background())
+				var restored State
+				if _, err := e.vault.Load(&restored); err != nil {
+					t.Fatal(err)
+				}
+				e.s = restored
+				s = e.s.Swaps[s.ID]
+				if e.fresh(chain.BTC) || !s.SecretObserved || !s.IncomingClaimSeen {
+					t.Fatal("source demotion erased immutable witnessed knowledge")
+				}
+				e.chainFresh[chain.BTC] = true
+				e.scanners = map[chain.ID]chain.SpendScanner{chain.BTC: &settlementFeeScanner{observations: map[string]chain.Observation{}}, chain.Blake: &settlementFeeScanner{observations: map[string]chain.Observation{}}}
+				if err := e.checkRefundAcceleration(context.Background(), s, own); err == nil || !strings.Contains(err.Error(), "previously claimed") {
+					t.Fatal("later witness disappearance enabled refund", err)
+				}
+			})
+		}
+	}
+}
+
+func TestIsolatedTowerRemembersObserveOnlyWitnessBeforeTargetReturns(t *testing.T) {
+	e, s, b, secret := isolatedFixture(t, "maker")
+	tower := e.ownTower()
+	s.Protection = &tower
+	target, observe := s.Long, s.Short
+	job, err := e.makeJob(s, target, "claim", &observe, s.Terms.Takeover)
+	if err != nil {
+		t.Fatal(err)
+	}
+	e.s.TowerJobs = map[string]*TowerJob{job.ID: {Job: job}}
+	if err := e.save(); err != nil {
+		t.Fatal(err)
+	}
+	key, _ := e.swapKey(observe.Chain, s.ID)
+	claim, err := contract.Spend(observe, key, e.scripts[observe.Chain], 2000, false, 0, nil, 0, secret)
+	if err != nil {
+		t.Fatal(err)
+	}
+	e.chainFresh[target.Chain], e.chainFresh[observe.Chain] = false, true
+	e.towerScanners = map[chain.ID]chain.SpendScanner{observe.Chain: &settlementFeeScanner{observations: map[string]chain.Observation{chain.OutpointKey(observe.TxID, observe.Vout): {Tx: claim, TxID: claim.TxHash().String()}}}}
+	all, err := e.scanTower(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	var restored State
+	if _, err := e.vault.Load(&restored); err != nil {
+		t.Fatal(err)
+	}
+	if restored.TowerJobs[job.ID] == nil || restored.TowerJobs[job.ID].Secret != hex.EncodeToString(secret) {
+		t.Fatal("tower discarded witness while target unavailable")
+	}
+	if err := e.advanceTower(context.Background(), all); err != nil {
+		t.Fatal(err)
+	}
+	e.s = restored
+	e.chainFresh[target.Chain], e.chainFresh[observe.Chain] = true, false
+	broadcasts := 0
+	b.broadcast = func(raw string) (string, error) {
+		broadcasts++
+		tx, err := contract.Parse(raw)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, ok := contract.ExtractSecret(target, tx); !ok || tx.TxOut[1].Value != protocol.Bounty(target.Amount, job.BPS) {
+			t.Fatal("restored tower changed authorized claim")
+		}
+		return tx.TxHash().String(), nil
+	}
+	if err := e.advanceTower(context.Background(), map[chain.ID]map[string]chain.Observation{target.Chain: {}}); err != nil || broadcasts != 1 {
+		t.Fatal("target-only recovery forgot prior witness", err, broadcasts)
+	}
+}
+
 func (b *recoveryClockBackend) Height(context.Context) (uint32, error) { return 500, nil }
 
 func TestIsolatedTerminalHistorySurvivesOutageButReopensOnReorg(t *testing.T) {
@@ -254,10 +378,13 @@ func TestIsolatedMempoolClaimKeepsAuthorizedVariantsAndDestination(t *testing.T)
 }
 
 func isolatedFixture(t *testing.T, role string) (*Engine, *Swap, *sendBackend, []byte) {
+	return isolatedFixtureSell(t, role, chain.BTC)
+}
+func isolatedFixtureSell(t *testing.T, role string, sell chain.ID) (*Engine, *Swap, *sendBackend, []byte) {
 	t.Helper()
 	e, b, _ := sendFixture(t)
 	maker, taker := nostr.Generate(), nostr.Generate()
-	offer := protocol.Offer{ID: transport.RandomID(), Maker: maker.Public().Hex(), Sell: chain.BTC, SellAmount: 1000000, BuyAmount: 2000000, Expires: time.Now().Unix() + 3600, Status: "open"}
+	offer := protocol.Offer{ID: transport.RandomID(), Maker: maker.Public().Hex(), Sell: sell, SellAmount: 1000000, BuyAmount: 2000000, Expires: time.Now().Unix() + 3600, Status: "open"}
 	raw, _ := offer.PublicJSON()
 	event := nostr.Event{Kind: transport.OfferKind, CreatedAt: nostr.Now(), Tags: nostr.Tags{{"d", offer.ID}, {"t", transport.Namespace}}, Content: string(raw)}
 	if err := transport.Sign(&event, maker); err != nil {

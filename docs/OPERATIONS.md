@@ -356,3 +356,9 @@ history stays terminal during an unrelated outage; fresh contradictory spend or
 confirmation evidence reopens it. Recovery still depends on
 timely valid observations and confirmation; endpoint failover does not remove
 chain censorship, finality, pinning, or malicious-indexer risks.
+
+Wallet and tower scans save validated preimages as each chain returns, even if
+the other chain is unavailable or a later source switch invalidates confirmation
+freshness. A tower can retain a witness while its claim target is offline, then
+use its existing authorized claim after the target returns. Readiness, locktime,
+and payout checks still apply to that publication.

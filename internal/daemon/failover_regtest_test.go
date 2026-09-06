@@ -20,6 +20,7 @@ import (
 
 	"github.com/blakeswap/blakeswap/internal/chain"
 	"github.com/blakeswap/blakeswap/internal/contract"
+	"github.com/blakeswap/blakeswap/internal/protocol"
 	"github.com/blakeswap/blakeswap/internal/testutil"
 )
 
@@ -356,6 +357,76 @@ func TestRealIsolatedRefundWaitsForPeerObservation(t *testing.T) {
 		t.Fatal("counterparty refund failed", h.swap("maker", id).Error)
 	}
 	t.Logf("refund held safely through outage then confirmed %s long=%s short=%s", id, h.swap("taker", id).LongSpend, h.swap("maker", id).ShortSpend)
+}
+
+func TestRealIsolatedTowerWitnessRecovery(t *testing.T) {
+	for _, sell := range []chain.ID{chain.BTC, chain.Blake} {
+		t.Run(string(sell), func(t *testing.T) {
+			h := newHarness(t, 50)
+			faults := installEndpointFaults(t, h, false)
+			id := h.fundBothFees(sell, 50, 6500, 20000)
+			maker := h.swap("maker", id)
+			target, observe := maker.Long, maker.Short
+			h.offline("maker")
+			h.online("taker")
+			h.tick("taker")
+			h.minePending()
+			claimID, _ := settlementVariant(h.swap("taker", id).SelfClaims, h.swap("taker", id).ClaimVariant, maker.Long, maker.Short, false)
+			claimRecord, err := h.nodes[observe.Chain].Transaction(h.ctx, claimID)
+			if err != nil || claimRecord.BlockHash == "" {
+				t.Fatal("missing real revealing claim", err)
+			}
+			faults[target.Chain].setDown(true)
+			tickDegraded(t, h.engines["tower"])
+			jobID := ""
+			for key, state := range h.engines["tower"].s.TowerJobs {
+				if state.Job.SwapID == id && state.Job.Kind == "claim" {
+					jobID = key
+					if state.Secret == "" {
+						t.Fatal("tower missed actual witness while target unavailable")
+					}
+				}
+			}
+			if jobID == "" {
+				t.Fatal("fixture has no authorized tower claim")
+			}
+			h.offline("tower")
+			if err := h.nodes[observe.Chain].Call(h.ctx, "invalidateblock", nil, claimRecord.BlockHash); err != nil {
+				t.Fatal(err)
+			}
+			defer func() {
+				if err := h.nodes[observe.Chain].Call(h.ctx, "reconsiderblock", nil, claimRecord.BlockHash); err != nil {
+					t.Error(err)
+				}
+			}()
+			faults[observe.Chain].setDown(true)
+			faults[target.Chain].setDown(false)
+			h.mine(target.Chain, maker.Terms.Takeover+1-h.height(target.Chain))
+			h.online("tower")
+			tickDegraded(t, h.engines["tower"])
+			state := h.engines["tower"].s.TowerJobs[jobID]
+			if state.Secret == "" || state.Broadcast == "" {
+				t.Fatal("tower lost observed secret across restart/outage", state.Error)
+			}
+			record, err := h.nodes[target.Chain].Transaction(h.ctx, state.Broadcast)
+			if err != nil {
+				t.Fatal("tower claim not published to healthy chain", err)
+			}
+			tx, err := contract.Parse(record.Hex)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, ok := contract.ExtractSecret(target, tx); !ok || tx.TxOut[1].Value != protocol.Bounty(target.Amount, 50) {
+				t.Fatal("tower claim changed preimage or bounty authorization")
+			}
+			h.mine(target.Chain, 2)
+			tickDegraded(t, h.engines["tower"])
+			if state.Confirmed < 2 {
+				t.Fatal("target-only tower claim did not confirm")
+			}
+			t.Logf("tower retained reorged witness and claimed %s on %s", state.Broadcast, target.Chain)
+		})
+	}
 }
 
 func TestRealEndpointAmbiguousBroadcastAndReorgRecovery(t *testing.T) {

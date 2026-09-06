@@ -713,6 +713,14 @@ func (e *Engine) scan(ctx context.Context) (map[chain.ID]map[string]chain.Observ
 		c, cancel := context.WithTimeout(ctx, chainWorkBudget)
 		result, err := e.scanners[id].Scan(c, starts[id], points[id])
 		cancel()
+		if err == nil {
+			accepted := map[chain.ID]map[string]chain.Observation{id: result}
+			for _, s := range e.s.Swaps {
+				if err := e.rememberSwapWitnesses(s, accepted); err != nil {
+					return out, err
+				}
+			}
+		}
 		if err == nil && !e.fresh(id) {
 			err = errors.New("chain source changed during observation; retrying complete refresh")
 		}
@@ -768,6 +776,9 @@ func (e *Engine) scanTower(ctx context.Context) (map[chain.ID]map[string]chain.O
 		if err != nil {
 			errs = append(errs, err)
 			continue
+		}
+		if err := e.rememberTowerWitnesses(map[chain.ID]map[string]chain.Observation{id: result}); err != nil {
+			return out, err
 		}
 		out[id] = result
 	}

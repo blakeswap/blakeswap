@@ -20,9 +20,6 @@ func (e *Engine) rememberSwapWitnesses(s *Swap, all map[chain.ID]map[string]chai
 	}
 	changed := false
 	for _, c := range []contract.HTLC{s.Long, s.Short} {
-		if !e.fresh(c.Chain) {
-			continue
-		}
 		obs, spent := observation(all, c)
 		if !spent || obs.Tx == nil {
 			continue
@@ -34,6 +31,32 @@ func (e *Engine) rememberSwapWitnesses(s *Swap, all map[chain.ID]map[string]chai
 			if c.Chain == incoming.Chain {
 				s.IncomingClaimSeen = true
 			}
+		}
+	}
+	if changed {
+		return e.save()
+	}
+	return nil
+}
+
+// These maps contain successful, validated scan results. Source switching may
+// make their canonicality stale, but cannot make an already public preimage
+// private again. Target readiness is checked separately before any broadcast.
+func (e *Engine) rememberTowerWitnesses(all map[chain.ID]map[string]chain.Observation) error {
+	changed := false
+	for _, state := range e.s.TowerJobs {
+		if state.Job.Observe == nil {
+			continue
+		}
+		c := *state.Job.Observe
+		obs, spent := observation(all, c)
+		if !spent || obs.Tx == nil {
+			continue
+		}
+		if secret, claimed := contract.ExtractSecret(c, obs.Tx); claimed {
+			encoded := hex.EncodeToString(secret)
+			changed = changed || state.Secret != encoded
+			state.Secret = encoded
 		}
 	}
 	if changed {

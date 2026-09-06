@@ -347,6 +347,11 @@ then remove the witness and verify that refund suppression remains durable.
 Terminal-history tests preserve completed/refunded rows and network switching
 during unrelated outages, while fresh reorg evidence reopens the obligation.
 Owner/tower fee selection must recheck source freshness before broadcasting.
+Accepted-scan tests change source readiness during/between chain scans and verify
+durable immutable witness knowledge. Tower tests observe only the peer chain,
+reopen the vault, remove the witness and recover using the target alone.
+`TestRealIsolatedTowerWitnessRecovery` repeats that handoff and revealing-block
+reorg against actual BTC/Blake2b targets through RPC and Electrum fixtures.
 
 With the exclusive isolated BTC/Blake2b fixture available, run:
 
