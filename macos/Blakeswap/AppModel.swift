@@ -19,6 +19,7 @@ final class AppModel: ObservableObject {
     @Published var notice: String?
     @Published var busy = false
     @Published var recovery: String?
+    @Published var setupWallet: Blakeswap_V1_FirstWallet?
     let root = DaemonProcess.shared.root
     private var refreshing = false
     var network: String { settings?.activeNetwork ?? status?.network ?? "mainnet" }
@@ -34,6 +35,7 @@ final class AppModel: ObservableObject {
             generation &+= 1
             recovery = nil
         }
+        if nextSettings.onboardingStage != "backup" { setupWallet = nil }
         let matching = next?.network == nextSettings.activeNetwork && next?.name == selected
         snapshot = Snapshot(status: matching ? next : nil, settings: nextSettings)
         if !nextSettings.wallets.isEmpty, !nextSettings.wallets.contains(where: { $0.id == profile }) { selectProfile(nextSettings.wallets[0].id) }
@@ -87,6 +89,27 @@ final class AppModel: ObservableObject {
             if let created = next.wallets.last { selectProfile(created.id) }
             notice = "Wallet created. Connecting."
         } catch { notice = error.localizedDescription }
+    }
+    func setupAction<M: Message>(_ method: String, request: M) async -> Bool {
+        guard !busy else { return false }
+        busy = true; notice = nil; invalidateSnapshot()
+        defer { busy = false }
+        do {
+            let raw = try await DaemonRPC.call(root: root, profile: profile, method: method, payload: request.jsonUTF8Data())
+            if method == "onboarding.prepare" || method == "onboarding.get" {
+                let first = try Blakeswap_V1_FirstWallet(serializedBytes: raw)
+                acceptSnapshot(nil, settings: first.settings, profile: profile, generation: generation)
+                setupWallet = first.settings.onboardingStage == "backup" ? first : nil
+            } else if method == "onboarding.export" {
+                _ = try Blakeswap_V1_Backup(serializedBytes: raw)
+                notice = "Encrypted backup saved. Keep its password separately."
+            } else {
+                let next = try AppSettings(serializedBytes: raw)
+                acceptSnapshot(nil, settings: next, profile: profile, generation: generation)
+            }
+            connectionError = nil
+            return true
+        } catch { notice = error.localizedDescription; return false }
     }
     func checkNode(network: String, chain: String, node: NodeSettings) async -> String {
         do {

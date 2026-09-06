@@ -10,8 +10,8 @@ Opening the app launches `Contents/Resources/blakeswap desktop --data-dir …
 --parent-pid …`. The helper holds an exclusive lock on that data directory and
 owns the wallet engines, API listeners, and runtime credential files. Settings
 supports creating independent wallets and editing their display names. All saved
-wallets are selectable and run on every network. New installations start with
-one wallet; legacy Alice/Bob vaults retain their original encrypted master seeds.
+wallets are selectable and run on every network. New installations create or
+restore their first wallet in onboarding; legacy Alice/Bob vaults retain their original encrypted master seeds.
 The isolated regtest demonstration explicitly prepares Alice and Bob.
 
 There is no pause control. The client restarts an unexpectedly exited helper while
@@ -31,16 +31,47 @@ progress. Reopening resumes the persisted state.
 
 Normal application data is `~/Library/Application Support/Blakeswap`:
 
-- `settings.json`: all three environments and revision, mode 0600.
+- `settings.json`: all three environments, revision and onboarding stage, mode 0600.
 - `runtime.json`: current socket/HTTP endpoints and bearer credentials, mode 0600.
 - `desktop.lock`, `desktop.log`: process ownership and error log.
 - `wallets/alice/master.db`: encrypted master seed shared across that profile's networks.
 - `wallets/alice/vault.password`: random local vault password, mode 0600.
 - `wallets/alice/<network>/state.db`: isolated network-specific swap state.
-- Regtest's `wallets/bob/` has its own master and network state.
+- Additional `wallets/<id>/` directories have their own master and network state.
 
 `--data-dir /absolute/path` selects an isolated desktop installation for testing.
 Do not point two concurrently running copies at the same wallet data.
+
+## First launch and reset
+
+First launch offers a new 24-word wallet, restoration from a BIP39 phrase, or
+restoration from an encrypted wallet state backup. New and phrase-restored wallets
+require confirmation of three recovery words. The phrase restores keys for both
+chains; an encrypted state backup also preserves pending swaps and prepared
+rescue transactions. Setup can export a backup protected by a password you choose
+(at least 16 characters). Keep the password separately. Older state backups use
+the original installation's `vault.password` contents.
+
+Setup then presents network, chain endpoints, and Nostr relays, with an optional
+connection check. No wallet engine connects or trades until setup completes.
+Quitting during setup resumes the same prepared wallet on reopening. Existing
+settings from earlier releases are treated as already configured.
+
+For development, quit the app and run:
+
+```sh
+make reset-local-data
+# Or reset only an isolated installation:
+make reset-local-data APP_DATA_DIR="/absolute/path/to/test-data"
+```
+
+The command moves the active data directory to a dated sibling archive and
+prints its location. It refuses a running app or an unrelated directory. It
+does not delete the archive; the next launch creates fresh settings and displays
+onboarding. To resume the exact archived installation, quit the app and launch
+with `--data-dir /absolute/archive/path`. Archives contain wallet passwords and
+pending state, so keep them private. Resetting local storage does not cancel any
+existing on-chain obligations.
 
 ## Build and install
 

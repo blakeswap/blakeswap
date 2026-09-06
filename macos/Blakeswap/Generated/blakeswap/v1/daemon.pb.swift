@@ -639,10 +639,96 @@ nonisolated struct Blakeswap_V1_CreateWalletRequest: Sendable {
   init() {}
 }
 
+nonisolated struct Blakeswap_V1_PrepareFirstWalletRequest: Sendable {
+  // SwiftProtobuf.Message conformance is added in an extension below. See the
+  // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
+  // methods supported on all messages.
+
+  var name: String = String()
+
+  var mnemonic: String = String()
+
+  var backupPath: String = String()
+
+  var backupPassword: String = String()
+
+  var revision: UInt64 = 0
+
+  var unknownFields = SwiftProtobuf.UnknownStorage()
+
+  init() {}
+}
+
+nonisolated struct Blakeswap_V1_FirstWallet: Sendable {
+  // SwiftProtobuf.Message conformance is added in an extension below. See the
+  // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
+  // methods supported on all messages.
+
+  var settings: Blakeswap_V1_Settings {
+    get {_settings ?? Blakeswap_V1_Settings()}
+    set {_settings = newValue}
+  }
+  /// Returns true if `settings` has been explicitly set.
+  var hasSettings: Bool {self._settings != nil}
+  /// Clears the value of `settings`. Subsequent reads from it will return its default value.
+  mutating func clearSettings() {self._settings = nil}
+
+  var recovery: Blakeswap_V1_Recovery {
+    get {_recovery ?? Blakeswap_V1_Recovery()}
+    set {_recovery = newValue}
+  }
+  /// Returns true if `recovery` has been explicitly set.
+  var hasRecovery: Bool {self._recovery != nil}
+  /// Clears the value of `recovery`. Subsequent reads from it will return its default value.
+  mutating func clearRecovery() {self._recovery = nil}
+
+  var backupWordPositions: [UInt32] = []
+
+  var unknownFields = SwiftProtobuf.UnknownStorage()
+
+  init() {}
+
+  fileprivate var _settings: Blakeswap_V1_Settings? = nil
+  fileprivate var _recovery: Blakeswap_V1_Recovery? = nil
+}
+
+nonisolated struct Blakeswap_V1_ConfirmFirstWalletRequest: Sendable {
+  // SwiftProtobuf.Message conformance is added in an extension below. See the
+  // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
+  // methods supported on all messages.
+
+  var revision: UInt64 = 0
+
+  var words: [String] = []
+
+  var unknownFields = SwiftProtobuf.UnknownStorage()
+
+  init() {}
+}
+
+nonisolated struct Blakeswap_V1_ExportFirstWalletRequest: Sendable {
+  // SwiftProtobuf.Message conformance is added in an extension below. See the
+  // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
+  // methods supported on all messages.
+
+  var path: String = String()
+
+  var password: String = String()
+
+  var revision: UInt64 = 0
+
+  var unknownFields = SwiftProtobuf.UnknownStorage()
+
+  init() {}
+}
+
 nonisolated struct Blakeswap_V1_Settings: Sendable {
   // SwiftProtobuf.Message conformance is added in an extension below. See the
   // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
   // methods supported on all messages.
+
+  /// wallet, backup, connect; empty means completed. Older installs remain completed.
+  var onboardingStage: String = String()
 
   /// Stable IDs; display names may be edited. Create IDs with CreateWallet.
   var wallets: [Blakeswap_V1_WalletProfile] = []
@@ -1995,9 +2081,178 @@ nonisolated extension Blakeswap_V1_CreateWalletRequest: SwiftProtobuf.Message, S
   }
 }
 
+nonisolated extension Blakeswap_V1_PrepareFirstWalletRequest: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+  static let protoMessageName: String = _protobuf_package + ".PrepareFirstWalletRequest"
+  static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}name\0\u{1}mnemonic\0\u{3}backup_path\0\u{3}backup_password\0\u{1}revision\0")
+
+  mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
+    while let fieldNumber = try decoder.nextFieldNumber() {
+      // The use of inline closures is to circumvent an issue where the compiler
+      // allocates stack space for every case branch when no optimizations are
+      // enabled. https://github.com/apple/swift-protobuf/issues/1034
+      switch fieldNumber {
+      case 1: try { try decoder.decodeSingularStringField(value: &self.name) }()
+      case 2: try { try decoder.decodeSingularStringField(value: &self.mnemonic) }()
+      case 3: try { try decoder.decodeSingularStringField(value: &self.backupPath) }()
+      case 4: try { try decoder.decodeSingularStringField(value: &self.backupPassword) }()
+      case 5: try { try decoder.decodeSingularUInt64Field(value: &self.revision) }()
+      default: break
+      }
+    }
+  }
+
+  func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+    if !self.name.isEmpty {
+      try visitor.visitSingularStringField(value: self.name, fieldNumber: 1)
+    }
+    if !self.mnemonic.isEmpty {
+      try visitor.visitSingularStringField(value: self.mnemonic, fieldNumber: 2)
+    }
+    if !self.backupPath.isEmpty {
+      try visitor.visitSingularStringField(value: self.backupPath, fieldNumber: 3)
+    }
+    if !self.backupPassword.isEmpty {
+      try visitor.visitSingularStringField(value: self.backupPassword, fieldNumber: 4)
+    }
+    if self.revision != 0 {
+      try visitor.visitSingularUInt64Field(value: self.revision, fieldNumber: 5)
+    }
+    try unknownFields.traverse(visitor: &visitor)
+  }
+
+  static func ==(lhs: Blakeswap_V1_PrepareFirstWalletRequest, rhs: Blakeswap_V1_PrepareFirstWalletRequest) -> Bool {
+    if lhs.name != rhs.name {return false}
+    if lhs.mnemonic != rhs.mnemonic {return false}
+    if lhs.backupPath != rhs.backupPath {return false}
+    if lhs.backupPassword != rhs.backupPassword {return false}
+    if lhs.revision != rhs.revision {return false}
+    if lhs.unknownFields != rhs.unknownFields {return false}
+    return true
+  }
+}
+
+nonisolated extension Blakeswap_V1_FirstWallet: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+  static let protoMessageName: String = _protobuf_package + ".FirstWallet"
+  static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}settings\0\u{1}recovery\0\u{3}backup_word_positions\0")
+
+  mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
+    while let fieldNumber = try decoder.nextFieldNumber() {
+      // The use of inline closures is to circumvent an issue where the compiler
+      // allocates stack space for every case branch when no optimizations are
+      // enabled. https://github.com/apple/swift-protobuf/issues/1034
+      switch fieldNumber {
+      case 1: try { try decoder.decodeSingularMessageField(value: &self._settings) }()
+      case 2: try { try decoder.decodeSingularMessageField(value: &self._recovery) }()
+      case 3: try { try decoder.decodeRepeatedUInt32Field(value: &self.backupWordPositions) }()
+      default: break
+      }
+    }
+  }
+
+  func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+    // The use of inline closures is to circumvent an issue where the compiler
+    // allocates stack space for every if/case branch local when no optimizations
+    // are enabled. https://github.com/apple/swift-protobuf/issues/1034 and
+    // https://github.com/apple/swift-protobuf/issues/1182
+    try { if let v = self._settings {
+      try visitor.visitSingularMessageField(value: v, fieldNumber: 1)
+    } }()
+    try { if let v = self._recovery {
+      try visitor.visitSingularMessageField(value: v, fieldNumber: 2)
+    } }()
+    if !self.backupWordPositions.isEmpty {
+      try visitor.visitPackedUInt32Field(value: self.backupWordPositions, fieldNumber: 3)
+    }
+    try unknownFields.traverse(visitor: &visitor)
+  }
+
+  static func ==(lhs: Blakeswap_V1_FirstWallet, rhs: Blakeswap_V1_FirstWallet) -> Bool {
+    if lhs._settings != rhs._settings {return false}
+    if lhs._recovery != rhs._recovery {return false}
+    if lhs.backupWordPositions != rhs.backupWordPositions {return false}
+    if lhs.unknownFields != rhs.unknownFields {return false}
+    return true
+  }
+}
+
+nonisolated extension Blakeswap_V1_ConfirmFirstWalletRequest: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+  static let protoMessageName: String = _protobuf_package + ".ConfirmFirstWalletRequest"
+  static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}revision\0\u{1}words\0")
+
+  mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
+    while let fieldNumber = try decoder.nextFieldNumber() {
+      // The use of inline closures is to circumvent an issue where the compiler
+      // allocates stack space for every case branch when no optimizations are
+      // enabled. https://github.com/apple/swift-protobuf/issues/1034
+      switch fieldNumber {
+      case 1: try { try decoder.decodeSingularUInt64Field(value: &self.revision) }()
+      case 2: try { try decoder.decodeRepeatedStringField(value: &self.words) }()
+      default: break
+      }
+    }
+  }
+
+  func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+    if self.revision != 0 {
+      try visitor.visitSingularUInt64Field(value: self.revision, fieldNumber: 1)
+    }
+    if !self.words.isEmpty {
+      try visitor.visitRepeatedStringField(value: self.words, fieldNumber: 2)
+    }
+    try unknownFields.traverse(visitor: &visitor)
+  }
+
+  static func ==(lhs: Blakeswap_V1_ConfirmFirstWalletRequest, rhs: Blakeswap_V1_ConfirmFirstWalletRequest) -> Bool {
+    if lhs.revision != rhs.revision {return false}
+    if lhs.words != rhs.words {return false}
+    if lhs.unknownFields != rhs.unknownFields {return false}
+    return true
+  }
+}
+
+nonisolated extension Blakeswap_V1_ExportFirstWalletRequest: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+  static let protoMessageName: String = _protobuf_package + ".ExportFirstWalletRequest"
+  static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}path\0\u{1}password\0\u{1}revision\0")
+
+  mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
+    while let fieldNumber = try decoder.nextFieldNumber() {
+      // The use of inline closures is to circumvent an issue where the compiler
+      // allocates stack space for every case branch when no optimizations are
+      // enabled. https://github.com/apple/swift-protobuf/issues/1034
+      switch fieldNumber {
+      case 1: try { try decoder.decodeSingularStringField(value: &self.path) }()
+      case 2: try { try decoder.decodeSingularStringField(value: &self.password) }()
+      case 3: try { try decoder.decodeSingularUInt64Field(value: &self.revision) }()
+      default: break
+      }
+    }
+  }
+
+  func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+    if !self.path.isEmpty {
+      try visitor.visitSingularStringField(value: self.path, fieldNumber: 1)
+    }
+    if !self.password.isEmpty {
+      try visitor.visitSingularStringField(value: self.password, fieldNumber: 2)
+    }
+    if self.revision != 0 {
+      try visitor.visitSingularUInt64Field(value: self.revision, fieldNumber: 3)
+    }
+    try unknownFields.traverse(visitor: &visitor)
+  }
+
+  static func ==(lhs: Blakeswap_V1_ExportFirstWalletRequest, rhs: Blakeswap_V1_ExportFirstWalletRequest) -> Bool {
+    if lhs.path != rhs.path {return false}
+    if lhs.password != rhs.password {return false}
+    if lhs.revision != rhs.revision {return false}
+    if lhs.unknownFields != rhs.unknownFields {return false}
+    return true
+  }
+}
+
 nonisolated extension Blakeswap_V1_Settings: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   static let protoMessageName: String = _protobuf_package + ".Settings"
-  static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}active_network\0\u{1}environments\0\u{1}revision\0\u{1}wallets\0")
+  static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}active_network\0\u{1}environments\0\u{1}revision\0\u{1}wallets\0\u{3}onboarding_stage\0")
 
   mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
     while let fieldNumber = try decoder.nextFieldNumber() {
@@ -2009,6 +2264,7 @@ nonisolated extension Blakeswap_V1_Settings: SwiftProtobuf.Message, SwiftProtobu
       case 2: try { try decoder.decodeRepeatedMessageField(value: &self.environments) }()
       case 3: try { try decoder.decodeSingularUInt64Field(value: &self.revision) }()
       case 4: try { try decoder.decodeRepeatedMessageField(value: &self.wallets) }()
+      case 5: try { try decoder.decodeSingularStringField(value: &self.onboardingStage) }()
       default: break
       }
     }
@@ -2027,10 +2283,14 @@ nonisolated extension Blakeswap_V1_Settings: SwiftProtobuf.Message, SwiftProtobu
     if !self.wallets.isEmpty {
       try visitor.visitRepeatedMessageField(value: self.wallets, fieldNumber: 4)
     }
+    if !self.onboardingStage.isEmpty {
+      try visitor.visitSingularStringField(value: self.onboardingStage, fieldNumber: 5)
+    }
     try unknownFields.traverse(visitor: &visitor)
   }
 
   static func ==(lhs: Blakeswap_V1_Settings, rhs: Blakeswap_V1_Settings) -> Bool {
+    if lhs.onboardingStage != rhs.onboardingStage {return false}
     if lhs.wallets != rhs.wallets {return false}
     if lhs.activeNetwork != rhs.activeNetwork {return false}
     if lhs.environments != rhs.environments {return false}

@@ -78,6 +78,26 @@ func Call(ctx context.Context, socket string, req daemon.Request) (json.RawMessa
 		p := &pb.CreateWalletRequest{}
 		in = p
 		invoke = func() (proto.Message, error) { return client.CreateWallet(ctx, p) }
+	case "onboarding.prepare":
+		p := &pb.PrepareFirstWalletRequest{}
+		in = p
+		invoke = func() (proto.Message, error) { return client.PrepareFirstWallet(ctx, p) }
+	case "onboarding.get":
+		p := &emptypb.Empty{}
+		in = p
+		invoke = func() (proto.Message, error) { return client.GetFirstWallet(ctx, p) }
+	case "onboarding.confirm":
+		p := &pb.ConfirmFirstWalletRequest{}
+		in = p
+		invoke = func() (proto.Message, error) { return client.ConfirmFirstWallet(ctx, p) }
+	case "onboarding.export":
+		p := &pb.ExportFirstWalletRequest{}
+		in = p
+		invoke = func() (proto.Message, error) { return client.ExportFirstWallet(ctx, p) }
+	case "onboarding.finish":
+		p := &pb.Settings{}
+		in = p
+		invoke = func() (proto.Message, error) { return client.FinishOnboarding(ctx, p) }
 	case "settings.get":
 		p := &emptypb.Empty{}
 		in = p

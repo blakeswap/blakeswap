@@ -164,6 +164,71 @@ internal enum Blakeswap_V1_DaemonService: Sendable {
                 type: .unary
             )
         }
+        /// Namespace for "PrepareFirstWallet" metadata.
+        internal enum PrepareFirstWallet: Sendable {
+            /// Request type for "PrepareFirstWallet".
+            internal typealias Input = Blakeswap_V1_PrepareFirstWalletRequest
+            /// Response type for "PrepareFirstWallet".
+            internal typealias Output = Blakeswap_V1_FirstWallet
+            /// Descriptor for "PrepareFirstWallet".
+            internal static let descriptor = GRPCCore.MethodDescriptor(
+                service: GRPCCore.ServiceDescriptor(fullyQualifiedService: "blakeswap.v1.DaemonService"),
+                method: "PrepareFirstWallet",
+                type: .unary
+            )
+        }
+        /// Namespace for "GetFirstWallet" metadata.
+        internal enum GetFirstWallet: Sendable {
+            /// Request type for "GetFirstWallet".
+            internal typealias Input = SwiftProtobuf.Google_Protobuf_Empty
+            /// Response type for "GetFirstWallet".
+            internal typealias Output = Blakeswap_V1_FirstWallet
+            /// Descriptor for "GetFirstWallet".
+            internal static let descriptor = GRPCCore.MethodDescriptor(
+                service: GRPCCore.ServiceDescriptor(fullyQualifiedService: "blakeswap.v1.DaemonService"),
+                method: "GetFirstWallet",
+                type: .unary
+            )
+        }
+        /// Namespace for "ConfirmFirstWallet" metadata.
+        internal enum ConfirmFirstWallet: Sendable {
+            /// Request type for "ConfirmFirstWallet".
+            internal typealias Input = Blakeswap_V1_ConfirmFirstWalletRequest
+            /// Response type for "ConfirmFirstWallet".
+            internal typealias Output = Blakeswap_V1_Settings
+            /// Descriptor for "ConfirmFirstWallet".
+            internal static let descriptor = GRPCCore.MethodDescriptor(
+                service: GRPCCore.ServiceDescriptor(fullyQualifiedService: "blakeswap.v1.DaemonService"),
+                method: "ConfirmFirstWallet",
+                type: .unary
+            )
+        }
+        /// Namespace for "ExportFirstWallet" metadata.
+        internal enum ExportFirstWallet: Sendable {
+            /// Request type for "ExportFirstWallet".
+            internal typealias Input = Blakeswap_V1_ExportFirstWalletRequest
+            /// Response type for "ExportFirstWallet".
+            internal typealias Output = Blakeswap_V1_Backup
+            /// Descriptor for "ExportFirstWallet".
+            internal static let descriptor = GRPCCore.MethodDescriptor(
+                service: GRPCCore.ServiceDescriptor(fullyQualifiedService: "blakeswap.v1.DaemonService"),
+                method: "ExportFirstWallet",
+                type: .unary
+            )
+        }
+        /// Namespace for "FinishOnboarding" metadata.
+        internal enum FinishOnboarding: Sendable {
+            /// Request type for "FinishOnboarding".
+            internal typealias Input = Blakeswap_V1_Settings
+            /// Response type for "FinishOnboarding".
+            internal typealias Output = Blakeswap_V1_Settings
+            /// Descriptor for "FinishOnboarding".
+            internal static let descriptor = GRPCCore.MethodDescriptor(
+                service: GRPCCore.ServiceDescriptor(fullyQualifiedService: "blakeswap.v1.DaemonService"),
+                method: "FinishOnboarding",
+                type: .unary
+            )
+        }
         /// Namespace for "GetSettings" metadata.
         internal enum GetSettings: Sendable {
             /// Request type for "GetSettings".
@@ -216,6 +281,11 @@ internal enum Blakeswap_V1_DaemonService: Sendable {
             GetRecovery.descriptor,
             BackupWallet.descriptor,
             CreateWallet.descriptor,
+            PrepareFirstWallet.descriptor,
+            GetFirstWallet.descriptor,
+            ConfirmFirstWallet.descriptor,
+            ExportFirstWallet.descriptor,
+            FinishOnboarding.descriptor,
             GetSettings.descriptor,
             UpdateSettings.descriptor,
             CheckNode.descriptor
@@ -442,6 +512,101 @@ extension Blakeswap_V1_DaemonService {
         func createWallet<Result>(
             request: GRPCCore.ClientRequest<Blakeswap_V1_CreateWalletRequest>,
             serializer: some GRPCCore.MessageSerializer<Blakeswap_V1_CreateWalletRequest>,
+            deserializer: some GRPCCore.MessageDeserializer<Blakeswap_V1_Settings>,
+            options: GRPCCore.CallOptions,
+            onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Blakeswap_V1_Settings>) async throws -> Result
+        ) async throws -> Result where Result: Sendable
+
+        /// Call the "PrepareFirstWallet" method.
+        ///
+        /// - Parameters:
+        ///   - request: A request containing a single `Blakeswap_V1_PrepareFirstWalletRequest` message.
+        ///   - serializer: A serializer for `Blakeswap_V1_PrepareFirstWalletRequest` messages.
+        ///   - deserializer: A deserializer for `Blakeswap_V1_FirstWallet` messages.
+        ///   - options: Options to apply to this RPC.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
+        /// - Returns: The result of `handleResponse`.
+        func prepareFirstWallet<Result>(
+            request: GRPCCore.ClientRequest<Blakeswap_V1_PrepareFirstWalletRequest>,
+            serializer: some GRPCCore.MessageSerializer<Blakeswap_V1_PrepareFirstWalletRequest>,
+            deserializer: some GRPCCore.MessageDeserializer<Blakeswap_V1_FirstWallet>,
+            options: GRPCCore.CallOptions,
+            onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Blakeswap_V1_FirstWallet>) async throws -> Result
+        ) async throws -> Result where Result: Sendable
+
+        /// Call the "GetFirstWallet" method.
+        ///
+        /// - Parameters:
+        ///   - request: A request containing a single `SwiftProtobuf.Google_Protobuf_Empty` message.
+        ///   - serializer: A serializer for `SwiftProtobuf.Google_Protobuf_Empty` messages.
+        ///   - deserializer: A deserializer for `Blakeswap_V1_FirstWallet` messages.
+        ///   - options: Options to apply to this RPC.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
+        /// - Returns: The result of `handleResponse`.
+        func getFirstWallet<Result>(
+            request: GRPCCore.ClientRequest<SwiftProtobuf.Google_Protobuf_Empty>,
+            serializer: some GRPCCore.MessageSerializer<SwiftProtobuf.Google_Protobuf_Empty>,
+            deserializer: some GRPCCore.MessageDeserializer<Blakeswap_V1_FirstWallet>,
+            options: GRPCCore.CallOptions,
+            onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Blakeswap_V1_FirstWallet>) async throws -> Result
+        ) async throws -> Result where Result: Sendable
+
+        /// Call the "ConfirmFirstWallet" method.
+        ///
+        /// - Parameters:
+        ///   - request: A request containing a single `Blakeswap_V1_ConfirmFirstWalletRequest` message.
+        ///   - serializer: A serializer for `Blakeswap_V1_ConfirmFirstWalletRequest` messages.
+        ///   - deserializer: A deserializer for `Blakeswap_V1_Settings` messages.
+        ///   - options: Options to apply to this RPC.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
+        /// - Returns: The result of `handleResponse`.
+        func confirmFirstWallet<Result>(
+            request: GRPCCore.ClientRequest<Blakeswap_V1_ConfirmFirstWalletRequest>,
+            serializer: some GRPCCore.MessageSerializer<Blakeswap_V1_ConfirmFirstWalletRequest>,
+            deserializer: some GRPCCore.MessageDeserializer<Blakeswap_V1_Settings>,
+            options: GRPCCore.CallOptions,
+            onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Blakeswap_V1_Settings>) async throws -> Result
+        ) async throws -> Result where Result: Sendable
+
+        /// Call the "ExportFirstWallet" method.
+        ///
+        /// - Parameters:
+        ///   - request: A request containing a single `Blakeswap_V1_ExportFirstWalletRequest` message.
+        ///   - serializer: A serializer for `Blakeswap_V1_ExportFirstWalletRequest` messages.
+        ///   - deserializer: A deserializer for `Blakeswap_V1_Backup` messages.
+        ///   - options: Options to apply to this RPC.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
+        /// - Returns: The result of `handleResponse`.
+        func exportFirstWallet<Result>(
+            request: GRPCCore.ClientRequest<Blakeswap_V1_ExportFirstWalletRequest>,
+            serializer: some GRPCCore.MessageSerializer<Blakeswap_V1_ExportFirstWalletRequest>,
+            deserializer: some GRPCCore.MessageDeserializer<Blakeswap_V1_Backup>,
+            options: GRPCCore.CallOptions,
+            onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Blakeswap_V1_Backup>) async throws -> Result
+        ) async throws -> Result where Result: Sendable
+
+        /// Call the "FinishOnboarding" method.
+        ///
+        /// - Parameters:
+        ///   - request: A request containing a single `Blakeswap_V1_Settings` message.
+        ///   - serializer: A serializer for `Blakeswap_V1_Settings` messages.
+        ///   - deserializer: A deserializer for `Blakeswap_V1_Settings` messages.
+        ///   - options: Options to apply to this RPC.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
+        /// - Returns: The result of `handleResponse`.
+        func finishOnboarding<Result>(
+            request: GRPCCore.ClientRequest<Blakeswap_V1_Settings>,
+            serializer: some GRPCCore.MessageSerializer<Blakeswap_V1_Settings>,
             deserializer: some GRPCCore.MessageDeserializer<Blakeswap_V1_Settings>,
             options: GRPCCore.CallOptions,
             onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Blakeswap_V1_Settings>) async throws -> Result
@@ -851,6 +1016,156 @@ extension Blakeswap_V1_DaemonService {
             )
         }
 
+        /// Call the "PrepareFirstWallet" method.
+        ///
+        /// - Parameters:
+        ///   - request: A request containing a single `Blakeswap_V1_PrepareFirstWalletRequest` message.
+        ///   - serializer: A serializer for `Blakeswap_V1_PrepareFirstWalletRequest` messages.
+        ///   - deserializer: A deserializer for `Blakeswap_V1_FirstWallet` messages.
+        ///   - options: Options to apply to this RPC.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
+        /// - Returns: The result of `handleResponse`.
+        internal func prepareFirstWallet<Result>(
+            request: GRPCCore.ClientRequest<Blakeswap_V1_PrepareFirstWalletRequest>,
+            serializer: some GRPCCore.MessageSerializer<Blakeswap_V1_PrepareFirstWalletRequest>,
+            deserializer: some GRPCCore.MessageDeserializer<Blakeswap_V1_FirstWallet>,
+            options: GRPCCore.CallOptions = .defaults,
+            onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Blakeswap_V1_FirstWallet>) async throws -> Result = { response in
+                try response.message
+            }
+        ) async throws -> Result where Result: Sendable {
+            try await self.client.unary(
+                request: request,
+                descriptor: Blakeswap_V1_DaemonService.Method.PrepareFirstWallet.descriptor,
+                serializer: serializer,
+                deserializer: deserializer,
+                options: options,
+                onResponse: handleResponse
+            )
+        }
+
+        /// Call the "GetFirstWallet" method.
+        ///
+        /// - Parameters:
+        ///   - request: A request containing a single `SwiftProtobuf.Google_Protobuf_Empty` message.
+        ///   - serializer: A serializer for `SwiftProtobuf.Google_Protobuf_Empty` messages.
+        ///   - deserializer: A deserializer for `Blakeswap_V1_FirstWallet` messages.
+        ///   - options: Options to apply to this RPC.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
+        /// - Returns: The result of `handleResponse`.
+        internal func getFirstWallet<Result>(
+            request: GRPCCore.ClientRequest<SwiftProtobuf.Google_Protobuf_Empty>,
+            serializer: some GRPCCore.MessageSerializer<SwiftProtobuf.Google_Protobuf_Empty>,
+            deserializer: some GRPCCore.MessageDeserializer<Blakeswap_V1_FirstWallet>,
+            options: GRPCCore.CallOptions = .defaults,
+            onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Blakeswap_V1_FirstWallet>) async throws -> Result = { response in
+                try response.message
+            }
+        ) async throws -> Result where Result: Sendable {
+            try await self.client.unary(
+                request: request,
+                descriptor: Blakeswap_V1_DaemonService.Method.GetFirstWallet.descriptor,
+                serializer: serializer,
+                deserializer: deserializer,
+                options: options,
+                onResponse: handleResponse
+            )
+        }
+
+        /// Call the "ConfirmFirstWallet" method.
+        ///
+        /// - Parameters:
+        ///   - request: A request containing a single `Blakeswap_V1_ConfirmFirstWalletRequest` message.
+        ///   - serializer: A serializer for `Blakeswap_V1_ConfirmFirstWalletRequest` messages.
+        ///   - deserializer: A deserializer for `Blakeswap_V1_Settings` messages.
+        ///   - options: Options to apply to this RPC.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
+        /// - Returns: The result of `handleResponse`.
+        internal func confirmFirstWallet<Result>(
+            request: GRPCCore.ClientRequest<Blakeswap_V1_ConfirmFirstWalletRequest>,
+            serializer: some GRPCCore.MessageSerializer<Blakeswap_V1_ConfirmFirstWalletRequest>,
+            deserializer: some GRPCCore.MessageDeserializer<Blakeswap_V1_Settings>,
+            options: GRPCCore.CallOptions = .defaults,
+            onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Blakeswap_V1_Settings>) async throws -> Result = { response in
+                try response.message
+            }
+        ) async throws -> Result where Result: Sendable {
+            try await self.client.unary(
+                request: request,
+                descriptor: Blakeswap_V1_DaemonService.Method.ConfirmFirstWallet.descriptor,
+                serializer: serializer,
+                deserializer: deserializer,
+                options: options,
+                onResponse: handleResponse
+            )
+        }
+
+        /// Call the "ExportFirstWallet" method.
+        ///
+        /// - Parameters:
+        ///   - request: A request containing a single `Blakeswap_V1_ExportFirstWalletRequest` message.
+        ///   - serializer: A serializer for `Blakeswap_V1_ExportFirstWalletRequest` messages.
+        ///   - deserializer: A deserializer for `Blakeswap_V1_Backup` messages.
+        ///   - options: Options to apply to this RPC.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
+        /// - Returns: The result of `handleResponse`.
+        internal func exportFirstWallet<Result>(
+            request: GRPCCore.ClientRequest<Blakeswap_V1_ExportFirstWalletRequest>,
+            serializer: some GRPCCore.MessageSerializer<Blakeswap_V1_ExportFirstWalletRequest>,
+            deserializer: some GRPCCore.MessageDeserializer<Blakeswap_V1_Backup>,
+            options: GRPCCore.CallOptions = .defaults,
+            onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Blakeswap_V1_Backup>) async throws -> Result = { response in
+                try response.message
+            }
+        ) async throws -> Result where Result: Sendable {
+            try await self.client.unary(
+                request: request,
+                descriptor: Blakeswap_V1_DaemonService.Method.ExportFirstWallet.descriptor,
+                serializer: serializer,
+                deserializer: deserializer,
+                options: options,
+                onResponse: handleResponse
+            )
+        }
+
+        /// Call the "FinishOnboarding" method.
+        ///
+        /// - Parameters:
+        ///   - request: A request containing a single `Blakeswap_V1_Settings` message.
+        ///   - serializer: A serializer for `Blakeswap_V1_Settings` messages.
+        ///   - deserializer: A deserializer for `Blakeswap_V1_Settings` messages.
+        ///   - options: Options to apply to this RPC.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
+        /// - Returns: The result of `handleResponse`.
+        internal func finishOnboarding<Result>(
+            request: GRPCCore.ClientRequest<Blakeswap_V1_Settings>,
+            serializer: some GRPCCore.MessageSerializer<Blakeswap_V1_Settings>,
+            deserializer: some GRPCCore.MessageDeserializer<Blakeswap_V1_Settings>,
+            options: GRPCCore.CallOptions = .defaults,
+            onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Blakeswap_V1_Settings>) async throws -> Result = { response in
+                try response.message
+            }
+        ) async throws -> Result where Result: Sendable {
+            try await self.client.unary(
+                request: request,
+                descriptor: Blakeswap_V1_DaemonService.Method.FinishOnboarding.descriptor,
+                serializer: serializer,
+                deserializer: deserializer,
+                options: options,
+                onResponse: handleResponse
+            )
+        }
+
         /// Call the "GetSettings" method.
         ///
         /// - Parameters:
@@ -1215,6 +1530,131 @@ extension Blakeswap_V1_DaemonService.ClientProtocol {
         try await self.createWallet(
             request: request,
             serializer: GRPCProtobuf.ProtobufSerializer<Blakeswap_V1_CreateWalletRequest>(),
+            deserializer: GRPCProtobuf.ProtobufDeserializer<Blakeswap_V1_Settings>(),
+            options: options,
+            onResponse: handleResponse
+        )
+    }
+
+    /// Call the "PrepareFirstWallet" method.
+    ///
+    /// - Parameters:
+    ///   - request: A request containing a single `Blakeswap_V1_PrepareFirstWalletRequest` message.
+    ///   - options: Options to apply to this RPC.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
+    /// - Returns: The result of `handleResponse`.
+    internal func prepareFirstWallet<Result>(
+        request: GRPCCore.ClientRequest<Blakeswap_V1_PrepareFirstWalletRequest>,
+        options: GRPCCore.CallOptions = .defaults,
+        onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Blakeswap_V1_FirstWallet>) async throws -> Result = { response in
+            try response.message
+        }
+    ) async throws -> Result where Result: Sendable {
+        try await self.prepareFirstWallet(
+            request: request,
+            serializer: GRPCProtobuf.ProtobufSerializer<Blakeswap_V1_PrepareFirstWalletRequest>(),
+            deserializer: GRPCProtobuf.ProtobufDeserializer<Blakeswap_V1_FirstWallet>(),
+            options: options,
+            onResponse: handleResponse
+        )
+    }
+
+    /// Call the "GetFirstWallet" method.
+    ///
+    /// - Parameters:
+    ///   - request: A request containing a single `SwiftProtobuf.Google_Protobuf_Empty` message.
+    ///   - options: Options to apply to this RPC.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
+    /// - Returns: The result of `handleResponse`.
+    internal func getFirstWallet<Result>(
+        request: GRPCCore.ClientRequest<SwiftProtobuf.Google_Protobuf_Empty>,
+        options: GRPCCore.CallOptions = .defaults,
+        onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Blakeswap_V1_FirstWallet>) async throws -> Result = { response in
+            try response.message
+        }
+    ) async throws -> Result where Result: Sendable {
+        try await self.getFirstWallet(
+            request: request,
+            serializer: GRPCProtobuf.ProtobufSerializer<SwiftProtobuf.Google_Protobuf_Empty>(),
+            deserializer: GRPCProtobuf.ProtobufDeserializer<Blakeswap_V1_FirstWallet>(),
+            options: options,
+            onResponse: handleResponse
+        )
+    }
+
+    /// Call the "ConfirmFirstWallet" method.
+    ///
+    /// - Parameters:
+    ///   - request: A request containing a single `Blakeswap_V1_ConfirmFirstWalletRequest` message.
+    ///   - options: Options to apply to this RPC.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
+    /// - Returns: The result of `handleResponse`.
+    internal func confirmFirstWallet<Result>(
+        request: GRPCCore.ClientRequest<Blakeswap_V1_ConfirmFirstWalletRequest>,
+        options: GRPCCore.CallOptions = .defaults,
+        onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Blakeswap_V1_Settings>) async throws -> Result = { response in
+            try response.message
+        }
+    ) async throws -> Result where Result: Sendable {
+        try await self.confirmFirstWallet(
+            request: request,
+            serializer: GRPCProtobuf.ProtobufSerializer<Blakeswap_V1_ConfirmFirstWalletRequest>(),
+            deserializer: GRPCProtobuf.ProtobufDeserializer<Blakeswap_V1_Settings>(),
+            options: options,
+            onResponse: handleResponse
+        )
+    }
+
+    /// Call the "ExportFirstWallet" method.
+    ///
+    /// - Parameters:
+    ///   - request: A request containing a single `Blakeswap_V1_ExportFirstWalletRequest` message.
+    ///   - options: Options to apply to this RPC.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
+    /// - Returns: The result of `handleResponse`.
+    internal func exportFirstWallet<Result>(
+        request: GRPCCore.ClientRequest<Blakeswap_V1_ExportFirstWalletRequest>,
+        options: GRPCCore.CallOptions = .defaults,
+        onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Blakeswap_V1_Backup>) async throws -> Result = { response in
+            try response.message
+        }
+    ) async throws -> Result where Result: Sendable {
+        try await self.exportFirstWallet(
+            request: request,
+            serializer: GRPCProtobuf.ProtobufSerializer<Blakeswap_V1_ExportFirstWalletRequest>(),
+            deserializer: GRPCProtobuf.ProtobufDeserializer<Blakeswap_V1_Backup>(),
+            options: options,
+            onResponse: handleResponse
+        )
+    }
+
+    /// Call the "FinishOnboarding" method.
+    ///
+    /// - Parameters:
+    ///   - request: A request containing a single `Blakeswap_V1_Settings` message.
+    ///   - options: Options to apply to this RPC.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
+    /// - Returns: The result of `handleResponse`.
+    internal func finishOnboarding<Result>(
+        request: GRPCCore.ClientRequest<Blakeswap_V1_Settings>,
+        options: GRPCCore.CallOptions = .defaults,
+        onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Blakeswap_V1_Settings>) async throws -> Result = { response in
+            try response.message
+        }
+    ) async throws -> Result where Result: Sendable {
+        try await self.finishOnboarding(
+            request: request,
+            serializer: GRPCProtobuf.ProtobufSerializer<Blakeswap_V1_Settings>(),
             deserializer: GRPCProtobuf.ProtobufDeserializer<Blakeswap_V1_Settings>(),
             options: options,
             onResponse: handleResponse
@@ -1613,6 +2053,151 @@ extension Blakeswap_V1_DaemonService.ClientProtocol {
             metadata: metadata
         )
         return try await self.createWallet(
+            request: request,
+            options: options,
+            onResponse: handleResponse
+        )
+    }
+
+    /// Call the "PrepareFirstWallet" method.
+    ///
+    /// - Parameters:
+    ///   - message: request message to send.
+    ///   - metadata: Additional metadata to send, defaults to empty.
+    ///   - options: Options to apply to this RPC, defaults to `.defaults`.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
+    /// - Returns: The result of `handleResponse`.
+    internal func prepareFirstWallet<Result>(
+        _ message: Blakeswap_V1_PrepareFirstWalletRequest,
+        metadata: GRPCCore.Metadata = [:],
+        options: GRPCCore.CallOptions = .defaults,
+        onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Blakeswap_V1_FirstWallet>) async throws -> Result = { response in
+            try response.message
+        }
+    ) async throws -> Result where Result: Sendable {
+        let request = GRPCCore.ClientRequest<Blakeswap_V1_PrepareFirstWalletRequest>(
+            message: message,
+            metadata: metadata
+        )
+        return try await self.prepareFirstWallet(
+            request: request,
+            options: options,
+            onResponse: handleResponse
+        )
+    }
+
+    /// Call the "GetFirstWallet" method.
+    ///
+    /// - Parameters:
+    ///   - message: request message to send.
+    ///   - metadata: Additional metadata to send, defaults to empty.
+    ///   - options: Options to apply to this RPC, defaults to `.defaults`.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
+    /// - Returns: The result of `handleResponse`.
+    internal func getFirstWallet<Result>(
+        _ message: SwiftProtobuf.Google_Protobuf_Empty,
+        metadata: GRPCCore.Metadata = [:],
+        options: GRPCCore.CallOptions = .defaults,
+        onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Blakeswap_V1_FirstWallet>) async throws -> Result = { response in
+            try response.message
+        }
+    ) async throws -> Result where Result: Sendable {
+        let request = GRPCCore.ClientRequest<SwiftProtobuf.Google_Protobuf_Empty>(
+            message: message,
+            metadata: metadata
+        )
+        return try await self.getFirstWallet(
+            request: request,
+            options: options,
+            onResponse: handleResponse
+        )
+    }
+
+    /// Call the "ConfirmFirstWallet" method.
+    ///
+    /// - Parameters:
+    ///   - message: request message to send.
+    ///   - metadata: Additional metadata to send, defaults to empty.
+    ///   - options: Options to apply to this RPC, defaults to `.defaults`.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
+    /// - Returns: The result of `handleResponse`.
+    internal func confirmFirstWallet<Result>(
+        _ message: Blakeswap_V1_ConfirmFirstWalletRequest,
+        metadata: GRPCCore.Metadata = [:],
+        options: GRPCCore.CallOptions = .defaults,
+        onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Blakeswap_V1_Settings>) async throws -> Result = { response in
+            try response.message
+        }
+    ) async throws -> Result where Result: Sendable {
+        let request = GRPCCore.ClientRequest<Blakeswap_V1_ConfirmFirstWalletRequest>(
+            message: message,
+            metadata: metadata
+        )
+        return try await self.confirmFirstWallet(
+            request: request,
+            options: options,
+            onResponse: handleResponse
+        )
+    }
+
+    /// Call the "ExportFirstWallet" method.
+    ///
+    /// - Parameters:
+    ///   - message: request message to send.
+    ///   - metadata: Additional metadata to send, defaults to empty.
+    ///   - options: Options to apply to this RPC, defaults to `.defaults`.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
+    /// - Returns: The result of `handleResponse`.
+    internal func exportFirstWallet<Result>(
+        _ message: Blakeswap_V1_ExportFirstWalletRequest,
+        metadata: GRPCCore.Metadata = [:],
+        options: GRPCCore.CallOptions = .defaults,
+        onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Blakeswap_V1_Backup>) async throws -> Result = { response in
+            try response.message
+        }
+    ) async throws -> Result where Result: Sendable {
+        let request = GRPCCore.ClientRequest<Blakeswap_V1_ExportFirstWalletRequest>(
+            message: message,
+            metadata: metadata
+        )
+        return try await self.exportFirstWallet(
+            request: request,
+            options: options,
+            onResponse: handleResponse
+        )
+    }
+
+    /// Call the "FinishOnboarding" method.
+    ///
+    /// - Parameters:
+    ///   - message: request message to send.
+    ///   - metadata: Additional metadata to send, defaults to empty.
+    ///   - options: Options to apply to this RPC, defaults to `.defaults`.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
+    /// - Returns: The result of `handleResponse`.
+    internal func finishOnboarding<Result>(
+        _ message: Blakeswap_V1_Settings,
+        metadata: GRPCCore.Metadata = [:],
+        options: GRPCCore.CallOptions = .defaults,
+        onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Blakeswap_V1_Settings>) async throws -> Result = { response in
+            try response.message
+        }
+    ) async throws -> Result where Result: Sendable {
+        let request = GRPCCore.ClientRequest<Blakeswap_V1_Settings>(
+            message: message,
+            metadata: metadata
+        )
+        return try await self.finishOnboarding(
             request: request,
             options: options,
             onResponse: handleResponse

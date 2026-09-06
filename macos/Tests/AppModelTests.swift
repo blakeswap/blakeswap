@@ -3,6 +3,21 @@ import XCTest
 
 final class AppModelTests: XCTestCase {
     @MainActor
+    func testOnboardingDiscardsRecoveryWhenBackupCompletesAndRejectsStaleStage() {
+        let model = AppModel()
+        var settings = AppSettings(); settings.activeNetwork = "mainnet"; settings.revision = 2; settings.onboardingStage = "backup"
+        model.acceptSnapshot(nil, settings: settings, profile: "alice", generation: model.generation)
+        var first = Blakeswap_V1_FirstWallet(); first.settings = settings; first.recovery.mnemonic = "test fixture"
+        model.setupWallet = first
+        let pending = model.generation
+        settings.revision = 3; settings.onboardingStage = "connect"
+        model.acceptSnapshot(nil, settings: settings, profile: "alice", generation: model.generation)
+        XCTAssertNil(model.setupWallet)
+        XCTAssertFalse(model.acceptSnapshot(nil, settings: first.settings, profile: "alice", generation: pending))
+        XCTAssertEqual(model.settings?.onboardingStage, "connect")
+    }
+
+    @MainActor
     func testNetworkSwitchRejectsMismatchedAddressesAndOldGeneration() {
         let model = AppModel()
         var main = AppSettings(); main.activeNetwork = "mainnet"; main.revision = 1

@@ -170,3 +170,28 @@ its empty-balance offers on both assets, and verify its addresses/identity survi
 renaming before completing an actual two-chain trade. Watchtower tests also cover
 asymmetric public clocks, unrelated funding-output rejection, and one private
 lookup per provider per expiry period after successful relay publication.
+
+## Onboarding and reset regressions
+
+Go tests cover first-launch engine gating, backup confirmation, invalid phrases,
+revision conflicts, interrupted wallet installation, completed/legacy setup,
+encrypted backup round trips, wrong passwords without source modification, and
+retained pending swaps/network guards. Python reset tests cover the actual Make
+target with spaces in its data path, preservation of archived files, and refusal
+of active locks, symlinks, or unrelated directories. CI and `scripts/test.sh` run
+these tests; `make test-reset` runs the reset checks alone.
+
+Native tests create a temporary installation through the real packaged helper
+and gRPC client, restart during backup, finish setup, and restore by phrase and
+encrypted file. They never contact public services or use existing wallet data:
+
+```sh
+sh scripts/build-mac.sh
+BLAKESWAP_TEST_HELPER="$PWD/bin/Blakeswap.app/Contents/Resources/blakeswap" \
+  swift test --package-path macos --scratch-path .cache/swift-build \
+  --cache-path .cache/swift-cache -c release --filter OnboardingTests
+```
+
+`scripts/test-swift.sh` includes these tests alongside its configured regtest
+trade. AppModel tests also ensure backup completion clears recovery material and
+rejects delayed snapshots from an earlier setup step.

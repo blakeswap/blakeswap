@@ -121,7 +121,9 @@ func Run(ctx context.Context, root string, parent int) error {
 		return err
 	}
 	m := &Manager{root: root, settings: settings, engines: map[string]*daemon.Engine{}, configs: map[string]daemon.Config{}, restart: true}
-	m.lastError = "Connecting"
+	if settings.OnboardingStage == "" {
+		m.lastError = "Connecting"
+	}
 	m.publishView()
 	runtimeDir, err := os.MkdirTemp("", "blakeswap-")
 	if err != nil {
@@ -166,6 +168,9 @@ func (m *Manager) writeSettings(ctx context.Context, next *pb.Settings) (*pb.Set
 	defer m.mu.Unlock()
 	if err := ctx.Err(); err != nil {
 		return nil, err
+	}
+	if next.OnboardingStage != m.settings.OnboardingStage || m.settings.OnboardingStage != "" {
+		return nil, status.Error(codes.FailedPrecondition, "use the onboarding flow to finish setup")
 	}
 	if next.Revision != m.settings.Revision {
 		return nil, status.Error(codes.Aborted, "settings changed; reload before saving")
@@ -225,6 +230,9 @@ func (m *Manager) command(ctx context.Context, profile string, req daemon.Reques
 	}
 	if m.stopped {
 		return nil, status.Error(codes.Unavailable, "daemon is stopping")
+	}
+	if m.settings.OnboardingStage != "" {
+		return nil, status.Error(codes.FailedPrecondition, "finish setting up your wallet")
 	}
 	if err := daemon.CheckCommandNetwork(req, chain.Network(m.settings.ActiveNetwork), true); err != nil {
 		return nil, status.Error(codes.FailedPrecondition, err.Error())
@@ -315,7 +323,7 @@ func (m *Manager) run(ctx context.Context) error {
 			m.configs = map[string]daemon.Config{}
 			m.restart = false
 		}
-		if len(m.engines) < len(m.settings.Wallets) || len(m.openings) > 0 {
+		if m.settings.OnboardingStage == "" && (len(m.engines) < len(m.settings.Wallets) || len(m.openings) > 0) {
 			m.connect(ctx)
 		}
 		if len(m.engines) == len(m.settings.Wallets) && len(m.openings) == 0 {

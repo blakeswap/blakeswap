@@ -22,7 +22,7 @@ import (
 func Defaults() *pb.Settings {
 	userDir, _ := os.UserHomeDir()
 	relays := []string{"wss://nos.lol", "wss://relay.primal.net", "wss://relay.ditto.pub"}
-	return &pb.Settings{ActiveNetwork: "mainnet", Revision: 1, Wallets: []*pb.WalletProfile{{Id: "alice", Name: "Wallet 1"}}, Environments: []*pb.Environment{
+	return &pb.Settings{ActiveNetwork: "mainnet", Revision: 1, OnboardingStage: "wallet", Wallets: []*pb.WalletProfile{{Id: "alice", Name: "Wallet 1"}}, Environments: []*pb.Environment{
 		{Network: "regtest", Nodes: map[string]*pb.Node{"btc": {Kind: "rpc", Url: "http://127.0.0.1:19443", Cookie: filepath.Join(userDir, "Library/Application Support/Bitcoin/regtest/.cookie")}, "blake": {Kind: "rpc", Url: "http://127.0.0.1:29443", Cookie: filepath.Join(userDir, "Library/Application Support/BitcoinBlake2b/regtest/.cookie")}}, Relays: append([]string(nil), relays...), Tower: &pb.Tower{}},
 		{Network: "testnet", Nodes: map[string]*pb.Node{"btc": {Kind: "electrum", Url: "ssl://mempool.space:40002"}, "blake": {Kind: "electrum"}}, Relays: relays, Tower: &pb.Tower{}},
 		{Network: "mainnet", Nodes: map[string]*pb.Node{"btc": {Kind: "electrum", Url: "ssl://electrum.blockstream.info:50002"}, "blake": {Kind: "electrum", Url: "ssl://fulcrum.kilombino.com:17717", CertificateSha256: "506dadc710c5abaeb13191056c5aaf47035d30e08bd869f7b4fbe6e13745d5a7"}}, Relays: append([]string(nil), relays...), Tower: &pb.Tower{}},
@@ -42,6 +42,12 @@ func validate(s *pb.Settings) error {
 	}
 	if len(s.Wallets) == 0 || len(s.Wallets) > 20 {
 		return errors.New("configure between one and 20 wallets")
+	}
+	if s.OnboardingStage != "" && s.OnboardingStage != "wallet" && s.OnboardingStage != "backup" && s.OnboardingStage != "connect" {
+		return errors.New("invalid onboarding stage")
+	}
+	if s.OnboardingStage != "" && (len(s.Wallets) != 1 || s.Wallets[0] == nil || s.Wallets[0].Id != "alice") {
+		return errors.New("onboarding requires the first wallet slot")
 	}
 	ids := map[string]bool{}
 	for _, profile := range s.Wallets {
@@ -157,6 +163,11 @@ func loadSettings(root string) (*pb.Settings, error) {
 	}
 	if migrated {
 		return s, saveSettings(root, s)
+	}
+	if s.OnboardingStage == "wallet" {
+		if err := recoverPreparedWallet(root, s); err != nil {
+			return nil, err
+		}
 	}
 	return s, nil
 }

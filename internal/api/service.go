@@ -17,6 +17,11 @@ import (
 )
 
 type Service struct {
+	PrepareWallet func(context.Context, *pb.PrepareFirstWalletRequest) (*pb.FirstWallet, error)
+	FirstWallet   func(context.Context) (*pb.FirstWallet, error)
+	ConfirmWallet func(context.Context, *pb.ConfirmFirstWalletRequest) (*pb.Settings, error)
+	ExportWallet  func(context.Context, *pb.ExportFirstWalletRequest) (*pb.Backup, error)
+	FinishSetup   func(context.Context, *pb.Settings) (*pb.Settings, error)
 	pb.UnimplementedDaemonServiceServer
 	Command       func(context.Context, daemon.Request) (any, error)
 	ReadSettings  func(context.Context) (*pb.Settings, error)
@@ -168,4 +173,55 @@ func (s *Service) CheckNode(ctx context.Context, in *pb.CheckNodeRequest) (*pb.C
 		return nil, rpcError(err)
 	}
 	return &pb.CheckNodeResponse{Height: h, Trust: trust}, nil
+}
+
+func (s *Service) PrepareFirstWallet(ctx context.Context, in *pb.PrepareFirstWalletRequest) (*pb.FirstWallet, error) {
+	if s.PrepareWallet == nil {
+		return nil, status.Error(codes.Unimplemented, "onboarding is managed by the desktop app")
+	}
+	v, err := s.PrepareWallet(ctx, in)
+	if err != nil {
+		return nil, rpcError(err)
+	}
+	return v, nil
+}
+func (s *Service) GetFirstWallet(ctx context.Context, _ *emptypb.Empty) (*pb.FirstWallet, error) {
+	if s.FirstWallet == nil {
+		return nil, status.Error(codes.Unimplemented, "onboarding is managed by the desktop app")
+	}
+	v, err := s.FirstWallet(ctx)
+	if err != nil {
+		return nil, rpcError(err)
+	}
+	return v, nil
+}
+func (s *Service) ConfirmFirstWallet(ctx context.Context, in *pb.ConfirmFirstWalletRequest) (*pb.Settings, error) {
+	if s.ConfirmWallet == nil {
+		return nil, status.Error(codes.Unimplemented, "onboarding is managed by the desktop app")
+	}
+	v, err := s.ConfirmWallet(ctx, in)
+	if err != nil {
+		return nil, rpcError(err)
+	}
+	return v, nil
+}
+func (s *Service) ExportFirstWallet(ctx context.Context, in *pb.ExportFirstWalletRequest) (*pb.Backup, error) {
+	if s.ExportWallet == nil {
+		return nil, status.Error(codes.Unimplemented, "onboarding is managed by the desktop app")
+	}
+	v, err := s.ExportWallet(ctx, in)
+	if err != nil {
+		return nil, rpcError(err)
+	}
+	return v, nil
+}
+func (s *Service) FinishOnboarding(ctx context.Context, in *pb.Settings) (*pb.Settings, error) {
+	if s.FinishSetup == nil {
+		return nil, status.Error(codes.Unimplemented, "onboarding is managed by the desktop app")
+	}
+	v, err := s.FinishSetup(ctx, in)
+	if err != nil {
+		return nil, rpcError(err)
+	}
+	return v, nil
 }

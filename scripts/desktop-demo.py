@@ -36,6 +36,7 @@ def prepare():
                 helper.terminate(); helper.wait(timeout=30)
     settings = json.loads((DATA / "settings.json").read_text())
     settings["active_network"] = "regtest"
+    settings["onboarding_stage"] = ""
     settings["wallets"] = [{"id": "alice", "name": "Alice"}, {"id": "bob", "name": "Bob"}]
     for env in settings["environments"]:
         if env["network"] == "regtest":

@@ -83,6 +83,26 @@ enum DaemonRPC {
                 let request = try Blakeswap_V1_CreateWalletRequest(jsonUTF8Data: payload)
                 let response = try await service.createWallet(request, metadata: metadata, options: options)
                 return try response.serializedData()
+            case "onboarding.prepare":
+                let request = try Blakeswap_V1_PrepareFirstWalletRequest(jsonUTF8Data: payload)
+                let response = try await service.prepareFirstWallet(request, metadata: metadata, options: options)
+                return try response.serializedData()
+            case "onboarding.get":
+                let request = try Google_Protobuf_Empty(jsonUTF8Data: payload)
+                let response = try await service.getFirstWallet(request, metadata: metadata, options: options)
+                return try response.serializedData()
+            case "onboarding.confirm":
+                let request = try Blakeswap_V1_ConfirmFirstWalletRequest(jsonUTF8Data: payload)
+                let response = try await service.confirmFirstWallet(request, metadata: metadata, options: options)
+                return try response.serializedData()
+            case "onboarding.export":
+                let request = try Blakeswap_V1_ExportFirstWalletRequest(jsonUTF8Data: payload)
+                let response = try await service.exportFirstWallet(request, metadata: metadata, options: options)
+                return try response.serializedData()
+            case "onboarding.finish":
+                let request = try Blakeswap_V1_Settings(jsonUTF8Data: payload)
+                let response = try await service.finishOnboarding(request, metadata: metadata, options: options)
+                return try response.serializedData()
             case "settings.get":
                 let request = try Google_Protobuf_Empty(jsonUTF8Data: payload)
                 let response = try await service.getSettings(request, metadata: metadata, options: options)

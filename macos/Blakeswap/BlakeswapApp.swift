@@ -7,7 +7,7 @@ struct BlakeswapApp: App {
     @StateObject private var model = AppModel()
     var body: some Scene {
         WindowGroup("Blakeswap") {
-            ContentView().environmentObject(model)
+            AppRootView().environmentObject(model)
                 .frame(minWidth: 1060, minHeight: 730)
                 .preferredColorScheme(.dark)
                 .task {
@@ -32,13 +32,13 @@ struct BlakeswapApp: App {
     }
 }
 
-private let mint = Color(red: 0.39, green: 0.88, blue: 0.72)
-private let panel = Color(red: 0.10, green: 0.12, blue: 0.15)
+let mint = Color(red: 0.39, green: 0.88, blue: 0.72)
+let panel = Color(red: 0.10, green: 0.12, blue: 0.15)
 // Share the packaged Dock artwork instead of maintaining a second brand mark.
 private let appIcon = Bundle.main.url(forResource: "AppIcon", withExtension: "icns")
     .flatMap { NSImage(contentsOf: $0) } ?? NSImage(size: .zero)
 
-private struct MintButton: ButtonStyle {
+struct MintButton: ButtonStyle {
     @Environment(\.isEnabled) private var isEnabled
     func makeBody(configuration: Configuration) -> some View {
         configuration.label.font(.callout.weight(.medium))
@@ -74,6 +74,24 @@ private struct OrderFilterTab: View {
         .accessibilityLabel(filter.rawValue).accessibilityValue("\(count) orders")
         .accessibilityAddTraits(selected ? .isSelected : [])
         .accessibilityIdentifier("order-filter-\(filter.key)")
+    }
+}
+
+struct AppRootView: View {
+    @EnvironmentObject private var model: AppModel
+    var body: some View {
+        Group {
+            if let settings = model.settings {
+                if settings.onboardingStage.isEmpty { ContentView() }
+                else { OnboardingView(settings: settings).id(settings.onboardingStage) }
+            } else {
+                VStack(spacing: 18) {
+                    ProgressView()
+                    Text("Opening Blakeswap").font(.title3.weight(.semibold))
+                    if let error = model.connectionError { Text(error).font(.callout).foregroundStyle(.secondary) }
+                }.frame(maxWidth: .infinity, maxHeight: .infinity)
+            }
+        }
     }
 }
 

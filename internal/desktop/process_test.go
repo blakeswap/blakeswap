@@ -52,7 +52,7 @@ func TestDesktopOwnedProcessLifecycle(t *testing.T) {
 	for _, scenario := range []string{"terminate", "parent-death"} {
 		t.Run(scenario, func(t *testing.T) {
 			root := t.TempDir()
-			settings := Defaults()
+			settings := configuredDefaults()
 			env := environment(settings, "mainnet")
 			cookie := filepath.Join(root, "rpc.cookie")
 			if err := os.WriteFile(cookie, []byte("test:test"), 0600); err != nil {

@@ -25,6 +25,10 @@ sh scripts/build-dmg.sh
 ```
 
 Open `bin/Blakeswap-0.2.0-arm64.dmg`, drag the app into Applications, and open it.
+On first launch, choose a wallet name and create a new wallet or restore a BIP39
+recovery phrase or encrypted state backup. Setup checks three recovery words,
+offers a password-protected backup file, and walks through network and server
+connections. Existing installations keep their wallets and skip onboarding.
 The app owns one bundled Go daemon: launch starts it, quit stops it, and parent-death
 monitoring stops it after a force quit.
 The default build is ad-hoc signed; [Packaging](docs/PACKAGING.md) describes Developer
@@ -99,9 +103,16 @@ See [the invariant matrix and test limits](docs/TESTING.md). “Comprehensive”
 
 Source lives in `internal/` and `cmd/blakeswap/`; native SwiftUI source lives in `macos/Blakeswap/`. Build products, downloaded binaries, regtest data, credentials, and wallet state remain in ignored directories.
 
-Wallets can be created and renamed in Settings. New installations start with one
-wallet; existing Alice/Bob vaults are preserved. The selector lists saved wallets
+Wallets can be created and renamed in Settings. New installations set up their
+first wallet during onboarding; existing Alice/Bob vaults are preserved. The selector lists saved wallets
 on every network, and all wallets continue trading and serving watchtower jobs
 while the app is open. Names are labels: renaming does not change keys, addresses,
 or balances. Public watchtower listing is off by default; its per-network toggle
 opts all of the app's wallets into that network's public directory.
+
+To exercise first launch again, quit the app and run `make reset-local-data`.
+This archives `~/Library/Application Support/Blakeswap` beside its original
+location and prints the archive path. The next launch starts onboarding.
+Use `make reset-local-data APP_DATA_DIR="/absolute/test/data"` for an isolated
+installation. The archive contains the previous wallets and pending swap state;
+keep it if you need to resume them. See [setup and recovery](docs/PACKAGING.md#first-launch-and-reset).
