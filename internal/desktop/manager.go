@@ -260,6 +260,9 @@ func (m *Manager) writeSettings(ctx context.Context, next *pb.Settings) (*pb.Set
 	return proto.Clone(saved).(*pb.Settings), nil
 }
 func (m *Manager) command(ctx context.Context, profile string, req daemon.Request) (any, error) {
+	if req.Method == "wallet.preflight" {
+		return m.preflightFunds(ctx, profile, req)
+	}
 	if req.Method == "status.refresh" {
 		return m.refreshStatus(ctx, profile, req)
 	}

@@ -195,3 +195,69 @@ func TestNetworkSwitchJoinsWorkersBeforeCheckingNewObligations(t *testing.T) {
 		t.Fatal("switch did not finish after worker joined")
 	}
 }
+
+type advisoryFixture struct {
+	*workerFixture
+	command func(context.Context, daemon.Request) (any, error)
+}
+
+func (f *advisoryFixture) Command(ctx context.Context, req daemon.Request) (any, error) {
+	return f.command(ctx, req)
+}
+
+func TestPreflightDoesNotHoldLifecycleLockAndStopsBeforeEngineClose(t *testing.T) {
+	entered, cancelled, release := make(chan struct{}), make(chan struct{}), make(chan struct{})
+	alice := &advisoryFixture{workerFixture: &workerFixture{name: "alice"}, command: func(ctx context.Context, req daemon.Request) (any, error) {
+		close(entered)
+		<-ctx.Done()
+		close(cancelled)
+		<-release
+		return daemon.FundsPreflight{State: "proven"}, nil // A late success cannot survive cancellation.
+	}}
+	wa := startWalletWorker(context.Background(), alice)
+	wb := startWalletWorker(context.Background(), &workerFixture{name: "bob"})
+	settings := configuredDefaults()
+	settings.ActiveNetwork = "regtest"
+	m := &Manager{settings: settings, workers: map[string]*walletWorker{"alice": wa, "bob": wb}}
+	done := make(chan error, 1)
+	go func() {
+		_, err := m.command(context.Background(), "alice", daemon.Request{Method: "wallet.preflight", Params: json.RawMessage(`{"expected_network":"regtest"}`)})
+		done <- err
+	}()
+	<-entered
+	if !m.mu.TryLock() {
+		t.Fatal("preflight holds global lifecycle lock")
+	}
+	m.mu.Unlock()
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	if _, err := m.command(ctx, "bob", daemon.Request{Method: "status.refresh", Params: json.RawMessage(`{"expected_network":"regtest"}`)}); err != nil {
+		t.Fatal("preflight blocked another wallet", err)
+	}
+	stopped := make(chan struct{})
+	go func() { m.mu.Lock(); m.stopWorkers(); m.mu.Unlock(); close(stopped) }()
+	select {
+	case <-cancelled:
+	case <-time.After(time.Second):
+		t.Fatal("worker shutdown did not cancel preflight")
+	}
+	select {
+	case <-stopped:
+		t.Fatal("engine may close before advisory completes")
+	default:
+	}
+	close(release)
+	select {
+	case err := <-done:
+		if !errors.Is(err, context.Canceled) {
+			t.Fatal("late proof survived cancellation", err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("preflight did not release")
+	}
+	select {
+	case <-stopped:
+	case <-time.After(time.Second):
+		t.Fatal("worker shutdown did not join advisory")
+	}
+}

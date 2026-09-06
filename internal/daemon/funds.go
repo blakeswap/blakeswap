@@ -184,7 +184,14 @@ func (e *Engine) preflightFunds(ctx context.Context, req Request) (FundsPrefligh
 	if err := json.Unmarshal(req.Params, &p); err != nil {
 		return FundsPreflight{}, err
 	}
+	if err := ctx.Err(); err != nil {
+		return FundsPreflight{}, err
+	}
 	e.mu.Lock()
+	if err := ctx.Err(); err != nil {
+		e.mu.Unlock()
+		return FundsPreflight{}, err
+	}
 	if err := CheckCommandNetwork(req, e.Config.Network, false); err != nil {
 		e.mu.Unlock()
 		return FundsPreflight{}, err
