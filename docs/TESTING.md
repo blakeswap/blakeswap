@@ -123,8 +123,10 @@ one app-owned Go helper. GUI shutdown and parent
 death must remove the helper/runtime while external fixtures remain alive.
 
 The GitHub Go validation workflow runs vet, unit/IPC lifecycle tests, race checks,
-NIP-44 vectors and formatting on Linux. Native Swift, DMG, and real two-chain
-integration validation run locally on macOS; CI does not imply those ran there.
+NIP-44 vectors and formatting on Linux. The separate version-tag/release workflow
+defines native Swift and DMG checks on both Mac architectures. Actual two-chain
+integration still requires separately prepared local fixtures; neither ordinary
+Go CI nor the macOS release workflow sets those up.
 The native client has a separate actual gRPC trade test using the same DaemonRPC
 implementation as the GUI:
 
@@ -230,9 +232,25 @@ explicit paths, and migrate obsolete generated defaults. `make test-local-nodes`
 checks launcher registration and per-chain Make targets. `make test-packaging`
 checks tag validation and bundle version metadata. Both run in CI. The macOS
 packages workflow builds, verifies DMGs and binary architectures, and runs native
-tests on Apple silicon and Intel when a version tag or release is published.
+tests on Apple silicon and Intel when a version tag or release is published. It
+sets `BLAKESWAP_TEST_HELPER`, enabling startup/onboarding tests, but does not set
+`BLAKESWAP_SWIFT_TEST_ROOT`, so the external regtest gRPC trade is skipped. This
+describes the workflow, not evidence that a particular release ran successfully.
 Pull requests and main-branch pushes keep Go validation in the separate CI
 workflow without building DMGs.
+
+## Sends, reservations, and safe request expiry
+
+[Send regressions](../internal/daemon/send_test.go) check durable-before-broadcast
+storage, identical retries, locked/spent coin and invalid-fee rejection, persisted
+open-order locks, pending request expiry, late acceptance rejection, and safe
+maker reservation expiry before prepared funding.
+`TestRealSendsHonorCoinControlFeesAndOrderLocks` checks selected inputs, exact fee
+and change, and confirmation on both regtest chains; it requires
+`BLAKESWAP_REGTEST` and also runs through the Electrum fixture in `scripts/test.sh`.
+Native [coin-control tests](../macos/Tests/SendCoinsTests.swift) cover send review
+amounts, dust, fees, locked/unconfirmed coins, and wrong-chain selections. These source tests are not
+a claim of a new integration run for a documentation-only correction.
 
 ## Order privacy and wallet background progress
 

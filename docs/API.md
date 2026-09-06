@@ -42,17 +42,19 @@ account that can read those files.
 
 | RPC | HTTP | Purpose |
 | --- | --- | --- |
-| GetStatus | GET `/v1/status` | Public wallet identity, network, balances, chain heights, offers, swaps, delivery state, errors |
+| GetStatus | GET `/v1/status` | Public wallet identity, network, balances, coins, sends, chain heights, offers, swaps, delivery state, errors |
+| RefreshStatus | POST `/v1/status/refresh` | Run a fresh wallet cycle and return its status |
 | SetPaused | PUT `/v1/pause` | Compatibility endpoint: pausing is rejected; resume clears legacy state |
 | ResolveWatchtower | POST `/v1/watchtowers/resolve` | Request an encrypted signed quote by npub or hex public key |
-| CreateOffer | POST `/v1/offers` | Exact chain/amount pair, optional expiry, tower basis points and discovered `tower_pubkey` |
+| CreateOffer | POST `/v1/offers` | Exact chain/amount pair, optional expiry, and maker-only private tower selection |
 | CancelOffer | DELETE `/v1/offers/{id}` | Cancel an unreserved local offer |
-| TakeOffer | POST `/v1/swaps` | Request a signed maker offer by maker key and ID |
+| TakeOffer | POST `/v1/swaps` | Request a signed maker offer by maker key and ID, with independent taker-only tower selection |
 | SendCoins | POST `/v1/wallet/send` | Explicit coin selection, recipient, amount, total fee, and idempotent request ID |
 | GetRecovery | POST `/v1/wallet/recovery` | Explicit sensitive recovery phrase request |
 | BackupWallet | POST `/v1/wallet/backup` | Consistent encrypted state backup |
 | Mine | POST `/v1/regtest/mine` | Test-node mining, regtest RPC only |
 | Faucet | POST `/v1/regtest/faucet` | Test faucet to caller's deposit address, regtest RPC only |
+| CreateWallet | POST `/v1/wallets` | Create an independent wallet using a name and Settings revision |
 | GetSettings | GET `/v1/settings` | Desktop environment configuration and revision |
 | UpdateSettings | PUT `/v1/settings` | Atomic compare-and-swap configuration update |
 | PrepareFirstWallet | POST `/v1/onboarding/wallet` | Create or restore the first wallet with the current Settings revision |
@@ -126,8 +128,9 @@ announcement. Public-directory clients filter on `public`; private quotes can
 still be selected by favorite identity. Each Settings environment has
 `public_watchtower` (false by default) and `favorite_watchtowers` (npubs).
 CreateOffer rechecks the confirmed sell balance against principal plus funding
-fee and rejects expired discovery quotes. Protected offers retain the provider's
-signed quote so settings edits cannot redirect negotiated rescue payouts.
+fee and rejects expired discovery quotes. Each wallet retains its own provider's
+signed quote in encrypted local protection state so settings edits cannot redirect
+accepted rescue payouts. Public offers and shared terms omit those choices.
 
 ### Wallet profiles
 
@@ -171,15 +174,21 @@ and confirmation state). Private signed transaction bytes are omitted.
 `destination`, `amount`, `fee`, 1–50 `inputs` (`txid`, `vout`), and the displayed
 `expected_network`. Amounts and the exact total miner fee are integer satoshis.
 The daemon revalidates ownership, current unspent outputs and confirmations,
-network/address, dust, and all order/trade/send reservations before signing.
+network/address, dust, and all order/trade/send reservations before signing. BTC
+sends also require the same bounded chain-exclusive ancestry proof as BTC swap
+funding. The fee range is 1–1,000,000 sats; the recipient must receive at least
+600 sats, and change must be zero or at least 600 sats.
 
 Open orders reserve full funding coins, including the funding fee. Cancelling an
 unreserved order releases those coins; an accepted trade retains them until its
 funding consumes them or it reaches a safe terminal state. A send is persisted
 before broadcast and retries the same signed bytes after ambiguous failures.
 Retry the same request ID with identical details to retrieve its existing result;
-changing details with an existing ID is rejected. Pending sends block network
-switching until six confirmations. There is no send cancellation or fee replacement;
+changing details with an existing ID is rejected. Transaction lookup errors do not
+prove absence: the daemon retries broadcast only after an explicit not-found
+result, at intervals of at least 30 seconds. `submitted` does not mean confirmed;
+inspect `confirmations` and `error`. History is capped at 1,000 sends. Pending
+sends block network switching until six confirmations. There is no send cancellation or fee replacement;
 a low fee can leave a payment pending until miners accept it.
 
 Unanswered take requests expire at the signed offer deadline before acceptance or

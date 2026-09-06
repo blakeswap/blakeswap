@@ -2,7 +2,7 @@
 
 ## What is paid
 
-There is no DAO, native token, treasury output, matching fee, or upfront service payment. An offer can select no tower or accept the configured tower's percentage quote. The demo provider quotes 50 basis points, or 0.50%; the protocol permits 1–1000 basis points for a protected order.
+There is no DAO, native token, treasury output, matching fee, or upfront service payment. Each wallet can select no tower or privately pin its own provider's percentage quote. The maker's choice protects the maker; the taker independently chooses optional refund protection. These choices do not appear in the public offer or shared swap terms. The demo provider quotes 50 basis points, or 0.50%; the protocol permits 1–1000 basis points for a protected order.
 
 For the specific local-chain output being rescued:
 
@@ -51,6 +51,10 @@ This is a model, not a claim of profitability. Most protected trades can finish 
 The application enforces a conservative 600-sat minimum bounty and non-dust owner payout after the highest pre-authorized mining fee. At 50 basis points the bounty floor alone implies a 120,000-sat minimum principal. The ordinary order minimum is 100,000 sats, so protection can impose a stricter minimum. No minimum fixed fee is silently charged in addition to the percentage.
 
 The local tower caps stored jobs at 1,000 and the relay caps records. These are development guardrails, not a complete public-service anti-spam or pricing strategy. An attacker can ask a provider to store valid but never-funded jobs. Upfront payment was deliberately excluded; production admission and incentive design remains an open problem.
+
+Wallet sends have a manually selected total mining fee and no tower bounty. A
+send that consolidates selected coins is still an ordinary paid transaction.
+There is no automatic consolidation service or live fee estimator.
 
 ## Fee escalation
 

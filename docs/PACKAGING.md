@@ -83,7 +83,8 @@ existing on-chain obligations.
 
 Use an Apple silicon or Intel Mac with compatible Swift 6.1+ tooling, Python 3,
 and Go toolchain download support. Each build contains a native UI and Go helper
-for its host architecture. GitHub builds separate arm64 and x86_64 DMGs.
+for its host architecture. The [GitHub release workflow](../.github/workflows/release.yml)
+is configured to build separate arm64 and x86_64 DMGs.
 
 ```sh
 sh scripts/build-mac.sh
@@ -91,7 +92,7 @@ sh scripts/build-dmg.sh
 ```
 
 The first script builds/signs `bin/Blakeswap.app`. The second creates and verifies
-`bin/Blakeswap-0.2.0-arm64.dmg`, with the app and an Applications shortcut. Open the
+`bin/Blakeswap-0.2.0-arm64.dmg` (or `x86_64` on Intel), with the app and an Applications shortcut. Open the
 DMG, drag Blakeswap into Applications, eject the image, and open the installed app.
 No repository checkout or separately installed Go runtime is needed to run it.
 Native dependencies are linked into the executable. Building does require the
@@ -124,8 +125,11 @@ so rebuilding cannot overwrite the executable vnode of a running copy.
 
 Push a version tag such as `v0.3.0`, or publish a GitHub release for an existing
 version tag. The macOS packages workflow builds the tagged source on native
-Apple silicon and Intel runners, verifies both executables' architectures,
-runs native tests, and uploads these assets only after both jobs pass:
+Apple silicon (`macos-26`) and Intel (`macos-26-intel`) runners, verifies both
+executables' architectures, and runs packaging/launcher tests plus `swift test`
+with the built helper. That enables native startup and onboarding tests. The
+external regtest gRPC trade skips without `BLAKESWAP_SWIFT_TEST_ROOT`; this workflow
+does not set up two-chain nodes. It uploads these assets only after both jobs pass:
 
 - `Blakeswap-0.3.0-arm64.dmg` (Apple silicon)
 - `Blakeswap-0.3.0-x86_64.dmg` (Intel)
@@ -142,7 +146,9 @@ version (otherwise an exact version tag or `0.2.0` is used).
 Hosted builds currently use ad-hoc signing. No Developer ID certificate or Apple
 notarization credentials are configured in this workflow; downloaded DMGs may
 be blocked by Gatekeeper. The existing local signing/notarization options above
-remain available.
+remain available. A workflow definition establishes intended build/test steps,
+not that a particular tag built, shipped, or received independent verification.
+Check that tag’s workflow results and release assets before treating it as built.
 
 ## Explicit external regtest demonstration
 

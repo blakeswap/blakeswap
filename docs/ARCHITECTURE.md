@@ -4,7 +4,7 @@
 
 | Component | Responsibility | Keys and authority |
 | --- | --- | --- |
-| SwiftUI macOS app | Market, exact-amount offer form, swaps, wallet, recovery controls, local test mining | No standing wallet key storage; recovery phrase is displayed only on explicit request |
+| SwiftUI macOS app | Market, exact-amount offer form, swaps, receive QR, coin-control send review, outgoing status, recovery controls, local test mining | No standing wallet key storage; recovery phrase is displayed only on explicit request |
 | Go trader daemon | Derivation, signing, order projection, negotiation, chain verification, durable state, rescue scheduling | Its own spending keys and Nostr identity; never the counterparty's keys |
 | Nostr relays | Store signed public offers and opaque persistent gift wraps; support WebSocket subscriptions | No spending authority and no private swap plaintext |
 | Watchtower daemon | Validate and persist fixed rescue templates; acknowledge jobs; scan both chains; insert public preimages and broadcast after delay | Nostr identity and its fee wallet; no trader private keys or undisclosed swap preimages |
@@ -15,7 +15,9 @@ The desktop owns a Go helper with an independent engine for each saved wallet on
 the selected network. Settings creates wallets and edits their display names. The CLI can instead run
 independent trader and tower daemons. Every wallet engine also accepts and advances watchtower jobs alongside its own swaps. Public listing is opt-in; a shared npub supports encrypted private discovery. Each connects to external chain services and
 one or more Nostr relays. The maker serializes reservations of its own offers;
-there is no authoritative matching database or service holding user funds.
+there is no authoritative matching database or service holding user funds. Durable
+local coin reservations prevent honest-client reuse across offers, trades, and
+sends, including funding fees. They do not prove remote offers are backed.
 
 By default wallets connect to public Electrum servers. Settings also accepts
 user-operated full-node RPC backends.
@@ -95,8 +97,9 @@ npub, generated P2WPKH scripts, basis-point fee, expiry and public-listing flag.
 Public announcements refresh every fifteen minutes and expire after an hour.
 An opt-out replaces the old public event with a signed `public=false` event.
 Unlisted providers answer `tower-query` with an encrypted `tower-quote`, carrying
-the same signed proof without posting an announcement. Protected offers pin the
-proof and terms must preserve it. Directory cache and favorites are bounded and
+the same signed proof without posting an announcement. Each wallet pins its selected
+proof in encrypted local protection state; public offers and shared swap terms
+contain neither party’s provider choice. Directory cache and favorites are bounded and
 network-scoped; stale quotes cannot authorize new offers.
 
 Discovery queries and replies expire after fifteen minutes and use a bounded

@@ -1,11 +1,30 @@
 # Implementation ledger
 
-The entries below record the initial regtest milestone. Current native transport,
+The numbered entries below record the September 5, 2026 initial regtest milestone,
+not a current missing-feature list or evidence of a later release build. Current native transport,
 packaging and network support are described in [API](API.md),
 [Packaging](PACKAGING.md), and [Operations](OPERATIONS.md). The app now owns its
 daemon, defaults to public Electrum, and supports all three environments. Public swaps use median-time deadlines and BTC
 ancestry checks; the initial short regtest height schedule is retained for tests.
 
+
+## Current capability source audit — September 6, 2026
+
+The documentation was reconciled against source at `cfae965` (after PRs #8 and
+#9). This audit changes documentation only and does not record a new integration
+run or security review. Later feature work must update the corresponding limits.
+
+| Capability / boundary | Source and test references |
+| --- | --- |
+| Manual sends, durable input locks, identical retries, outgoing status | [Daemon sends and tests](../internal/daemon/send.go), [regressions](../internal/daemon/send_test.go), [native review](../macos/Blakeswap/SendCoinsView.swift), [Wallet UI](../macos/Blakeswap/BlakeswapApp.swift) |
+| Receive rotation, historical monitoring, index recovery | [Receive implementation](../internal/daemon/receive.go), [regressions](../internal/daemon/receive_test.go), [derivation](../internal/wallet/keys.go) |
+| Offer/trade reservations and safe unsigned-request expiry | [Reservations](../internal/daemon/reservations.go), [expiry regressions](../internal/daemon/send_test.go) |
+| Private independent protection and stable provider payouts | [Local protection](../internal/daemon/privacy.go), [provider discovery](../internal/daemon/discovery.go), [protocol](PROTOCOL.md) |
+| API names and request fields | [Protobuf service](../api/proto/blakeswap/v1/daemon.proto), [API reference](API.md) |
+| Both Mac architectures, native release tests, ad-hoc signing | [Workflow](../.github/workflows/release.yml), [build/signing script](../scripts/build-dmg.sh), [packaging limits](PACKAGING.md) |
+| Manual/fixed fees, bounded history, replay/observer trust, password files, stale recovery, whole-offer v1 swaps, no independent audit | [Risks](RISKS.md), [economics](ECONOMICS.md), [recovery](OPERATIONS.md#backups) |
+
+## Initial regtest milestone — September 5, 2026
 
 Goal: run BTC and actual Bitcoin Blake2b regtest nodes, local Nostr relay(s), independent Go trader daemons, a keyless delayed-bounty watchtower, and a native macOS GUI. Verify a real atomic trade and adversarial paths. Windows is excluded.
 
