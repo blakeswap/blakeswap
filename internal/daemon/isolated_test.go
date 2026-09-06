@@ -19,6 +19,148 @@ import (
 	"github.com/btcsuite/btcd/wire"
 )
 
+type switchingEstimateBackend struct {
+	chain.Backend
+	id         chain.ID
+	onEstimate func()
+}
+
+type recoveryClockBackend struct{ chain.Backend }
+
+func (b *recoveryClockBackend) Height(context.Context) (uint32, error) { return 500, nil }
+
+func TestIsolatedTerminalHistorySurvivesOutageButReopensOnReorg(t *testing.T) {
+	for _, role := range []string{"maker", "taker"} {
+		for _, stage := range []string{"completed", "refunded"} {
+			for _, reorg := range []bool{false, true} {
+				t.Run(role+"/"+stage+"/"+map[bool]string{false: "outage", true: "reorg"}[reorg], func(t *testing.T) {
+					e, s, b, secret := isolatedFixture(t, role)
+					target := s.Short
+					if role == "maker" {
+						target = s.Long
+					}
+					key, _ := e.swapKey(target.Chain, s.ID)
+					lock := uint32(0)
+					if stage == "refunded" {
+						lock = target.RefundHeight
+						secret = nil
+					}
+					tx, err := contract.Spend(target, key, e.scripts[target.Chain], 2000, stage == "refunded", lock, nil, 0, secret)
+					if err != nil {
+						t.Fatal(err)
+					}
+					s.Stage, s.LongSpend, s.ShortSpend, s.LongConfirmations, s.ShortConfirmations = stage, strings.Repeat("1", 64), strings.Repeat("2", 64), 2, 2
+					if target.Chain == s.Long.Chain {
+						s.LongSpend = tx.TxHash().String()
+					} else {
+						s.ShortSpend = tx.TxHash().String()
+					}
+					if err := e.CanChangeNetwork(); err != nil {
+						t.Fatal("fixture is not terminal", err)
+					}
+					confirmations := 2
+					if reorg {
+						confirmations = 0
+					}
+					all := map[chain.ID]map[string]chain.Observation{target.Chain: {chain.OutpointKey(target.TxID, target.Vout): {Tx: tx, TxID: tx.TxHash().String(), Confirmations: confirmations}}}
+					b.broadcast = func(raw string) (string, error) { tx, _ := contract.Parse(raw); return tx.TxHash().String(), nil }
+					_ = e.advanceSwap(context.Background(), s, all)
+					if !reorg && (s.Stage != stage || e.CanChangeNetwork() != nil) {
+						t.Fatal("unrelated outage invented active obligation", s.Stage)
+					}
+					if reorg && (terminalSwapStage(s.Stage) || e.CanChangeNetwork() == nil) {
+						t.Fatal("fresh reorg evidence failed to reopen obligation", s.Stage)
+					}
+				})
+			}
+		}
+	}
+}
+
+func TestIsolatedWitnessPersistsBeforeUnrelatedRecoveryFailure(t *testing.T) {
+	for _, role := range []string{"maker", "taker"} {
+		for _, action := range []string{"funding_lookup", "manual_refund"} {
+			t.Run(role+"/"+action, func(t *testing.T) {
+				e, s, b, secret := isolatedFixture(t, role)
+				own, incoming := s.Long, s.Short
+				if role == "maker" {
+					own, incoming = s.Short, s.Long
+				}
+				e.chainFresh[chain.BTC], e.chainFresh[chain.Blake] = true, true
+				all := map[chain.ID]map[string]chain.Observation{chain.BTC: {}, chain.Blake: {}}
+				for _, target := range []contract.HTLC{own, incoming} {
+					key, err := e.swapKey(target.Chain, s.ID)
+					if err != nil {
+						t.Fatal(err)
+					}
+					tx, err := contract.Spend(target, key, e.scripts[target.Chain], 2000, false, 0, nil, 0, secret)
+					if err != nil {
+						t.Fatal(err)
+					}
+					all[target.Chain][chain.OutpointKey(target.TxID, target.Vout)] = chain.Observation{Tx: tx, TxID: tx.TxHash().String()}
+				}
+				if action == "funding_lookup" {
+					if err := e.advanceSwap(context.Background(), s, all); err == nil {
+						t.Fatal("fixture did not fail unrelated funding lookup")
+					}
+				} else {
+					e.nodes[own.Chain] = &recoveryClockBackend{Backend: b}
+					e.scanners = map[chain.ID]chain.SpendScanner{own.Chain: &settlementFeeScanner{observations: all[own.Chain]}, incoming.Chain: &settlementFeeScanner{observations: all[incoming.Chain]}}
+					base, _ := contract.Parse(s.SelfRefunds[0])
+					params, _ := json.Marshal(BumpRequest{ID: s.ID, Kind: "refund", Fee: 6000, ExpectedTxID: base.TxHash().String()})
+					if _, err := e.bumpTransaction(context.Background(), params); err == nil || !strings.Contains(err.Error(), "claim") {
+						t.Fatal("fixture did not reject manual refund", err)
+					}
+				}
+				// No final Tick/save follows the error. Reopen exactly what the failed
+				// action persisted, then remove every spend from the next observation.
+				var restored State
+				if _, err := e.vault.Load(&restored); err != nil {
+					t.Fatal(err)
+				}
+				e.s = restored
+				s = e.s.Swaps[s.ID]
+				if !s.SecretObserved || !s.SecretExposed || !s.IncomingClaimSeen {
+					t.Fatal("failed action forgot a witnessed claim before returning")
+				}
+				e.scanners = map[chain.ID]chain.SpendScanner{chain.BTC: &settlementFeeScanner{observations: map[string]chain.Observation{}}, chain.Blake: &settlementFeeScanner{observations: map[string]chain.Observation{}}}
+				if err := e.checkRefundAcceleration(context.Background(), s, own); err == nil || !strings.Contains(err.Error(), "previously claimed") {
+					t.Fatal("witness disappearance enabled refund after restart", err)
+				}
+			})
+		}
+	}
+}
+
+func (b *switchingEstimateBackend) EstimateFee(context.Context, uint32) chain.FeeEstimate {
+	b.onEstimate()
+	return chain.FeeEstimate{Chain: b.id, State: "available", Rate: 1000, Timestamp: time.Now().Unix()}
+}
+
+func TestIsolatedTowerFeeSelectionCannotReuseChangedSourceEvidence(t *testing.T) {
+	e, s, b, _ := isolatedFixture(t, "maker")
+	tower := e.ownTower()
+	s.Protection = &tower
+	job, err := e.makeJob(s, s.Short, "refund", nil, s.Short.RefundHeight+protocol.RefundDelay(chain.Regtest))
+	if err != nil {
+		t.Fatal(err)
+	}
+	e.chainFresh[chain.BTC], e.chainFresh[chain.Blake] = true, true
+	e.s.TowerJobs = map[string]*TowerJob{job.ID: {Job: job}}
+	e.nodes[job.Target.Chain] = &switchingEstimateBackend{Backend: b, id: job.Target.Chain, onEstimate: func() { e.chainFresh[job.Target.Chain] = false }}
+	b.broadcast = func(string) (string, error) {
+		t.Fatal("tower broadcast after fee estimate invalidated source")
+		return "", nil
+	}
+	if err := e.advanceTower(context.Background(), map[chain.ID]map[string]chain.Observation{chain.BTC: {}, chain.Blake: {}}); err != nil {
+		t.Fatal(err)
+	}
+	state := e.s.TowerJobs[job.ID]
+	if !strings.Contains(state.Error, "source changed") || state.LastAttempt != 0 || len(state.Variants) != 0 {
+		t.Fatal("tower did not preserve recovery gate", state.Error)
+	}
+}
+
 func TestIsolatedManualAccelerationCannotPublishPrivateClaim(t *testing.T) {
 	for _, role := range []string{"maker", "taker"} {
 		t.Run(role, func(t *testing.T) {

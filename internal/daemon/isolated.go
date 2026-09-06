@@ -10,20 +10,66 @@ import (
 	"github.com/blakeswap/blakeswap/internal/protocol"
 )
 
+// A successful spend observation can be the only chance to learn a preimage.
+// Persist it before any unrelated lookup or refund eligibility check can return;
+// a later reorg must not erase a fact that this process already witnessed.
+func (e *Engine) rememberSwapWitnesses(s *Swap, all map[chain.ID]map[string]chain.Observation) error {
+	incoming := s.Short
+	if s.Role == "maker" {
+		incoming = s.Long
+	}
+	changed := false
+	for _, c := range []contract.HTLC{s.Long, s.Short} {
+		if !e.fresh(c.Chain) {
+			continue
+		}
+		obs, spent := observation(all, c)
+		if !spent || obs.Tx == nil {
+			continue
+		}
+		if secret, claimed := contract.ExtractSecret(c, obs.Tx); claimed {
+			encoded := hex.EncodeToString(secret)
+			changed = changed || s.Secret != encoded || !s.SecretObserved || !s.SecretExposed || (c.Chain == incoming.Chain && !s.IncomingClaimSeen)
+			s.Secret, s.SecretObserved, s.SecretExposed = encoded, true, true
+			if c.Chain == incoming.Chain {
+				s.IncomingClaimSeen = true
+			}
+		}
+	}
+	if changed {
+		return e.save()
+	}
+	return nil
+}
+
 // During a peer outage, absence is never evidence. Only a witnessed preimage
 // permits an isolated claim. A locally generated secret or a signed SelfClaim
 // saved before its first broadcast is insufficient. Refunds and funding wait for
 // fresh observations of BOTH chains, including the incoming-spend scan.
 func (e *Engine) advanceIsolatedSwap(ctx context.Context, s *Swap, all map[chain.ID]map[string]chain.Observation) error {
+	if err := e.rememberSwapWitnesses(s, all); err != nil {
+		return err
+	}
 	incoming := s.Short
 	if s.Role == "maker" {
 		incoming = s.Long
 	}
+	terminalStable := terminalSwapStage(s.Stage)
 	for _, c := range []contract.HTLC{s.Long, s.Short} {
 		if !e.fresh(c.Chain) {
 			continue
 		}
+		if _, scanned := all[c.Chain]; !scanned {
+			continue
+		}
 		o, ok := observation(all, c)
+		previous := s.ShortSpend
+		if c.Chain == s.Long.Chain {
+			previous = s.LongSpend
+		}
+		if (previous != "" && (!ok || o.TxID != previous || o.Confirmations < e.Config.Network.Confirmations())) || (previous == "" && ok) {
+			terminalStable = false
+		}
 		if c.Chain == s.Long.Chain {
 			s.LongSpend = ""
 			s.LongConfirmations = 0
@@ -39,16 +85,11 @@ func (e *Engine) advanceIsolatedSwap(ctx context.Context, s *Swap, all map[chain
 				s.ShortConfirmations = o.Confirmations
 			}
 		}
-		if ok {
-			if secret, known := contract.ExtractSecret(c, o.Tx); known {
-				s.Secret = hex.EncodeToString(secret)
-				s.SecretObserved = true
-				s.SecretExposed = true
-				if c.Chain == incoming.Chain {
-					s.IncomingClaimSeen = true
-				}
-			}
-		}
+	}
+	if terminalStable {
+		// An unrelated outage is not a reorg. Keep completed history terminal;
+		// readiness separately identifies the peer observation as stale.
+		return nil
 	}
 	s.Stage = "chain unavailable; funding, revelation and refunds held"
 	if !s.SecretObserved || !e.fresh(incoming.Chain) {

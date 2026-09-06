@@ -33,9 +33,7 @@ func canChangeNetwork(s State) error {
 		}
 	}
 	for _, swap := range s.Swaps {
-		switch swap.Stage {
-		case "completed", "refunded", "rejected", "expired before acceptance", "expired before funding", "expired before maker funding", "aborted; counterparty refunded":
-		default:
+		if !terminalSwapStage(swap.Stage) {
 			return fmt.Errorf("swap %s must finish before changing networks", swap.ID)
 		}
 	}
@@ -45,6 +43,15 @@ func canChangeNetwork(s State) error {
 		}
 	}
 	return nil
+}
+
+func terminalSwapStage(stage string) bool {
+	switch stage {
+	case "completed", "refunded", "rejected", "expired before acceptance", "expired before funding", "expired before maker funding", "aborted; counterparty refunded":
+		return true
+	default:
+		return false
+	}
 }
 
 // CheckStoredNetwork reads the encrypted state when a node is unavailable, so a

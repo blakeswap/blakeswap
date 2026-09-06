@@ -180,6 +180,9 @@ func (e *Engine) checkRefundAcceleration(ctx context.Context, s *Swap, own contr
 		return errors.New("refund is not eligible yet; refresh chain status")
 	}
 	all, err := e.scan(ctx)
+	if witnessErr := e.rememberSwapWitnesses(s, all); witnessErr != nil {
+		return witnessErr
+	}
 	if err != nil {
 		return err
 	}
@@ -223,28 +226,14 @@ func (e *Engine) checkClaimAcceleration(ctx context.Context, s *Swap) error {
 		return errors.New("claim acceleration requires a current target-chain observation")
 	}
 	all, scanErr := e.scan(ctx)
+	if err := e.rememberSwapWitnesses(s, all); err != nil {
+		return err
+	}
 	if _, ok := all[target.Chain]; !ok {
 		if scanErr != nil {
 			return scanErr
 		}
 		return errors.New("claim target spend observation unavailable")
-	}
-	learned := false
-	for _, c := range []contract.HTLC{s.Long, s.Short} {
-		if obs, spent := observation(all, c); spent && obs.Tx != nil {
-			if secret, claimed := contract.ExtractSecret(c, obs.Tx); claimed {
-				s.Secret, s.SecretObserved, s.SecretExposed = hex.EncodeToString(secret), true, true
-				if c.Chain == target.Chain {
-					s.IncomingClaimSeen = true
-				}
-				learned = true
-			}
-		}
-	}
-	if learned {
-		if err := e.save(); err != nil {
-			return err
-		}
 	}
 	if !s.SecretObserved {
 		if s.Role != "taker" || !e.fresh(chain.BTC) || !e.fresh(chain.Blake) {

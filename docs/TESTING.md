@@ -339,6 +339,15 @@ and permanent refund suppression after an observed incoming claim is reorged.
 Settings/API/native tests preserve ordered fallback fields and distinguish stale
 values from current readiness.
 
+Integrated fee regressions preserve estimate provenance, owner caps, signed
+variants and destinations through failover. Manual acceleration cannot publish a
+privately saved claim during a peer outage. Witness-ordering regressions reopen
+the encrypted state immediately after a failed funding lookup or rejected refund,
+then remove the witness and verify that refund suppression remains durable.
+Terminal-history tests preserve completed/refunded rows and network switching
+during unrelated outages, while fresh reorg evidence reopens the obligation.
+Owner/tower fee selection must recheck source freshness before broadcasting.
+
 With the exclusive isolated BTC/Blake2b fixture available, run:
 
 ```sh

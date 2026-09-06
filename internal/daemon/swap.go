@@ -89,6 +89,9 @@ func (e *Engine) advanceSwap(ctx context.Context, s *Swap, all map[chain.ID]map[
 		e.expirePendingRequest(s, time.Now().Unix())
 		return nil
 	}
+	if err := e.rememberSwapWitnesses(s, all); err != nil {
+		return err
+	}
 	if err := s.Terms.Validate(); err != nil {
 		return err
 	}
@@ -145,27 +148,6 @@ func (e *Engine) advanceSwap(ctx context.Context, s *Swap, all map[chain.ID]map[
 	if shortSpent {
 		s.ShortSpend = shortObs.TxID
 		s.ShortConfirmations = shortObs.Confirmations
-	}
-	// Secret knowledge is monotonic, even when the revealing tx is evicted/reorged.
-	for _, pair := range []struct {
-		c  contract.HTLC
-		o  chain.Observation
-		ok bool
-	}{{s.Long, longObs, longSpent}, {s.Short, shortObs, shortSpent}} {
-		if pair.ok {
-			if secret, ok := contract.ExtractSecret(pair.c, pair.o.Tx); ok {
-				s.Secret = hex.EncodeToString(secret)
-				s.SecretExposed = true
-				s.SecretObserved = true
-				incoming := s.Short
-				if s.Role == "maker" {
-					incoming = s.Long
-				}
-				if pair.c.Chain == incoming.Chain {
-					s.IncomingClaimSeen = true
-				}
-			}
-		}
 	}
 	for _, job := range s.Jobs {
 		obs, ok := observation(all, job.Target)
@@ -484,6 +466,10 @@ func (e *Engine) advanceTower(ctx context.Context, all map[chain.ID]map[string]c
 		if suggested := estimatedTier(estimate, job.Templates); suggested > index {
 			index = suggested
 			state.Attempt = index * 3
+		}
+		if !e.fresh(job.Target.Chain) || (job.Kind == "refund" && (!e.fresh(chain.BTC) || !e.fresh(chain.Blake))) {
+			state.Error = "chain source changed during fee selection; refresh recovery evidence"
+			continue
 		}
 		tx, err := contract.Parse(job.Templates[index])
 		if err != nil {

@@ -344,11 +344,15 @@ reported as a fresh zero balance.
 | --- | --- |
 | Wallet monitoring and retries of an already saved signed send | Fresh target-chain observation; retry only the same signed bytes and keep reservations after ambiguous errors. New sends still require their normal full refresh/replay checks. |
 | Swap spend monitoring | A successful scan from the available chain; unavailable-chain observations remain explicitly stale. A witnessed preimage is persisted monotonically. |
-| Owner claim | A preimage already observed in a validated contract spend, including after restart; fresh target scan and exact confirmed unspent agreed HTLC. A private generated secret or a claim signed before a crash is insufficient. |
+| Owner claim | A preimage already observed in a validated contract spend, including after restart; fresh target scan and exact confirmed unspent agreed HTLC, or its observed unconfirmed claim for authorized replacement. Existing fee caps, signed variants and destinations remain binding. A private generated secret or a claim signed before a crash is insufficient. |
 | Tower claim | Previously witnessed/persisted secret, fresh target-chain scan, existing authorized signed templates and target locktime checks. |
 | New funding, retries of swap funding, first revelation, owner/tower refunds | Held until the required observations of both chains return. Missing peer observations never authorize a refund. |
 
 Once an incoming claim has been observed, the owner permanently suppresses its
-refund path even if that witness is later reorged away. Recovery still depends on
+refund path even if that witness is later reorged away. Witnesses are saved before
+unrelated recovery failures or rejected manual acceleration can return. Manual
+claim/refund acceleration follows the same evidence rules. Completed/refunded
+history stays terminal during an unrelated outage; fresh contradictory spend or
+confirmation evidence reopens it. Recovery still depends on
 timely valid observations and confirmation; endpoint failover does not remove
 chain censorship, finality, pinning, or malicious-indexer risks.
