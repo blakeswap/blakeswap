@@ -266,3 +266,154 @@ func TestOwnerLadderRequiresConsentAndPersistsBeforeEscalation(t *testing.T) {
 		})
 	}
 }
+
+func TestSendReplacementCanConsumeAllChange(t *testing.T) {
+	e, b, p := sendFixture(t)
+	p.MaxFee = 100000
+	b.broadcast = func(raw string) (string, error) {
+		tx, err := contract.Parse(raw)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return tx.TxHash().String(), nil
+	}
+	raw, _ := json.Marshal(p)
+	sent, err := e.sendCoins(context.Background(), raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	result, err := e.bumpSend(context.Background(), BumpRequest{ID: p.ID, Kind: "send", Fee: 100000, ExpectedTxID: sent.TxID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := e.s.Sends[p.ID]
+	tx, err := contract.Parse(s.Raw)
+	if err != nil || len(tx.TxOut) != 1 || tx.TxOut[0].Value != p.Amount || s.Change != 0 || result.Fee != 100000 {
+		t.Fatal("zero-change replacement changed payment", result, err)
+	}
+	var saved State
+	if _, err = e.vault.Load(&saved); err != nil {
+		t.Fatal(err)
+	}
+	if saved.Sends[p.ID].Change != 0 || len(saved.Sends[p.ID].History) != 2 {
+		t.Fatal("zero-change lineage was not durable")
+	}
+}
+
+type stalledFeeBackend struct {
+	*sendBackend
+	estimates int
+}
+
+func (b *stalledFeeBackend) EstimateFee(ctx context.Context, target uint32) chain.FeeEstimate {
+	b.estimates++
+	<-ctx.Done()
+	return chain.FeeEstimate{Chain: chain.Blake, State: "unavailable", Error: ctx.Err().Error()}
+}
+func (b *stalledFeeBackend) Output(ctx context.Context, id string, vout uint32) (*chain.TxOut, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	return b.sendBackend.Output(ctx, id, vout)
+}
+
+func TestManualFeeQuoteDoesNotDependOnEstimator(t *testing.T) {
+	e, b, p := sendFixture(t)
+	if err := e.refresh(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	backend := &stalledFeeBackend{sendBackend: b}
+	e.nodes[p.Chain] = backend
+	for _, kind := range []string{"send", "funding"} {
+		params, _ := json.Marshal(FeeQuoteRequest{Kind: kind, Chain: p.Chain, Destination: p.Destination, Amount: p.Amount, Fee: p.Fee, Inputs: p.Inputs})
+		q, err := e.quoteFee(context.Background(), params)
+		if err != nil || q.Fee != p.Fee || q.Change != 98500 || backend.estimates != 0 {
+			t.Fatal("manual fee depended on unavailable estimator", kind, q, err, backend.estimates)
+		}
+	}
+}
+
+type settlementFeeScanner struct {
+	observations map[string]chain.Observation
+	err          error
+	calls        int
+}
+
+func (s *settlementFeeScanner) Scan(context.Context, uint32, []string) (map[string]chain.Observation, error) {
+	s.calls++
+	return s.observations, s.err
+}
+
+func TestManualRefundAccelerationRechecksBothSettlements(t *testing.T) {
+	for _, role := range []string{"maker", "taker"} {
+		for _, condition := range []string{"peer_claim", "incoming_claim", "confirmed_refund", "unknown", "reorg_clock", "pending_refund"} {
+			t.Run(role+"/"+condition, func(t *testing.T) {
+				e, b, _ := sendFixture(t)
+				id := transport.RandomID()
+				key, err := e.swapKey(chain.Blake, id)
+				if err != nil {
+					t.Fatal(err)
+				}
+				secret := bytes.Repeat([]byte{2}, 32)
+				hash := sha256.Sum256(secret)
+				pub := hex.EncodeToString(key.PubKey().SerializeCompressed())
+				own := contract.HTLC{Chain: chain.Blake, Hash: hex.EncodeToString(hash[:]), ClaimKey: pub, RefundKey: pub, RefundHeight: 200, Amount: 1000000, TxID: transport.RandomID()}
+				incoming := own
+				incoming.Chain = chain.BTC
+				incoming.TxID = transport.RandomID()
+				if condition == "reorg_clock" {
+					own.RefundHeight = 201
+				}
+				s := &Swap{ID: id, Role: role, Terms: &protocol.Terms{}, Stage: "refunding", Long: own, Short: incoming}
+				if role == "maker" {
+					s.Long, s.Short = incoming, own
+				}
+				for _, fee := range protocol.RescueFees {
+					tx, err := contract.Spend(own, key, e.scripts[own.Chain], fee, true, own.RefundHeight, nil, 0, nil)
+					if err != nil {
+						t.Fatal(err)
+					}
+					s.SelfRefunds = append(s.SelfRefunds, contract.Hex(tx))
+				}
+				e.s.Swaps[id] = s
+				e.heights[own.Chain] = 201 // UI snapshot predates a reorg or new spend.
+				ownScan, incomingScan := &settlementFeeScanner{observations: map[string]chain.Observation{}}, &settlementFeeScanner{observations: map[string]chain.Observation{}}
+				e.scanners = map[chain.ID]chain.SpendScanner{own.Chain: ownScan, incoming.Chain: incomingScan}
+				base, _ := contract.Parse(s.SelfRefunds[0])
+				switch condition {
+				case "peer_claim", "incoming_claim":
+					target, scanner := own, ownScan
+					if condition == "incoming_claim" {
+						target, scanner = incoming, incomingScan
+					}
+					claim, err := contract.Spend(target, key, e.scripts[target.Chain], 2000, false, 0, nil, 0, secret)
+					if err != nil {
+						t.Fatal(err)
+					}
+					scanner.observations[chain.OutpointKey(target.TxID, target.Vout)] = chain.Observation{Tx: claim}
+				case "confirmed_refund":
+					ownScan.observations[chain.OutpointKey(own.TxID, own.Vout)] = chain.Observation{Tx: base, Confirmations: 1}
+				case "pending_refund":
+					ownScan.observations[chain.OutpointKey(own.TxID, own.Vout)] = chain.Observation{Tx: base}
+				case "unknown":
+					incomingScan.err = context.DeadlineExceeded
+				}
+				broadcasts := 0
+				b.broadcast = func(raw string) (string, error) {
+					broadcasts++
+					tx, _ := contract.Parse(raw)
+					return tx.TxHash().String(), nil
+				}
+				params, _ := json.Marshal(BumpRequest{ID: id, Kind: "refund", Fee: 6000, ExpectedTxID: base.TxHash().String()})
+				_, err = e.bumpTransaction(context.Background(), params)
+				if condition == "pending_refund" {
+					if err != nil || broadcasts != 1 || s.RefundVariant != 1 || ownScan.calls == 0 || incomingScan.calls == 0 {
+						t.Fatal("safe pending refund was not freshly checked", err, broadcasts)
+					}
+				} else if err == nil || broadcasts != 0 || s.RefundVariant != 0 || s.RefundAttempt != 0 {
+					t.Fatal("unsafe refund changed authorization/broadcast", condition, err, broadcasts, s.RefundVariant)
+				}
+			})
+		}
+	}
+}

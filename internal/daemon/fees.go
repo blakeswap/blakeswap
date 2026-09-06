@@ -104,7 +104,13 @@ func (e *Engine) quoteFee(ctx context.Context, raw json.RawMessage) (FeeQuote, e
 	e.mu.Unlock()
 	ctx, cancel := context.WithTimeout(ctx, 2*time.Second)
 	defer cancel()
-	quote := FeeQuote{Estimate: estimateBackend(ctx, p.Chain, node, p.Target), Limits: feeLimits(p.Chain), Amount: p.Amount}
+	quote := FeeQuote{Limits: feeLimits(p.Chain), Amount: p.Amount}
+	if p.Fee > 0 {
+		// A manual fee remains usable when the advisory estimator is stalled.
+		quote.Estimate = chain.FeeEstimate{Chain: p.Chain, State: "unavailable", Error: "network estimate not requested for a manual total fee"}
+	} else {
+		quote.Estimate = estimateBackend(ctx, p.Chain, node, p.Target)
+	}
 	if p.Fee == 0 && !quote.Estimate.Current(time.Now()) {
 		quote.Error = quote.Estimate.Error
 		return quote, nil

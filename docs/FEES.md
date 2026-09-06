@@ -121,3 +121,9 @@ Estimates and fee caps cannot guarantee confirmation during arbitrary congestion
 operator outages, censorship, or pinning. Send cancellation, arbitrary extra-input
 RBF, CPFP, funding replacement, and higher v1 tower caps are unsupported. Keep
 state backups: a mnemonic alone does not preserve signed obligations and lineage.
+
+Manual fee review skips the network estimator, so a stalled estimator cannot
+block an otherwise healthy wallet from reviewing an explicit total fee. A manual
+refund increase refreshes the refund timelock and scans both funded outputs:
+a pending peer claim, an incoming claim, a confirmed spend, or an unavailable
+observation refuses acceleration before changing the saved refund selection.

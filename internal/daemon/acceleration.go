@@ -57,8 +57,10 @@ func (e *Engine) bumpTransaction(ctx context.Context, raw json.RawMessage) (Bump
 	if p.Kind == "claim" && s.OwnerFeeCap == 0 {
 		return BumpResult{}, errors.New("legacy claim has no authorized replacement budget; retain its signed transaction")
 	}
-	if err := e.prepareClaimVariants(s); err != nil {
-		return BumpResult{}, err
+	if p.Kind == "claim" {
+		if err := e.prepareClaimVariants(s); err != nil {
+			return BumpResult{}, err
+		}
 	}
 	variants := s.SelfClaims
 	target := s.Short
@@ -74,9 +76,6 @@ func (e *Engine) bumpTransaction(ctx context.Context, raw json.RawMessage) (Bump
 		last = &s.RefundLastAttempt
 		if s.Role == "maker" {
 			target = s.Short
-		}
-		if !e.eligible(target.Chain, target.RefundHeight) {
-			return BumpResult{}, errors.New("refund is not eligible yet")
 		}
 	}
 	if len(variants) == 0 {
@@ -124,6 +123,11 @@ func (e *Engine) bumpTransaction(ctx context.Context, raw json.RawMessage) (Bump
 			return BumpResult{}, errors.New("settlement is already confirmed; refresh status")
 		}
 	}
+	if p.Kind == "refund" {
+		if err := e.checkRefundAcceleration(ctx, s, target); err != nil {
+			return BumpResult{}, err
+		}
+	}
 	if index > current {
 		*attempt = index * 3
 	}
@@ -142,6 +146,48 @@ func (e *Engine) bumpTransaction(ctx context.Context, raw json.RawMessage) (Bump
 		result.Error = err.Error()
 	}
 	return result, e.save()
+}
+
+// The UI stage can predate a peer claim or a reorg. Manual acceleration must
+// observe the same two-output safety conditions as automatic refund recovery.
+func (e *Engine) checkRefundAcceleration(ctx context.Context, s *Swap, own contract.HTLC) error {
+	if own.TxID == "" {
+		return errors.New("refund has no funded outpoint")
+	}
+	var clock uint32
+	var err error
+	if own.RefundHeight >= protocol.TimeLockThreshold {
+		clock, err = e.nodes[own.Chain].MedianTime(ctx)
+	} else {
+		clock, err = e.nodes[own.Chain].Height(ctx)
+	}
+	if err != nil {
+		return err
+	}
+	if clock < own.RefundHeight || (own.RefundHeight >= protocol.TimeLockThreshold && clock == own.RefundHeight) {
+		return errors.New("refund is not eligible yet; refresh chain status")
+	}
+	all, err := e.scan(ctx)
+	if err != nil {
+		return err
+	}
+	ownObs, ownSpent := observation(all, own)
+	if !refundReplaceable(own, ownSpent, ownObs) {
+		return errors.New("funded output has a claim or confirmed spend; refund acceleration is unsafe")
+	}
+	incoming := s.Short
+	if s.Role == "maker" {
+		incoming = s.Long
+	}
+	if obs, spent := observation(all, incoming); spent {
+		if obs.Tx == nil {
+			return errors.New("incoming settlement is unknown; refresh before accelerating")
+		}
+		if _, claimed := contract.ExtractSecret(incoming, obs.Tx); claimed {
+			return errors.New("incoming contract was claimed; await the counterparty claim instead of refunding")
+		}
+	}
+	return nil
 }
 
 func (e *Engine) bumpSend(ctx context.Context, p BumpRequest) (BumpResult, error) {
@@ -203,7 +249,10 @@ func (e *Engine) bumpSend(ctx context.Context, p BumpRequest) (BumpResult, error
 	s.Raw = v.Raw
 	s.TxID = v.TxID
 	s.Fee = p.Fee
-	s.Change = tx.TxOut[1].Value
+	s.Change = 0
+	if len(tx.TxOut) > 1 {
+		s.Change = tx.TxOut[1].Value
+	}
 	s.LastAttempt = 0
 	s.Submitted = false
 	s.State = "saved"

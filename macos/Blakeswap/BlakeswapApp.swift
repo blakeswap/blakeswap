@@ -222,7 +222,7 @@ struct ContentView: View {
                     Text("Orderbook").font(.title3.weight(.semibold))
                 }
                 Spacer()
-                Button { showOffer = true } label: { Label("Create offer", systemImage: "plus") }.buttonStyle(MintButton()).disabled(model.busy || !["btc", "blake"].contains(where: status.canSell)).accessibilityIdentifier("create-offer")
+                Button { showOffer = true } label: { Label("Create offer", systemImage: "plus") }.buttonStyle(MintButton()).disabled(model.busy || !["btc", "blake"].contains(where: status.canReviewOffer)).accessibilityIdentifier("create-offer")
             }
             HStack(spacing: 6) {
                 ForEach(OrderFilter.allCases, id: \.self) { filter in
@@ -233,7 +233,7 @@ struct ContentView: View {
             .padding(.bottom, 10)
             .overlay(alignment: .bottom) { Rectangle().fill(Color.white.opacity(0.07)).frame(height: 1) }
             .accessibilityElement(children: .contain).accessibilityLabel("Show open orders").accessibilityIdentifier("order-filter")
-            if !["btc", "blake"].contains(where: status.canSell) {
+            if !["btc", "blake"].contains(where: status.canReviewOffer) {
                 Text("Deposit BTC or BLAKE and wait for confirmation to create an offer. The sell balance must cover the amount and funding fee.").font(.callout).foregroundStyle(.secondary)
             }
             if orders.isEmpty {
@@ -391,8 +391,8 @@ struct OfferSheet: View {
             Text("Create an offer").font(.title.bold())
             Form {
                 Picker("You sell", selection: $sell) {
-                    Text("Bitcoin (BTC)").tag("btc").disabled(!(model.status?.canSell("btc") ?? false))
-                    Text("Bitcoin Blake2b (BLAKE)").tag("blake").disabled(!(model.status?.canSell("blake") ?? false))
+                    Text("Bitcoin (BTC)").tag("btc").disabled(!(model.status?.canReviewOffer("btc") ?? false))
+                    Text("Bitcoin Blake2b (BLAKE)").tag("blake").disabled(!(model.status?.canReviewOffer("blake") ?? false))
                 }
                 Text("Available: \(model.status?.available(sell) ?? 0) \(symbol(sell)) sats · Funding fee: \(currentQuote?.quote.fee ?? 0) sats").font(.caption).foregroundStyle(.secondary)
                 TextField("Sell amount (sats)", text: $sellAmount).accessibilityIdentifier("sell-amount")
@@ -427,7 +427,7 @@ struct OfferSheet: View {
             }
         }.padding(32).frame(width: 540)
         .task {
-            if !(model.status?.canSell(sell) ?? false), model.status?.canSell("blake") == true { sell = "blake" }
+            if !(model.status?.canReviewOffer(sell) ?? false), model.status?.canReviewOffer("blake") == true { sell = "blake" }
             towerID = towers.first?.pubkey ?? ""
         }
     }

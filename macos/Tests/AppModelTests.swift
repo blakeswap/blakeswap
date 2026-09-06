@@ -168,3 +168,21 @@ extension AppModelTests {
         XCTAssertNotEqual(initial, FundsCheckKey(profile: "alice", network: "mainnet", generation: 1, chain: "btc", amount: 100_000, fee: 2_000, inputs: ["a:1", "b:1"]))
     }
 }
+
+
+extension AppModelTests {
+    func testOfferEntryAllowsReviewOfAffordableManualFee() {
+        var status = DaemonStatus(); status.pubkey = "maker"; status.fundingFee = 2_000
+        for chain in ["btc", "blake"] {
+            var funds = Blakeswap_V1_ChainBalance(); funds.unlockedConfirmed = 100_000
+            status.funds[chain] = funds
+            XCTAssertFalse(status.canReviewOffer(chain))
+            funds.unlockedConfirmed = 101_000; status.funds[chain] = funds
+            XCTAssertTrue(status.canReviewOffer(chain))
+            XCTAssertTrue([chain].contains(where: status.canReviewOffer))
+            XCTAssertFalse([chain].contains(where: status.canSell))
+            XCTAssertNil(status.offerValidation(sell: chain, sellAmount: "100000", buyAmount: "100000", fee: 1_000))
+            XCTAssertNotNil(status.offerValidation(sell: chain, sellAmount: "100000", buyAmount: "100000", fee: 1_001))
+        }
+    }
+}
