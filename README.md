@@ -45,6 +45,11 @@ own endpoint for that chain. The application does not substitute a Bitcoin serve
 or silently change networks. [Operations](docs/OPERATIONS.md) lists the defaults and
 trust assumptions.
 
+Wallet provides a QR for each chain’s current receive address and advances it after
+a confirmed receipt. Send supports individual coin selection and a manual total
+network fee. Open orders, active trades, and pending sends lock their funding coins;
+cancel an open order before withdrawing those coins.
+
 ## Local regtest nodes
 
 Run `make regtest-nodes` for both chains, or `make regtest-btc` / `make regtest-blake`

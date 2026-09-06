@@ -202,6 +202,15 @@ func FundWithKeys(c HTLC, coins []chain.UTXO, keys map[string]*btcec.PrivateKey,
 	if e != nil {
 		return nil, e
 	}
+	return PayWithKeys(c.Chain, c.Amount, script, coins, keys, changeScript, fee)
+}
+
+// PayWithKeys spends explicitly selected wallet inputs to one destination and
+// optional change. All inputs are signed locally with the chain's hash type.
+func PayWithKeys(id chain.ID, amount int64, script []byte, coins []chain.UTXO, keys map[string]*btcec.PrivateKey, changeScript []byte, fee int64) (*wire.MsgTx, error) {
+	if !id.Valid() || amount < Dust || amount > MaxMoney || len(script) == 0 {
+		return nil, errors.New("invalid payment")
+	}
 	if fee < 1 || fee > 1000000 || len(coins) < 1 || len(coins) > 50 {
 		return nil, errors.New("invalid funding policy")
 	}
@@ -239,14 +248,14 @@ func FundWithKeys(c HTLC, coins []chain.UTXO, keys map[string]*btcec.PrivateKey,
 		tx.AddTxIn(in)
 		spent = append(spent, wire.NewTxOut(int64(coin.Amount), s))
 	}
-	change := total - c.Amount - fee
+	change := total - amount - fee
 	if change < 0 {
 		return nil, errors.New("insufficient confirmed funds")
 	}
 	if change > 0 && change < Dust {
 		return nil, errors.New("change would be dust; select another coin")
 	}
-	tx.AddTxOut(wire.NewTxOut(c.Amount, script))
+	tx.AddTxOut(wire.NewTxOut(amount, script))
 	if change > 0 {
 		tx.AddTxOut(wire.NewTxOut(change, changeScript))
 	}
@@ -257,7 +266,7 @@ func FundWithKeys(c HTLC, coins []chain.UTXO, keys map[string]*btcec.PrivateKey,
 		if err != nil {
 			return nil, err
 		}
-		sig, e := sign(c.Chain, tx, i, code, spent, key)
+		sig, e := sign(id, tx, i, code, spent, key)
 		if e != nil {
 			return nil, e
 		}

@@ -223,7 +223,7 @@ func (e *Engine) advanceSwap(ctx context.Context, s *Swap, all map[chain.ID]map[
 			s.Stage = "expired before funding"
 			return err
 		}
-		tx, err := e.fund(ctx, s.Long)
+		tx, err := e.fundReserved(ctx, s.Long, "swap/"+s.ID)
 		if err != nil {
 			return err
 		}
@@ -247,7 +247,7 @@ func (e *Engine) advanceSwap(ctx context.Context, s *Swap, all map[chain.ID]map[
 			s.Stage = "expired before maker funding"
 			return err
 		}
-		tx, err := e.fund(ctx, s.Short)
+		tx, err := e.fundReserved(ctx, s.Short, "offer/"+s.Terms.Offer().ID)
 		if err != nil {
 			return err
 		}

@@ -48,6 +48,7 @@ account that can read those files.
 | CreateOffer | POST `/v1/offers` | Exact chain/amount pair, optional expiry, tower basis points and discovered `tower_pubkey` |
 | CancelOffer | DELETE `/v1/offers/{id}` | Cancel an unreserved local offer |
 | TakeOffer | POST `/v1/swaps` | Request a signed maker offer by maker key and ID |
+| SendCoins | POST `/v1/wallet/send` | Explicit coin selection, recipient, amount, total fee, and idempotent request ID |
 | GetRecovery | POST `/v1/wallet/recovery` | Explicit sensitive recovery phrase request |
 | BackupWallet | POST `/v1/wallet/backup` | Consistent encrypted state backup |
 | Mine | POST `/v1/regtest/mine` | Test-node mining, regtest RPC only |
@@ -73,7 +74,7 @@ accepts the historical `refund_height` JSON alias for domain-state compatibility
 the value is a regtest height or a public-network Unix timestamp, as specified by
 the associated network. The wire field number is stable.
 
-Wallet mutations (create/cancel/take, watchtower lookup, pause, faucet, mine) carry an
+Wallet mutations (create/cancel/take/send, watchtower lookup, pause, faucet, mine) carry an
 `expected_network` field. The desktop rejects missing or mismatched values, so a
 stale client cannot transact on a newly selected network. Native clients bind the
 network shown in their status; the CLI snapshots it before dispatch unless the
@@ -98,7 +99,7 @@ bin/blakeswap call --socket /absolute/path/daemon.sock --method offer.create \
   --params '{"sell":"btc","sell_amount":1000000,"buy_amount":2000000}'
 ```
 
-There is no arbitrary signing, arbitrary PSBT execution, remote withdrawal, or
+There is no arbitrary signing, arbitrary PSBT execution, unauthenticated withdrawal, or
 forced revocation of a funded HTLC method.
 
 ## Regeneration
@@ -160,3 +161,23 @@ durable before advancing the stage, so a restart cannot silently replace keys.
 Onboarding RPCs are unavailable after setup (use normal wallet recovery/backup).
 The CLI names are `onboarding.prepare`, `onboarding.get`, `onboarding.confirm`,
 `onboarding.export`, and `onboarding.finish`.
+
+### Coin control and sends
+
+Status includes `coins` (chain, outpoint, amount, address, confirmations, reserved)
+and public `sends` (transaction ID, recipient, amount, total fee, change, submission
+and confirmation state). Private signed transaction bytes are omitted.
+`SendCoins` / CLI `wallet.send` requires a unique `id` (16–64 characters), `chain`,
+`destination`, `amount`, `fee`, 1–50 `inputs` (`txid`, `vout`), and the displayed
+`expected_network`. Amounts and the exact total miner fee are integer satoshis.
+The daemon revalidates ownership, current unspent outputs and confirmations,
+network/address, dust, and all order/trade/send reservations before signing.
+
+Open orders reserve full funding coins, including the funding fee. Cancelling an
+unreserved order releases those coins; an accepted trade retains them until its
+funding consumes them or it reaches a safe terminal state. A send is persisted
+before broadcast and retries the same signed bytes after ambiguous failures.
+Retry the same request ID with identical details to retrieve its existing result;
+changing details with an existing ID is rejected. Pending sends block network
+switching until six confirmations. There is no send cancellation or fee replacement;
+a low fee can leave a payment pending until miners accept it.

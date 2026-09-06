@@ -25,6 +25,7 @@ service DaemonService {
  rpc Mine(MineRequest) returns (google.protobuf.Empty) { option (google.api.http) = { post: "/v1/regtest/mine" body: "*" }; }
  rpc Faucet(FaucetRequest) returns (FaucetResponse) { option (google.api.http) = { post: "/v1/regtest/faucet" body: "*" }; }
  rpc GetRecovery(google.protobuf.Empty) returns (Recovery) { option (google.api.http) = { post: "/v1/wallet/recovery" body: "*" }; }
+ rpc SendCoins(SendCoinsRequest) returns (WalletSend) { option (google.api.http) = { post: "/v1/wallet/send" body: "*" }; }
  rpc BackupWallet(google.protobuf.Empty) returns (Backup) { option (google.api.http) = { post: "/v1/wallet/backup" body: "*" }; }
  rpc CreateWallet(CreateWalletRequest) returns (Settings) { option (google.api.http) = { post: "/v1/wallets" body: "*" }; }
  rpc PrepareFirstWallet(PrepareFirstWalletRequest) returns (FirstWallet) { option (google.api.http) = { post: "/v1/onboarding/wallet" body: "*" }; }
@@ -53,6 +54,20 @@ message TakeOfferResponse { string id = 1; }
 message MineRequest { string chain = 1; uint32 blocks = 2; string expected_network = 3; }
 message FaucetRequest { string chain = 1; int64 amount = 2; string expected_network = 3; }
 message FaucetResponse { string txid = 1; }
+message Outpoint { string txid = 1; uint32 vout = 2; }
+message WalletCoin {
+ string chain = 1; string txid = 2; uint32 vout = 3; int64 amount = 4;
+ string address = 5; int32 confirmations = 6; bool reserved = 7;
+}
+message SendCoinsRequest {
+ string id = 1; string chain = 2; string destination = 3; int64 amount = 4;
+ int64 fee = 5; repeated Outpoint inputs = 6; string expected_network = 7;
+}
+message WalletSend {
+ string id = 1; string chain = 2; string txid = 3; string destination = 4;
+ int64 amount = 5; int64 fee = 6; int64 change = 7; int32 confirmations = 8;
+ string error = 9; bool submitted = 10;
+}
 message Recovery { string mnemonic = 1; string warning = 2; }
 message Backup { string path = 1; }
 message Offer {
@@ -91,6 +106,7 @@ message Status {
  map<string,uint32> heights = 6; bool paused = 7;
  repeated Offer orders = 8; repeated Swap swaps = 9; repeated TowerJob tower_jobs = 10;
  int32 pending_messages = 11; string last_error = 12; Tower tower = 13;
+ repeated WalletCoin coins = 18; repeated WalletSend sends = 19;
  string network = 14;
  Tower own_watchtower = 15; repeated Tower watchtowers = 16; int64 funding_fee = 17;
 }

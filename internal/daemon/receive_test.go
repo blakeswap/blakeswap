@@ -88,7 +88,7 @@ func TestReceiveRotationRetainsFundsAndPersistsAcrossRestart(t *testing.T) {
 			if replacement == original || replacement == "" || e.addresses[id.Other()] != other {
 				t.Fatal("wrong chain rotation")
 			}
-			if len(b.queried) != 2 || b.queried[0] != original || e.balances[id] != 0 {
+			if len(b.queried) != 2 || (b.queried[0] != original && b.queried[1] != original) || e.balances[id] != 0 {
 				t.Fatal("old balance lost")
 			}
 			b.coins[0].Confirmations = e.Config.Network.Confirmations()
@@ -193,7 +193,9 @@ func TestRealReceiveRotationSpendsMultipleHistoricalAddresses(t *testing.T) {
 	e := h.engines["maker"]
 	for _, id := range []chain.ID{chain.BTC, chain.Blake} {
 		first := e.addresses[id]
-		h.command("maker", "regtest.faucet", map[string]any{"chain": id, "amount": 2000000})
+		if err := h.nodes[id].WithWallet("faucet").Call(h.ctx, "sendtoaddress", nil, first, 0.02); err != nil {
+			t.Fatal(err)
+		}
 		if e.addresses[id] != first {
 			t.Fatal("rotated before confirmation")
 		}
@@ -206,6 +208,9 @@ func TestRealReceiveRotationSpendsMultipleHistoricalAddresses(t *testing.T) {
 			t.Fatal("real confirmed receipt did not rotate")
 		}
 		h.mine(id, 1) // Funding retains the existing two-confirmation policy.
+		if err := e.refreshChain(h.ctx, id); err != nil {
+			t.Fatal(err)
+		}
 		key, err := e.swapKey(id, "receive-spending-test")
 		if err != nil {
 			t.Fatal(err)
@@ -246,5 +251,37 @@ func TestRealReceiveRotationSpendsMultipleHistoricalAddresses(t *testing.T) {
 		if h.engines["maker"].addresses[id] != address {
 			t.Fatal("restoration reused spent address", id)
 		}
+	}
+}
+
+func TestHistoricalReceivePollingIsBoundedAndRevisitsEveryAddress(t *testing.T) {
+	e, backends := receiveEngine(t)
+	ctx := context.Background()
+	id := chain.BTC
+	e.s.ReceiveIndexes[id] = 40
+	if err := e.loadReceiveAddresses(ctx, id); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := e.refreshWalletCoins(ctx, id); err != nil {
+		t.Fatal(err)
+	}
+	if len(backends[id].queried) != 41 {
+		t.Fatal("startup did not inventory all historical addresses")
+	}
+	seen := map[string]bool{}
+	for i := 0; i < 5; i++ {
+		if _, err := e.refreshWalletCoins(ctx, id); err != nil {
+			t.Fatal(err)
+		}
+		queried := backends[id].queried
+		if len(queried) > 9 || queried[0] != e.addresses[id] {
+			t.Fatal("poll is unbounded or omitted current address")
+		}
+		for _, address := range queried {
+			seen[address] = true
+		}
+	}
+	if len(seen) != 41 {
+		t.Fatal("historical address omitted from round robin", len(seen))
 	}
 }

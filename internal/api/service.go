@@ -225,3 +225,8 @@ func (s *Service) FinishOnboarding(ctx context.Context, in *pb.Settings) (*pb.Se
 	}
 	return v, nil
 }
+
+func (s *Service) SendCoins(ctx context.Context, in *pb.SendCoinsRequest) (*pb.WalletSend, error) {
+	out := &pb.WalletSend{}
+	return out, s.command(ctx, "wallet.send", in, out)
+}

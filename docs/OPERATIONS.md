@@ -230,3 +230,34 @@ the saved index until it finds an unused address. Preserve current state backups
 a phrase alone cannot reconstruct an address-use record erased by a reorg, nor
 recover pending swap state. Existing signed swap/tower transactions retain their
 original payout destinations.
+
+
+## Sending and coin control
+
+Choose **Send BTC** or **Send BLAKE** in Wallet. Enter the recipient, amount in sats,
+and exact total network fee in sats; select individual confirmed coins and review
+the chain, network, destination, fee and change before confirming. The send screen
+uses the displayed wallet and network throughout. The daemon checks them again.
+Locked coins are visible but cannot be selected. Cancel an open order to free its
+coins; a reserved order has become a trade and cannot be cancelled to withdraw its
+funding. Pending sends also retain their inputs. Outgoing transaction IDs and
+submission errors appear in Wallet. Network fees are manual; no fee estimator,
+fee replacement, or cancellation is provided. A rejected/low-fee broadcast remains
+saved for retry, so use an appropriate fee before confirming.
+
+The maker serializes take requests and durably reserves an available order for one
+trade before sending acceptance. Other takers receive a rejection; a local pending
+request also hides that offer from Take. This follows Bisq's maker-side available →
+reserved transition and persistence pattern in
+[TradeManager](https://github.com/bisq-network/bisq/blob/master/core/src/main/java/bisq/core/trade/TradeManager.java)
+and [OpenOfferManager](https://github.com/bisq-network/bisq/blob/master/core/src/main/java/bisq/core/offer/OpenOfferManager.java).
+Relay propagation is asynchronous: another user can briefly see a stale offer,
+but cannot obtain a second accepted reservation.
+
+After initial recovery, live RPC address allocations import from the current time
+and carry a separate completed-import marker, avoiding a historical rescan during
+trading. An unfamiliar/restored address still scans history. Wallet polling checks
+the current address plus up to eight historical addresses per cycle, rotating
+through all old addresses. A late payment's balance can therefore take multiple
+cycles to appear in a large wallet. Selected inputs are checked directly on chain
+again before a funding transaction or send is signed.

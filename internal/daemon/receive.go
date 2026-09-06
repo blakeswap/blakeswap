@@ -2,6 +2,7 @@ package daemon
 
 import (
 	"context"
+	"encoding/hex"
 	"errors"
 
 	"github.com/blakeswap/blakeswap/internal/chain"
@@ -38,6 +39,10 @@ func (e *Engine) loadReceiveAddresses(ctx context.Context, id chain.ID) error {
 	if e.s.ReceiveIndexes == nil {
 		e.s.ReceiveIndexes = map[chain.ID]uint32{}
 	}
+	if e.receiveReady == nil {
+		e.receiveReady = map[chain.ID]bool{}
+	}
+	e.receiveReady[id] = false
 	if e.receiveBook == nil {
 		e.receiveBook = map[chain.ID][]receiveAddress{}
 	}
@@ -75,6 +80,7 @@ func (e *Engine) rotateReceiveAddress(ctx context.Context, id chain.ID) error {
 		}
 		if !used {
 			e.addresses[id] = current.address
+			e.receiveReady[id] = true
 			return nil
 		}
 		e.addresses[id] = ""
@@ -86,7 +92,12 @@ func (e *Engine) rotateReceiveAddress(ctx context.Context, id chain.ID) error {
 		if err != nil {
 			return err
 		}
-		w, err := e.nodes[id].Observe(ctx, "blakeswap-"+e.identity.Public().Hex()[:20], []string{next.address})
+		var w chain.Backend
+		if rpc, ok := e.nodes[id].(*chain.RPC); ok && e.receiveReady[id] {
+			w, err = rpc.ObserveNew(ctx, "blakeswap-"+e.identity.Public().Hex()[:20], []string{next.address})
+		} else {
+			w, err = e.nodes[id].Observe(ctx, "blakeswap-"+e.identity.Public().Hex()[:20], []string{next.address})
+		}
 		if err != nil {
 			return err
 		}
@@ -98,4 +109,61 @@ func (e *Engine) rotateReceiveAddress(ctx context.Context, id chain.ID) error {
 		e.watch[id] = w
 		e.addresses[id], e.scripts[id] = next.address, next.script
 	}
+}
+
+// Startup inventories every known script before publishing readiness. During
+// normal operation, bounded round-robin polling keeps late payments observable
+// without letting an ever-growing history starve swap/rescue advancement.
+func (e *Engine) refreshWalletCoins(ctx context.Context, id chain.ID) ([]chain.UTXO, error) {
+	if e.walletCoins == nil {
+		e.walletCoins = map[chain.ID]map[string][]chain.UTXO{}
+		e.walletCursor = map[chain.ID]int{}
+	}
+	entries := e.receiveBook[id]
+	var polled []receiveAddress
+	if e.walletCoins[id] == nil {
+		polled = entries
+	} else {
+		polled = append(polled, entries[len(entries)-1])
+		historical := len(entries) - 1
+		for i := 0; i < 8 && i < historical; i++ {
+			cursor := e.walletCursor[id] % historical
+			polled = append(polled, entries[cursor])
+			e.walletCursor[id] = (cursor + 1) % historical
+		}
+	}
+	addresses := make([]string, 0, len(polled))
+	scripts := map[string]bool{}
+	for _, entry := range polled {
+		addresses = append(addresses, entry.address)
+		scripts[hex.EncodeToString(entry.script)] = true
+	}
+	coins, err := e.watch[id].Unspent(ctx, addresses)
+	if err != nil {
+		return nil, err
+	}
+	updates := map[string][]chain.UTXO{}
+	for script := range scripts {
+		updates[script] = nil
+	}
+	for _, coin := range coins {
+		if !scripts[coin.Script] {
+			return nil, errors.New("wallet backend returned an unrequested script")
+		}
+		updates[coin.Script] = append(updates[coin.Script], coin)
+	}
+	if e.walletCoins[id] == nil {
+		e.walletCoins[id] = map[string][]chain.UTXO{}
+	}
+	for script, coins := range updates {
+		e.walletCoins[id][script] = coins
+	}
+	return e.knownCoins(id), nil
+}
+func (e *Engine) knownCoins(id chain.ID) []chain.UTXO {
+	var coins []chain.UTXO
+	for _, entry := range e.receiveBook[id] {
+		coins = append(coins, e.walletCoins[id][hex.EncodeToString(entry.script)]...)
+	}
+	return coins
 }

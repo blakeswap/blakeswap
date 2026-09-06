@@ -18,9 +18,12 @@ func TestRealCancellationReservationAndReceiptBinding(t *testing.T) {
 				h.command("maker", "offer.cancel", map[string]string{"id": o.ID})
 			}
 			first := h.command("taker", "swap.take", map[string]string{"maker": o.Maker, "id": o.ID}).(map[string]string)["id"]
-			second := ""
+
 			if scenario == "two-takers-one-reservation" {
-				second = h.command("taker", "swap.take", map[string]string{"maker": o.Maker, "id": o.ID}).(map[string]string)["id"]
+				raw, _ := json.Marshal(map[string]string{"maker": o.Maker, "id": o.ID})
+				if _, err := h.engines["taker"].Command(h.ctx, Request{Method: "swap.take", Params: raw}); err == nil {
+					t.Fatal("duplicate local reservation request accepted")
+				}
 			}
 			h.tick("taker", "maker", "taker")
 			if scenario == "cancel-before-request" {
@@ -32,14 +35,7 @@ func TestRealCancellationReservationAndReceiptBinding(t *testing.T) {
 			if len(h.engines["maker"].s.Swaps) != 1 {
 				t.Fatal("offer reserved more than once")
 			}
-			one, two := h.swap("taker", first), h.swap("taker", second)
-			if (one.Stage == "rejected") == (two.Stage == "rejected") {
-				t.Fatal("expected exactly one rejected request")
-			}
-			winner := one
-			if winner.Stage == "rejected" {
-				winner = two
-			}
+			winner := h.swap("taker", first)
 			if winner.LongSent {
 				t.Fatal("funded without durable tower receipt")
 			}

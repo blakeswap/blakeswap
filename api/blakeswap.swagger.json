@@ -550,6 +550,38 @@
         ]
       }
     },
+    "/v1/wallet/send": {
+      "post": {
+        "operationId": "DaemonService_SendCoins",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1WalletSend"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/googleRpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/v1SendCoinsRequest"
+            }
+          }
+        ],
+        "tags": [
+          "DaemonService"
+        ]
+      }
+    },
     "/v1/wallets": {
       "post": {
         "operationId": "DaemonService_CreateWallet",
@@ -682,6 +714,20 @@
         },
         "tower": {
           "$ref": "#/definitions/v1Tower"
+        },
+        "coins": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/v1WalletCoin"
+          }
+        },
+        "sends": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/v1WalletSend"
+          }
         },
         "network": {
           "type": "string"
@@ -1033,6 +1079,18 @@
         }
       }
     },
+    "v1Outpoint": {
+      "type": "object",
+      "properties": {
+        "txid": {
+          "type": "string"
+        },
+        "vout": {
+          "type": "integer",
+          "format": "int64"
+        }
+      }
+    },
     "v1PrepareFirstWalletRequest": {
       "type": "object",
       "properties": {
@@ -1070,6 +1128,38 @@
       "properties": {
         "pubkey": {
           "type": "string"
+        },
+        "expected_network": {
+          "type": "string"
+        }
+      }
+    },
+    "v1SendCoinsRequest": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "chain": {
+          "type": "string"
+        },
+        "destination": {
+          "type": "string"
+        },
+        "amount": {
+          "type": "string",
+          "format": "int64"
+        },
+        "fee": {
+          "type": "string",
+          "format": "int64"
+        },
+        "inputs": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/v1Outpoint"
+          }
         },
         "expected_network": {
           "type": "string"
@@ -1279,6 +1369,35 @@
         }
       }
     },
+    "v1WalletCoin": {
+      "type": "object",
+      "properties": {
+        "chain": {
+          "type": "string"
+        },
+        "txid": {
+          "type": "string"
+        },
+        "vout": {
+          "type": "integer",
+          "format": "int64"
+        },
+        "amount": {
+          "type": "string",
+          "format": "int64"
+        },
+        "address": {
+          "type": "string"
+        },
+        "confirmations": {
+          "type": "integer",
+          "format": "int32"
+        },
+        "reserved": {
+          "type": "boolean"
+        }
+      }
+    },
     "v1WalletProfile": {
       "type": "object",
       "properties": {
@@ -1287,6 +1406,45 @@
         },
         "name": {
           "type": "string"
+        }
+      }
+    },
+    "v1WalletSend": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "chain": {
+          "type": "string"
+        },
+        "txid": {
+          "type": "string"
+        },
+        "destination": {
+          "type": "string"
+        },
+        "amount": {
+          "type": "string",
+          "format": "int64"
+        },
+        "fee": {
+          "type": "string",
+          "format": "int64"
+        },
+        "change": {
+          "type": "string",
+          "format": "int64"
+        },
+        "confirmations": {
+          "type": "integer",
+          "format": "int32"
+        },
+        "error": {
+          "type": "string"
+        },
+        "submitted": {
+          "type": "boolean"
         }
       }
     }
