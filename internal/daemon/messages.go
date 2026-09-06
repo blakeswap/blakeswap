@@ -190,6 +190,9 @@ func (e *Engine) handle(from string, m transport.Message) error {
 		if protocol.Digest(terms.Request) != protocol.Digest(s.Request) || from != terms.Offer().Maker {
 			return errors.New("acceptance changed request or maker")
 		}
+		if s.Terms == nil && (e.expirePendingRequest(s, time.Now().Unix()) || terminalSwap(s)) {
+			return nil // Acknowledge stale acceptance without reviving released funds.
+		}
 		tower, err := e.selectedTower(terms.Offer())
 		if err != nil {
 			return err

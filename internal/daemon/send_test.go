@@ -17,8 +17,9 @@ import (
 
 type sendBackend struct {
 	*receiveBackend
-	broadcast func(string) (string, error)
-	spent     bool
+	broadcast   func(string) (string, error)
+	transaction func(context.Context, string) (chain.Transaction, error)
+	spent       bool
 }
 
 func (b *sendBackend) Output(_ context.Context, id string, vout uint32) (*chain.TxOut, error) {
@@ -34,7 +35,10 @@ func (b *sendBackend) Output(_ context.Context, id string, vout uint32) (*chain.
 	}
 	return nil, nil
 }
-func (b *sendBackend) Transaction(context.Context, string) (chain.Transaction, error) {
+func (b *sendBackend) Transaction(ctx context.Context, id string) (chain.Transaction, error) {
+	if b.transaction != nil {
+		return b.transaction(ctx, id)
+	}
 	return chain.Transaction{}, &chain.RPCError{Code: -5, Message: "transaction not found"}
 }
 func (b *sendBackend) Broadcast(_ context.Context, raw string) (string, error) {
@@ -219,5 +223,134 @@ func TestRealSendsHonorCoinControlFeesAndOrderLocks(t *testing.T) {
 		if e.s.Sends[p.ID].Confirmations < 2 {
 			t.Fatal("send not confirmed")
 		}
+	}
+}
+
+func TestPendingSendsRotateAfterTimeout(t *testing.T) {
+	e, b, _ := sendFixture(t)
+	e.s.Sends = map[string]*WalletSend{}
+	for _, id := range []string{"a", "b", "c"} {
+		e.s.Sends[id] = &WalletSend{PublicSend: PublicSend{ID: id, Chain: chain.Blake, TxID: id}}
+	}
+	var observed []string
+	for i := 0; i < 6; i++ {
+		ctx, cancel := context.WithCancel(context.Background())
+		b.transaction = func(ctx context.Context, id string) (chain.Transaction, error) {
+			observed = append(observed, id)
+			cancel() // This lookup exhausts the cycle's entire budget.
+			return chain.Transaction{}, ctx.Err()
+		}
+		e.advanceSends(ctx)
+		cancel()
+	}
+	if strings.Join(observed, ",") != "a,b,c,a,b,c" {
+		t.Fatal("slow early send starved later sends", observed)
+	}
+}
+
+func TestPendingTakeExpiryUnlocksCoinsAndRefusesLateAcceptance(t *testing.T) {
+	e, _, _ := sendFixture(t)
+	maker, _, _ := sendFixture(t)
+	offer := protocol.Offer{ID: transport.RandomID(), Maker: maker.identity.Public().Hex(), Sell: chain.BTC, SellAmount: 100000, BuyAmount: 200000, Expires: time.Now().Unix() + 3600, Status: "open"}
+	if err := maker.publishOffer(offer); err != nil {
+		t.Fatal(err)
+	}
+	event := maker.s.Offers[offer.ID]
+	e.s.Book[offer.Maker+":"+offer.ID] = event
+	raw, _ := json.Marshal(map[string]string{"maker": offer.Maker, "id": offer.ID})
+	result, err := e.Command(context.Background(), Request{Method: "swap.take", Params: raw})
+	if err != nil {
+		t.Fatal(err)
+	}
+	id := result.(map[string]string)["id"]
+	swap := e.s.Swaps[id]
+	makerKeys, err := maker.swapKeys(id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	terms, err := protocol.NewTerms(swap.Request, makerKeys, e.heights, "", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if e.expirePendingRequest(swap, offer.Expires-1) || !e.publicCoins()[0].Reserved {
+		t.Fatal("released request before deadline")
+	}
+	if !e.expirePendingRequest(swap, offer.Expires) || e.publicCoins()[0].Reserved {
+		t.Fatal("expired request kept coins locked")
+	}
+	for _, delivery := range e.s.Outbox {
+		if delivery.Type == "request" {
+			t.Fatal("expired request still retries")
+		}
+	}
+	if err := e.save(); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := e.vault.Load(&e.s); err != nil {
+		t.Fatal(err)
+	}
+	body, _ := json.Marshal(terms)
+	if err := e.handle(offer.Maker, transport.Message{Type: "accepted", SwapID: id, Body: body}); err != nil {
+		t.Fatal(err)
+	}
+	e.reconcileReservations()
+	if e.s.Swaps[id].Terms != nil || e.s.Swaps[id].Stage != "expired before acceptance" || e.publicCoins()[0].Reserved {
+		t.Fatal("late acceptance revived released funds")
+	}
+	if err := e.CanChangeNetwork(); err != nil {
+		t.Fatal("expired request blocks network change", err)
+	}
+}
+
+func TestMakerReservationExpiresWhenTakerNeverFunds(t *testing.T) {
+	e, _, _ := sendFixture(t)
+	raw, _ := json.Marshal(map[string]any{"sell": "blake", "sell_amount": 100000, "buy_amount": 200000})
+	result, err := e.Command(context.Background(), Request{Method: "offer.create", Params: raw})
+	if err != nil {
+		t.Fatal(err)
+	}
+	offer := result.(protocol.Offer)
+	taker := nostr.Generate()
+	id := transport.RandomID()
+	keys, _ := e.swapKeys(id)
+	request := protocol.Request{ID: id, OfferEvent: e.s.Offers[offer.ID], Taker: taker.Public().Hex(), Hash: strings.Repeat("12", 32), Keys: keys}
+	raw, _ = json.Marshal(request)
+	if err := e.handle(taker.Public().Hex(), transport.Message{Type: "request", SwapID: id, Body: raw}); err != nil {
+		t.Fatal(err)
+	}
+	swap := e.s.Swaps[id]
+	if !e.publicCoins()[0].Reserved {
+		t.Fatal("accepted maker funds unlocked")
+	}
+	for _, c := range []chain.ID{chain.BTC, chain.Blake} {
+		e.heights[c] = swap.Long.RefundHeight + 100
+		e.clocks[c] = e.heights[c]
+	}
+	if err := e.advanceSwap(context.Background(), swap, nil); err == nil {
+		t.Fatal("expired funding gate not reached")
+	}
+	e.reconcileReservations()
+	if swap.Stage != "expired before maker funding" || e.publicCoins()[0].Reserved || swap.ShortFunding != "" {
+		t.Fatal("abandoned maker reservation kept funds locked")
+	}
+	if err := e.save(); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := e.vault.Load(&e.s); err != nil {
+		t.Fatal(err)
+	}
+	swap = e.s.Swaps[id]
+	for _, c := range []chain.ID{chain.BTC, chain.Blake} {
+		e.heights[c] = 200
+		e.clocks[c] = 200
+	}
+	if err := e.advanceSwap(context.Background(), swap, nil); err != nil {
+		t.Fatal(err)
+	}
+	if swap.Stage != "expired before maker funding" || swap.ShortFunding != "" {
+		t.Fatal("expired maker revived after clock rollback")
+	}
+	if err := e.CanChangeNetwork(); err != nil {
+		t.Fatal(err)
 	}
 }

@@ -86,10 +86,14 @@ func observation(all map[chain.ID]map[string]chain.Observation, c contract.HTLC)
 func (e *Engine) advanceSwap(ctx context.Context, s *Swap, all map[chain.ID]map[string]chain.Observation) error {
 	var revealError error
 	if s.Terms == nil {
+		e.expirePendingRequest(s, time.Now().Unix())
 		return nil
 	}
 	if err := s.Terms.Validate(); err != nil {
 		return err
+	}
+	if (s.Stage == "expired before maker funding" && s.ShortFunding == "") || (s.Stage == "expired before funding" && s.LongFunding == "") {
+		return nil // Safe expiry is final even if a reorg moves the clock back.
 	}
 	// Reconcile prepared transactions even in older snapshots whose broadcast
 	// succeeded before the sent flag was saved. Lookup errors are not absence.
@@ -235,6 +239,18 @@ func (e *Engine) advanceSwap(ctx context.Context, s *Swap, all map[chain.ID]map[
 		}
 	}
 	if s.Role == "maker" && s.ShortFunding == "" {
+		if err := e.gate(s.Terms, "fund-short"); err != nil {
+			s.Stage = "expired before maker funding"
+			offer := s.Terms.Offer()
+			delete(e.s.CoinReservations, "offer/"+offer.ID)
+			if _, ok := e.s.Offers[offer.ID]; ok {
+				offer.Status, offer.Reservation = "cancelled", s.ID
+				if err := e.publishOffer(offer); err != nil {
+					return err
+				}
+			}
+			return err
+		}
 		ready, err := e.funded(ctx, s.Long)
 		if err != nil {
 			return err
@@ -242,10 +258,6 @@ func (e *Engine) advanceSwap(ctx context.Context, s *Swap, all map[chain.ID]map[
 		if !ready {
 			s.Stage = "awaiting taker funding"
 			return nil
-		}
-		if err = e.gate(s.Terms, "fund-short"); err != nil {
-			s.Stage = "expired before maker funding"
-			return err
 		}
 		tx, err := e.fundReserved(ctx, s.Short, "offer/"+s.Terms.Offer().ID)
 		if err != nil {

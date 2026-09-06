@@ -34,7 +34,7 @@ func canChangeNetwork(s State) error {
 	}
 	for _, swap := range s.Swaps {
 		switch swap.Stage {
-		case "completed", "refunded", "rejected", "expired before funding", "aborted; counterparty refunded":
+		case "completed", "refunded", "rejected", "expired before acceptance", "expired before funding", "expired before maker funding", "aborted; counterparty refunded":
 		default:
 			return fmt.Errorf("swap %s must finish before changing networks", swap.ID)
 		}

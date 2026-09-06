@@ -23,7 +23,7 @@ type CoinReservation struct {
 func pointKey(p CoinOutpoint) string { return chain.OutpointKey(p.TxID, p.Vout) }
 func terminalSwap(s *Swap) bool {
 	switch s.Stage {
-	case "completed", "refunded", "rejected", "expired before funding", "expired before maker funding", "aborted; counterparty refunded":
+	case "completed", "refunded", "rejected", "expired before acceptance", "expired before funding", "expired before maker funding", "aborted; counterparty refunded":
 		return true
 	}
 	return false
@@ -124,6 +124,7 @@ func (e *Engine) reconcileReservations() {
 		}
 	}
 	for id, s := range e.s.Swaps {
+		e.expirePendingRequest(s, time.Now().Unix())
 		if s.Role != "taker" || terminalSwap(s) || s.LongFunding != "" {
 			continue
 		}
@@ -146,4 +147,22 @@ func (e *Engine) reconcileReservations() {
 		n := active[owner]
 		_ = e.reserveCoins(owner, n.id, n.amount)
 	}
+}
+
+// Before accepting terms the taker has signed no funding transaction. Expiring
+// the request is safe only in that state, and late acceptance cannot revive it.
+func (e *Engine) expirePendingRequest(s *Swap, now int64) bool {
+	if s.Role != "taker" || s.Terms != nil || s.LongFunding != "" || s.ShortFunding != "" || terminalSwap(s) {
+		return false
+	}
+	var offer protocol.Offer
+	if json.Unmarshal([]byte(s.Request.OfferEvent.Content), &offer) != nil || offer.Expires <= 0 || offer.Expires > now {
+		return false
+	}
+	s.Stage = "expired before acceptance"
+	delete(e.s.CoinReservations, "swap/"+s.ID)
+	raw, _ := json.Marshal(s.Request)
+	deliveryID := protocol.Digest([]string{offer.Maker, "request", s.ID, string(raw)})
+	delete(e.s.Outbox, deliveryID)
+	return true
 }

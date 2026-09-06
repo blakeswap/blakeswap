@@ -185,13 +185,19 @@ func (e *Engine) advanceSends(ctx context.Context) {
 		}
 	}
 	sort.Strings(ids)
+	if len(ids) == 0 {
+		return
+	}
+	start := sort.Search(len(ids), func(i int) bool { return ids[i] > e.sendCursor }) % len(ids)
 	// Transfers have a separate budget, preserving time for swaps and rescues.
 	sendCtx, cancel := context.WithTimeout(ctx, 3*time.Second)
 	defer cancel()
-	for _, id := range ids {
+	for i := 0; i < len(ids); i++ {
 		if sendCtx.Err() != nil {
 			return
 		}
+		id := ids[(start+i)%len(ids)]
+		e.sendCursor = id // Advance even when this lookup uses the remaining budget.
 		e.advanceSend(sendCtx, e.s.Sends[id])
 	}
 }

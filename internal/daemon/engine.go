@@ -39,6 +39,7 @@ type Engine struct {
 	receiveReady  map[chain.ID]bool
 	walletCoins   map[chain.ID]map[string][]chain.UTXO
 	walletCursor  map[chain.ID]int
+	sendCursor    string
 	addresses     map[chain.ID]string
 	scripts       map[chain.ID][]byte
 	heights       map[chain.ID]uint32

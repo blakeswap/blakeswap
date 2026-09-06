@@ -181,3 +181,11 @@ Retry the same request ID with identical details to retrieve its existing result
 changing details with an existing ID is rejected. Pending sends block network
 switching until six confirmations. There is no send cancellation or fee replacement;
 a low fee can leave a payment pending until miners accept it.
+
+Unanswered take requests expire at the signed offer deadline before acceptance or
+prepared funding. Their coins unlock, retries stop, and late acceptance cannot
+revive the request. Already accepted trades retain their settlement deadlines.
+An accepted maker reservation with no prepared funding expires when its signed
+funding safety window closes, even if the taker never broadcasts. Its offer becomes
+cancelled. Safe expiry is final across restart and clock rollback; signed funding
+transactions retain their input locks and existing settlement obligations.
