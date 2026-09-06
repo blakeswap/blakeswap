@@ -1,6 +1,5 @@
 name: macOS packages
 on:
-  pull_request:
   push:
     tags: ['v*']
   release:
@@ -34,9 +33,7 @@ jobs:
       - name: Release version
         env:
           RELEASE_TAG: ${{ github.event.release.tag_name || github.ref_name }}
-          EVENT_NAME: ${{ github.event_name }}
         run: |
-          if [ "$EVENT_NAME" = pull_request ]; then RELEASE_TAG=0.2.0; fi
           BLAKESWAP_VERSION="$RELEASE_TAG" python3 scripts/package-version.py
           echo "BLAKESWAP_VERSION=$RELEASE_TAG" >> "$GITHUB_ENV"
           echo "BLAKESWAP_BUILD_NUMBER=$GITHUB_RUN_NUMBER" >> "$GITHUB_ENV"
@@ -61,7 +58,6 @@ jobs:
             bin/*.dmg.sha256
           if-no-files-found: error
   publish:
-    if: github.event_name != 'pull_request'
     needs: build
     runs-on: ubuntu-latest
     permissions:

@@ -230,4 +230,6 @@ explicit paths, and migrate obsolete generated defaults. `make test-local-nodes`
 checks launcher registration and per-chain Make targets. `make test-packaging`
 checks tag validation and bundle version metadata. Both run in CI. The macOS
 packages workflow builds, verifies DMGs and binary architectures, and runs native
-tests on Apple silicon and Intel for every PR before a release tag can publish.
+tests on Apple silicon and Intel when a version tag or release is published.
+Pull requests and main-branch pushes keep Go validation in the separate CI
+workflow without building DMGs.

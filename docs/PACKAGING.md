@@ -134,7 +134,8 @@ runs native tests, and uploads these assets only after both jobs pass:
 If the tag has no release, the workflow creates one; otherwise it attaches assets
 to the existing release without replacing its notes. Prerelease tags such as
 `v0.3.0-rc.1` produce prereleases. Both DMG filenames and app metadata derive from
-the tag. Pull requests build/test both architectures without publishing a release.
+the tag. DMG builds run only for version tags and published releases. Pull requests
+and main-branch pushes keep the Go checks without building a Mac installer.
 For local builds, `BLAKESWAP_VERSION=v0.3.0 sh scripts/build-dmg.sh` overrides the
 version (otherwise an exact version tag or `0.2.0` is used).
 
