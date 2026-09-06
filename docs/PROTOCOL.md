@@ -1,4 +1,4 @@
-# Atomic swap protocol v1
+# Atomic swap protocol v2
 
 ## Scope and roles
 
@@ -6,7 +6,7 @@ An offer sells one exact amount on one chain for one exact amount on the other. 
 
 **Maker/taker are market roles.** In this protocol the **taker always chooses the preimage and funds first**, regardless of which asset they sell. The taker funds the long-timeout HTLC; the maker funds the short-timeout HTLC. The protocol works in either BTC/BLAKE direction.
 
-Offers are signed intent, not executable PSBTs. The original proposal of a pre-signed open order that an arbitrary future taker can complete is replaced by authenticated negotiation of concrete keys, amounts, outpoints, deadlines, and tower policy. A maker can post an offer and stop its daemon, but it must return to accept and fund a specific swap. The participants can take turns being online; they need not overlap. Once funded, timeouts constrain that asynchrony.
+Offers are signed intent, not executable PSBTs. The original proposal of a pre-signed open order that an arbitrary future taker can complete is replaced by authenticated negotiation of concrete keys, amounts, outpoints, and deadlines. A maker can post an offer and stop its daemon, but it must return to accept and fund a specific swap. The participants can take turns being online; they need not overlap. Once funded, timeouts constrain that asynchrony.
 
 ## Contracts and signatures
 
@@ -27,7 +27,7 @@ The claim witness is `[signature, s, 0x01, witnessScript]`. The refund witness i
 
 All application-generated transactions are version 2. Inputs use sequence `0xfffffffd`, making `nLockTime` effective and signaling replacement. Funding consumes confirmed local P2WPKH coins, creates the HTLC at output 0, and returns non-dust change to the chain's local deposit key. No spending key crosses node RPC. Refunds are signed and persisted before funding is broadcast.
 
-BTC signatures use BIP-143 and hash byte `0x01`. Blake2b signatures use hash byte `0x21` and the fork's `UnifiedSighash` tagged hash. The implementation supports only ALL and SegWit v0. It commits to every input outpoint, spent value/script, input sequence, output, transaction version, and locktime; the unified message zero-extends locktime to five bytes. None, Single, AnyoneCanPay, Taproot, and custom script modes are outside v1.
+BTC signatures use BIP-143 and hash byte `0x01`. Blake2b signatures use hash byte `0x21` and the fork's `UnifiedSighash` tagged hash. The implementation supports only ALL and SegWit v0. It commits to every input outpoint, spent value/script, input sequence, output, transaction version, and locktime; the unified message zero-extends locktime to five bytes. None, Single, AnyoneCanPay, Taproot, and custom script modes are outside v2.
 
 The two contracts share `H` but have different keys and assets:
 
@@ -38,11 +38,11 @@ The two contracts share `H` but have different keys and assets:
 
 ## Authenticated terms
 
-The request contains a random swap ID, the original signed open-offer event, taker Nostr identity, `H`, and two taker per-swap compressed public keys. The maker verifies the request, its own current open offer, available funds, and the selected provider-signed tower quote. It reserves the entire offer exactly once, derives its keys, and sends immutable accepted terms.
+The request contains a random swap ID, the original signed open-offer event, taker Nostr identity, `H`, and two taker per-swap compressed public keys. The maker verifies the request, its own current open offer, available funds, and its privately stored protection policy. It reserves the entire offer exactly once, derives its keys, and sends immutable accepted terms.
 
-Terms include the full request, both contracts before funding, both maker keys, both application chain domains, both refund locktimes, the long-chain reveal cutoff/tower takeover locktime, and selected tower identity/payout scripts. JSON structs are serialized deterministically by Go and SHA256 hashed to bind subsequent messages. There are no floating-point amounts or prices: all amounts and basis points are integers. An implementation in another language must reproduce this serialization or negotiate a future canonical encoding version.
+Terms include the full request, both contracts before funding, both maker keys, both application chain domains, both refund locktimes, the long-chain reveal cutoff/tower takeover locktime, without either party’s tower identity, fee, payout scripts, quote, or protection flag. JSON structs are serialized deterministically by Go and SHA256 hashed to bind subsequent messages. There are no floating-point amounts or prices: all amounts and basis points are integers. An implementation in another language must reproduce this serialization or negotiate a future canonical encoding version.
 
-The taker checks that acceptance preserves its exact request, the signed maker offer, keys, amounts, hash, domains, and the provider-signed tower quote pinned in the offer (or the locally configured quote for legacy offers). A changed contract requires a new negotiation, not reinterpretation of a signature already handed out.
+The taker checks that acceptance preserves its exact request, the signed maker offer, keys, amounts, hash, domains, and protocol version. Each wallet independently pins its own provider quote in encrypted local state; that selection is never sent to the counterparty. A changed contract requires a new negotiation, not reinterpretation of a signature already handed out.
 
 ## Regtest deadline policy
 
@@ -138,7 +138,7 @@ sequenceDiagram
   M->>L: Claim incoming funds without tower fee
 ```
 
-A configured tower's durable receipt is required before its protected party funds. A receipt commits to the exact validated job digest; relay `OK` acknowledgments alone do not arm protection. With tower protection explicitly disabled, the daemon still prepares its own refunds but does not wait for a tower.
+A configured tower's durable receipt is required before its protected party funds. A receipt commits to the exact validated job digest; relay `OK` acknowledgments alone do not arm protection. With local tower protection disabled, that wallet still prepares its own refunds but does not wait for a tower. A maker’s choice protects only the maker. A taker chooses its own optional refund protection through the local take command. Neither choice changes the public offer or shared terms.
 
 ## Delayed tower claims
 
@@ -154,7 +154,23 @@ Refund rescue jobs similarly spend the party's own HTLC after the refund thresho
 
 ## Messaging and crash recovery
 
-Public offers use addressable kind `38481`. Latest `created_at` wins within `(kind, author, d)`, with the lexicographically lower event ID breaking equal-time ties. Status changes publish `reserved`, `cancelled`, or `filled`. Local expiry is enforced even if a relay retains an old event. A relay deletion request is never treated as revoking an on-chain capability.
+Public offers use addressable kind `38481` and carry `version: 2`. Their public
+schema contains only network, ID, maker, amounts, asset, expiry, status, and
+reservation. Both protected and unprotected offers omit all protection fields.
+The maker’s authenticated local API overlays its own saved choice; other wallets
+receive no provider or protection information, including for cached legacy offers.
+Only encrypted jobs and receipts disclose an order’s protection to its provider.
+Provider directory announcements describe a service, not which orders use it.
+
+On upgrade, stored legacy offers are republished in v2 without protection fields,
+and stale offer retries are removed before relay IO. Old disclosures already
+stored by third parties cannot be erased. New trades require v2 offers and v2
+terms; older clients must upgrade. Previously accepted v1 swaps retain their
+original terms, message digests, jobs, and receipt validation to settle safely.
+Existing public blockchain rescue transactions can still reveal a provider payout
+when a rescue is actually executed; this change hides the prior protection choice.
+
+Latest `created_at` wins within `(kind, author, d)`, with the lexicographically lower event ID breaking equal-time ties. Status changes publish `reserved`, `cancelled`, or `filled`. Local expiry is enforced even if a relay retains an old event. A relay deletion request is never treated as revoking an on-chain capability.
 
 Private messages use a versioned application envelope with stable message ID, type, swap ID, and JSON body. Current types are `request`, `accepted`, `rejected`, `long-funded`, `short-funded`, `tower-job`, `tower-receipt`, `tower-query`, `tower-quote`, and `ack`. They are unsigned inner rumors, authenticated by their signed encrypted seal, inside encrypted signed gift wraps.
 

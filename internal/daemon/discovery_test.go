@@ -194,7 +194,8 @@ func TestRealDiscoveredTraderWatchtowerAndOfferBalance(t *testing.T) {
 		h.engines[name].Config.Tower = TowerConfig{}
 	}
 	h.command("maker", "tower.resolve", map[string]string{"pubkey": tower.ownTower().Npub})
-	h.tick("maker", "tower", "maker")
+	h.command("taker", "tower.resolve", map[string]string{"pubkey": tower.ownTower().Npub})
+	h.tick("maker", "taker", "tower", "maker", "taker")
 	maker := h.engines["maker"]
 	for _, sell := range []string{"btc", "blake"} {
 		empty, _ := json.Marshal(map[string]any{"sell": sell, "sell_amount": 1000000, "buy_amount": 2000000})
@@ -212,7 +213,7 @@ func TestRealDiscoveredTraderWatchtowerAndOfferBalance(t *testing.T) {
 		t.Fatal("provider quote not pinned")
 	}
 	h.tick("maker", "taker")
-	id := h.command("taker", "swap.take", map[string]string{"maker": o.Maker, "id": o.ID}).(map[string]string)["id"]
+	id := h.command("taker", "swap.take", map[string]any{"maker": o.Maker, "id": o.ID, "tower_bps": 125, "tower_pubkey": tower.ownTower().Npub}).(map[string]string)["id"]
 	h.until("protected long funding", func() bool { return h.swap("taker", id).LongSent }, func() { h.tick("taker", "maker", "tower") })
 	if len(tower.s.TowerJobs) == 0 || !h.swap("taker", id).LongSent {
 		t.Fatal("trading watchtower did not acknowledge and enable funding")

@@ -27,6 +27,7 @@ final class AppModel: ObservableObject {
         root = self.daemon.root
     }
     private var refreshing = false
+    @Published private(set) var checkingSwaps = false
     var network: String { settings?.activeNetwork ?? status?.network ?? "mainnet" }
     var isRegtest: Bool { network == "regtest" }
     func invalidateSnapshot() { generation &+= 1; snapshot.status = nil; recovery = nil }
@@ -61,6 +62,20 @@ final class AppModel: ObservableObject {
             // Closing the app while its helper starts is not a connection failure.
         } catch { if selected == profile && expected == generation { connectionError = error.localizedDescription } }
     }
+    func refreshSwaps() async {
+        guard !checkingSwaps else { return }
+        checkingSwaps = true
+        defer { checkingSwaps = false }
+        let selected = profile, expected = generation
+        let currentNetwork = network
+        do {
+            let raw = try await DaemonRPC.call(root: root, profile: selected, method: "status.refresh", params: ["expected_network": currentNetwork])
+            let next = try DaemonStatus(serializedBytes: raw)
+            guard let currentSettings = settings else { return }
+            if acceptSnapshot(next, settings: currentSettings, profile: selected, generation: expected) { connectionError = nil }
+        } catch { if selected == profile && expected == generation { connectionError = error.localizedDescription } }
+    }
+
     @discardableResult
     func loadSettings() async -> AppSettings? {
         let selected = profile, expected = generation

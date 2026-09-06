@@ -38,6 +38,10 @@ func Call(ctx context.Context, socket string, req daemon.Request) (json.RawMessa
 		p := &emptypb.Empty{}
 		in = p
 		invoke = func() (proto.Message, error) { return client.GetStatus(ctx, p) }
+	case "status.refresh":
+		p := &pb.RefreshStatusRequest{}
+		in = p
+		invoke = func() (proto.Message, error) { return client.RefreshStatus(ctx, p) }
 	case "tower.resolve":
 		p := &pb.ResolveWatchtowerRequest{}
 		in = p

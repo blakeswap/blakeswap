@@ -93,3 +93,57 @@ func TestBountyRoundingAndEconomicBounds(t *testing.T) {
 		t.Fatal(e)
 	}
 }
+
+func TestPrivateTermsAndOfferVersionCannotLeakOrDowngrade(t *testing.T) {
+	old := sample(t)
+	key := nostr.Generate()
+	o := old.Offer()
+	o.Maker, o.Version = key.Public().Hex(), 2
+	fields := map[string]any{"version": 2, "id": o.ID, "maker": o.Maker, "sell": o.Sell, "sell_amount": o.SellAmount, "buy_amount": o.BuyAmount, "expires": o.Expires, "status": o.Status}
+	event := old.Request.OfferEvent
+	sign := func() {
+		raw, _ := json.Marshal(fields)
+		event.Content = string(raw)
+		if err := transport.Sign(&event, key); err != nil {
+			t.Fatal(err)
+		}
+	}
+	sign()
+	r := old.Request
+	r.OfferEvent = event
+	terms, err := NewTerms(r, old.MakerKeys, map[chain.ID]uint32{chain.BTC: 100, chain.Blake: 1000}, "", nil)
+	if err != nil || terms.Version != 2 {
+		t.Fatal("private terms failed", err)
+	}
+	for _, mutate := range []func(*Terms){
+		func(t *Terms) { t.Version = 1 },
+		func(t *Terms) { t.Tower = key.Public().Hex() },
+		func(t *Terms) { t.TowerScripts = map[chain.ID]string{chain.BTC: "private"} },
+	} {
+		copy := terms
+		mutate(&copy)
+		if copy.Validate() == nil {
+			t.Fatal("private terms leaked or downgraded")
+		}
+	}
+	for _, field := range []string{"tower", "tower_bps"} {
+		fields[field] = 0
+		sign()
+		if _, err := DecodeOffer(event, time.Now().Unix()); err == nil {
+			t.Fatal("private offer contains protection field", field)
+		}
+		delete(fields, field)
+	}
+	fields["version"] = 99
+	sign()
+	if _, err := DecodeOffer(event, time.Now().Unix()); err == nil {
+		t.Fatal("unknown offer version accepted")
+	}
+	// The added serialization preserves every legacy terms digest.
+	type plain Terms
+	before, _ := json.Marshal(plain(old))
+	after, _ := json.Marshal(old)
+	if string(before) != string(after) {
+		t.Fatal("legacy terms wire encoding changed")
+	}
+}

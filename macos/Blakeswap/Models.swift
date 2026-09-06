@@ -11,6 +11,10 @@ typealias NodeSettings = Blakeswap_V1_Node
 
 extension Blakeswap_V1_Offer: Identifiable {
     var buy: String { sell == "btc" ? "blake" : "btc" }
+    func protectionLabel(viewer: String) -> String? {
+        guard !viewer.isEmpty, maker == viewer else { return nil }
+        return towerBps > 0 ? "Watchtower: \(percentage(towerBps)) only if used" : "No protection"
+    }
 }
 extension Blakeswap_V1_Swap: Identifiable {
     var feeLabel: String {

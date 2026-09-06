@@ -39,6 +39,11 @@ func (e *Engine) status() Status {
 	for _, event := range e.s.Book {
 		o, err := protocol.DecodeOffer(event, time.Now().Unix())
 		if err == nil {
+			if o.Maker == s.PubKey {
+				o = e.ownOffer(o)
+			} else {
+				o.Tower, o.TowerBPS = nil, 0
+			}
 			if o.Status == "open" {
 				for _, pending := range e.s.Swaps {
 					var requested protocol.Offer
@@ -59,7 +64,7 @@ func (e *Engine) status() Status {
 			p.TowerPayments[id] = amount
 		}
 		if swap.Terms != nil {
-			p.TowerEnabled = swap.Terms.Offer().TowerBPS > 0
+			p.TowerEnabled = swap.protection().BPS > 0
 			p.TowerReady = p.TowerEnabled && len(swap.Jobs) > 0 && towerReady(swap)
 			p.Takeover = swap.Terms.Takeover
 			p.RevealBefore = swap.Terms.RevealBefore
@@ -86,6 +91,15 @@ func (e *Engine) status() Status {
 	return s
 }
 func (e *Engine) Command(ctx context.Context, req Request) (any, error) {
+	if req.Method == "status.refresh" {
+		if err := CheckCommandNetwork(req, e.Config.Network, false); err != nil {
+			return nil, err
+		}
+		if err := e.Tick(ctx); err != nil {
+			return nil, err
+		}
+		return e.Status(), nil
+	}
 	e.mu.Lock()
 	defer e.mu.Unlock()
 	if err := ctx.Err(); err != nil {
@@ -133,6 +147,7 @@ func (e *Engine) Command(ctx context.Context, req Request) (any, error) {
 		if err := json.Unmarshal(req.Params, &o); err != nil {
 			return nil, err
 		}
+		o.Version = 2
 		o.Network = e.Config.Network
 		o.ID = transport.RandomID()
 		o.Maker = e.identity.Public().Hex()
@@ -144,37 +159,19 @@ func (e *Engine) Command(ctx context.Context, req Request) (any, error) {
 		if err := o.Validate(time.Now().Unix()); err != nil {
 			return nil, err
 		}
-		if o.TowerBPS > 0 {
-			var selection struct {
-				PubKey string `json:"tower_pubkey"`
-			}
-			if err := json.Unmarshal(req.Params, &selection); err != nil {
-				return nil, err
-			}
-			if selection.PubKey != "" {
-				pub, err := protocol.PublicKey(selection.PubKey)
-				if err != nil {
-					return nil, err
-				}
-				event, ok := e.s.Towers[pub.Hex()]
-				if !ok {
-					return nil, errors.New("watchtower has not been discovered on your relays")
-				}
-				tower, err := protocol.DecodeTower(event, e.Config.Network, time.Now().Unix())
-				if err != nil {
-					return nil, err
-				}
-				if tower.BPS != o.TowerBPS {
-					return nil, errors.New("watchtower fee changed; refresh the quote")
-				}
-				o.Tower = &tower
-			}
-			if _, err := e.selectedTower(o); err != nil {
-				return nil, err
-			}
-			if err := o.Validate(time.Now().Unix()); err != nil {
-				return nil, err
-			}
+		var selection struct {
+			PubKey string `json:"tower_pubkey"`
+		}
+		if err := json.Unmarshal(req.Params, &selection); err != nil {
+			return nil, err
+		}
+		tower, err := e.selectProtection(o, o.TowerBPS, selection.PubKey)
+		if err != nil {
+			return nil, err
+		}
+		o.Tower = nil
+		if tower.BPS > 0 {
+			o.Tower = &tower
 		}
 		if err := e.refresh(ctx); err != nil {
 			return nil, err
@@ -189,6 +186,10 @@ func (e *Engine) Command(ctx context.Context, req Request) (any, error) {
 			delete(e.s.CoinReservations, "offer/"+o.ID)
 			return nil, err
 		}
+		if e.s.OfferTowers == nil {
+			e.s.OfferTowers = map[string]protocol.Tower{}
+		}
+		e.s.OfferTowers[o.ID] = tower
 		if err := e.publishOffer(o); err != nil {
 			return nil, err
 		}
@@ -216,14 +217,16 @@ func (e *Engine) Command(ctx context.Context, req Request) (any, error) {
 		if err = e.publishOffer(o); err != nil {
 			return nil, err
 		}
-		return o, e.save()
+		return e.ownOffer(o), e.save()
 	case "swap.take":
 		if e.Config.Mode != "trader" {
 			return nil, errors.New("trader is unavailable")
 		}
 		var p struct {
-			Maker string `json:"maker"`
-			ID    string `json:"id"`
+			Maker       string `json:"maker"`
+			ID          string `json:"id"`
+			TowerBPS    int64  `json:"tower_bps"`
+			TowerPubKey string `json:"tower_pubkey"`
 		}
 		if err := json.Unmarshal(req.Params, &p); err != nil {
 			return nil, err
@@ -245,7 +248,11 @@ func (e *Engine) Command(ctx context.Context, req Request) (any, error) {
 		if o.Status != "open" || o.Maker == e.identity.Public().Hex() {
 			return nil, errors.New("offer not available to take")
 		}
-		if _, err := e.selectedTower(o); err != nil {
+		if o.Version != 2 {
+			return nil, errors.New("maker must upgrade and republish this legacy offer")
+		}
+		tower, err := e.selectProtection(o, p.TowerBPS, p.TowerPubKey)
+		if err != nil {
 			return nil, err
 		}
 		if len(e.s.Swaps) >= 1000 {
@@ -262,7 +269,7 @@ func (e *Engine) Command(ctx context.Context, req Request) (any, error) {
 			return nil, err
 		}
 		request := protocol.Request{ID: id, OfferEvent: event, Taker: e.identity.Public().Hex(), Hash: hex.EncodeToString(hash[:]), Keys: keys}
-		s := &Swap{ID: id, Role: "taker", Request: request, Secret: hex.EncodeToString(secret), Receipts: map[string]protocol.Receipt{}, Stage: "request queued"}
+		s := &Swap{ID: id, Role: "taker", Protection: &tower, Request: request, Secret: hex.EncodeToString(secret), Receipts: map[string]protocol.Receipt{}, Stage: "request queued"}
 		if err := e.refresh(ctx); err != nil {
 			return nil, err
 		}

@@ -230,3 +230,9 @@ func (s *Service) SendCoins(ctx context.Context, in *pb.SendCoinsRequest) (*pb.W
 	out := &pb.WalletSend{}
 	return out, s.command(ctx, "wallet.send", in, out)
 }
+
+func (s *Service) RefreshStatus(ctx context.Context, in *pb.RefreshStatusRequest) (*pb.Status, error) {
+	out := &pb.Status{}
+	err := s.command(ctx, "status.refresh", in, out)
+	return out, err
+}

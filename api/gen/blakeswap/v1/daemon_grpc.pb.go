@@ -21,6 +21,7 @@ const _ = grpc.SupportPackageIsVersion9
 
 const (
 	DaemonService_GetStatus_FullMethodName          = "/blakeswap.v1.DaemonService/GetStatus"
+	DaemonService_RefreshStatus_FullMethodName      = "/blakeswap.v1.DaemonService/RefreshStatus"
 	DaemonService_ResolveWatchtower_FullMethodName  = "/blakeswap.v1.DaemonService/ResolveWatchtower"
 	DaemonService_SetPaused_FullMethodName          = "/blakeswap.v1.DaemonService/SetPaused"
 	DaemonService_CreateOffer_FullMethodName        = "/blakeswap.v1.DaemonService/CreateOffer"
@@ -47,6 +48,7 @@ const (
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
 type DaemonServiceClient interface {
 	GetStatus(ctx context.Context, in *emptypb.Empty, opts ...grpc.CallOption) (*Status, error)
+	RefreshStatus(ctx context.Context, in *RefreshStatusRequest, opts ...grpc.CallOption) (*Status, error)
 	ResolveWatchtower(ctx context.Context, in *ResolveWatchtowerRequest, opts ...grpc.CallOption) (*emptypb.Empty, error)
 	SetPaused(ctx context.Context, in *SetPausedRequest, opts ...grpc.CallOption) (*Status, error)
 	CreateOffer(ctx context.Context, in *CreateOfferRequest, opts ...grpc.CallOption) (*Offer, error)
@@ -80,6 +82,16 @@ func (c *daemonServiceClient) GetStatus(ctx context.Context, in *emptypb.Empty, 
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(Status)
 	err := c.cc.Invoke(ctx, DaemonService_GetStatus_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *daemonServiceClient) RefreshStatus(ctx context.Context, in *RefreshStatusRequest, opts ...grpc.CallOption) (*Status, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(Status)
+	err := c.cc.Invoke(ctx, DaemonService_RefreshStatus_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -281,6 +293,7 @@ func (c *daemonServiceClient) CheckNode(ctx context.Context, in *CheckNodeReques
 // for forward compatibility.
 type DaemonServiceServer interface {
 	GetStatus(context.Context, *emptypb.Empty) (*Status, error)
+	RefreshStatus(context.Context, *RefreshStatusRequest) (*Status, error)
 	ResolveWatchtower(context.Context, *ResolveWatchtowerRequest) (*emptypb.Empty, error)
 	SetPaused(context.Context, *SetPausedRequest) (*Status, error)
 	CreateOffer(context.Context, *CreateOfferRequest) (*Offer, error)
@@ -312,6 +325,9 @@ type UnimplementedDaemonServiceServer struct{}
 
 func (UnimplementedDaemonServiceServer) GetStatus(context.Context, *emptypb.Empty) (*Status, error) {
 	return nil, status.Error(codes.Unimplemented, "method GetStatus not implemented")
+}
+func (UnimplementedDaemonServiceServer) RefreshStatus(context.Context, *RefreshStatusRequest) (*Status, error) {
+	return nil, status.Error(codes.Unimplemented, "method RefreshStatus not implemented")
 }
 func (UnimplementedDaemonServiceServer) ResolveWatchtower(context.Context, *ResolveWatchtowerRequest) (*emptypb.Empty, error) {
 	return nil, status.Error(codes.Unimplemented, "method ResolveWatchtower not implemented")
@@ -405,6 +421,24 @@ func _DaemonService_GetStatus_Handler(srv interface{}, ctx context.Context, dec 
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(DaemonServiceServer).GetStatus(ctx, req.(*emptypb.Empty))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _DaemonService_RefreshStatus_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(RefreshStatusRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DaemonServiceServer).RefreshStatus(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: DaemonService_RefreshStatus_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DaemonServiceServer).RefreshStatus(ctx, req.(*RefreshStatusRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -761,6 +795,10 @@ var DaemonService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "GetStatus",
 			Handler:    _DaemonService_GetStatus_Handler,
+		},
+		{
+			MethodName: "RefreshStatus",
+			Handler:    _DaemonService_RefreshStatus_Handler,
 		},
 		{
 			MethodName: "ResolveWatchtower",

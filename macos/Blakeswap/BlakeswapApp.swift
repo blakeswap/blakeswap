@@ -97,6 +97,7 @@ struct AppRootView: View {
 struct ContentView: View {
     @EnvironmentObject private var model: AppModel
     @State private var showOffer = false
+    @State private var takingOrder: Order?
     @State private var sendContext: SendContext?
     @State private var orderFilter: OrderFilter = .all
     var body: some View {
@@ -131,6 +132,7 @@ struct ContentView: View {
         }
         .sheet(item: $sendContext) { context in SendCoinsView(context: context).environmentObject(model) }
         .sheet(isPresented: $showOffer) { OfferSheet().environmentObject(model) }
+        .sheet(item: $takingOrder) { order in TakeOfferSheet(order: order).environmentObject(model) }
         .sheet(isPresented: Binding(get: { model.recovery != nil }, set: { if !$0 { model.recovery = nil } })) {
             VStack(alignment: .leading, spacing: 20) {
                 Text("Wallet recovery phrase").font(.title2.bold())
@@ -234,21 +236,19 @@ struct ContentView: View {
                     .frame(maxWidth: .infinity).padding(28).background(panel.opacity(0.5), in: RoundedRectangle(cornerRadius: 14))
             } else {
                 VStack(spacing: 0) {
-                    HStack { Text("MAKER SELLS").frame(maxWidth: .infinity, alignment: .leading); Text("MAKER RECEIVES").frame(maxWidth: .infinity, alignment: .leading); Text("WATCHTOWER").frame(width: 160, alignment: .leading); Text("STATUS").frame(width: 124, alignment: .leading) }
+                    HStack { Text("MAKER SELLS").frame(maxWidth: .infinity, alignment: .leading); Text("MAKER RECEIVES").frame(maxWidth: .infinity, alignment: .leading); Text("STATUS").frame(width: 124, alignment: .leading) }
                         .font(.system(size: 10, weight: .semibold)).tracking(1.2).foregroundStyle(.secondary).padding(18)
                     ForEach(orders, id: \.bookID) { order in
                         Divider().opacity(0.4)
                         HStack(spacing: 10) {
-                            VStack(alignment: .leading, spacing: 6) { Text("\(units(order.sellAmount)) \(symbol(order.sell))").font(.system(.body, design: .monospaced)); Text(order.maker == status.pubkey ? "Your offer" : "Maker \(order.maker.prefix(10))…").font(.caption).foregroundStyle(.secondary) }.frame(maxWidth: .infinity, alignment: .leading)
+                            VStack(alignment: .leading, spacing: 6) { Text("\(units(order.sellAmount)) \(symbol(order.sell))").font(.system(.body, design: .monospaced)); Text(order.maker == status.pubkey ? "Your offer" : "Maker \(order.maker.prefix(10))…").font(.caption).foregroundStyle(.secondary)
+                                if let protection = order.protectionLabel(viewer: status.pubkey) { Text(protection).font(.caption).foregroundStyle(.secondary) }
+                                if order.maker == status.pubkey && order.hasTower { Text(String(order.tower.npub.prefix(18)) + "…").font(.caption2.monospaced()).foregroundStyle(.secondary).help(order.tower.npub).textSelection(.enabled) } }.frame(maxWidth: .infinity, alignment: .leading)
                             Text("\(units(order.buyAmount)) \(symbol(order.buy))").font(.system(.body, design: .monospaced)).frame(maxWidth: .infinity, alignment: .leading)
-                            VStack(alignment: .leading, spacing: 5) {
-                                Text(order.towerBps > 0 ? "\(percentage(order.towerBps)) only if used" : "No protection")
-                                if order.hasTower { Text(String(order.tower.npub.prefix(18)) + "…").font(.caption2.monospaced()).foregroundStyle(.secondary).help(order.tower.npub).textSelection(.enabled) }
-                            }.frame(width: 160, alignment: .leading)
                             Group {
                                 if order.status == "open" {
                                     if order.maker == status.pubkey { Button("Cancel") { Task { await model.command("offer.cancel", ["id": order.id]) } } }
-                                    else { Button("Take offer") { Task { await model.command("swap.take", ["maker": order.maker, "id": order.id]) } }.tint(mint).accessibilityIdentifier("take-offer-\(order.id)") }
+                                    else { Button("Take offer") { takingOrder = order }.tint(mint).accessibilityIdentifier("take-offer-\(order.id)") }
                                 } else { Text(order.status.capitalized).foregroundStyle(order.status == "filled" ? mint : .secondary).font(.caption) }
                             }.frame(width: 124, alignment: .leading).disabled(model.busy)
                         }.padding(18)
@@ -261,6 +261,13 @@ struct ContentView: View {
     }
     private func swaps(_ status: DaemonStatus) -> some View {
         VStack(alignment: .leading, spacing: 18) {
+            HStack {
+                Text("Swaps").font(.title3.weight(.semibold))
+                Spacer()
+                if model.checkingSwaps { ProgressView().controlSize(.small) }
+                Button { Task { await model.refreshSwaps() } } label: { Label(model.checkingSwaps ? "Checking…" : "Refresh", systemImage: "arrow.clockwise") }
+                    .disabled(model.checkingSwaps || model.busy).accessibilityIdentifier("refresh-swaps")
+            }
             if status.swaps.isEmpty { ContentUnavailableView("No swaps yet", systemImage: "arrow.triangle.2.circlepath").frame(maxWidth: .infinity).padding(50) }
             ForEach(status.swaps) { swap in
                 VStack(alignment: .leading, spacing: 18) {
@@ -361,7 +368,7 @@ struct OfferSheet: View {
                 Text("Available: \(model.status?.balances[sell] ?? 0) \(symbol(sell)) sats · Funding fee: \(model.status?.offerFundingFee ?? 2_000) sats").font(.caption).foregroundStyle(.secondary)
                 TextField("Sell amount (sats)", text: $sellAmount).accessibilityIdentifier("sell-amount")
                 TextField("Receive amount (sats)", text: $buyAmount).accessibilityIdentifier("buy-amount")
-                Toggle("Delayed watchtower protection", isOn: $protection)
+                Toggle("Protect my side with a watchtower", isOn: $protection)
                 if protection {
                     Picker("Favorite watchtower", selection: $towerID) {
                         Text("Select a watchtower").tag("")
@@ -371,7 +378,8 @@ struct OfferSheet: View {
                     if towers.isEmpty { Text("Add a public watchtower to favorites in Settings. Its announcement must be available on your relays.").font(.caption).foregroundStyle(.secondary) }
                 }
             }.formStyle(.grouped)
-            Text(protection ? "The tower earns \(percentage(selectedTower?.bps ?? 0)) only when its delayed rescue transaction confirms. Claim yourself first to avoid that fee." : "Keep the app open to respond before the refund deadlines. This offer will have no tower protection.")
+            Text("Your protection choice is private to you and your watchtower.").font(.caption).foregroundStyle(.secondary)
+            Text(protection ? "The tower earns \(percentage(selectedTower?.bps ?? 0)) only when its delayed rescue transaction confirms. Claim yourself first to avoid that fee." : "Keep the app open to respond before the refund deadlines. Your side will have no tower protection.")
                 .font(.callout).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
             Text("Publishing authorizes your daemon to reserve this offer and fund the agreed swap after verifying the taker's confirmed contract. Expires in 24 hours.")
                 .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)

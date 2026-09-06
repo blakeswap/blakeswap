@@ -35,13 +35,17 @@ enum DaemonRPC {
             let service = Blakeswap_V1_DaemonService.Client(wrapping: client)
             let metadata: Metadata = ["authorization": "Bearer \(endpoint.token)"]
             var options = CallOptions.defaults
-            options.timeout = .seconds(45)
+            options.timeout = .seconds(method == "status.refresh" ? 70 : 45)
             options.maxRequestMessageBytes = 131_072
             options.maxResponseMessageBytes = 8_388_608
             switch method {
             case "status":
                 let request = try Google_Protobuf_Empty(jsonUTF8Data: payload)
                 let response = try await service.getStatus(request, metadata: metadata, options: options)
+                return try response.serializedData()
+            case "status.refresh":
+                let request = try Blakeswap_V1_RefreshStatusRequest(jsonUTF8Data: payload)
+                let response = try await service.refreshStatus(request, metadata: metadata, options: options)
                 return try response.serializedData()
             case "tower.resolve":
                 let request = try Blakeswap_V1_ResolveWatchtowerRequest(jsonUTF8Data: payload)

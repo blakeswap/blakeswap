@@ -34,6 +34,19 @@ internal enum Blakeswap_V1_DaemonService: Sendable {
                 type: .unary
             )
         }
+        /// Namespace for "RefreshStatus" metadata.
+        internal enum RefreshStatus: Sendable {
+            /// Request type for "RefreshStatus".
+            internal typealias Input = Blakeswap_V1_RefreshStatusRequest
+            /// Response type for "RefreshStatus".
+            internal typealias Output = Blakeswap_V1_Status
+            /// Descriptor for "RefreshStatus".
+            internal static let descriptor = GRPCCore.MethodDescriptor(
+                service: GRPCCore.ServiceDescriptor(fullyQualifiedService: "blakeswap.v1.DaemonService"),
+                method: "RefreshStatus",
+                type: .unary
+            )
+        }
         /// Namespace for "ResolveWatchtower" metadata.
         internal enum ResolveWatchtower: Sendable {
             /// Request type for "ResolveWatchtower".
@@ -284,6 +297,7 @@ internal enum Blakeswap_V1_DaemonService: Sendable {
         /// Descriptors for all methods in the "blakeswap.v1.DaemonService" service.
         internal static let descriptors: [GRPCCore.MethodDescriptor] = [
             GetStatus.descriptor,
+            RefreshStatus.descriptor,
             ResolveWatchtower.descriptor,
             SetPaused.descriptor,
             CreateOffer.descriptor,
@@ -336,6 +350,25 @@ extension Blakeswap_V1_DaemonService {
         func getStatus<Result>(
             request: GRPCCore.ClientRequest<SwiftProtobuf.Google_Protobuf_Empty>,
             serializer: some GRPCCore.MessageSerializer<SwiftProtobuf.Google_Protobuf_Empty>,
+            deserializer: some GRPCCore.MessageDeserializer<Blakeswap_V1_Status>,
+            options: GRPCCore.CallOptions,
+            onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Blakeswap_V1_Status>) async throws -> Result
+        ) async throws -> Result where Result: Sendable
+
+        /// Call the "RefreshStatus" method.
+        ///
+        /// - Parameters:
+        ///   - request: A request containing a single `Blakeswap_V1_RefreshStatusRequest` message.
+        ///   - serializer: A serializer for `Blakeswap_V1_RefreshStatusRequest` messages.
+        ///   - deserializer: A deserializer for `Blakeswap_V1_Status` messages.
+        ///   - options: Options to apply to this RPC.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
+        /// - Returns: The result of `handleResponse`.
+        func refreshStatus<Result>(
+            request: GRPCCore.ClientRequest<Blakeswap_V1_RefreshStatusRequest>,
+            serializer: some GRPCCore.MessageSerializer<Blakeswap_V1_RefreshStatusRequest>,
             deserializer: some GRPCCore.MessageDeserializer<Blakeswap_V1_Status>,
             options: GRPCCore.CallOptions,
             onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Blakeswap_V1_Status>) async throws -> Result
@@ -742,6 +775,36 @@ extension Blakeswap_V1_DaemonService {
             try await self.client.unary(
                 request: request,
                 descriptor: Blakeswap_V1_DaemonService.Method.GetStatus.descriptor,
+                serializer: serializer,
+                deserializer: deserializer,
+                options: options,
+                onResponse: handleResponse
+            )
+        }
+
+        /// Call the "RefreshStatus" method.
+        ///
+        /// - Parameters:
+        ///   - request: A request containing a single `Blakeswap_V1_RefreshStatusRequest` message.
+        ///   - serializer: A serializer for `Blakeswap_V1_RefreshStatusRequest` messages.
+        ///   - deserializer: A deserializer for `Blakeswap_V1_Status` messages.
+        ///   - options: Options to apply to this RPC.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
+        /// - Returns: The result of `handleResponse`.
+        internal func refreshStatus<Result>(
+            request: GRPCCore.ClientRequest<Blakeswap_V1_RefreshStatusRequest>,
+            serializer: some GRPCCore.MessageSerializer<Blakeswap_V1_RefreshStatusRequest>,
+            deserializer: some GRPCCore.MessageDeserializer<Blakeswap_V1_Status>,
+            options: GRPCCore.CallOptions = .defaults,
+            onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Blakeswap_V1_Status>) async throws -> Result = { response in
+                try response.message
+            }
+        ) async throws -> Result where Result: Sendable {
+            try await self.client.unary(
+                request: request,
+                descriptor: Blakeswap_V1_DaemonService.Method.RefreshStatus.descriptor,
                 serializer: serializer,
                 deserializer: deserializer,
                 options: options,
@@ -1349,6 +1412,31 @@ extension Blakeswap_V1_DaemonService.ClientProtocol {
         )
     }
 
+    /// Call the "RefreshStatus" method.
+    ///
+    /// - Parameters:
+    ///   - request: A request containing a single `Blakeswap_V1_RefreshStatusRequest` message.
+    ///   - options: Options to apply to this RPC.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
+    /// - Returns: The result of `handleResponse`.
+    internal func refreshStatus<Result>(
+        request: GRPCCore.ClientRequest<Blakeswap_V1_RefreshStatusRequest>,
+        options: GRPCCore.CallOptions = .defaults,
+        onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Blakeswap_V1_Status>) async throws -> Result = { response in
+            try response.message
+        }
+    ) async throws -> Result where Result: Sendable {
+        try await self.refreshStatus(
+            request: request,
+            serializer: GRPCProtobuf.ProtobufSerializer<Blakeswap_V1_RefreshStatusRequest>(),
+            deserializer: GRPCProtobuf.ProtobufDeserializer<Blakeswap_V1_Status>(),
+            options: options,
+            onResponse: handleResponse
+        )
+    }
+
     /// Call the "ResolveWatchtower" method.
     ///
     /// - Parameters:
@@ -1851,6 +1939,35 @@ extension Blakeswap_V1_DaemonService.ClientProtocol {
             metadata: metadata
         )
         return try await self.getStatus(
+            request: request,
+            options: options,
+            onResponse: handleResponse
+        )
+    }
+
+    /// Call the "RefreshStatus" method.
+    ///
+    /// - Parameters:
+    ///   - message: request message to send.
+    ///   - metadata: Additional metadata to send, defaults to empty.
+    ///   - options: Options to apply to this RPC, defaults to `.defaults`.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
+    /// - Returns: The result of `handleResponse`.
+    internal func refreshStatus<Result>(
+        _ message: Blakeswap_V1_RefreshStatusRequest,
+        metadata: GRPCCore.Metadata = [:],
+        options: GRPCCore.CallOptions = .defaults,
+        onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Blakeswap_V1_Status>) async throws -> Result = { response in
+            try response.message
+        }
+    ) async throws -> Result where Result: Sendable {
+        let request = GRPCCore.ClientRequest<Blakeswap_V1_RefreshStatusRequest>(
+            message: message,
+            metadata: metadata
+        )
+        return try await self.refreshStatus(
             request: request,
             options: options,
             onResponse: handleResponse

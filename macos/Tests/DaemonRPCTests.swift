@@ -20,7 +20,7 @@ final class DaemonRPCTests: XCTestCase {
         }
         func call(_ profile: String, _ method: String, _ params: [String: Any] = [:]) async throws -> Data {
             var bound = params
-            if ["offer.create", "offer.cancel", "swap.take", "pause", "regtest.mine", "regtest.faucet"].contains(method) {
+            if ["status.refresh", "offer.create", "offer.cancel", "swap.take", "pause", "regtest.mine", "regtest.faucet"].contains(method) {
                 bound["expected_network"] = "regtest"
             }
             return try await DaemonRPC.call(root: root, profile: profile, method: method, params: bound)
@@ -103,9 +103,15 @@ final class DaemonRPCTests: XCTestCase {
         let taken = try Blakeswap_V1_TakeOfferResponse(serializedBytes: await call("bob", "swap.take", ["maker": offer.maker, "id": offer.id]))
         var mined = Set<String>()
         for _ in 0..<160 {
-            let alice = try await status("alice"), bob = try await status("bob")
-            let swaps = [alice, bob].compactMap { $0.swaps.first(where: { $0.id == taken.id }) }
-            if swaps.count == 2 && swaps.allSatisfy({ $0.stage == "completed" }) {
+            // Keep Bob selected throughout negotiation/settlement. Alice must accept,
+            // fund and claim without any API reads or UI selection of her wallet.
+            let bob = try DaemonStatus(serializedBytes: await call("bob", "status.refresh"))
+            var swaps = bob.swaps.filter { $0.id == taken.id }
+            if swaps.first?.stage == "completed" {
+                let alice = try await status("alice")
+                let makerSwap = try XCTUnwrap(alice.swaps.first(where: { $0.id == taken.id }))
+                swaps.append(makerSwap)
+                XCTAssertEqual(makerSwap.stage, "completed")
                 for swap in swaps {
                     XCTAssertEqual(swap.towerPaid, 0)
                     XCTAssertGreaterThanOrEqual(swap.longConfirmations, 2)
@@ -119,7 +125,10 @@ final class DaemonRPCTests: XCTestCase {
             }
             let ids = swaps.flatMap { [$0.long.txid, $0.short.txid, $0.longSpend, $0.shortSpend] }.filter { !$0.isEmpty }
             if ids.contains(where: { !mined.contains($0) }) {
-                _ = try await call("alice", "regtest.mine", ["blocks": 2])
+                let height = bob.heights["btc"] ?? 0
+                _ = try await call("bob", "regtest.mine", ["blocks": 2])
+                let refreshed = try DaemonStatus(serializedBytes: await call("bob", "status.refresh"))
+                XCTAssertGreaterThanOrEqual(refreshed.heights["btc"] ?? 0, height + 2)
                 mined.formUnion(ids)
             }
             try await Task.sleep(nanoseconds: 500_000_000)

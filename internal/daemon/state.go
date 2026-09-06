@@ -44,6 +44,7 @@ type Delivery struct {
 	Published   bool        `json:"published"`
 }
 type Swap struct {
+	Protection         *protocol.Tower             `json:"protection,omitempty"`
 	ID                 string                      `json:"id"`
 	Role               string                      `json:"role"`
 	Request            protocol.Request            `json:"request"`
@@ -81,6 +82,7 @@ type TowerJob struct {
 	Error       string       `json:"error,omitempty"`
 }
 type State struct {
+	OfferTowers      map[string]protocol.Tower  `json:"offer_towers,omitempty"`
 	CoinReservations map[string]CoinReservation `json:"coin_reservations,omitempty"`
 	Sends            map[string]*WalletSend     `json:"sends,omitempty"`
 	ReceiveIndexes   map[chain.ID]uint32        `json:"receive_indexes,omitempty"`

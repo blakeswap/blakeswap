@@ -27,6 +27,7 @@ const RevealBlocks uint32 = 24
 const RefundGrace uint32 = 6
 
 type Offer struct {
+	Version     int           `json:"version,omitempty"`
 	Tower       *Tower        `json:"tower,omitempty"`
 	Network     chain.Network `json:"network,omitempty"`
 	ID          string        `json:"id"`
@@ -41,6 +42,9 @@ type Offer struct {
 }
 
 func (o Offer) Validate(now int64) error {
+	if o.Version != 0 && o.Version != 1 && o.Version != 2 {
+		return errors.New("unsupported offer version")
+	}
 	if !o.Network.Valid() || !Hex32(o.ID) || !Hex32(o.Maker) || !o.Sell.Valid() || o.SellAmount < 100000 || o.BuyAmount < 100000 || o.SellAmount > 10000000000 || o.BuyAmount > 10000000000 {
 		return errors.New("invalid order bounds (v1: 100,000 to 10 billion sats per leg)")
 	}
@@ -81,6 +85,13 @@ func DecodeOffer(event nostr.Event, now int64) (Offer, error) {
 	}
 	if e := json.Unmarshal([]byte(event.Content), &o); e != nil {
 		return o, e
+	}
+	if o.Version == 2 {
+		var fields map[string]json.RawMessage
+		_ = json.Unmarshal([]byte(event.Content), &fields)
+		if fields["tower"] != nil || fields["tower_bps"] != nil {
+			return o, errors.New("private offers must not publish tower policy")
+		}
 	}
 	if transport.Tag(event, "t") != o.Network.Namespace() {
 		return o, errors.New("wrong order network")
@@ -160,6 +171,9 @@ func NewTermsWithClocks(r Request, makerKeys map[chain.ID]string, heights, clock
 	longID := o.Sell.Other()
 	shortID := o.Sell
 	terms := Terms{Version: 1, Request: r, MakerKeys: makerKeys, Takeover: heights[longID] + TakeoverBlocks*scale, RevealBefore: heights[longID] + RevealBlocks*scale, Tower: tower, TowerScripts: scripts, Domains: map[chain.ID]string{chain.BTC: o.Network.Domain(chain.BTC), chain.Blake: o.Network.Domain(chain.Blake)}}
+	if o.Version == 2 {
+		terms.Version = 2
+	}
 	terms.Long = contract.HTLC{Chain: longID, Hash: r.Hash, ClaimKey: makerKeys[longID], RefundKey: r.Keys[longID], RefundHeight: heights[longID] + LongBlocks*scale, Amount: o.BuyAmount}
 	terms.Short = contract.HTLC{Chain: shortID, Hash: r.Hash, ClaimKey: r.Keys[shortID], RefundKey: makerKeys[shortID], RefundHeight: heights[shortID] + ShortBlocks*scale, Amount: o.SellAmount}
 	if o.Network.Normalized() != chain.Regtest {
@@ -190,7 +204,14 @@ func (t Terms) Validate() error {
 	if o.Tower != nil && (t.Tower != o.Tower.PubKey || Digest(t.TowerScripts) != Digest(o.Tower.Scripts) || t.Request.Taker == t.Tower) {
 		return errors.New("terms changed the selected watchtower")
 	}
-	if t.Version != 1 || !Hex32(t.Request.ID) || !Hex32(t.Request.Taker) || !Hex32(t.Request.Hash) || len(t.MakerKeys) != 2 || len(t.Request.Keys) != 2 {
+	wantVersion := 1
+	if o.Version == 2 {
+		wantVersion = 2
+		if t.Tower != "" || len(t.TowerScripts) != 0 {
+			return errors.New("private terms must not disclose tower policy")
+		}
+	}
+	if t.Version != wantVersion || !Hex32(t.Request.ID) || !Hex32(t.Request.Taker) || !Hex32(t.Request.Hash) || len(t.MakerKeys) != 2 || len(t.Request.Keys) != 2 {
 		return errors.New("invalid terms")
 	}
 	for _, id := range []chain.ID{chain.BTC, chain.Blake} {
@@ -284,4 +305,21 @@ func (t Terms) Party(role string) string {
 }
 func (t Terms) String() string {
 	return fmt.Sprintf("%s %s/%s", t.Request.ID, t.Long.Chain, t.Short.Chain)
+}
+
+// Keep legacy digests byte-for-byte compatible. V2 terms never serialize either
+// participant's local rescue selection into the shared acceptance or its hash.
+func (t Terms) MarshalJSON() ([]byte, error) {
+	type plain Terms
+	raw, err := json.Marshal(plain(t))
+	if err != nil || t.Version != 2 {
+		return raw, err
+	}
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &fields); err != nil {
+		return nil, err
+	}
+	delete(fields, "tower")
+	delete(fields, "tower_scripts")
+	return json.Marshal(fields)
 }

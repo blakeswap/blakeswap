@@ -452,6 +452,38 @@
         ]
       }
     },
+    "/v1/status/refresh": {
+      "post": {
+        "operationId": "DaemonService_RefreshStatus",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/blakeswapV1Status"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/googleRpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/v1RefreshStatusRequest"
+            }
+          }
+        ],
+        "tags": [
+          "DaemonService"
+        ]
+      }
+    },
     "/v1/swaps": {
       "post": {
         "operationId": "DaemonService_TakeOffer",
@@ -1040,6 +1072,11 @@
     "v1Offer": {
       "type": "object",
       "properties": {
+        "version": {
+          "type": "integer",
+          "format": "int32",
+          "description": "Public protocol version. Tower fields below are maker-local only."
+        },
         "id": {
           "type": "string"
         },
@@ -1119,6 +1156,14 @@
           "type": "string"
         },
         "warning": {
+          "type": "string"
+        }
+      }
+    },
+    "v1RefreshStatusRequest": {
+      "type": "object",
+      "properties": {
+        "expected_network": {
           "type": "string"
         }
       }
@@ -1285,6 +1330,15 @@
         },
         "expected_network": {
           "type": "string"
+        },
+        "tower_bps": {
+          "type": "string",
+          "format": "int64",
+          "description": "This wallet's private protection; zero disables it."
+        },
+        "tower_pubkey": {
+          "type": "string",
+          "description": "Selected discovered provider, never sent to the maker."
         }
       }
     },
