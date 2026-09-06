@@ -27,6 +27,8 @@ service DaemonService {
  rpc Faucet(FaucetRequest) returns (FaucetResponse) { option (google.api.http) = { post: "/v1/regtest/faucet" body: "*" }; }
  rpc GetRecovery(google.protobuf.Empty) returns (Recovery) { option (google.api.http) = { post: "/v1/wallet/recovery" body: "*" }; }
  rpc PreflightFunds(FundsPreflightRequest) returns (FundsPreflight) { option (google.api.http) = { post: "/v1/wallet/preflight" body: "*" }; }
+ rpc QuoteTrade(TradeQuoteRequest) returns (TradeQuote) { option (google.api.http) = { post: "/v1/trades/quote" body: "*" }; }
+ rpc ConfirmTrade(ConfirmTradeRequest) returns (ConfirmTradeResult) { option (google.api.http) = { post: "/v1/trades/confirm" body: "*" }; }
  rpc QuoteFee(FeeQuoteRequest) returns (FeeQuote) { option (google.api.http) = { post: "/v1/fees/quote" body: "*" }; }
  rpc BumpTransaction(BumpRequest) returns (BumpResult) { option (google.api.http) = { post: "/v1/transactions/bump" body: "*" }; }
  rpc SendCoins(SendCoinsRequest) returns (WalletSend) { option (google.api.http) = { post: "/v1/wallet/send" body: "*" }; }
@@ -199,3 +201,39 @@ message FeeQuote {
 message TransactionVariant { string txid = 1; int64 fee = 2; int32 confirmations = 3; bool submitted = 4; }
 message BumpRequest { string id = 1; string kind = 2; int64 fee = 3; string expected_txid = 4; string expected_network = 5; }
 message BumpResult { string txid = 1; int64 fee = 2; string state = 3; string error = 4; }
+
+// Read-only review. Amounts describe the maker's signed offer/draft; the response
+// orients economics to the selected wallet. Every fee is native to its chain.
+message TradeQuoteRequest {
+ string kind = 1; string expected_wallet = 2; string expected_network = 3;
+ string maker = 4; string id = 5; string sell = 6;
+ int64 sell_amount = 7; int64 buy_amount = 8; int64 expires = 9;
+ int64 tower_bps = 10; string tower_pubkey = 11;
+ int64 funding_fee = 12; int64 rate_sat_kvb = 13; int64 fee_timestamp = 14; int64 owner_fee_cap = 15;
+}
+message TradeFeePolicy { int64 funding_fee = 1; int64 rate_sat_kvb = 2; int64 fee_timestamp = 3; int64 owner_fee_cap = 4; }
+message TradeTiming {
+ string unit = 1; uint32 confirmations = 2; uint32 own_refund = 3; uint32 incoming_refund = 4;
+ uint32 reveal_before = 5; uint32 tower_takeover = 6; uint32 refund_grace = 7; string first_revealer = 8;
+}
+message TradeOutcome {
+ string kind = 1; string chain = 2; int64 principal = 3; int64 fee_min = 4; int64 fee_max = 5;
+ int64 bounty = 6; int64 net_min = 7; int64 net_max = 8;
+}
+message TradeQuote {
+ string token = 1; string revision = 2; string kind = 3; string wallet = 4; string wallet_key = 5;
+ string network = 6; int64 created = 7; int64 expires = 8;
+ string offer_event_id = 9; string offer_id = 10; string offer_maker = 11; int64 offer_expires = 12;
+ string paid_chain = 13; int64 paid_principal = 14; int64 paid_total = 15;
+ string received_chain = 16; int64 received_principal = 17;
+ int64 rate_numerator = 18; int64 rate_denominator = 19; string rate_display = 20;
+ TradeFeePolicy fees = 21; int64 funding_size = 22; Tower provider = 23;
+ string provider_revision = 24; string tower_coverage = 25; TradeTiming timing = 26;
+ repeated TradeOutcome outcomes = 27; FundsPreflight funds = 28; bool ready = 29; string error = 30;
+}
+// Keep this exact identity through an uncertain response. A persisted receipt
+// returns the same accepted result after restart/expiry, never a second trade.
+message ConfirmTradeRequest {
+ string token = 1; string revision = 2; string request_id = 3; string expected_wallet = 4; string expected_network = 5;
+}
+message ConfirmTradeResult { string id = 1; string kind = 2; string state = 3; string error = 4; }

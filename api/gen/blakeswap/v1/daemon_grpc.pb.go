@@ -31,6 +31,8 @@ const (
 	DaemonService_Faucet_FullMethodName             = "/blakeswap.v1.DaemonService/Faucet"
 	DaemonService_GetRecovery_FullMethodName        = "/blakeswap.v1.DaemonService/GetRecovery"
 	DaemonService_PreflightFunds_FullMethodName     = "/blakeswap.v1.DaemonService/PreflightFunds"
+	DaemonService_QuoteTrade_FullMethodName         = "/blakeswap.v1.DaemonService/QuoteTrade"
+	DaemonService_ConfirmTrade_FullMethodName       = "/blakeswap.v1.DaemonService/ConfirmTrade"
 	DaemonService_QuoteFee_FullMethodName           = "/blakeswap.v1.DaemonService/QuoteFee"
 	DaemonService_BumpTransaction_FullMethodName    = "/blakeswap.v1.DaemonService/BumpTransaction"
 	DaemonService_SendCoins_FullMethodName          = "/blakeswap.v1.DaemonService/SendCoins"
@@ -61,6 +63,8 @@ type DaemonServiceClient interface {
 	Faucet(ctx context.Context, in *FaucetRequest, opts ...grpc.CallOption) (*FaucetResponse, error)
 	GetRecovery(ctx context.Context, in *emptypb.Empty, opts ...grpc.CallOption) (*Recovery, error)
 	PreflightFunds(ctx context.Context, in *FundsPreflightRequest, opts ...grpc.CallOption) (*FundsPreflight, error)
+	QuoteTrade(ctx context.Context, in *TradeQuoteRequest, opts ...grpc.CallOption) (*TradeQuote, error)
+	ConfirmTrade(ctx context.Context, in *ConfirmTradeRequest, opts ...grpc.CallOption) (*ConfirmTradeResult, error)
 	QuoteFee(ctx context.Context, in *FeeQuoteRequest, opts ...grpc.CallOption) (*FeeQuote, error)
 	BumpTransaction(ctx context.Context, in *BumpRequest, opts ...grpc.CallOption) (*BumpResult, error)
 	SendCoins(ctx context.Context, in *SendCoinsRequest, opts ...grpc.CallOption) (*WalletSend, error)
@@ -188,6 +192,26 @@ func (c *daemonServiceClient) PreflightFunds(ctx context.Context, in *FundsPrefl
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(FundsPreflight)
 	err := c.cc.Invoke(ctx, DaemonService_PreflightFunds_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *daemonServiceClient) QuoteTrade(ctx context.Context, in *TradeQuoteRequest, opts ...grpc.CallOption) (*TradeQuote, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(TradeQuote)
+	err := c.cc.Invoke(ctx, DaemonService_QuoteTrade_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *daemonServiceClient) ConfirmTrade(ctx context.Context, in *ConfirmTradeRequest, opts ...grpc.CallOption) (*ConfirmTradeResult, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ConfirmTradeResult)
+	err := c.cc.Invoke(ctx, DaemonService_ConfirmTrade_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -339,6 +363,8 @@ type DaemonServiceServer interface {
 	Faucet(context.Context, *FaucetRequest) (*FaucetResponse, error)
 	GetRecovery(context.Context, *emptypb.Empty) (*Recovery, error)
 	PreflightFunds(context.Context, *FundsPreflightRequest) (*FundsPreflight, error)
+	QuoteTrade(context.Context, *TradeQuoteRequest) (*TradeQuote, error)
+	ConfirmTrade(context.Context, *ConfirmTradeRequest) (*ConfirmTradeResult, error)
 	QuoteFee(context.Context, *FeeQuoteRequest) (*FeeQuote, error)
 	BumpTransaction(context.Context, *BumpRequest) (*BumpResult, error)
 	SendCoins(context.Context, *SendCoinsRequest) (*WalletSend, error)
@@ -394,6 +420,12 @@ func (UnimplementedDaemonServiceServer) GetRecovery(context.Context, *emptypb.Em
 }
 func (UnimplementedDaemonServiceServer) PreflightFunds(context.Context, *FundsPreflightRequest) (*FundsPreflight, error) {
 	return nil, status.Error(codes.Unimplemented, "method PreflightFunds not implemented")
+}
+func (UnimplementedDaemonServiceServer) QuoteTrade(context.Context, *TradeQuoteRequest) (*TradeQuote, error) {
+	return nil, status.Error(codes.Unimplemented, "method QuoteTrade not implemented")
+}
+func (UnimplementedDaemonServiceServer) ConfirmTrade(context.Context, *ConfirmTradeRequest) (*ConfirmTradeResult, error) {
+	return nil, status.Error(codes.Unimplemented, "method ConfirmTrade not implemented")
 }
 func (UnimplementedDaemonServiceServer) QuoteFee(context.Context, *FeeQuoteRequest) (*FeeQuote, error) {
 	return nil, status.Error(codes.Unimplemented, "method QuoteFee not implemented")
@@ -649,6 +681,42 @@ func _DaemonService_PreflightFunds_Handler(srv interface{}, ctx context.Context,
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(DaemonServiceServer).PreflightFunds(ctx, req.(*FundsPreflightRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _DaemonService_QuoteTrade_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(TradeQuoteRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DaemonServiceServer).QuoteTrade(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: DaemonService_QuoteTrade_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DaemonServiceServer).QuoteTrade(ctx, req.(*TradeQuoteRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _DaemonService_ConfirmTrade_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ConfirmTradeRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DaemonServiceServer).ConfirmTrade(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: DaemonService_ConfirmTrade_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DaemonServiceServer).ConfirmTrade(ctx, req.(*ConfirmTradeRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -937,6 +1005,14 @@ var DaemonService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "PreflightFunds",
 			Handler:    _DaemonService_PreflightFunds_Handler,
+		},
+		{
+			MethodName: "QuoteTrade",
+			Handler:    _DaemonService_QuoteTrade_Handler,
+		},
+		{
+			MethodName: "ConfirmTrade",
+			Handler:    _DaemonService_ConfirmTrade_Handler,
 		},
 		{
 			MethodName: "QuoteFee",

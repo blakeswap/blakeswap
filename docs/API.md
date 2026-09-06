@@ -48,7 +48,9 @@ account that can read those files.
 | ResolveWatchtower | POST `/v1/watchtowers/resolve` | Request an encrypted signed quote by npub or hex public key |
 | CreateOffer | POST `/v1/offers` | Exact chain/amount pair, optional expiry, and maker-only private tower selection |
 | CancelOffer | DELETE `/v1/offers/{id}` | Cancel an unreserved local offer |
-| TakeOffer | POST `/v1/swaps` | Request a signed maker offer by maker key and ID, with independent taker-only tower selection |
+| TakeOffer | POST `/v1/swaps` | Compatibility direct request for a signed maker offer |
+| QuoteTrade | POST `/v1/trades/quote` | Read-only maker/taker economics, exact candidate funds, short-lived bound review |
+| ConfirmTrade | POST `/v1/trades/confirm` | Revalidate one reviewed quote and durably authorize one offer/request identity |
 | PreflightFunds | POST `/v1/wallet/preflight` | Fresh fee-inclusive candidate funds and BTC replay readiness; advisory only |
 | SendCoins | POST `/v1/wallet/send` | Explicit coin selection, recipient, amount, total fee, and idempotent request ID |
 | GetRecovery | POST `/v1/wallet/recovery` | Explicit sensitive recovery phrase request |
@@ -165,6 +167,48 @@ durable before advancing the stage, so a restart cannot silently replace keys.
 Onboarding RPCs are unavailable after setup (use normal wallet recovery/backup).
 The CLI names are `onboarding.prepare`, `onboarding.get`, `onboarding.confirm`,
 `onboarding.export`, and `onboarding.finish`.
+
+### Reviewed swaps
+
+The native maker and taker forms use `QuoteTrade` (CLI `trade.quote`) before any
+publish/request action. Supply `kind: maker|taker`, immutable `expected_wallet`,
+`expected_network`, sell chain/principal and buy principal, an explicit
+`funding_fee`, and `owner_fee_cap` (0 retains a fixed 2,000-sat owner fee; 20,000
+authorizes the bounded owner ladder). Automatic funding estimates also carry
+`rate_sat_kvb` and `fee_timestamp`. A taker includes the maker key and offer ID;
+its displayed amounts must match that exact verified signed event. Protection
+requires the selected `tower_pubkey` and its current `tower_bps` proof.
+
+The result separates paid principal plus funding cost from received principal,
+owner claim/refund ranges, and conditional tower outcomes in each chain's sats.
+It includes an exact rational principal exchange rate, expected timing policy,
+provider identity/coverage, and fresh fee-inclusive input/replay readiness. Quote
+reads hold no funds, create no offer/request, and send no protocol message. A
+wallet can retain up to 64 unexpired reviews; each expires within 120 seconds,
+or earlier when its order/provider/automatic-fee review expires.
+
+Persist a fresh 32-byte hex `request_id` before `ConfirmTrade` (CLI
+`trade.confirm`), alongside the original `token`, `revision`, wallet and network.
+The daemon rechecks signed order/proof, expiry, wallet identity, fee bounds and
+fresh exact inputs before committing. A changed quote needs a new review. One
+quote can authorize only one request ID. `accepted` means an offer is saved for
+publication or a take request is saved for delivery; it does not mean funding or
+settlement has completed. Status tracks the automatic sequence afterward.
+
+Confirmation receipts live in the encrypted wallet snapshot. An exact accepted
+or rejected retry returns the same result after expiry, order changes or restart;
+reusing the ID with changed bindings fails. A `pending` result or transport error
+must retry the same identity. Pending authorization survives cancellation/restart,
+and revalidates its original snapshot before any new commitment. Native stores
+only profile/network/request ID/token/revision/kind in a private local retry
+journal, exposes a saved-confirmation resume action, and ignores late responses
+from an earlier wallet/network generation. A definitive rejection clears the
+journal and requires a fresh review. The bounded 1,000-receipt history fails
+closed when full rather than forgetting an identity that might be retried.
+
+Existing `CreateOffer`/`TakeOffer` remain compatible for explicit command-line
+callers; they do not synthesize a native review or an idempotent confirmation
+identity. New interactive clients should use the quote/confirm pair.
 
 ### Coin control and sends
 

@@ -250,3 +250,12 @@ func (s *Service) BumpTransaction(ctx context.Context, in *pb.BumpRequest) (*pb.
 	out := &pb.BumpResult{}
 	return out, s.command(ctx, "transaction.bump", in, out)
 }
+
+func (s *Service) QuoteTrade(ctx context.Context, in *pb.TradeQuoteRequest) (*pb.TradeQuote, error) {
+	out := &pb.TradeQuote{}
+	return out, s.command(ctx, "trade.quote", in, out)
+}
+func (s *Service) ConfirmTrade(ctx context.Context, in *pb.ConfirmTradeRequest) (*pb.ConfirmTradeResult, error) {
+	out := &pb.ConfirmTradeResult{}
+	return out, s.command(ctx, "trade.confirm", in, out)
+}

@@ -91,6 +91,7 @@ type TowerJob struct {
 	Error       string       `json:"error,omitempty"`
 }
 type State struct {
+	TradeReceipts    map[string]*TradeReceipt   `json:"trade_receipts,omitempty"`
 	FundingFees      map[string]FeeSelection    `json:"funding_fees,omitempty"`
 	OfferTowers      map[string]protocol.Tower  `json:"offer_towers,omitempty"`
 	CoinReservations map[string]CoinReservation `json:"coin_reservations,omitempty"`

@@ -78,6 +78,14 @@ func Call(ctx context.Context, socket string, req daemon.Request) (json.RawMessa
 		p := &pb.FundsPreflightRequest{}
 		in = p
 		invoke = func() (proto.Message, error) { return client.PreflightFunds(ctx, p) }
+	case "trade.quote":
+		p := &pb.TradeQuoteRequest{}
+		in = p
+		invoke = func() (proto.Message, error) { return client.QuoteTrade(ctx, p) }
+	case "trade.confirm":
+		p := &pb.ConfirmTradeRequest{}
+		in = p
+		invoke = func() (proto.Message, error) { return client.ConfirmTrade(ctx, p) }
 	case "fee.quote":
 		p := &pb.FeeQuoteRequest{}
 		in = p

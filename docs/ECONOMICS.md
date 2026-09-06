@@ -72,3 +72,23 @@ refunds and tower jobs commit its transaction ID. See [Fees and recovery](FEES.m
 for units, limits, retry intervals, API parameters, replacement lineage, and
 supported recovery paths. No estimate or bounded fee allowance guarantees
 confirmation during arbitrary fee spikes or transaction pinning.
+
+## Pre-trade review
+
+The native maker and taker sheets obtain economics from the daemon. For the example
+above and a selected 6,500-sat funding fee, Alice pays 1,006,500 BTC sats and Bob
+pays 2,006,500 BLAKE sats. With a newly authorized 20,000-sat owner cap, Alice's
+ordinary incoming receipt is bounded at 1,980,000–1,998,000 BLAKE sats; Bob's is
+980,000–998,000 BTC sats. The 50-bps delayed maker rescue instead yields
+1,970,000–1,988,000 BLAKE sats. The taker's selected tower provides refunds only:
+the taker must make the first secret-revealing claim itself.
+
+Refund ranges subtract the refund mining fee and any applicable rescue bounty
+from that wallet's outgoing principal; the separate funding fee is already spent.
+The quoted exchange rate is the exact ratio of received to paid principals,
+accompanied by an approximate decimal, not a rate net of costs in two assets.
+Future settlement fees are bounded by the selected policy rather than presented
+as a guaranteed prediction. Existing signed obligations retain their original fee
+rules. Before negotiation, lockup/reveal/takeover windows are labeled expected
+policy; accepted terms later provide exact deadlines. Confirmation and relay
+latency can change elapsed time, and no completion time is guaranteed.

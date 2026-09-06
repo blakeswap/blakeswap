@@ -298,3 +298,31 @@ checks all three claim/refund/tower fee tiers and preserves signed original
 recovery and payout invariants. Set `BLAKESWAP_TEST_ELECTRUM=1` for the daemon's
 Electrum matrix. These require the exclusive isolated regtest fixture; ordinary
 unit passes with skipped real tests are not two-chain evidence.
+
+## Reviewed trade acceptance
+
+`TestTrade*` daemon tests cover read-only cancellation, exact per-asset outcomes
+reconciled against owner/tower transaction constructors, signed order/provider
+changes, wallet/network/fee/expiry/input binding, concurrent confirmation, and
+pending/accepted/rejected identities across encrypted snapshot reloads. A quote
+cannot authorize a second request ID. Typed API mapping includes amounts above
+JavaScript's exact integer range.
+
+`TestRealReviewedSwapThroughTypedAPI` creates and takes both market directions
+through authenticated generated gRPC clients, restarts each daemon immediately
+after confirmation, completes the automatic swap, and compares confirmed owner
+receipts with the reviewed bounds. Run it against the isolated two-chain fixture,
+serially with all other node-mutating tests; set `BLAKESWAP_TEST_ELECTRUM=1` for
+the actual-chain loopback Electrum bridge matrix:
+
+```sh
+BLAKESWAP_REGTEST="$PWD" sh scripts/go.sh test -p=1 ./internal/api -run TestRealReviewedSwapThroughTypedAPI -v -count=1
+```
+
+`TradeReviewTests` exercises native maker/taker orientation, cancellation, wallet/
+network/generation changes during delayed replies, double-click suppression,
+ambiguous response and expired-quote restart retries, definitive rejection, and
+private minimal journal permissions/overwrite protection. It injects typed
+responses into the production review model; it is not a claim of automated
+pixel-level UI coverage. Build the bundle and use its helper for startup tests as
+described by `scripts/test-swift.sh`.
