@@ -432,6 +432,10 @@ func (e *Engine) advanceTower(ctx context.Context, all map[chain.ID]map[string]c
 			state.Error = "target-chain scan unavailable"
 			continue
 		}
+		if job.Kind == "refund" && (all[chain.BTC] == nil || all[chain.Blake] == nil) {
+			state.Error = "peer-chain scan unavailable; refund held"
+			continue
+		}
 		obs, spent := observation(all, job.Target)
 		state.Confirmed = 0
 		if spent && obs.Confirmations > 0 {

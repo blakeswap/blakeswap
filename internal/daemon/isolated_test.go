@@ -64,7 +64,12 @@ func TestIsolatedTowerWorkBudgetsKeepHealthyChainProgressing(t *testing.T) {
 	}
 	e.s.Swaps = map[string]*Swap{}
 	state := &TowerJob{Job: job, Secret: hex.EncodeToString(secret), FundingSeen: true}
-	e.s.TowerJobs = map[string]*TowerJob{job.ID: state}
+	refund, err := e.makeJob(s, target, "refund", nil, target.RefundHeight+protocol.RefundDelay(chain.Regtest))
+	if err != nil {
+		t.Fatal(err)
+	}
+	refundState := &TowerJob{Job: refund, FundingSeen: true}
+	e.s.TowerJobs = map[string]*TowerJob{job.ID: state, refund.ID: refundState}
 	b.coins = nil
 	e.nodes[chain.BTC] = &recoveryClockBackend{Backend: e.watch[chain.BTC]}
 	e.nodes[chain.Blake] = &recoveryClockBackend{Backend: b}
@@ -80,7 +85,7 @@ func TestIsolatedTowerWorkBudgetsKeepHealthyChainProgressing(t *testing.T) {
 			t.Fatal(err)
 		}
 		if _, ok := contract.ExtractSecret(target, tx); !ok {
-			t.Fatal("wrong recovery transaction")
+			t.Fatal("refund published while BTC tower scan was unavailable")
 		}
 		return tx.TxHash().String(), nil
 	}
@@ -92,6 +97,9 @@ func TestIsolatedTowerWorkBudgetsKeepHealthyChainProgressing(t *testing.T) {
 		if broadcasts != cycle+1 || live.calls != cycle+1 || blocked.calls != cycle+1 {
 			t.Fatal("slow BTC tower work starved healthy Blake recovery", broadcasts, live.calls, blocked.calls)
 		}
+		if refundState.Attempt != 0 || !strings.Contains(refundState.Error, "scan unavailable") {
+			t.Fatal("refund did not preserve the missing peer-scan gate", refundState.Error)
+		}
 	}
 	state.LastAttempt = 0
 	ctx, cancel := context.WithTimeout(context.Background(), time.Millisecond)
@@ -99,6 +107,91 @@ func TestIsolatedTowerWorkBudgetsKeepHealthyChainProgressing(t *testing.T) {
 	_ = e.Tick(ctx)
 	if ctx.Err() == nil || broadcasts != 2 {
 		t.Fatal("overall worker deadline did not stop recovery publication")
+	}
+}
+
+func TestIsolatedTowerScanRejectsChangedSourceBeforeRefund(t *testing.T) {
+	e, s, b, _ := isolatedFixture(t, "maker")
+	tower := e.ownTower()
+	s.Protection = &tower
+	refund, err := e.makeJob(s, s.Long, "refund", nil, s.Long.RefundHeight+protocol.RefundDelay(chain.Regtest))
+	if err != nil {
+		t.Fatal(err)
+	}
+	claim, err := e.makeJob(s, s.Long, "claim", &s.Short, s.Terms.Takeover)
+	if err != nil {
+		t.Fatal(err)
+	}
+	state := &TowerJob{Job: refund, FundingSeen: true}
+	e.s.TowerJobs = map[string]*TowerJob{refund.ID: state, claim.ID: {Job: claim, FundingSeen: true}}
+	e.chainFresh[chain.BTC], e.chainFresh[chain.Blake] = true, true
+	e.towerScanners = map[chain.ID]chain.SpendScanner{
+		chain.BTC:   &callbackRecoveryScanner{observations: map[string]chain.Observation{}, beforeReturn: func() { e.chainFresh[chain.BTC] = false }},
+		chain.Blake: &recordingScanner{},
+	}
+	b.broadcast = func(string) (string, error) { t.Fatal("refund reused changed peer source"); return "", nil }
+	all, err := e.scanTower(context.Background())
+	if err == nil || all[chain.BTC] != nil || all[chain.Blake] == nil {
+		t.Fatal("tower scan accepted a changed source", err)
+	}
+	if err := e.advanceTower(context.Background(), all); err != nil {
+		t.Fatal(err)
+	}
+	if state.Attempt != 0 {
+		t.Fatal("refund attempted after source change")
+	}
+	// Successful current maps of both chains permit the pre-authorized refund.
+	e.chainFresh[chain.BTC] = true
+	e.towerScanners[chain.BTC] = &recordingScanner{}
+	delete(e.s.TowerJobs, claim.ID)
+	broadcasts := 0
+	b.broadcast = func(raw string) (string, error) {
+		broadcasts++
+		tx, err := contract.Parse(raw)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return tx.TxHash().String(), nil
+	}
+	all, err = e.scanTower(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := e.advanceTower(context.Background(), all); err != nil {
+		t.Fatal(err)
+	}
+	if broadcasts != 1 || state.Attempt != 1 {
+		t.Fatal("current scans did not release refund", state.Error)
+	}
+}
+
+func TestIsolatedOwnerRefundsHoldAfterFailedSpendScan(t *testing.T) {
+	for _, role := range []string{"maker", "taker"} {
+		for _, failed := range []chain.ID{chain.BTC, chain.Blake} {
+			t.Run(role+"/"+string(failed), func(t *testing.T) {
+				e, s, b, _ := isolatedFixture(t, role)
+				own := s.Long
+				if role == "maker" {
+					own = s.Short
+				}
+				e.chainFresh[chain.BTC], e.chainFresh[chain.Blake] = true, true
+				e.scanners = map[chain.ID]chain.SpendScanner{chain.BTC: &recordingScanner{}, chain.Blake: &recordingScanner{}}
+				e.scanners[failed] = &recordingScanner{err: context.DeadlineExceeded}
+				b.broadcast = func(string) (string, error) { t.Fatal("refund with missing spend scan"); return "", nil }
+				all, err := e.scan(context.Background())
+				if err == nil || e.fresh(failed) {
+					t.Fatal("failed scan remained current", err)
+				}
+				if err := e.advanceSwap(context.Background(), s, all); err == nil {
+					t.Fatal("automatic recovery ignored missing scan")
+				}
+				e.chainFresh[chain.BTC], e.chainFresh[chain.Blake] = true, true
+				e.nodes[own.Chain] = &recoveryClockBackend{Backend: b}
+				if err := e.checkRefundAcceleration(context.Background(), s, own); err == nil {
+					t.Fatal("manual refund ignored missing scan")
+				}
+			})
+		}
 	}
 }
 

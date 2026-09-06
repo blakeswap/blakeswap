@@ -781,6 +781,10 @@ func (e *Engine) scanTower(ctx context.Context) (map[chain.ID]map[string]chain.O
 		if err := e.rememberTowerWitnesses(map[chain.ID]map[string]chain.Observation{id: result}); err != nil {
 			return out, err
 		}
+		if !e.fresh(id) {
+			errs = append(errs, fmt.Errorf("%s tower scan source changed; refreshing recovery evidence", id))
+			continue
+		}
 		out[id] = result
 	}
 	return out, errors.Join(errs...)
