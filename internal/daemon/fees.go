@@ -88,6 +88,10 @@ func (e *Engine) quoteFee(ctx context.Context, raw json.RawMessage) (FeeQuote, e
 	if !p.Chain.Valid() || (p.Kind != "send" && p.Kind != "funding") || p.Amount < contract.Dust || p.Amount > contract.MaxMoney || p.Fee < 0 || p.Fee > feeLimits(p.Chain).Send || len(p.Inputs) > 50 {
 		return FeeQuote{}, errors.New("invalid fee quote")
 	}
+	if !e.feeQuoteBusy.CompareAndSwap(false, true) {
+		return FeeQuote{}, errors.New("a fee quote is already running; refresh the quote shortly")
+	}
+	defer e.feeQuoteBusy.Store(false)
 	e.mu.Lock()
 	if err := CheckCommandNetwork(Request{Method: "fee.quote", Params: raw}, e.Config.Network, false); err != nil {
 		e.mu.Unlock()

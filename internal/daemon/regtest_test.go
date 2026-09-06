@@ -231,15 +231,18 @@ func (h *harness) until(label string, fn func() bool, step func()) {
 // Each phase runs with the other trader stopped. A new Engine is opened from its
 // encrypted database at every handoff; the local relay is the only mailbox.
 func (h *harness) fundBoth(sell chain.ID, bps int64) string {
+	return h.fundBothFees(sell, bps, 2000, 0)
+}
+func (h *harness) fundBothFees(sell chain.ID, bps, fee, ownerCap int64) string {
 	h.t.Helper()
-	o := h.command("maker", "offer.create", map[string]any{"sell": sell, "sell_amount": 1000000, "buy_amount": 2000000, "tower_bps": bps}).(protocol.Offer)
+	o := h.command("maker", "offer.create", map[string]any{"sell": sell, "sell_amount": 1000000, "buy_amount": 2000000, "tower_bps": bps, "funding_fee": fee, "owner_fee_cap": ownerCap}).(protocol.Offer)
 	// Power loss before the first relay publish must preserve the signed offer.
 	h.offline("maker")
 	h.online("maker")
 	h.tick("maker")
 	h.offline("maker")
 	h.tick("taker")
-	result := h.command("taker", "swap.take", map[string]any{"maker": o.Maker, "id": o.ID, "tower_bps": bps}).(map[string]string)
+	result := h.command("taker", "swap.take", map[string]any{"maker": o.Maker, "id": o.ID, "tower_bps": bps, "funding_fee": fee, "owner_fee_cap": ownerCap}).(map[string]string)
 	id := result["id"]
 	// The taker's request is likewise saved before any network transmission.
 	h.offline("taker")

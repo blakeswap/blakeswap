@@ -52,12 +52,23 @@ The application enforces a conservative 600-sat minimum bounty and non-dust owne
 
 The local tower caps stored jobs at 1,000 and the relay caps records. These are development guardrails, not a complete public-service anti-spam or pricing strategy. An attacker can ask a provider to store valid but never-funded jobs. Upfront payment was deliberately excluded; production admission and incentive design remains an open problem.
 
-Wallet sends have a manually selected total mining fee and no tower bounty. A
-send that consolidates selected coins is still an ordinary paid transaction.
-There is no automatic consolidation service or live fee estimator.
+Wallet sends have an estimated or manually selected total mining fee and no tower
+bounty. A send that consolidates selected coins is still an ordinary paid
+transaction. There is no automatic consolidation service.
 
 ## Fee escalation
 
-The signed rescue ladder uses 2,000, 6,000, and 20,000 sats of mining fee. All variants pay the same bounty and destination, changing only the owner's net payout and the resulting transaction ID/signature. The tower retries every five seconds and moves to the next tier after three attempts, then stays at the cap. This fixed policy is also used on public networks; it is not a live fee estimator. Own claims/refunds currently retry the base variant, while the tower advances its pre-signed ladder. High fees can therefore stall funding, self-settlement, or rescue. The UI does not promise the configured fees will confirm.
+The signed v1 rescue ladder remains 2,000, 6,000, and 20,000 native sats. Each
+variant preserves principal, recipient, and tower bounty; only the owner's net
+payout and transaction signature/ID change. Per-chain estimates can select a
+higher authorized tier, and retries advance within the cap. New owner policies
+require explicit consent before funding; old claims retain their original signed
+fee. New funding totals are reviewed and persisted separately, with the original
+2,000-sat default retained for legacy obligations.
 
-The provider cannot exceed the cap. Consequently it also cannot guarantee rescue during arbitrary fee spikes, censorship, or transaction pinning. An economically meaningful production quote would need calibrated deadlines and fee allowances, explicit privacy terms, and a credible availability model; those are not solved by adding a percentage output.
+Wallet send fee increases consume only change and cannot exceed the original
+user-selected maximum. Funding replacements are explicitly refused because
+refunds and tower jobs commit its transaction ID. See [Fees and recovery](FEES.md)
+for units, limits, retry intervals, API parameters, replacement lineage, and
+supported recovery paths. No estimate or bounded fee allowance guarantees
+confirmation during arbitrary fee spikes or transaction pinning.

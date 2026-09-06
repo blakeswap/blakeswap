@@ -74,7 +74,7 @@ extension Blakeswap_V1_Tower: Identifiable {
 extension Blakeswap_V1_Status {
     var offerFundingFee: Int64 { fundingFee > 0 ? fundingFee : 2_000 }
     func available(_ chain: String) -> Int64 { funds[chain]?.unlockedConfirmed ?? 0 }
-    func canSell(_ chain: String) -> Bool { available(chain) >= 100_000 + offerFundingFee }
+    func canSell(_ chain: String, fee: Int64? = nil) -> Bool { available(chain) >= 100_000 + (fee ?? offerFundingFee) }
     func offerValidation(sell: String, sellAmount: String, buyAmount: String, fee: Int64? = nil) -> String? {
         let offerFundingFee = fee ?? self.offerFundingFee
         guard ["btc", "blake"].contains(sell), !pubkey.isEmpty else { return "Waiting for your wallet balance." }

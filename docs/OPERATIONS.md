@@ -254,8 +254,12 @@ signed transaction before broadcast; ambiguous failures retry those same bytes.
 Retry an uncertain API request with the same ID and identical details rather than
 creating another payment. **Outgoing sends** shows transaction IDs, amounts, fees,
 confirmation counts, and errors in Wallet; submission alone is not confirmation.
-Network fees are manual; no fee estimator, fee replacement, or cancellation is provided. A rejected/low-fee broadcast remains
-saved for retry, so use an appropriate fee before confirming. Sends below six
+Select a chain-specific estimate or a manual total, then review the amount, change,
+and replacement maximum. **Increase fee** uses change within that original cap;
+all signed variants remain tracked. A rejected or ambiguous broadcast remains
+saved for retry. See [Fees and recovery](FEES.md) for stuck states, owner/tower
+escalation, and the explicit refusal of funding replacements. Send cancellation
+is unsupported. Sends below six
 confirmations block network switching, including on regtest; send history is
 currently capped at 1,000 records.
 

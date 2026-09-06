@@ -383,7 +383,7 @@ func (e *Engine) advanceSwap(ctx context.Context, s *Swap, all map[chain.ID]map[
 	if incomingSpent && incomingObs.Confirmations >= e.Config.Network.Confirmations() {
 		s.Stage = "awaiting counterparty claim"
 	}
-	if (!ownSpent || ownObs.Confirmations == 0) && own.TxID != "" && e.eligible(own.Chain, own.RefundHeight) && len(s.SelfRefunds) > 0 {
+	if refundReplaceable(own, ownSpent, ownObs) && own.TxID != "" && e.eligible(own.Chain, own.RefundHeight) && len(s.SelfRefunds) > 0 {
 		if incomingSpent {
 			if _, claimed := contract.ExtractSecret(incoming, incomingObs.Tx); claimed {
 				s.Stage = "awaiting counterparty claim"
@@ -417,6 +417,7 @@ func (e *Engine) recordFunding(s *Swap) error {
 	return e.save()
 }
 func (e *Engine) advanceTower(ctx context.Context, all map[chain.ID]map[string]chain.Observation) error {
+	estimates := map[chain.ID]chain.FeeEstimate{}
 	for _, state := range e.s.TowerJobs {
 		job := state.Job
 		if state.Expired {
@@ -453,6 +454,17 @@ func (e *Engine) advanceTower(ctx context.Context, all map[chain.ID]map[string]c
 		index := state.Attempt / 3
 		if index >= len(job.Templates) {
 			index = len(job.Templates) - 1
+		}
+		estimate, ok := estimates[job.Target.Chain]
+		if !ok {
+			feeCtx, cancel := context.WithTimeout(ctx, 500*time.Millisecond)
+			estimate = e.estimateFee(feeCtx, job.Target.Chain, 2)
+			cancel()
+			estimates[job.Target.Chain] = estimate
+		}
+		if suggested := estimatedTier(estimate, job.Templates); suggested > index {
+			index = suggested
+			state.Attempt = index * 3
 		}
 		tx, err := contract.Parse(job.Templates[index])
 		if err != nil {
@@ -540,4 +552,17 @@ func (e *Engine) refreshTowerJobs(ctx context.Context) {
 			state.FundingSeen = true
 		}
 	}
+}
+
+// A pending owner refund may be replaced. A peer claim in the mempool is not
+// an invitation to race it with our refund after learning its secret.
+func refundReplaceable(c contract.HTLC, spent bool, obs chain.Observation) bool {
+	if !spent {
+		return true
+	}
+	if obs.Confirmations != 0 || obs.Tx == nil {
+		return false
+	}
+	_, claim := contract.ExtractSecret(c, obs.Tx)
+	return !claim
 }

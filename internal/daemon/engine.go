@@ -27,6 +27,7 @@ import (
 
 type Engine struct {
 	mu            sync.Mutex
+	feeQuoteBusy  atomic.Bool
 	preflightBusy atomic.Bool
 	htlcBalances  map[chain.ID]int64
 	htlcAvailable map[chain.ID]bool

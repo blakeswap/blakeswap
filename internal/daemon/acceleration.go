@@ -284,6 +284,16 @@ func (e *Engine) broadcastOwner(ctx context.Context, s *Swap, id chain.ID, refun
 	if index >= len(variants) {
 		index = len(variants) - 1
 	}
+	if s.OwnerFeeCap > 0 {
+		// Estimates select only among the owner's already-authorized templates.
+		feeCtx, cancel := context.WithTimeout(ctx, 500*time.Millisecond)
+		suggested := estimatedTier(e.estimateFee(feeCtx, id, 2), variants)
+		cancel()
+		if suggested > index {
+			index = suggested
+			*attempt = index * 3
+		}
+	}
 	if refund {
 		s.RefundVariant = index
 	} else {
@@ -297,6 +307,30 @@ func (e *Engine) broadcastOwner(ctx context.Context, s *Swap, id chain.ID, refun
 		return err
 	}
 	return e.broadcast(ctx, id, variants[index])
+}
+
+func estimatedTier(estimate chain.FeeEstimate, variants []string) int {
+	if !estimate.Current(time.Now()) {
+		return 0
+	}
+	for i, raw := range variants {
+		tx, err := contract.Parse(raw)
+		if err != nil {
+			return 0
+		}
+		// A withheld tower preimage still occupies 32 bytes when broadcast.
+		if len(tx.TxIn) == 1 && len(tx.TxIn[0].Witness) == 4 && len(tx.TxIn[0].Witness[1]) == 0 {
+			tx.TxIn[0].Witness[1] = make([]byte, 32)
+		}
+		fee, err := contract.FeeForVSize(estimate.Rate, contract.VirtualSize(tx))
+		if err != nil {
+			return 0
+		}
+		if i < len(protocol.RescueFees) && protocol.RescueFees[i] >= fee {
+			return i
+		}
+	}
+	return len(variants) - 1
 }
 
 func settlementVariant(raws []string, index int, long, short contract.HTLC, useLong bool) (string, int64) {

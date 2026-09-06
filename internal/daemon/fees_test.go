@@ -1,8 +1,12 @@
 package daemon
 
 import (
+	"bytes"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -10,6 +14,7 @@ import (
 	"github.com/blakeswap/blakeswap/internal/chain"
 	"github.com/blakeswap/blakeswap/internal/contract"
 	"github.com/blakeswap/blakeswap/internal/protocol"
+	"github.com/blakeswap/blakeswap/internal/transport"
 )
 
 func TestSendReplacementPersistsVariantsAndRecognizesEarlierConfirmation(t *testing.T) {
@@ -135,6 +140,9 @@ func TestSendFeeReviewAndReplacementLimits(t *testing.T) {
 
 func TestFeeQuoteManualFallbackSizeDustAndFundingPersistence(t *testing.T) {
 	e, _, p := sendFixture(t)
+	if err := e.refresh(context.Background()); err != nil {
+		t.Fatal(err)
+	}
 	quote := FeeQuoteRequest{Kind: "send", Chain: p.Chain, Destination: p.Destination, Amount: p.Amount, Inputs: p.Inputs}
 	raw, _ := json.Marshal(quote)
 	q, err := e.quoteFee(context.Background(), raw)
@@ -181,5 +189,80 @@ func TestFeeQuoteManualFallbackSizeDustAndFundingPersistence(t *testing.T) {
 	}
 	if strings.Contains(e.s.Offers[offer.ID].Content, "funding_fee") {
 		t.Fatal("private funding fee leaked into public offer")
+	}
+}
+
+func TestOwnerLadderRequiresConsentAndPersistsBeforeEscalation(t *testing.T) {
+	for _, cap := range []int64{0, 20000} {
+		t.Run(fmt.Sprint(cap), func(t *testing.T) {
+			e, b, _ := sendFixture(t)
+			id := transport.RandomID()
+			key, err := e.swapKey(chain.Blake, id)
+			if err != nil {
+				t.Fatal(err)
+			}
+			secret := bytes.Repeat([]byte{1}, 32)
+			hash := sha256.Sum256(secret)
+			pub := hex.EncodeToString(key.PubKey().SerializeCompressed())
+			target := contract.HTLC{Chain: chain.Blake, Hash: hex.EncodeToString(hash[:]), ClaimKey: pub, RefundKey: pub, RefundHeight: 1, Amount: 1000000, TxID: strings.Repeat("34", 32)}
+			claim, err := contract.Spend(target, key, e.scripts[chain.Blake], 2000, false, 0, nil, 0, secret)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if refundReplaceable(target, true, chain.Observation{Tx: claim}) {
+				t.Fatal("pending peer claim allowed refund race")
+			}
+			refundTx, err := contract.Spend(target, key, e.scripts[chain.Blake], 2000, true, target.RefundHeight, nil, 0, nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !refundReplaceable(target, true, chain.Observation{Tx: refundTx}) || refundReplaceable(target, true, chain.Observation{Tx: refundTx, Confirmations: 1}) {
+				t.Fatal("refund replacement eligibility incorrect")
+			}
+			s := &Swap{ID: id, Role: "taker", Short: target, Long: target, OwnerFeeCap: cap, SelfClaim: contract.Hex(claim), Secret: hex.EncodeToString(secret)}
+			e.s.Swaps[id] = s
+			b.broadcast = func(raw string) (string, error) {
+				var saved State
+				if _, err := e.vault.Load(&saved); err != nil {
+					t.Fatal(err)
+				}
+				found := false
+				for _, v := range saved.Swaps[id].SelfClaims {
+					if v == raw {
+						found = true
+					}
+				}
+				if !found {
+					t.Fatal("owner broadcast before persistence")
+				}
+				return "", context.DeadlineExceeded
+			}
+			for i := 0; i < 12; i++ {
+				s.ClaimLastAttempt = 0
+				_ = e.broadcastOwner(context.Background(), s, chain.Blake, false)
+			}
+			want := 1
+			if cap > 0 {
+				want = 3
+			}
+			if len(s.SelfClaims) != want {
+				t.Fatal("unexpected authorized variants", len(s.SelfClaims), cap)
+			}
+			if cap == 0 && s.ClaimVariant != 0 {
+				t.Fatal("legacy claim silently escalated")
+			}
+			if cap > 0 && s.ClaimVariant != 2 {
+				t.Fatal("new claim failed to reach its cap")
+			}
+			for _, raw := range s.SelfClaims {
+				tx, _ := contract.Parse(raw)
+				if err := contract.VerifySignature(target, tx, false); err != nil {
+					t.Fatal(err)
+				}
+				if !bytes.Equal(tx.TxOut[0].PkScript, claim.TxOut[0].PkScript) || target.Amount-tx.TxOut[0].Value > 20000 {
+					t.Fatal("owner authority changed")
+				}
+			}
+		})
 	}
 }
