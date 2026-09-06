@@ -27,6 +27,10 @@ jobs:
         with:
           ref: ${{ github.event.release.tag_name || github.ref }}
           persist-credentials: false
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
+        with:
+          go-version: '1.26.8'
+          cache: false
       - name: Release version
         env:
           RELEASE_TAG: ${{ github.event.release.tag_name || github.ref_name }}
