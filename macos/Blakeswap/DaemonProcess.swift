@@ -30,6 +30,27 @@ final class DaemonProcess {
         process.standardOutput = log; process.standardError = log
         try process.run(); child = process
     }
+    func waitUntilReady(profile: String, timeout: TimeInterval = 15) async throws {
+        let deadline = ProcessInfo.processInfo.systemUptime + timeout
+        while true {
+            try Task.checkCancellation()
+            guard !stopping else { throw CancellationError() }
+            guard let process = child else { throw RPCError.message("The wallet service has not been started.") }
+            guard process.isRunning else {
+                throw RPCError.message("The wallet service exited during startup (code \(process.terminationStatus)). Reopen Blakeswap or check desktop.log for details.")
+            }
+            do {
+                _ = try DaemonRPC.endpoint(root: root, profile: profile)
+                return
+            } catch let error as CocoaError where error.code == .fileNoSuchFile || error.code == .fileReadNoSuchFile {
+                // The helper publishes its private manifest only after opening its API listeners.
+                guard ProcessInfo.processInfo.systemUptime < deadline else {
+                    throw RPCError.message("The wallet service did not become ready. Try reopening Blakeswap.")
+                }
+                try await Task.sleep(nanoseconds: 50_000_000)
+            }
+        }
+    }
     func stop() async {
         stopping = true
         guard let process = child else { return }

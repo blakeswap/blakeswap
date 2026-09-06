@@ -14,6 +14,12 @@ wallets are selectable and run on every network. New installations create or
 restore their first wallet in onboarding; legacy Alice/Bob vaults retain their original encrypted master seeds.
 The isolated regtest demonstration explicitly prepares Alice and Bob.
 
+The opening screen waits for the helper to publish its private runtime endpoint
+before requesting wallet status. A briefly absent `runtime.json` during launch
+is normal and does not display a file error. The wait is cancellable and bounded
+to 15 seconds; helper exits, invalid/private-file checks, and startup timeouts
+remain visible as connection errors.
+
 There is no pause control. The client restarts an unexpectedly exited helper while
 the app remains open, and old persisted pause flags are cleared on reopen.
 Watchtower service runs alongside trading, with public listing off by default.

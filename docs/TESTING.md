@@ -181,6 +181,13 @@ lookup per provider per expiry period after successful relay publication.
 
 ## Onboarding and reset regressions
 
+`AppStartupTests` holds a real helper before it creates its runtime manifest and
+verifies that the opening screen stays in its loading state, then receives
+settings in the same refresh when the helper becomes ready. Additional cases
+cover startup timeout, helper exit, launch failure, cancellation, and rejection
+of unsafe or invalid runtime files. Run with `BLAKESWAP_TEST_HELPER` pointing to
+the built desktop helper and `swift test ... --filter AppStartupTests`.
+
 Go tests cover first-launch engine gating, backup confirmation, invalid phrases,
 revision conflicts, interrupted wallet installation, completed/legacy setup,
 encrypted backup round trips, wrong passwords without source modification, and
