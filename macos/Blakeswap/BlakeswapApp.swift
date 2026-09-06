@@ -97,6 +97,7 @@ struct AppRootView: View {
 struct ContentView: View {
     @EnvironmentObject private var model: AppModel
     @State private var showOffer = false
+    @State private var sendContext: SendContext?
     @State private var orderFilter: OrderFilter = .all
     var body: some View {
         HStack(spacing: 0) {
@@ -128,6 +129,7 @@ struct ContentView: View {
                 footer
             }.background(Color(red: 0.065, green: 0.078, blue: 0.10))
         }
+        .sheet(item: $sendContext) { context in SendCoinsView(context: context).environmentObject(model) }
         .sheet(isPresented: $showOffer) { OfferSheet().environmentObject(model) }
         .sheet(isPresented: Binding(get: { model.recovery != nil }, set: { if !$0 { model.recovery = nil } })) {
             VStack(alignment: .leading, spacing: 20) {
@@ -297,14 +299,27 @@ struct ContentView: View {
             HStack(spacing: 16) { balanceCard("btc", status); balanceCard("blake", status) }
             ForEach(["btc", "blake"], id: \.self) { chain in
                 VStack(alignment: .leading, spacing: 14) {
-                    Text("Receive \(symbol(chain))").font(.headline)
-                    Text(status.addresses[chain] ?? "").font(.system(.body, design: .monospaced)).textSelection(.enabled)
+                    ReceiveAddressView(chain: chain, network: status.network, address: status.addresses[chain] ?? "")
+                        .id("\(status.name)/\(status.network)/\(chain)")
                     HStack {
-                        Button("Copy address") { NSPasteboard.general.clearContents(); NSPasteboard.general.setString(status.addresses[chain] ?? "", forType: .string) }
+                        Button("Send \(symbol(chain))…") { sendContext = SendContext(profile: model.profile, network: status.network, chain: chain) }
+                            .disabled(model.busy)
                         if model.isRegtest { Button("Add 1 test coin") { Task { await model.command("regtest.faucet", ["chain": chain, "amount": 100_000_000]) } }.disabled(model.busy)
                         Text("Mine 2 blocks to confirm deposits.").font(.caption).foregroundStyle(.secondary) }
                     }
                 }.padding(24).frame(maxWidth: .infinity, alignment: .leading).background(panel, in: RoundedRectangle(cornerRadius: 14))
+            }
+            if !status.sends.isEmpty {
+                VStack(alignment: .leading, spacing: 14) {
+                    Text("Outgoing sends").font(.headline)
+                    ForEach(status.sends, id: \.id) { send in
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("\(send.amount) \(symbol(send.chain)) sats · fee \(send.fee) sats · \(send.confirmations) confirmations")
+                            Text(send.txid).font(.caption.monospaced()).textSelection(.enabled)
+                            if !send.error.isEmpty { Text(send.error).font(.caption).foregroundStyle(.orange) }
+                        }
+                    }
+                }.padding(24).background(panel, in: RoundedRectangle(cornerRadius: 14))
             }
             VStack(alignment: .leading, spacing: 14) {
                 Text("Recovery & protection").font(.headline)

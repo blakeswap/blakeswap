@@ -24,7 +24,9 @@ cd blakeswap
 sh scripts/build-dmg.sh
 ```
 
-Open `bin/Blakeswap-0.2.0-arm64.dmg`, drag the app into Applications, and open it.
+Download an Apple silicon (`arm64`) or Intel (`x86_64`) DMG from
+[GitHub Releases](https://github.com/blakeswap/blakeswap/releases), or build locally.
+Open `bin/Blakeswap-0.2.0-arm64.dmg` (or the Intel equivalent), drag the app into Applications, and open it.
 On first launch, choose a wallet name and create a new wallet or restore a BIP39
 recovery phrase or encrypted state backup. Setup checks three recovery words,
 offers a password-protected backup file, and walks through network and server
@@ -42,6 +44,18 @@ chain data. No verified public Blake2b Testnet4 indexer was found; configure you
 own endpoint for that chain. The application does not substitute a Bitcoin server
 or silently change networks. [Operations](docs/OPERATIONS.md) lists the defaults and
 trust assumptions.
+
+Wallet provides a QR for each chain’s current receive address and advances it after
+a confirmed receipt. Send supports individual coin selection and a manual total
+network fee. Open orders, active trades, and pending sends lock their funding coins;
+cancel an open order before withdrawing those coins.
+
+## Local regtest nodes
+
+Run `make regtest-nodes` for both chains, or `make regtest-btc` / `make regtest-blake`
+for one chain. Then select Regtest in the app with the cookie fields empty; the app
+discovers the launcher's current cookie paths automatically. `make regtest-stop`
+stops the nodes. See [Operations](docs/OPERATIONS.md#local-regtest-discovery).
 
 ## Desktop regtest demonstration
 

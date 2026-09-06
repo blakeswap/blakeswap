@@ -143,7 +143,7 @@ final class AppModel: ObservableObject {
                     notice = "Backup saved. Keep the vault password separately."
                     NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: path)])
                 }
-                if method == "swap.take" { page = "Swaps" }
+                if method == "swap.take" { page = "Swaps"; notice = "Reservation requested. Waiting for the maker to accept before funding." }
                 if method == "offer.create" { notice = "Offer queued." }
                 if method == "tower.resolve" { notice = "Private watchtower lookup queued. Waiting for its signed quote." }
             }

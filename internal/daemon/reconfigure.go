@@ -19,6 +19,12 @@ func (e *Engine) CanChangeNetwork() error {
 	return canChangeNetwork(e.s)
 }
 func canChangeNetwork(s State) error {
+	for _, send := range s.Sends {
+		if send.Confirmations < 6 {
+			return errors.New("wait for outgoing sends to confirm before changing networks")
+		}
+	}
+
 	for _, event := range s.Offers {
 		var o protocol.Offer
 		o, err := protocol.DecodeOffer(event, time.Now().Unix())
@@ -28,7 +34,7 @@ func canChangeNetwork(s State) error {
 	}
 	for _, swap := range s.Swaps {
 		switch swap.Stage {
-		case "completed", "refunded", "rejected", "expired before funding", "aborted; counterparty refunded":
+		case "completed", "refunded", "rejected", "expired before acceptance", "expired before funding", "expired before maker funding", "aborted; counterparty refunded":
 		default:
 			return fmt.Errorf("swap %s must finish before changing networks", swap.ID)
 		}
@@ -69,7 +75,7 @@ func CheckStoredNetwork(c Config) error {
 // selected wallet. Standalone immutable-config daemons accept legacy callers.
 func CheckCommandNetwork(req Request, actual chain.Network, required bool) error {
 	switch req.Method {
-	case "tower.resolve", "offer.create", "offer.cancel", "swap.take", "pause", "regtest.mine", "regtest.faucet":
+	case "wallet.send", "tower.resolve", "offer.create", "offer.cancel", "swap.take", "pause", "regtest.mine", "regtest.faucet":
 	default:
 		return nil
 	}

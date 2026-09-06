@@ -22,9 +22,15 @@ func (e *Engine) ownTower() protocol.Tower {
 	} else if e.Config.RescueFeeBPS != 0 {
 		tower.BPS = e.Config.RescueFeeBPS
 	}
+	// Signed offers and delayed jobs pin these payout scripts. Keep the legacy
+	// tower destinations stable while the wallet's receive addresses rotate.
 	for id, script := range e.scripts {
+		if len(e.receiveBook[id]) > 0 {
+			script = e.receiveBook[id][0].script
+		}
 		tower.Scripts[id] = hex.EncodeToString(script)
 	}
+
 	return tower
 }
 

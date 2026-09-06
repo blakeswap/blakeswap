@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Isolated real-chain regtest lifecycle. No mainnet or external P2P access."""
-import argparse, base64, json, os, pathlib, subprocess, time, urllib.request
+import argparse, base64, json, os, pathlib, subprocess, sys, tempfile, time, urllib.request
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 NODES = {"btc": ("29.1", int(os.environ.get("BLAKESWAP_BTC_RPC_PORT", "19443"))), "blake": ("29.4.1.knots20260508", int(os.environ.get("BLAKESWAP_BLAKE_RPC_PORT", "29443")))}
@@ -40,16 +40,45 @@ def start(chain):
         rpc(chain, "generatetoaddress", 110-height, addr)
     return rpc(chain, "getblockchaininfo")
 
+def registry_path():
+    if os.environ.get("BLAKESWAP_REGTEST_REGISTRY"):
+        return pathlib.Path(os.environ["BLAKESWAP_REGTEST_REGISTRY"])
+    cache = pathlib.Path.home() / "Library/Caches" if sys.platform == "darwin" else pathlib.Path(os.environ.get("XDG_CACHE_HOME", pathlib.Path.home() / ".cache"))
+    return cache / "Blakeswap/regtest-nodes.json"
+
+def register(chain):
+    # Share locations with installed apps and fresh wallets without sharing
+    # credentials or storing checkout-specific paths in wallet settings.
+    import fcntl
+    path = registry_path()
+    path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+    with (path.parent / "regtest-nodes.lock").open("a") as lock:
+        fcntl.flock(lock, fcntl.LOCK_EX)
+        nodes = json.loads(path.read_text()) if path.exists() else {}
+        nodes[chain] = {"url": f"http://127.0.0.1:{NODES[chain][1]}",
+                        "cookie": str(ROOT / ".local" / chain / "regtest/.cookie")}
+        fd, temporary = tempfile.mkstemp(dir=path.parent)
+        try:
+            with os.fdopen(fd, "w") as output:
+                json.dump(nodes, output, indent=2)
+                output.flush(); os.fsync(output.fileno())
+            os.replace(temporary, path)
+        finally:
+            if os.path.exists(temporary): os.unlink(temporary)
+    print(f"Registered {chain} regtest at {nodes[chain]['url']} for local app discovery.")
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("action", choices=["nodes", "stop-nodes", "status", "mine", "fund"])
     parser.add_argument("chain", nargs="?", choices=list(NODES))
     parser.add_argument("value", nargs="?")
     parser.add_argument("amount", nargs="?", default="1")
+    parser.add_argument("--register", action="store_true", help="Register started nodes for automatic app discovery")
     a = parser.parse_args()
     for chain in ([a.chain] if a.chain else NODES):
         if a.action == "nodes":
             info = start(chain)
+            if a.register: register(chain)
             print(chain, "height", info["blocks"], "tip", info["bestblockhash"])
             if chain == "blake":
                 deployment = rpc(chain, "getdeploymentinfo")["blake2b"]

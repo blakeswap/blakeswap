@@ -119,7 +119,12 @@ func (e *Engine) handle(from string, m transport.Message) error {
 			return e.queue(from, "accepted", m.SwapID, existing.Terms)
 		}
 		owned, ok := e.s.Offers[o.ID]
-		if !ok || owned.ID != request.OfferEvent.ID {
+		var current protocol.Offer
+		currentErr := json.Unmarshal([]byte(owned.Content), &current)
+		// Maker-authoritative check-and-reserve under Engine.mu, analogous to
+		// Bisq's AVAILABLE -> RESERVED transition. A stale relay copy is never
+		// sufficient authorization for another trade.
+		if !ok || currentErr != nil || current.Status != "open" || owned.ID != request.OfferEvent.ID {
 			return e.queue(from, "rejected", request.ID, map[string]string{"reason": "order is unavailable or changed"})
 		}
 		if e.balances[o.Sell] < o.SellAmount+protocol.FundingFee {
@@ -144,6 +149,9 @@ func (e *Engine) handle(from string, m transport.Message) error {
 		if err = e.publishOffer(o); err != nil {
 			return err
 		}
+		if err := e.save(); err != nil {
+			return err
+		} // Reservation is durable before acceptance can be sent.
 		return e.queue(from, "accepted", s.ID, terms)
 	}
 	s := e.s.Swaps[m.SwapID]
@@ -164,6 +172,7 @@ func (e *Engine) handle(from string, m transport.Message) error {
 			return errors.New("rejection too long")
 		}
 		s.Stage = "rejected"
+		delete(e.s.CoinReservations, "swap/"+s.ID)
 		s.Error = reason.Reason
 		return nil
 	}
@@ -180,6 +189,9 @@ func (e *Engine) handle(from string, m transport.Message) error {
 		}
 		if protocol.Digest(terms.Request) != protocol.Digest(s.Request) || from != terms.Offer().Maker {
 			return errors.New("acceptance changed request or maker")
+		}
+		if s.Terms == nil && (e.expirePendingRequest(s, time.Now().Unix()) || terminalSwap(s)) {
+			return nil // Acknowledge stale acceptance without reviving released funds.
 		}
 		tower, err := e.selectedTower(terms.Offer())
 		if err != nil {

@@ -81,20 +81,23 @@ type TowerJob struct {
 	Error       string       `json:"error,omitempty"`
 }
 type State struct {
-	DiscoverySeen map[string]int64       `json:"discovery_seen,omitempty"`
-	TowerPublic   bool                   `json:"tower_public,omitempty"`
-	Towers        map[string]nostr.Event `json:"towers,omitempty"`
-	Network       chain.Network          `json:"network,omitempty"`
-	Version       int                    `json:"version"`
-	Mnemonic      string                 `json:"mnemonic"`
-	Paused        bool                   `json:"paused"`
-	Offers        map[string]nostr.Event `json:"offers"`
-	Book          map[string]nostr.Event `json:"book"`
-	Swaps         map[string]*Swap       `json:"swaps"`
-	Outbox        map[string]*Delivery   `json:"outbox"`
-	Seen          map[string]string      `json:"seen"`
-	TowerJobs     map[string]*TowerJob   `json:"tower_jobs"`
-	EventTime     nostr.Timestamp        `json:"event_time"`
+	CoinReservations map[string]CoinReservation `json:"coin_reservations,omitempty"`
+	Sends            map[string]*WalletSend     `json:"sends,omitempty"`
+	ReceiveIndexes   map[chain.ID]uint32        `json:"receive_indexes,omitempty"`
+	DiscoverySeen    map[string]int64           `json:"discovery_seen,omitempty"`
+	TowerPublic      bool                       `json:"tower_public,omitempty"`
+	Towers           map[string]nostr.Event     `json:"towers,omitempty"`
+	Network          chain.Network              `json:"network,omitempty"`
+	Version          int                        `json:"version"`
+	Mnemonic         string                     `json:"mnemonic"`
+	Paused           bool                       `json:"paused"`
+	Offers           map[string]nostr.Event     `json:"offers"`
+	Book             map[string]nostr.Event     `json:"book"`
+	Swaps            map[string]*Swap           `json:"swaps"`
+	Outbox           map[string]*Delivery       `json:"outbox"`
+	Seen             map[string]string          `json:"seen"`
+	TowerJobs        map[string]*TowerJob       `json:"tower_jobs"`
+	EventTime        nostr.Timestamp            `json:"event_time"`
 }
 type PublicSwap struct {
 	ID                 string             `json:"id"`
@@ -116,6 +119,8 @@ type PublicSwap struct {
 	RevealBefore       uint32             `json:"reveal_before"`
 }
 type Status struct {
+	Coins           []PublicCoin        `json:"coins"`
+	Sends           []PublicSend        `json:"sends"`
 	OwnWatchtower   protocol.Tower      `json:"own_watchtower"`
 	Watchtowers     []protocol.Tower    `json:"watchtowers"`
 	FundingFee      int64               `json:"funding_fee"`

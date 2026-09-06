@@ -70,6 +70,10 @@ func Call(ctx context.Context, socket string, req daemon.Request) (json.RawMessa
 		p := &emptypb.Empty{}
 		in = p
 		invoke = func() (proto.Message, error) { return client.GetRecovery(ctx, p) }
+	case "wallet.send":
+		p := &pb.SendCoinsRequest{}
+		in = p
+		invoke = func() (proto.Message, error) { return client.SendCoins(ctx, p) }
 	case "wallet.backup":
 		p := &emptypb.Empty{}
 		in = p

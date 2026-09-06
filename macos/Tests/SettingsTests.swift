@@ -20,6 +20,19 @@ final class SettingsTests: XCTestCase {
         XCTAssertEqual(percentage(125), "1.25%")
     }
 
+    func testNumericRescueFeeInputUsesBasisPointPrecisionAndBounds() {
+        var environment = EnvironmentSettings()
+        XCTAssertEqual(environment.rescueFeePercent, 0.5)
+        environment.rescueFeePercent = 1.234
+        XCTAssertEqual(environment.rescueFeeBasisPoints, 123)
+        environment.rescueFeePercent = 0
+        XCTAssertEqual(environment.rescueFeeBasisPoints, 1)
+        environment.rescueFeePercent = 20
+        XCTAssertEqual(environment.rescueFeeBasisPoints, 1000)
+        environment.rescueFeePercent = .infinity
+        XCTAssertEqual(environment.rescueFeeBasisPoints, 1000)
+    }
+
     @MainActor
     func testPartialChainReadinessAndNetworkSwitch() {
         let model = AppModel()

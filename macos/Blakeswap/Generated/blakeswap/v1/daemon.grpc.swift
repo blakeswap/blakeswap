@@ -138,6 +138,19 @@ internal enum Blakeswap_V1_DaemonService: Sendable {
                 type: .unary
             )
         }
+        /// Namespace for "SendCoins" metadata.
+        internal enum SendCoins: Sendable {
+            /// Request type for "SendCoins".
+            internal typealias Input = Blakeswap_V1_SendCoinsRequest
+            /// Response type for "SendCoins".
+            internal typealias Output = Blakeswap_V1_WalletSend
+            /// Descriptor for "SendCoins".
+            internal static let descriptor = GRPCCore.MethodDescriptor(
+                service: GRPCCore.ServiceDescriptor(fullyQualifiedService: "blakeswap.v1.DaemonService"),
+                method: "SendCoins",
+                type: .unary
+            )
+        }
         /// Namespace for "BackupWallet" metadata.
         internal enum BackupWallet: Sendable {
             /// Request type for "BackupWallet".
@@ -279,6 +292,7 @@ internal enum Blakeswap_V1_DaemonService: Sendable {
             Mine.descriptor,
             Faucet.descriptor,
             GetRecovery.descriptor,
+            SendCoins.descriptor,
             BackupWallet.descriptor,
             CreateWallet.descriptor,
             PrepareFirstWallet.descriptor,
@@ -477,6 +491,25 @@ extension Blakeswap_V1_DaemonService {
             deserializer: some GRPCCore.MessageDeserializer<Blakeswap_V1_Recovery>,
             options: GRPCCore.CallOptions,
             onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Blakeswap_V1_Recovery>) async throws -> Result
+        ) async throws -> Result where Result: Sendable
+
+        /// Call the "SendCoins" method.
+        ///
+        /// - Parameters:
+        ///   - request: A request containing a single `Blakeswap_V1_SendCoinsRequest` message.
+        ///   - serializer: A serializer for `Blakeswap_V1_SendCoinsRequest` messages.
+        ///   - deserializer: A deserializer for `Blakeswap_V1_WalletSend` messages.
+        ///   - options: Options to apply to this RPC.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
+        /// - Returns: The result of `handleResponse`.
+        func sendCoins<Result>(
+            request: GRPCCore.ClientRequest<Blakeswap_V1_SendCoinsRequest>,
+            serializer: some GRPCCore.MessageSerializer<Blakeswap_V1_SendCoinsRequest>,
+            deserializer: some GRPCCore.MessageDeserializer<Blakeswap_V1_WalletSend>,
+            options: GRPCCore.CallOptions,
+            onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Blakeswap_V1_WalletSend>) async throws -> Result
         ) async throws -> Result where Result: Sendable
 
         /// Call the "BackupWallet" method.
@@ -949,6 +982,36 @@ extension Blakeswap_V1_DaemonService {
             try await self.client.unary(
                 request: request,
                 descriptor: Blakeswap_V1_DaemonService.Method.GetRecovery.descriptor,
+                serializer: serializer,
+                deserializer: deserializer,
+                options: options,
+                onResponse: handleResponse
+            )
+        }
+
+        /// Call the "SendCoins" method.
+        ///
+        /// - Parameters:
+        ///   - request: A request containing a single `Blakeswap_V1_SendCoinsRequest` message.
+        ///   - serializer: A serializer for `Blakeswap_V1_SendCoinsRequest` messages.
+        ///   - deserializer: A deserializer for `Blakeswap_V1_WalletSend` messages.
+        ///   - options: Options to apply to this RPC.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
+        /// - Returns: The result of `handleResponse`.
+        internal func sendCoins<Result>(
+            request: GRPCCore.ClientRequest<Blakeswap_V1_SendCoinsRequest>,
+            serializer: some GRPCCore.MessageSerializer<Blakeswap_V1_SendCoinsRequest>,
+            deserializer: some GRPCCore.MessageDeserializer<Blakeswap_V1_WalletSend>,
+            options: GRPCCore.CallOptions = .defaults,
+            onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Blakeswap_V1_WalletSend>) async throws -> Result = { response in
+                try response.message
+            }
+        ) async throws -> Result where Result: Sendable {
+            try await self.client.unary(
+                request: request,
+                descriptor: Blakeswap_V1_DaemonService.Method.SendCoins.descriptor,
                 serializer: serializer,
                 deserializer: deserializer,
                 options: options,
@@ -1486,6 +1549,31 @@ extension Blakeswap_V1_DaemonService.ClientProtocol {
         )
     }
 
+    /// Call the "SendCoins" method.
+    ///
+    /// - Parameters:
+    ///   - request: A request containing a single `Blakeswap_V1_SendCoinsRequest` message.
+    ///   - options: Options to apply to this RPC.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
+    /// - Returns: The result of `handleResponse`.
+    internal func sendCoins<Result>(
+        request: GRPCCore.ClientRequest<Blakeswap_V1_SendCoinsRequest>,
+        options: GRPCCore.CallOptions = .defaults,
+        onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Blakeswap_V1_WalletSend>) async throws -> Result = { response in
+            try response.message
+        }
+    ) async throws -> Result where Result: Sendable {
+        try await self.sendCoins(
+            request: request,
+            serializer: GRPCProtobuf.ProtobufSerializer<Blakeswap_V1_SendCoinsRequest>(),
+            deserializer: GRPCProtobuf.ProtobufDeserializer<Blakeswap_V1_WalletSend>(),
+            options: options,
+            onResponse: handleResponse
+        )
+    }
+
     /// Call the "BackupWallet" method.
     ///
     /// - Parameters:
@@ -1995,6 +2083,35 @@ extension Blakeswap_V1_DaemonService.ClientProtocol {
             metadata: metadata
         )
         return try await self.getRecovery(
+            request: request,
+            options: options,
+            onResponse: handleResponse
+        )
+    }
+
+    /// Call the "SendCoins" method.
+    ///
+    /// - Parameters:
+    ///   - message: request message to send.
+    ///   - metadata: Additional metadata to send, defaults to empty.
+    ///   - options: Options to apply to this RPC, defaults to `.defaults`.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
+    /// - Returns: The result of `handleResponse`.
+    internal func sendCoins<Result>(
+        _ message: Blakeswap_V1_SendCoinsRequest,
+        metadata: GRPCCore.Metadata = [:],
+        options: GRPCCore.CallOptions = .defaults,
+        onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Blakeswap_V1_WalletSend>) async throws -> Result = { response in
+            try response.message
+        }
+    ) async throws -> Result where Result: Sendable {
+        let request = GRPCCore.ClientRequest<Blakeswap_V1_SendCoinsRequest>(
+            message: message,
+            metadata: metadata
+        )
+        return try await self.sendCoins(
             request: request,
             options: options,
             onResponse: handleResponse

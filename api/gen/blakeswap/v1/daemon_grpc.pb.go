@@ -29,6 +29,7 @@ const (
 	DaemonService_Mine_FullMethodName               = "/blakeswap.v1.DaemonService/Mine"
 	DaemonService_Faucet_FullMethodName             = "/blakeswap.v1.DaemonService/Faucet"
 	DaemonService_GetRecovery_FullMethodName        = "/blakeswap.v1.DaemonService/GetRecovery"
+	DaemonService_SendCoins_FullMethodName          = "/blakeswap.v1.DaemonService/SendCoins"
 	DaemonService_BackupWallet_FullMethodName       = "/blakeswap.v1.DaemonService/BackupWallet"
 	DaemonService_CreateWallet_FullMethodName       = "/blakeswap.v1.DaemonService/CreateWallet"
 	DaemonService_PrepareFirstWallet_FullMethodName = "/blakeswap.v1.DaemonService/PrepareFirstWallet"
@@ -54,6 +55,7 @@ type DaemonServiceClient interface {
 	Mine(ctx context.Context, in *MineRequest, opts ...grpc.CallOption) (*emptypb.Empty, error)
 	Faucet(ctx context.Context, in *FaucetRequest, opts ...grpc.CallOption) (*FaucetResponse, error)
 	GetRecovery(ctx context.Context, in *emptypb.Empty, opts ...grpc.CallOption) (*Recovery, error)
+	SendCoins(ctx context.Context, in *SendCoinsRequest, opts ...grpc.CallOption) (*WalletSend, error)
 	BackupWallet(ctx context.Context, in *emptypb.Empty, opts ...grpc.CallOption) (*Backup, error)
 	CreateWallet(ctx context.Context, in *CreateWalletRequest, opts ...grpc.CallOption) (*Settings, error)
 	PrepareFirstWallet(ctx context.Context, in *PrepareFirstWalletRequest, opts ...grpc.CallOption) (*FirstWallet, error)
@@ -158,6 +160,16 @@ func (c *daemonServiceClient) GetRecovery(ctx context.Context, in *emptypb.Empty
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(Recovery)
 	err := c.cc.Invoke(ctx, DaemonService_GetRecovery_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *daemonServiceClient) SendCoins(ctx context.Context, in *SendCoinsRequest, opts ...grpc.CallOption) (*WalletSend, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(WalletSend)
+	err := c.cc.Invoke(ctx, DaemonService_SendCoins_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -277,6 +289,7 @@ type DaemonServiceServer interface {
 	Mine(context.Context, *MineRequest) (*emptypb.Empty, error)
 	Faucet(context.Context, *FaucetRequest) (*FaucetResponse, error)
 	GetRecovery(context.Context, *emptypb.Empty) (*Recovery, error)
+	SendCoins(context.Context, *SendCoinsRequest) (*WalletSend, error)
 	BackupWallet(context.Context, *emptypb.Empty) (*Backup, error)
 	CreateWallet(context.Context, *CreateWalletRequest) (*Settings, error)
 	PrepareFirstWallet(context.Context, *PrepareFirstWalletRequest) (*FirstWallet, error)
@@ -323,6 +336,9 @@ func (UnimplementedDaemonServiceServer) Faucet(context.Context, *FaucetRequest) 
 }
 func (UnimplementedDaemonServiceServer) GetRecovery(context.Context, *emptypb.Empty) (*Recovery, error) {
 	return nil, status.Error(codes.Unimplemented, "method GetRecovery not implemented")
+}
+func (UnimplementedDaemonServiceServer) SendCoins(context.Context, *SendCoinsRequest) (*WalletSend, error) {
+	return nil, status.Error(codes.Unimplemented, "method SendCoins not implemented")
 }
 func (UnimplementedDaemonServiceServer) BackupWallet(context.Context, *emptypb.Empty) (*Backup, error) {
 	return nil, status.Error(codes.Unimplemented, "method BackupWallet not implemented")
@@ -533,6 +549,24 @@ func _DaemonService_GetRecovery_Handler(srv interface{}, ctx context.Context, de
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(DaemonServiceServer).GetRecovery(ctx, req.(*emptypb.Empty))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _DaemonService_SendCoins_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(SendCoinsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DaemonServiceServer).SendCoins(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: DaemonService_SendCoins_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DaemonServiceServer).SendCoins(ctx, req.(*SendCoinsRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -759,6 +793,10 @@ var DaemonService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "GetRecovery",
 			Handler:    _DaemonService_GetRecovery_Handler,
+		},
+		{
+			MethodName: "SendCoins",
+			Handler:    _DaemonService_SendCoins_Handler,
 		},
 		{
 			MethodName: "BackupWallet",

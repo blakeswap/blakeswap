@@ -96,7 +96,11 @@ func (r *RPC) call(ctx context.Context, client *http.Client, method string, out 
 	if err != nil {
 		return err
 	}
-	cookie, err := os.ReadFile(r.Cookie)
+	cookiePath, err := r.cookiePath(ctx)
+	if err != nil {
+		return err
+	}
+	cookie, err := os.ReadFile(cookiePath)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
 			return fmt.Errorf("%s %s RPC cookie not found. Start your node and choose its cookie file in the connection settings: %w", r.Network, r.ID, err)
@@ -286,6 +290,15 @@ func (r *RPC) Transaction(ctx context.Context, id string) (Transaction, error) {
 
 // Observe imports addresses into a watch-only node wallet. No spending key crosses RPC.
 func (r *RPC) Observe(ctx context.Context, name string, addresses []string) (Backend, error) {
+	return r.observe(ctx, name, addresses, false)
+}
+
+// ObserveNew registers a never-exposed receive address without scanning the
+// blockchain from genesis. Completion is marked before the address is shown.
+func (r *RPC) ObserveNew(ctx context.Context, name string, addresses []string) (Backend, error) {
+	return r.observe(ctx, name, addresses, true)
+}
+func (r *RPC) observe(ctx context.Context, name string, addresses []string, fresh bool) (Backend, error) {
 	w := r.WithWallet(name)
 	var loaded []string
 	if e := r.Call(ctx, "listwallets", &loaded); e != nil {
@@ -335,12 +348,21 @@ func (r *RPC) Observe(ctx context.Context, name string, addresses []string) (Bac
 		return nil, err
 	}
 	known := map[string]bool{}
+	historical := map[string]bool{}
 	for _, d := range descriptors.Descriptors {
-		known[d.Desc] = d.Timestamp >= 0 && d.Timestamp <= 1 // Core normalizes timestamp zero to one.
+		known[d.Desc] = true
+		historical[d.Desc] = d.Timestamp >= 0 && d.Timestamp <= 1 // Core normalizes timestamp zero to one.
 	}
 	// Descriptor presence alone cannot prove that its initial rescan succeeded.
 	// Record readiness in the same node wallet only after the complete response.
 	const readyLabel = "blakeswap-history-ready-v1"
+	const liveLabel = "blakeswap-live-ready-v1"
+	label := readyLabel
+	var timestamp any = 0
+	if fresh {
+		label = liveLabel
+		timestamp = "now"
+	}
 	var imports []any
 	var pending []string
 	for _, addr := range addresses {
@@ -354,12 +376,12 @@ func (r *RPC) Observe(ctx context.Context, name string, addresses []string) (Bac
 		}
 		ready := false
 		for _, label := range address.Labels {
-			ready = ready || label == readyLabel
+			ready = ready || (label == readyLabel && historical[d.Descriptor]) || label == liveLabel
 		}
 		if known[d.Descriptor] && ready {
 			continue
 		}
-		imports = append(imports, map[string]any{"desc": d.Descriptor, "timestamp": 0})
+		imports = append(imports, map[string]any{"desc": d.Descriptor, "timestamp": timestamp})
 		pending = append(pending, addr)
 	}
 	if len(imports) == 0 {
@@ -381,7 +403,7 @@ func (r *RPC) Observe(ctx context.Context, name string, addresses []string) (Bac
 		}
 	}
 	for _, addr := range pending {
-		if err := w.Call(ctx, "setlabel", nil, addr, readyLabel); err != nil {
+		if err := w.Call(ctx, "setlabel", nil, addr, label); err != nil {
 			return nil, err
 		}
 	}
@@ -391,4 +413,23 @@ func (r *RPC) Unspent(ctx context.Context, addresses []string) ([]UTXO, error) {
 	var list []UTXO
 	e := r.Call(ctx, "listunspent", &list, 1, 9999999, addresses)
 	return list, e
+}
+
+// ConfirmedReceived includes spent receipts, so phrase/older-backup recovery can
+// advance past emptied addresses. Include immature coinbase receipts as well.
+func (r *RPC) ConfirmedReceived(ctx context.Context, address string) (bool, error) {
+	var receipts []struct {
+		Address string
+		Amount  Coins
+	}
+	err := r.Call(ctx, "listreceivedbyaddress", &receipts, 1, true, true, address, true)
+	if err != nil {
+		return false, err
+	}
+	for _, receipt := range receipts {
+		if receipt.Address == address && receipt.Amount > 0 {
+			return true, nil
+		}
+	}
+	return false, nil
 }

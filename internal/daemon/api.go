@@ -39,6 +39,15 @@ func (e *Engine) status() Status {
 	for _, event := range e.s.Book {
 		o, err := protocol.DecodeOffer(event, time.Now().Unix())
 		if err == nil {
+			if o.Status == "open" {
+				for _, pending := range e.s.Swaps {
+					var requested protocol.Offer
+					if pending.Role == "taker" && !terminalSwap(pending) && json.Unmarshal([]byte(pending.Request.OfferEvent.Content), &requested) == nil && requested.ID == o.ID && requested.Maker == o.Maker {
+						o.Status = "pending"
+						break
+					}
+				}
+			}
 			s.Orders = append(s.Orders, o)
 		}
 	}
@@ -68,6 +77,12 @@ func (e *Engine) status() Status {
 			s.PendingMessages++
 		}
 	}
+	s.Coins = e.publicCoins()
+	s.Sends = []PublicSend{}
+	for _, send := range e.s.Sends {
+		s.Sends = append(s.Sends, send.PublicSend)
+	}
+	sort.Slice(s.Sends, func(i, j int) bool { return s.Sends[i].ID < s.Sends[j].ID })
 	return s
 }
 func (e *Engine) Command(ctx context.Context, req Request) (any, error) {
@@ -85,6 +100,8 @@ func (e *Engine) Command(ctx context.Context, req Request) (any, error) {
 	switch req.Method {
 	case "status":
 		return e.status(), nil
+	case "wallet.send":
+		return e.sendCoins(ctx, req.Params)
 	case "tower.resolve":
 		var p struct {
 			PubKey string `json:"pubkey"`
@@ -168,6 +185,10 @@ func (e *Engine) Command(ctx context.Context, req Request) (any, error) {
 		if len(e.s.Offers) >= 1000 {
 			return nil, errors.New("order capacity reached")
 		}
+		if err := e.reserveCoins("offer/"+o.ID, o.Sell, o.SellAmount+protocol.FundingFee); err != nil {
+			delete(e.s.CoinReservations, "offer/"+o.ID)
+			return nil, err
+		}
 		if err := e.publishOffer(o); err != nil {
 			return nil, err
 		}
@@ -191,6 +212,7 @@ func (e *Engine) Command(ctx context.Context, req Request) (any, error) {
 			return nil, errors.New("only unreserved offers can be cancelled; committed swaps settle or refund")
 		}
 		o.Status = "cancelled"
+		delete(e.s.CoinReservations, "offer/"+o.ID)
 		if err = e.publishOffer(o); err != nil {
 			return nil, err
 		}
@@ -214,6 +236,12 @@ func (e *Engine) Command(ctx context.Context, req Request) (any, error) {
 		if err != nil {
 			return nil, err
 		}
+		for _, existing := range e.s.Swaps {
+			var requested protocol.Offer
+			if existing.Role == "taker" && !terminalSwap(existing) && json.Unmarshal([]byte(existing.Request.OfferEvent.Content), &requested) == nil && requested.ID == o.ID && requested.Maker == o.Maker {
+				return nil, errors.New("this wallet has already requested or reserved that order")
+			}
+		}
 		if o.Status != "open" || o.Maker == e.identity.Public().Hex() {
 			return nil, errors.New("offer not available to take")
 		}
@@ -235,6 +263,13 @@ func (e *Engine) Command(ctx context.Context, req Request) (any, error) {
 		}
 		request := protocol.Request{ID: id, OfferEvent: event, Taker: e.identity.Public().Hex(), Hash: hex.EncodeToString(hash[:]), Keys: keys}
 		s := &Swap{ID: id, Role: "taker", Request: request, Secret: hex.EncodeToString(secret), Receipts: map[string]protocol.Receipt{}, Stage: "request queued"}
+		if err := e.refresh(ctx); err != nil {
+			return nil, err
+		}
+		if err := e.reserveCoins("swap/"+id, o.Sell.Other(), o.BuyAmount+protocol.FundingFee); err != nil {
+			delete(e.s.CoinReservations, "swap/"+id)
+			return nil, err
+		}
 		e.s.Swaps[id] = s
 		if err = e.queue(o.Maker, "request", id, request); err != nil {
 			return nil, err

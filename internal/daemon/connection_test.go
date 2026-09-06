@@ -59,6 +59,8 @@ func TestOpenReportsEachChainOnlyAfterWalletData(t *testing.T) {
 					result = map[string]any{"labels": []string{}}
 				case "importdescriptors":
 					result = []map[string]bool{{"success": true}}
+				case "listreceivedbyaddress":
+					result = []any{}
 				case "listunspent":
 					record("wallet-" + id)
 					if rejectWalletData {

@@ -90,3 +90,37 @@ func TestNetworkDerivationsRecoverWithoutReusingKeys(t *testing.T) {
 		}
 	}
 }
+
+func TestReceiveIndexesPreserveLegacyKeysAndSeparateChainsAndNetworks(t *testing.T) {
+	mnemonic, _ := NewMnemonic()
+	seen := map[string]bool{}
+	for _, network := range []chain.Network{chain.Regtest, chain.Testnet, chain.Mainnet} {
+		keys, _ := FromMnemonic(mnemonic)
+		keys.SetNetwork(network)
+		restored, _ := FromMnemonic(mnemonic)
+		restored.SetNetwork(network)
+		for _, id := range []chain.ID{chain.BTC, chain.Blake} {
+			legacy, _ := keys.Spending(id, "deposit")
+			for index := uint32(0); index < 3; index++ {
+				key, err := keys.Receive(id, index)
+				if err != nil {
+					t.Fatal(err)
+				}
+				recovery, err := restored.Receive(id, index)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if !bytes.Equal(key.Serialize(), recovery.Serialize()) {
+					t.Fatal("unstable recovery")
+				}
+				if index == 0 && !bytes.Equal(key.Serialize(), legacy.Serialize()) {
+					t.Fatal("legacy address changed")
+				}
+				if seen[string(key.Serialize())] {
+					t.Fatal("receive key reused")
+				}
+				seen[string(key.Serialize())] = true
+			}
+		}
+	}
+}

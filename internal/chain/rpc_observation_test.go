@@ -285,3 +285,51 @@ func TestRealRPCObservationReconnectSkipsRescan(t *testing.T) {
 		})
 	}
 }
+
+func TestLiveReceiveImportAvoidsGenesisRescanAndSurvivesReconnect(t *testing.T) {
+	var descriptor, label string
+	imports := 0
+	rpc := fakeRPC(t, func(method string, params []json.RawMessage) (any, *RPCError) {
+		switch method {
+		case "listwallets":
+			return []string{"watch"}, nil
+		case "getwalletinfo":
+			return map[string]any{"scanning": false}, nil
+		case "listdescriptors":
+			var list []any
+			if descriptor != "" {
+				list = append(list, map[string]any{"desc": descriptor, "timestamp": 1700000000})
+			}
+			return map[string]any{"descriptors": list}, nil
+		case "getdescriptorinfo":
+			return map[string]any{"descriptor": "addr(fresh)#checksum"}, nil
+		case "getaddressinfo":
+			return map[string]any{"labels": []string{label}}, nil
+		case "importdescriptors":
+			imports++
+			descriptor = "addr(fresh)#checksum"
+			if !strings.Contains(string(params[0]), `"timestamp":"now"`) {
+				t.Error("fresh address triggered historical rescan")
+			}
+			return []any{map[string]any{"success": true}}, nil
+		case "setlabel":
+			json.Unmarshal(params[1], &label)
+			return nil, nil
+		default:
+			t.Errorf("unexpected %s", method)
+			return nil, nil
+		}
+	})
+	if _, err := rpc.ObserveNew(context.Background(), "watch", []string{"fresh"}); err != nil {
+		t.Fatal(err)
+	}
+	if label != "blakeswap-live-ready-v1" {
+		t.Fatal("live import completion not recorded")
+	}
+	if _, err := rpc.Observe(context.Background(), "watch", []string{"fresh"}); err != nil {
+		t.Fatal(err)
+	}
+	if imports != 1 {
+		t.Fatal("reopen repeated an already complete import")
+	}
+}
