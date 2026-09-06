@@ -164,6 +164,32 @@ internal enum Blakeswap_V1_DaemonService: Sendable {
                 type: .unary
             )
         }
+        /// Namespace for "QuoteTrade" metadata.
+        internal enum QuoteTrade: Sendable {
+            /// Request type for "QuoteTrade".
+            internal typealias Input = Blakeswap_V1_TradeQuoteRequest
+            /// Response type for "QuoteTrade".
+            internal typealias Output = Blakeswap_V1_TradeQuote
+            /// Descriptor for "QuoteTrade".
+            internal static let descriptor = GRPCCore.MethodDescriptor(
+                service: GRPCCore.ServiceDescriptor(fullyQualifiedService: "blakeswap.v1.DaemonService"),
+                method: "QuoteTrade",
+                type: .unary
+            )
+        }
+        /// Namespace for "ConfirmTrade" metadata.
+        internal enum ConfirmTrade: Sendable {
+            /// Request type for "ConfirmTrade".
+            internal typealias Input = Blakeswap_V1_ConfirmTradeRequest
+            /// Response type for "ConfirmTrade".
+            internal typealias Output = Blakeswap_V1_ConfirmTradeResult
+            /// Descriptor for "ConfirmTrade".
+            internal static let descriptor = GRPCCore.MethodDescriptor(
+                service: GRPCCore.ServiceDescriptor(fullyQualifiedService: "blakeswap.v1.DaemonService"),
+                method: "ConfirmTrade",
+                type: .unary
+            )
+        }
         /// Namespace for "QuoteFee" metadata.
         internal enum QuoteFee: Sendable {
             /// Request type for "QuoteFee".
@@ -346,6 +372,8 @@ internal enum Blakeswap_V1_DaemonService: Sendable {
             Faucet.descriptor,
             GetRecovery.descriptor,
             PreflightFunds.descriptor,
+            QuoteTrade.descriptor,
+            ConfirmTrade.descriptor,
             QuoteFee.descriptor,
             BumpTransaction.descriptor,
             SendCoins.descriptor,
@@ -585,6 +613,44 @@ extension Blakeswap_V1_DaemonService {
             deserializer: some GRPCCore.MessageDeserializer<Blakeswap_V1_FundsPreflight>,
             options: GRPCCore.CallOptions,
             onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Blakeswap_V1_FundsPreflight>) async throws -> Result
+        ) async throws -> Result where Result: Sendable
+
+        /// Call the "QuoteTrade" method.
+        ///
+        /// - Parameters:
+        ///   - request: A request containing a single `Blakeswap_V1_TradeQuoteRequest` message.
+        ///   - serializer: A serializer for `Blakeswap_V1_TradeQuoteRequest` messages.
+        ///   - deserializer: A deserializer for `Blakeswap_V1_TradeQuote` messages.
+        ///   - options: Options to apply to this RPC.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
+        /// - Returns: The result of `handleResponse`.
+        func quoteTrade<Result>(
+            request: GRPCCore.ClientRequest<Blakeswap_V1_TradeQuoteRequest>,
+            serializer: some GRPCCore.MessageSerializer<Blakeswap_V1_TradeQuoteRequest>,
+            deserializer: some GRPCCore.MessageDeserializer<Blakeswap_V1_TradeQuote>,
+            options: GRPCCore.CallOptions,
+            onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Blakeswap_V1_TradeQuote>) async throws -> Result
+        ) async throws -> Result where Result: Sendable
+
+        /// Call the "ConfirmTrade" method.
+        ///
+        /// - Parameters:
+        ///   - request: A request containing a single `Blakeswap_V1_ConfirmTradeRequest` message.
+        ///   - serializer: A serializer for `Blakeswap_V1_ConfirmTradeRequest` messages.
+        ///   - deserializer: A deserializer for `Blakeswap_V1_ConfirmTradeResult` messages.
+        ///   - options: Options to apply to this RPC.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
+        /// - Returns: The result of `handleResponse`.
+        func confirmTrade<Result>(
+            request: GRPCCore.ClientRequest<Blakeswap_V1_ConfirmTradeRequest>,
+            serializer: some GRPCCore.MessageSerializer<Blakeswap_V1_ConfirmTradeRequest>,
+            deserializer: some GRPCCore.MessageDeserializer<Blakeswap_V1_ConfirmTradeResult>,
+            options: GRPCCore.CallOptions,
+            onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Blakeswap_V1_ConfirmTradeResult>) async throws -> Result
         ) async throws -> Result where Result: Sendable
 
         /// Call the "QuoteFee" method.
@@ -1174,6 +1240,66 @@ extension Blakeswap_V1_DaemonService {
             try await self.client.unary(
                 request: request,
                 descriptor: Blakeswap_V1_DaemonService.Method.PreflightFunds.descriptor,
+                serializer: serializer,
+                deserializer: deserializer,
+                options: options,
+                onResponse: handleResponse
+            )
+        }
+
+        /// Call the "QuoteTrade" method.
+        ///
+        /// - Parameters:
+        ///   - request: A request containing a single `Blakeswap_V1_TradeQuoteRequest` message.
+        ///   - serializer: A serializer for `Blakeswap_V1_TradeQuoteRequest` messages.
+        ///   - deserializer: A deserializer for `Blakeswap_V1_TradeQuote` messages.
+        ///   - options: Options to apply to this RPC.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
+        /// - Returns: The result of `handleResponse`.
+        internal func quoteTrade<Result>(
+            request: GRPCCore.ClientRequest<Blakeswap_V1_TradeQuoteRequest>,
+            serializer: some GRPCCore.MessageSerializer<Blakeswap_V1_TradeQuoteRequest>,
+            deserializer: some GRPCCore.MessageDeserializer<Blakeswap_V1_TradeQuote>,
+            options: GRPCCore.CallOptions = .defaults,
+            onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Blakeswap_V1_TradeQuote>) async throws -> Result = { response in
+                try response.message
+            }
+        ) async throws -> Result where Result: Sendable {
+            try await self.client.unary(
+                request: request,
+                descriptor: Blakeswap_V1_DaemonService.Method.QuoteTrade.descriptor,
+                serializer: serializer,
+                deserializer: deserializer,
+                options: options,
+                onResponse: handleResponse
+            )
+        }
+
+        /// Call the "ConfirmTrade" method.
+        ///
+        /// - Parameters:
+        ///   - request: A request containing a single `Blakeswap_V1_ConfirmTradeRequest` message.
+        ///   - serializer: A serializer for `Blakeswap_V1_ConfirmTradeRequest` messages.
+        ///   - deserializer: A deserializer for `Blakeswap_V1_ConfirmTradeResult` messages.
+        ///   - options: Options to apply to this RPC.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
+        /// - Returns: The result of `handleResponse`.
+        internal func confirmTrade<Result>(
+            request: GRPCCore.ClientRequest<Blakeswap_V1_ConfirmTradeRequest>,
+            serializer: some GRPCCore.MessageSerializer<Blakeswap_V1_ConfirmTradeRequest>,
+            deserializer: some GRPCCore.MessageDeserializer<Blakeswap_V1_ConfirmTradeResult>,
+            options: GRPCCore.CallOptions = .defaults,
+            onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Blakeswap_V1_ConfirmTradeResult>) async throws -> Result = { response in
+                try response.message
+            }
+        ) async throws -> Result where Result: Sendable {
+            try await self.client.unary(
+                request: request,
+                descriptor: Blakeswap_V1_DaemonService.Method.ConfirmTrade.descriptor,
                 serializer: serializer,
                 deserializer: deserializer,
                 options: options,
@@ -1851,6 +1977,56 @@ extension Blakeswap_V1_DaemonService.ClientProtocol {
         )
     }
 
+    /// Call the "QuoteTrade" method.
+    ///
+    /// - Parameters:
+    ///   - request: A request containing a single `Blakeswap_V1_TradeQuoteRequest` message.
+    ///   - options: Options to apply to this RPC.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
+    /// - Returns: The result of `handleResponse`.
+    internal func quoteTrade<Result>(
+        request: GRPCCore.ClientRequest<Blakeswap_V1_TradeQuoteRequest>,
+        options: GRPCCore.CallOptions = .defaults,
+        onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Blakeswap_V1_TradeQuote>) async throws -> Result = { response in
+            try response.message
+        }
+    ) async throws -> Result where Result: Sendable {
+        try await self.quoteTrade(
+            request: request,
+            serializer: GRPCProtobuf.ProtobufSerializer<Blakeswap_V1_TradeQuoteRequest>(),
+            deserializer: GRPCProtobuf.ProtobufDeserializer<Blakeswap_V1_TradeQuote>(),
+            options: options,
+            onResponse: handleResponse
+        )
+    }
+
+    /// Call the "ConfirmTrade" method.
+    ///
+    /// - Parameters:
+    ///   - request: A request containing a single `Blakeswap_V1_ConfirmTradeRequest` message.
+    ///   - options: Options to apply to this RPC.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
+    /// - Returns: The result of `handleResponse`.
+    internal func confirmTrade<Result>(
+        request: GRPCCore.ClientRequest<Blakeswap_V1_ConfirmTradeRequest>,
+        options: GRPCCore.CallOptions = .defaults,
+        onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Blakeswap_V1_ConfirmTradeResult>) async throws -> Result = { response in
+            try response.message
+        }
+    ) async throws -> Result where Result: Sendable {
+        try await self.confirmTrade(
+            request: request,
+            serializer: GRPCProtobuf.ProtobufSerializer<Blakeswap_V1_ConfirmTradeRequest>(),
+            deserializer: GRPCProtobuf.ProtobufDeserializer<Blakeswap_V1_ConfirmTradeResult>(),
+            options: options,
+            onResponse: handleResponse
+        )
+    }
+
     /// Call the "QuoteFee" method.
     ///
     /// - Parameters:
@@ -2493,6 +2669,64 @@ extension Blakeswap_V1_DaemonService.ClientProtocol {
             metadata: metadata
         )
         return try await self.preflightFunds(
+            request: request,
+            options: options,
+            onResponse: handleResponse
+        )
+    }
+
+    /// Call the "QuoteTrade" method.
+    ///
+    /// - Parameters:
+    ///   - message: request message to send.
+    ///   - metadata: Additional metadata to send, defaults to empty.
+    ///   - options: Options to apply to this RPC, defaults to `.defaults`.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
+    /// - Returns: The result of `handleResponse`.
+    internal func quoteTrade<Result>(
+        _ message: Blakeswap_V1_TradeQuoteRequest,
+        metadata: GRPCCore.Metadata = [:],
+        options: GRPCCore.CallOptions = .defaults,
+        onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Blakeswap_V1_TradeQuote>) async throws -> Result = { response in
+            try response.message
+        }
+    ) async throws -> Result where Result: Sendable {
+        let request = GRPCCore.ClientRequest<Blakeswap_V1_TradeQuoteRequest>(
+            message: message,
+            metadata: metadata
+        )
+        return try await self.quoteTrade(
+            request: request,
+            options: options,
+            onResponse: handleResponse
+        )
+    }
+
+    /// Call the "ConfirmTrade" method.
+    ///
+    /// - Parameters:
+    ///   - message: request message to send.
+    ///   - metadata: Additional metadata to send, defaults to empty.
+    ///   - options: Options to apply to this RPC, defaults to `.defaults`.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
+    /// - Returns: The result of `handleResponse`.
+    internal func confirmTrade<Result>(
+        _ message: Blakeswap_V1_ConfirmTradeRequest,
+        metadata: GRPCCore.Metadata = [:],
+        options: GRPCCore.CallOptions = .defaults,
+        onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Blakeswap_V1_ConfirmTradeResult>) async throws -> Result = { response in
+            try response.message
+        }
+    ) async throws -> Result where Result: Sendable {
+        let request = GRPCCore.ClientRequest<Blakeswap_V1_ConfirmTradeRequest>(
+            message: message,
+            metadata: metadata
+        )
+        return try await self.confirmTrade(
             request: request,
             options: options,
             onResponse: handleResponse

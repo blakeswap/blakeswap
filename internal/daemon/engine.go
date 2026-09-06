@@ -26,32 +26,35 @@ import (
 )
 
 type Engine struct {
-	mu            sync.Mutex
-	feeQuoteBusy  atomic.Bool
-	preflightBusy atomic.Bool
-	htlcBalances  map[chain.ID]int64
-	htlcAvailable map[chain.ID]bool
-	Config        Config
-	s             State
-	vault         *storage.Vault
-	keys          *wallet.Keys
-	identity      nostr.SecretKey
-	nodes         map[chain.ID]chain.Backend
-	watch         map[chain.ID]chain.Backend
-	scanners      map[chain.ID]chain.SpendScanner
-	towerScanners map[chain.ID]chain.SpendScanner
-	receiveBook   map[chain.ID][]receiveAddress
-	receiveReady  map[chain.ID]bool
-	walletCoins   map[chain.ID]map[string][]chain.UTXO
-	walletCursor  map[chain.ID]int
-	sendCursor    string
-	addresses     map[chain.ID]string
-	scripts       map[chain.ID][]byte
-	heights       map[chain.ID]uint32
-	clocks        map[chain.ID]uint32
-	balances      map[chain.ID]int64
-	lastError     string
-	fatal         error
+	mu              sync.Mutex
+	tradeQuotes     map[string]TradeQuoteSnapshot
+	tradeConfirming map[string]bool
+	tradeQuoteBusy  atomic.Bool
+	feeQuoteBusy    atomic.Bool
+	preflightBusy   atomic.Bool
+	htlcBalances    map[chain.ID]int64
+	htlcAvailable   map[chain.ID]bool
+	Config          Config
+	s               State
+	vault           *storage.Vault
+	keys            *wallet.Keys
+	identity        nostr.SecretKey
+	nodes           map[chain.ID]chain.Backend
+	watch           map[chain.ID]chain.Backend
+	scanners        map[chain.ID]chain.SpendScanner
+	towerScanners   map[chain.ID]chain.SpendScanner
+	receiveBook     map[chain.ID][]receiveAddress
+	receiveReady    map[chain.ID]bool
+	walletCoins     map[chain.ID]map[string][]chain.UTXO
+	walletCursor    map[chain.ID]int
+	sendCursor      string
+	addresses       map[chain.ID]string
+	scripts         map[chain.ID][]byte
+	heights         map[chain.ID]uint32
+	clocks          map[chain.ID]uint32
+	balances        map[chain.ID]int64
+	lastError       string
+	fatal           error
 }
 
 func Open(ctx context.Context, c Config) (*Engine, error) {

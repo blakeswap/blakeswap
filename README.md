@@ -59,6 +59,13 @@ confirmation funds, with observed contract principal shown separately. Forms che
 fee-inclusive available inputs and BTC replay ancestry; coin-control activity links
 explain holds and permit safe open-order cancellation. See [sending and coin control](docs/OPERATIONS.md#sending-and-coin-control).
 
+Create offer and Take offer first show a daemon-backed economics review: your
+outgoing principal and funding fee, incoming net range, conditional tower costs,
+and expected timing/reveal duties. BTC and BLAKE costs stay separate. Confirming
+once authorizes the automatic swap sequence within the reviewed limits. Cancelling
+the review commits nothing. If the response is lost, use the saved-confirmation
+resume action to retry the same request after restart. See [reviewed swaps](docs/API.md#reviewed-swaps).
+
 ## Local regtest nodes
 
 Run `make regtest-nodes` for both chains, or `make regtest-btc` / `make regtest-blake`

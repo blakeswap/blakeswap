@@ -96,8 +96,10 @@ struct AppRootView: View {
 
 struct ContentView: View {
     @EnvironmentObject private var model: AppModel
-    @State private var showOffer = false
-    @State private var takingOrder: Order?
+    @State private var creatingOffer: TradeContext?
+    @State private var resumingTrade: TradeContext?
+    @State private var pendingTrade: PendingTradeConfirmation?
+    @State private var takingOrder: TakeOfferContext?
     @State private var sendContext: SendContext?
     @State private var orderFilter: OrderFilter = .all
     var body: some View {
@@ -131,8 +133,10 @@ struct ContentView: View {
             }.background(Color(red: 0.065, green: 0.078, blue: 0.10))
         }
         .sheet(item: $sendContext) { context in SendCoinsView(context: context).environmentObject(model) }
-        .sheet(isPresented: $showOffer) { OfferSheet().environmentObject(model) }
-        .sheet(item: $takingOrder) { order in TakeOfferSheet(order: order).environmentObject(model) }
+        .sheet(item: $creatingOffer, onDismiss: refreshPendingTrade) { context in TradeComposer(context: context, root: model.root).environmentObject(model) }
+        .sheet(item: $resumingTrade, onDismiss: refreshPendingTrade) { context in TradeComposer(context: context, root: model.root).environmentObject(model) }
+        .task(id: model.profile + "|" + model.network + "|" + String(model.generation)) { refreshPendingTrade() }
+        .sheet(item: $takingOrder, onDismiss: refreshPendingTrade) { context in TradeComposer(context: context.wallet, root: model.root, order: context.order).environmentObject(model) }
         .sheet(isPresented: Binding(get: { model.recovery != nil }, set: { if !$0 { model.recovery = nil } })) {
             VStack(alignment: .leading, spacing: 20) {
                 Text("Wallet recovery phrase").font(.title2.bold())
@@ -213,16 +217,27 @@ struct ContentView: View {
             }
         }.padding(22).frame(maxWidth: .infinity, alignment: .leading).background(panel, in: RoundedRectangle(cornerRadius: 14))
     }
+    private func refreshPendingTrade() {
+        pendingTrade = try? TradeConfirmationJournal(root: model.root).load(profile: model.profile, network: model.network)
+    }
     private func market(_ status: DaemonStatus) -> some View {
         let orders = orderFilter.orders(in: status)
         return VStack(alignment: .leading, spacing: 26) {
             HStack(spacing: 16) { balanceCard("btc", status); balanceCard("blake", status) }
+            if pendingTrade != nil {
+                HStack {
+                    Text("A saved trade confirmation needs an outcome.")
+                    Spacer()
+                    Button("Resume saved confirmation") { resumingTrade = model.tradeContext }
+                        .disabled(status.pubkey.isEmpty).accessibilityIdentifier("resume-trade-confirmation")
+                }.padding().background(panel, in: RoundedRectangle(cornerRadius: 12))
+            }
             HStack {
                 VStack(alignment: .leading, spacing: 5) {
                     Text("Orderbook").font(.title3.weight(.semibold))
                 }
                 Spacer()
-                Button { showOffer = true } label: { Label("Create offer", systemImage: "plus") }.buttonStyle(MintButton()).disabled(model.busy || !["btc", "blake"].contains(where: status.canReviewOffer)).accessibilityIdentifier("create-offer")
+                Button { creatingOffer = model.tradeContext } label: { Label("Create offer", systemImage: "plus") }.buttonStyle(MintButton()).disabled(model.busy || !["btc", "blake"].contains(where: status.canReviewOffer)).accessibilityIdentifier("create-offer")
             }
             HStack(spacing: 6) {
                 ForEach(OrderFilter.allCases, id: \.self) { filter in
@@ -253,7 +268,7 @@ struct ContentView: View {
                             Group {
                                 if order.status == "open" {
                                     if order.maker == status.pubkey { Button("Cancel") { Task { await model.command("offer.cancel", ["id": order.id]) } } }
-                                    else { Button("Take offer") { takingOrder = order }.tint(mint).accessibilityIdentifier("take-offer-\(order.id)") }
+                                    else { Button("Take offer") { takingOrder = TakeOfferContext(order: order, wallet: model.tradeContext) }.tint(mint).accessibilityIdentifier("take-offer-\(order.id)") }
                                 } else { Text(order.status.capitalized).foregroundStyle(order.status == "filled" ? mint : .secondary).font(.caption) }
                             }.frame(width: 124, alignment: .leading).disabled(model.busy)
                         }.padding(18)
@@ -322,6 +337,14 @@ struct ContentView: View {
     private func wallet(_ status: DaemonStatus) -> some View {
         VStack(alignment: .leading, spacing: 24) {
             HStack(spacing: 16) { balanceCard("btc", status); balanceCard("blake", status) }
+            if pendingTrade != nil {
+                HStack {
+                    Text("A saved trade confirmation needs an outcome.")
+                    Spacer()
+                    Button("Resume saved confirmation") { resumingTrade = model.tradeContext }
+                        .disabled(status.pubkey.isEmpty).accessibilityIdentifier("resume-trade-confirmation")
+                }.padding().background(panel, in: RoundedRectangle(cornerRadius: 12))
+            }
             ForEach(["btc", "blake"], id: \.self) { chain in
                 VStack(alignment: .leading, spacing: 14) {
                     ReceiveAddressView(chain: chain, network: status.network, address: status.addresses[chain] ?? "")
@@ -352,83 +375,6 @@ struct ContentView: View {
                 HStack { Button("Reveal recovery phrase") { Task { await model.command("wallet.recovery") } }; Button("Save encrypted state backup") { Task { await model.command("wallet.backup") } } }.disabled(model.busy)
                 Text("Choose a favorite watchtower when creating an offer. Its rescue fee is paid only when used; mining fees are separate.").font(.caption).foregroundStyle(.secondary)
             }.padding(24).background(panel, in: RoundedRectangle(cornerRadius: 14))
-        }
-    }
-}
-
-struct OfferSheet: View {
-    @EnvironmentObject private var model: AppModel
-    @Environment(\.dismiss) private var dismiss
-    @State private var sell = "btc"
-    @State private var sellAmount = "1000000"
-    @State private var buyAmount = "2000000"
-    @State private var protection = false
-    @State private var towerID = ""
-    @State private var validation: String?
-    @State private var checkedFunds: FundsCheckKey?
-    private var fundsReady: Bool {
-        checkedFunds == FundsCheckKey(profile: model.profile, network: model.network, generation: model.generation,
-                                     chain: sell, amount: Int64(sellAmount) ?? 0, fee: currentQuote?.quote.fee ?? 0)
-    }
-    @State private var fundingFee = "2000"
-    @State private var automaticFee = false
-    @State private var feeReview: FeeReview?
-    private var favorites: [String] { model.settings?.environments.first(where: { $0.network == model.network })?.favoriteWatchtowers ?? [] }
-    private var towers: [Blakeswap_V1_Tower] {
-        (model.status?.watchtowers ?? []).filter { favorites.contains($0.npub) && $0.expires > Int64(Date().timeIntervalSince1970) }
-    }
-    private var selectedTower: Blakeswap_V1_Tower? { towers.first { $0.pubkey == towerID } }
-    private var feeKey: String { feeReviewKey(profile: model.profile, network: model.network, kind: "funding", chain: sell, amount: sellAmount, fee: fundingFee, automatic: automaticFee, generation: model.generation) }
-    private var currentQuote: FeeReview? { feeReview?.key == feeKey ? feeReview : nil }
-    private var formError: String? {
-        guard let status = model.status else { return "Waiting for your wallet balance." }
-        if let error = status.offerValidation(sell: sell, sellAmount: sellAmount, buyAmount: buyAmount, fee: currentQuote?.quote.fee) { return error }
-        if protection && selectedTower == nil { return "Select an available favorite watchtower. Add favorites in Settings." }
-        return nil
-    }
-    var body: some View {
-        VStack(alignment: .leading, spacing: 20) {
-            Text("Create an offer").font(.title.bold())
-            Form {
-                Picker("You sell", selection: $sell) {
-                    Text("Bitcoin (BTC)").tag("btc").disabled(!(model.status?.canReviewOffer("btc") ?? false))
-                    Text("Bitcoin Blake2b (BLAKE)").tag("blake").disabled(!(model.status?.canReviewOffer("blake") ?? false))
-                }
-                Text("Available: \(model.status?.available(sell) ?? 0) \(symbol(sell)) sats · Funding fee: \(currentQuote?.quote.fee ?? 0) sats").font(.caption).foregroundStyle(.secondary)
-                TextField("Sell amount (sats)", text: $sellAmount).accessibilityIdentifier("sell-amount")
-                TextField("Receive amount (sats)", text: $buyAmount).accessibilityIdentifier("buy-amount")
-                FeeQuoteControl(kind: "funding", chain: sell, amount: sellAmount, fee: $fundingFee, automatic: $automaticFee, review: $feeReview)
-                Toggle("Protect my side with a watchtower", isOn: $protection)
-                if protection {
-                    Picker("Favorite watchtower", selection: $towerID) {
-                        Text("Select a watchtower").tag("")
-                        ForEach(towers) { tower in Text(tower.label).tag(tower.pubkey) }
-                    }.accessibilityIdentifier("offer-watchtower")
-                    if let tower = selectedTower { Text(tower.npub).font(.caption.monospaced()).textSelection(.enabled) }
-                    if towers.isEmpty { Text("Add a public watchtower to favorites in Settings. Its announcement must be available on your relays.").font(.caption).foregroundStyle(.secondary) }
-                }
-            }.formStyle(.grouped)
-            FundsPreflightView(chain: sell, amount: Int64(sellAmount) ?? 0, fee: currentQuote?.quote.fee ?? 0, ready: $checkedFunds)
-            Text("Your protection choice is private to you and your watchtower.").font(.caption).foregroundStyle(.secondary)
-            Text(protection ? "The tower earns \(percentage(selectedTower?.bps ?? 0)) only when its delayed rescue transaction confirms. Claim yourself first to avoid that fee." : "Keep the app open to respond before the refund deadlines. Your side will have no tower protection.")
-                .font(.callout).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
-            Text("Publishing authorizes your daemon to reserve this offer and fund the agreed swap after verifying the taker's confirmed contract. Expires in 24 hours.")
-                .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
-            if let error = formError ?? validation { Text(error).foregroundStyle(.orange).font(.caption) }
-            HStack {
-                Button("Cancel") { dismiss() }.keyboardShortcut(.cancelAction)
-                Spacer()
-                Button("Publish offer") {
-                    guard fundsReady, formError == nil, let quote = currentQuote, let a = Int64(sellAmount), let b = Int64(buyAmount) else { return }
-                    let tower = protection ? selectedTower : nil
-                    let checked = checkedFunds, selectedChain = sell
-                    Task { guard fundsReady, checked == checkedFunds else { return }; if await model.command("offer.create", quote.fundingParams.merging(["sell": selectedChain, "sell_amount": a, "buy_amount": b, "tower_bps": tower?.bps ?? 0, "tower_pubkey": tower?.pubkey ?? ""], uniquingKeysWith: { _, new in new })) { dismiss() } else { validation = model.notice } }
-                }.buttonStyle(MintButton()).keyboardShortcut(.defaultAction).disabled(model.busy || formError != nil || currentQuote == nil || !fundsReady).accessibilityIdentifier("publish-offer")
-            }
-        }.padding(32).frame(width: 540)
-        .task {
-            if !(model.status?.canReviewOffer(sell) ?? false), model.status?.canReviewOffer("blake") == true { sell = "blake" }
-            towerID = towers.first?.pubkey ?? ""
         }
     }
 }

@@ -548,6 +548,72 @@
         ]
       }
     },
+    "/v1/trades/confirm": {
+      "post": {
+        "operationId": "DaemonService_ConfirmTrade",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1ConfirmTradeResult"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/googleRpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "body",
+            "description": "Keep this exact identity through an uncertain response. A persisted receipt\nreturns the same accepted result after restart/expiry, never a second trade.",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/v1ConfirmTradeRequest"
+            }
+          }
+        ],
+        "tags": [
+          "DaemonService"
+        ]
+      }
+    },
+    "/v1/trades/quote": {
+      "post": {
+        "operationId": "DaemonService_QuoteTrade",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1TradeQuote"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/googleRpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "body",
+            "description": "Read-only review. Amounts describe the maker's signed offer/draft; the response\norients economics to the selected wallet. Every fee is native to its chain.",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/v1TradeQuoteRequest"
+            }
+          }
+        ],
+        "tags": [
+          "DaemonService"
+        ]
+      }
+    },
     "/v1/transactions/bump": {
       "post": {
         "operationId": "DaemonService_BumpTransaction",
@@ -1050,6 +1116,44 @@
           "items": {
             "type": "string"
           }
+        }
+      }
+    },
+    "v1ConfirmTradeRequest": {
+      "type": "object",
+      "properties": {
+        "token": {
+          "type": "string"
+        },
+        "revision": {
+          "type": "string"
+        },
+        "request_id": {
+          "type": "string"
+        },
+        "expected_wallet": {
+          "type": "string"
+        },
+        "expected_network": {
+          "type": "string"
+        }
+      },
+      "description": "Keep this exact identity through an uncertain response. A persisted receipt\nreturns the same accepted result after restart/expiry, never a second trade."
+    },
+    "v1ConfirmTradeResult": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "kind": {
+          "type": "string"
+        },
+        "state": {
+          "type": "string"
+        },
+        "error": {
+          "type": "string"
         }
       }
     },
@@ -1886,6 +1990,264 @@
           "type": "boolean"
         },
         "error": {
+          "type": "string"
+        }
+      }
+    },
+    "v1TradeFeePolicy": {
+      "type": "object",
+      "properties": {
+        "funding_fee": {
+          "type": "string",
+          "format": "int64"
+        },
+        "rate_sat_kvb": {
+          "type": "string",
+          "format": "int64"
+        },
+        "fee_timestamp": {
+          "type": "string",
+          "format": "int64"
+        },
+        "owner_fee_cap": {
+          "type": "string",
+          "format": "int64"
+        }
+      }
+    },
+    "v1TradeOutcome": {
+      "type": "object",
+      "properties": {
+        "kind": {
+          "type": "string"
+        },
+        "chain": {
+          "type": "string"
+        },
+        "principal": {
+          "type": "string",
+          "format": "int64"
+        },
+        "fee_min": {
+          "type": "string",
+          "format": "int64"
+        },
+        "fee_max": {
+          "type": "string",
+          "format": "int64"
+        },
+        "bounty": {
+          "type": "string",
+          "format": "int64"
+        },
+        "net_min": {
+          "type": "string",
+          "format": "int64"
+        },
+        "net_max": {
+          "type": "string",
+          "format": "int64"
+        }
+      }
+    },
+    "v1TradeQuote": {
+      "type": "object",
+      "properties": {
+        "token": {
+          "type": "string"
+        },
+        "revision": {
+          "type": "string"
+        },
+        "kind": {
+          "type": "string"
+        },
+        "wallet": {
+          "type": "string"
+        },
+        "wallet_key": {
+          "type": "string"
+        },
+        "network": {
+          "type": "string"
+        },
+        "created": {
+          "type": "string",
+          "format": "int64"
+        },
+        "expires": {
+          "type": "string",
+          "format": "int64"
+        },
+        "offer_event_id": {
+          "type": "string"
+        },
+        "offer_id": {
+          "type": "string"
+        },
+        "offer_maker": {
+          "type": "string"
+        },
+        "offer_expires": {
+          "type": "string",
+          "format": "int64"
+        },
+        "paid_chain": {
+          "type": "string"
+        },
+        "paid_principal": {
+          "type": "string",
+          "format": "int64"
+        },
+        "paid_total": {
+          "type": "string",
+          "format": "int64"
+        },
+        "received_chain": {
+          "type": "string"
+        },
+        "received_principal": {
+          "type": "string",
+          "format": "int64"
+        },
+        "rate_numerator": {
+          "type": "string",
+          "format": "int64"
+        },
+        "rate_denominator": {
+          "type": "string",
+          "format": "int64"
+        },
+        "rate_display": {
+          "type": "string"
+        },
+        "fees": {
+          "$ref": "#/definitions/v1TradeFeePolicy"
+        },
+        "funding_size": {
+          "type": "string",
+          "format": "int64"
+        },
+        "provider": {
+          "$ref": "#/definitions/v1Tower"
+        },
+        "provider_revision": {
+          "type": "string"
+        },
+        "tower_coverage": {
+          "type": "string"
+        },
+        "timing": {
+          "$ref": "#/definitions/v1TradeTiming"
+        },
+        "outcomes": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/v1TradeOutcome"
+          }
+        },
+        "funds": {
+          "$ref": "#/definitions/v1FundsPreflight"
+        },
+        "ready": {
+          "type": "boolean"
+        },
+        "error": {
+          "type": "string"
+        }
+      }
+    },
+    "v1TradeQuoteRequest": {
+      "type": "object",
+      "properties": {
+        "kind": {
+          "type": "string"
+        },
+        "expected_wallet": {
+          "type": "string"
+        },
+        "expected_network": {
+          "type": "string"
+        },
+        "maker": {
+          "type": "string"
+        },
+        "id": {
+          "type": "string"
+        },
+        "sell": {
+          "type": "string"
+        },
+        "sell_amount": {
+          "type": "string",
+          "format": "int64"
+        },
+        "buy_amount": {
+          "type": "string",
+          "format": "int64"
+        },
+        "expires": {
+          "type": "string",
+          "format": "int64"
+        },
+        "tower_bps": {
+          "type": "string",
+          "format": "int64"
+        },
+        "tower_pubkey": {
+          "type": "string"
+        },
+        "funding_fee": {
+          "type": "string",
+          "format": "int64"
+        },
+        "rate_sat_kvb": {
+          "type": "string",
+          "format": "int64"
+        },
+        "fee_timestamp": {
+          "type": "string",
+          "format": "int64"
+        },
+        "owner_fee_cap": {
+          "type": "string",
+          "format": "int64"
+        }
+      },
+      "description": "Read-only review. Amounts describe the maker's signed offer/draft; the response\norients economics to the selected wallet. Every fee is native to its chain."
+    },
+    "v1TradeTiming": {
+      "type": "object",
+      "properties": {
+        "unit": {
+          "type": "string"
+        },
+        "confirmations": {
+          "type": "integer",
+          "format": "int64"
+        },
+        "own_refund": {
+          "type": "integer",
+          "format": "int64"
+        },
+        "incoming_refund": {
+          "type": "integer",
+          "format": "int64"
+        },
+        "reveal_before": {
+          "type": "integer",
+          "format": "int64"
+        },
+        "tower_takeover": {
+          "type": "integer",
+          "format": "int64"
+        },
+        "refund_grace": {
+          "type": "integer",
+          "format": "int64"
+        },
+        "first_revealer": {
           "type": "string"
         }
       }
