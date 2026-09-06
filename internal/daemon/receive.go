@@ -58,13 +58,14 @@ func (e *Engine) loadReceiveAddresses(ctx context.Context, id chain.ID) error {
 		}
 		e.receiveBook[id] = append(e.receiveBook[id], entry)
 	}
+	current := e.receiveBook[id][index]
+	e.addresses[id], e.scripts[id] = current.address, current.script
 	w, err := e.nodes[id].Observe(ctx, "blakeswap-"+e.identity.Public().Hex()[:20], e.receiveAddresses(id))
 	if err != nil {
+		e.addresses[id] = ""
 		return err
 	}
 	e.watch[id] = w
-	current := e.receiveBook[id][index]
-	e.addresses[id], e.scripts[id] = current.address, current.script
 	return nil
 }
 
@@ -93,8 +94,10 @@ func (e *Engine) rotateReceiveAddress(ctx context.Context, id chain.ID) error {
 			return err
 		}
 		var w chain.Backend
-		if rpc, ok := e.nodes[id].(*chain.RPC); ok && e.receiveReady[id] {
-			w, err = rpc.ObserveNew(ctx, "blakeswap-"+e.identity.Public().Hex()[:20], []string{next.address})
+		if live, ok := e.nodes[id].(interface {
+			ObserveNew(context.Context, string, []string) (chain.Backend, error)
+		}); ok && e.receiveReady[id] {
+			w, err = live.ObserveNew(ctx, "blakeswap-"+e.identity.Public().Hex()[:20], []string{next.address})
 		} else {
 			w, err = e.nodes[id].Observe(ctx, "blakeswap-"+e.identity.Public().Hex()[:20], []string{next.address})
 		}

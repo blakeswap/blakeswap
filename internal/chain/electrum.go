@@ -55,6 +55,9 @@ func NewElectrum(network Network, id ID, endpoint, pin string) (*Electrum, error
 		return nil, errors.New("public Electrum connections require TLS")
 	}
 	if pin != "" {
+		if u.Scheme != "ssl" {
+			return nil, errors.New("certificate pin requires a TLS endpoint")
+		}
 		b, e := hex.DecodeString(pin)
 		if e != nil || len(b) != 32 {
 			return nil, errors.New("certificate SHA256 must be 32 bytes in hex")

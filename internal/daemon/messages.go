@@ -138,6 +138,9 @@ func (e *Engine) handle(from string, m transport.Message) error {
 		if err != nil {
 			return err
 		}
+		if !e.fresh(chain.BTC) || !e.fresh(chain.Blake) {
+			return errors.New("both chains require fresh observations before accepting a new request")
+		}
 		terms, err := protocol.NewTermsWithClocks(request, keys, e.heights, e.clocks)
 		if err != nil {
 			return err

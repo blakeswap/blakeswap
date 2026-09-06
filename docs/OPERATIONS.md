@@ -174,8 +174,11 @@ it). The daemon imports only public deposit-address descriptors. Initial imports
 scan historical blocks from timestamp zero, preserving deposits when restoring a
 wallet or moving from Electrum to RPC. This can take hours on mainnet. Desktop
 bootstrap runs independently of the short trading cycles; status and Settings
-remain available. Each wallet becomes ready after both chain histories synchronize;
-existing wallets keep running while a new wallet initializes. Changing the active
+remain available. History imports run independently with retained completion
+results; cancellation of a short trading cycle does not discard a completed
+rescan. Each chain publishes its own readiness after its wallet history
+synchronizes; funding and first revelation require both. Existing wallets keep
+running while a new wallet initializes. Changing the active
 network or its connections, or quitting, cancels bootstrap and releases wallet locks.
 
 After a complete successful import response, the daemon records the
@@ -301,3 +304,51 @@ Checks use a two-second budget outside the settlement mutex and keep no proof
 cache. Wallet/network/form/input changes invalidate native readiness. A successful
 check does not reserve funds or guarantee future availability; the daemon keeps
 its authoritative output, reservation, and ancestry checks before funding.
+
+
+## Endpoint failover and partial connectivity
+
+Settings keeps the existing primary server and accepts up to three ordered
+fallbacks for each chain/network. Existing single-server settings remain valid
+as a one-entry list; no wallet seed, database, signed transaction, negotiated
+terms, or reservation is replaced by this compatibility migration. Each entry
+has its own backend, URL, RPC cookie path, and optional Electrum certificate pin.
+Use **Test connection** / **Test fallback** for each candidate, then save Settings.
+An active healthy secondary remains selected; restart/reconfiguration begins at
+the primary again. Backoff is 2–32 seconds after errors. Transport attempts are
+bounded to two seconds; each chain has eight seconds of cumulative backend
+work per cycle, and wallet refresh/local scan phases each have a five-second
+limit. Relay time and the other chain do not consume that chain’s allowance. Long RPC history imports continue independently,
+with shutdown cancelling and joining them before closing transports.
+
+A candidate must pass the configured network/genesis/fork rules, transport
+security, and its own configured certificate pin before use. Pins require TLS;
+RPC pins are refused rather than ignored (RPC HTTPS uses normal CA validation).
+A new source must reach and agree with the previous source's last observed tip.
+A lagging candidate reports **stale candidate tip**; differing history reports
+**conflicting chain history**. A legitimate reorg reported by the recovered
+previous source can update that anchor, allowing an agreeing fallback afterward.
+If the old source cannot recover, independently verify the correct history and
+reconfigure the chain endpoints deliberately. Do not blindly change a pin or
+server to clear an error. This routing is not most-work validation or a quorum.
+
+Header caches, watch-only history imports and scan cursors belong to individual
+endpoints. Switching sources invalidates the combined wallet observation and
+requires a complete refresh before trading. Settings shows the active source,
+each endpoint's last error/retry time, and failover count. Public status retains
+last observed heights/balances with `connections[chain].ready=false`; the native
+balance card labels those values as old observations. Unavailable data is never
+reported as a fresh zero balance.
+
+| Action with one chain unavailable | Required evidence / behavior |
+| --- | --- |
+| Wallet monitoring and retries of an already saved signed send | Fresh target-chain observation; retry only the same signed bytes and keep reservations after ambiguous errors. New sends still require their normal full refresh/replay checks. |
+| Swap spend monitoring | A successful scan from the available chain; unavailable-chain observations remain explicitly stale. A witnessed preimage is persisted monotonically. |
+| Owner claim | A preimage already observed in a validated contract spend, including after restart; fresh target scan and exact confirmed unspent agreed HTLC. A private generated secret or a claim signed before a crash is insufficient. |
+| Tower claim | Previously witnessed/persisted secret, fresh target-chain scan, existing authorized signed templates and target locktime checks. |
+| New funding, retries of swap funding, first revelation, owner/tower refunds | Held until the required observations of both chains return. Missing peer observations never authorize a refund. |
+
+Once an incoming claim has been observed, the owner permanently suppresses its
+refund path even if that witness is later reorged away. Recovery still depends on
+timely valid observations and confirmation; endpoint failover does not remove
+chain censorship, finality, pinning, or malicious-indexer risks.

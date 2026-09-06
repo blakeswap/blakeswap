@@ -326,3 +326,31 @@ private minimal journal permissions/overwrite protection. It injects typed
 responses into the production review model; it is not a claim of automated
 pixel-level UI coverage. Build the bundle and use its helper for startup tests as
 described by `scripts/test-swift.sh`.
+
+## Endpoint interruption and isolated recovery
+
+`TestFailover*` covers ordered routing, timeout budgets/backoff, wrong-network
+admission failure, stale/conflicting tips, recovery after a legitimate reorg,
+proof errors, TLS pin mismatch, watch-history provenance, cancellation and
+identical retry after an ambiguous broadcast. `TestIsolated*` covers private
+secrets and crash-before-first-broadcast claims, persistence of witnessed
+preimages, missing target scans/outputs, healthy-chain signed-send progress,
+and permanent refund suppression after an observed incoming claim is reorged.
+Settings/API/native tests preserve ordered fallback fields and distinguish stale
+values from current readiness.
+
+With the exclusive isolated BTC/Blake2b fixture available, run:
+
+```sh
+BLAKESWAP_REGTEST=/path/to/isolated-fixture \
+  sh scripts/go.sh test -count=1 -p=1 -run 'TestRealEndpointFailover|TestRealIsolated' -v ./internal/daemon
+BLAKESWAP_TEST_ELECTRUM=1 BLAKESWAP_REGTEST=/path/to/isolated-fixture \
+  sh scripts/go.sh test -count=1 -p=1 -run 'TestRealEndpointFailover|TestRealIsolated' -v ./internal/daemon
+```
+
+The RPC tests inject HTTP endpoint outages; the Electrum tests close actual TCP
+connections. Both fixtures use real node consensus and no public funds. Cases
+cover settlement in both directions after primary loss, blocked first
+revelation during a peer outage, persisted-witness claims while only the target
+chain is reachable, and refunds held until peer observation returns. Run the
+existing asynchronous settlement/refund/reorg matrix as a regression too.

@@ -95,6 +95,9 @@ func (e *Engine) advanceSwap(ctx context.Context, s *Swap, all map[chain.ID]map[
 	if (s.Stage == "expired before maker funding" && s.ShortFunding == "") || (s.Stage == "expired before funding" && s.LongFunding == "") {
 		return nil // Safe expiry is final even if a reorg moves the clock back.
 	}
+	if !e.fresh(chain.BTC) || !e.fresh(chain.Blake) {
+		return e.advanceIsolatedSwap(ctx, s, all)
+	}
 	// Reconcile prepared transactions even in older snapshots whose broadcast
 	// succeeded before the sent flag was saved. Lookup errors are not absence.
 	published, raw, fundingChain := s.LongSent, s.LongFunding, s.Long.Chain
@@ -153,6 +156,14 @@ func (e *Engine) advanceSwap(ctx context.Context, s *Swap, all map[chain.ID]map[
 			if secret, ok := contract.ExtractSecret(pair.c, pair.o.Tx); ok {
 				s.Secret = hex.EncodeToString(secret)
 				s.SecretExposed = true
+				s.SecretObserved = true
+				incoming := s.Short
+				if s.Role == "maker" {
+					incoming = s.Long
+				}
+				if pair.c.Chain == incoming.Chain {
+					s.IncomingClaimSeen = true
+				}
 			}
 		}
 	}
@@ -383,7 +394,7 @@ func (e *Engine) advanceSwap(ctx context.Context, s *Swap, all map[chain.ID]map[
 	if incomingSpent && incomingObs.Confirmations >= e.Config.Network.Confirmations() {
 		s.Stage = "awaiting counterparty claim"
 	}
-	if refundReplaceable(own, ownSpent, ownObs) && own.TxID != "" && e.eligible(own.Chain, own.RefundHeight) && len(s.SelfRefunds) > 0 {
+	if e.fresh(chain.BTC) && e.fresh(chain.Blake) && !s.IncomingClaimSeen && refundReplaceable(own, ownSpent, ownObs) && own.TxID != "" && e.eligible(own.Chain, own.RefundHeight) && len(s.SelfRefunds) > 0 {
 		if incomingSpent {
 			if _, claimed := contract.ExtractSecret(incoming, incomingObs.Tx); claimed {
 				s.Stage = "awaiting counterparty claim"
@@ -424,8 +435,16 @@ func (e *Engine) advanceTower(ctx context.Context, all map[chain.ID]map[string]c
 			continue
 		}
 		state.Error = ""
+		if !e.fresh(job.Target.Chain) || (job.Kind == "refund" && (!e.fresh(chain.BTC) || !e.fresh(chain.Blake))) {
+			state.Error = "chain observations unavailable; recovery held"
+			continue
+		}
 		if err := job.Validate(e.ownTower().Scripts, job.BPS); err != nil {
 			state.Error = err.Error()
+			continue
+		}
+		if _, ok := all[job.Target.Chain]; !ok {
+			state.Error = "target-chain scan unavailable"
 			continue
 		}
 		obs, spent := observation(all, job.Target)
@@ -504,6 +523,9 @@ func (e *Engine) advanceTower(ctx context.Context, all map[chain.ID]map[string]c
 }
 
 func (e *Engine) eligible(id chain.ID, lock uint32) bool {
+	if !e.fresh(id) {
+		return false
+	}
 	if lock >= protocol.TimeLockThreshold {
 		return e.clocks[id] > lock
 	}
@@ -511,6 +533,9 @@ func (e *Engine) eligible(id chain.ID, lock uint32) bool {
 }
 
 func (e *Engine) gate(t *protocol.Terms, phase string) error {
+	if !e.fresh(chain.BTC) || !e.fresh(chain.Blake) {
+		return errors.New("both chains require fresh observations")
+	}
 	if e.Config.Network != chain.Regtest {
 		for _, id := range []chain.ID{chain.BTC, chain.Blake} {
 			if t.StartHeights[id] > e.heights[id] {
@@ -531,6 +556,9 @@ func (e *Engine) refreshTowerJobs(ctx context.Context) {
 			continue
 		}
 		target := state.Job.Target
+		if !e.fresh(target.Chain) {
+			continue
+		}
 		tx, err := e.nodes[target.Chain].Transaction(ctx, target.TxID)
 		if chain.TransactionNotFound(err) {
 			deadline := uint64(target.RefundHeight) + uint64(protocol.RefundDelay(e.Config.Network))

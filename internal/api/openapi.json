@@ -921,6 +921,13 @@
             "$ref": "#/definitions/v1ChainBalance"
           }
         },
+        "connections": {
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/definitions/v1ChainConnection"
+          },
+          "description": "Last observations remain visible when ready is false."
+        },
         "coins": {
           "type": "array",
           "items": {
@@ -1057,6 +1064,24 @@
         "htlc_available": {
           "type": "boolean",
           "description": "False means contract observations are unavailable, never zero by inference."
+        }
+      }
+    },
+    "v1ChainConnection": {
+      "type": "object",
+      "properties": {
+        "ready": {
+          "type": "boolean"
+        },
+        "last_observation": {
+          "type": "string",
+          "format": "int64"
+        },
+        "error": {
+          "type": "string"
+        },
+        "sources": {
+          "$ref": "#/definitions/v1EndpointStatus"
         }
       }
     },
@@ -1216,6 +1241,55 @@
         "revision": {
           "type": "string",
           "format": "uint64"
+        }
+      }
+    },
+    "v1EndpointHealth": {
+      "type": "object",
+      "properties": {
+        "url": {
+          "type": "string"
+        },
+        "kind": {
+          "type": "string"
+        },
+        "active": {
+          "type": "boolean"
+        },
+        "last_success": {
+          "type": "string",
+          "format": "int64"
+        },
+        "retry_after": {
+          "type": "string",
+          "format": "int64"
+        },
+        "error": {
+          "type": "string"
+        }
+      }
+    },
+    "v1EndpointStatus": {
+      "type": "object",
+      "properties": {
+        "endpoints": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/v1EndpointHealth"
+          }
+        },
+        "generation": {
+          "type": "string",
+          "format": "uint64"
+        },
+        "failovers": {
+          "type": "string",
+          "format": "uint64"
+        },
+        "last_failover": {
+          "type": "string",
+          "format": "int64"
         }
       }
     },
@@ -1558,6 +1632,14 @@
     "v1Node": {
       "type": "object",
       "properties": {
+        "fallbacks": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/v1Node"
+          },
+          "description": "Ordered after this primary; at most three, without nested fallbacks."
+        },
         "kind": {
           "type": "string",
           "description": "electrum or rpc; all chain backends are external."

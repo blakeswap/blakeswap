@@ -15,6 +15,58 @@ struct SettingsView: View {
     private func node(_ chain: String) -> Binding<NodeSettings> {
         Binding(get: { draft.environments[index].nodes[chain] ?? NodeSettings() }, set: { draft.environments[index].nodes[chain] = $0 })
     }
+    private func fallback(_ chain: String, _ position: Int) -> Binding<NodeSettings> {
+        Binding(get: { draft.environments[index].nodes[chain]?.fallbacks[position] ?? NodeSettings() }, set: { draft.environments[index].nodes[chain]?.fallbacks[position] = $0 })
+    }
+    private func endpointHealth(_ chain: String) -> some View {
+        VStack(alignment: .leading, spacing: 5) {
+            if model.status?.network == editing, let connection = model.status?.connections[chain] {
+                Text(connection.ready ? "Observations ready" : "Observations unavailable · last values may be stale").font(.caption).foregroundStyle(connection.ready ? Color.secondary : Color.orange)
+                if connection.lastObservation > 0 { Text("Last complete observation: \(Date(timeIntervalSince1970: TimeInterval(connection.lastObservation)).formatted())").font(.caption2) }
+                ForEach(Array(connection.sources.endpoints.enumerated()), id: \.offset) { _, endpoint in
+                    Text("\(endpoint.active ? "Active" : "Standby"): \(endpoint.url)").font(.caption2).textSelection(.enabled)
+                    if !endpoint.error.isEmpty { Text(endpoint.error).font(.caption2).foregroundStyle(.orange).textSelection(.enabled) }
+                    if endpoint.retryAfter > 0 { Text("Retry after \(Date(timeIntervalSince1970: TimeInterval(endpoint.retryAfter)).formatted(date: .omitted, time: .standard))").font(.caption2) }
+                }
+                if connection.sources.failovers > 0 { Text("Automatic failovers: \(connection.sources.failovers)").font(.caption2) }
+            }
+        }
+    }
+    private func fallbackSettings(_ chain: String) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            ForEach(0..<(environment.nodes[chain]?.fallbacks.count ?? 0), id: \.self) { position in
+                Divider()
+                HStack {
+                    Text("Fallback \(position + 1)").font(.headline)
+                    Spacer()
+                    if position > 0 { Button("Move up") { draft.environments[index].nodes[chain]?.fallbacks.swapAt(position, position - 1) } }
+                    Button("Remove") { draft.environments[index].nodes[chain]?.fallbacks.remove(at: position) }
+                }
+                Picker("Backend", selection: fallback(chain, position).kind) { Text("Electrum").tag("electrum"); Text("Full-node RPC").tag("rpc") }
+                TextField("Fallback endpoint", text: fallback(chain, position).url).textFieldStyle(.roundedBorder).accessibilityIdentifier("\(chain)-fallback-\(position)")
+                if environment.nodes[chain]?.fallbacks[position].kind == "rpc" { RPCCookieField(path: fallback(chain, position).cookie, chain: chain) }
+                else { TextField("Certificate SHA256 pin (optional)", text: fallback(chain, position).certificateSha256).textFieldStyle(.roundedBorder) }
+                Button("Test fallback") {
+                    let selected = editing
+                    let endpoint = environment.nodes[chain]?.fallbacks[position] ?? NodeSettings()
+                    let key = "\(selected)-\(chain)-\(position)"
+                    checking = key
+                    Task {
+                        let result = await model.checkNode(network: selected, chain: chain, node: endpoint)
+                        if selected == editing, environment.nodes[chain]?.fallbacks.indices.contains(position) == true, environment.nodes[chain]?.fallbacks[position] == endpoint { checks[key] = result }
+                        checking = nil
+                    }
+                }.disabled(checking != nil)
+                if let result = checks["\(editing)-\(chain)-\(position)"] { Text(result).font(.caption).textSelection(.enabled) }
+            }
+            Button("Add fallback endpoint") {
+                var endpoint = NodeSettings(); endpoint.kind = "electrum"
+                draft.environments[index].nodes[chain]?.fallbacks.append(endpoint)
+            }.disabled((environment.nodes[chain]?.fallbacks.count ?? 0) >= 3)
+            Text("Fallbacks are tried in order when the active server fails. Each server must validate for this chain and agree with the last observed history. Conflicting history requires investigation; multiple servers are not a consensus quorum.").font(.caption).foregroundStyle(.secondary)
+            endpointHealth(chain)
+        }
+    }
     private func relay(_ position: Int) -> Binding<String> {
         Binding(get: { environment.relays.count > position ? environment.relays[position] : "" }, set: { value in
             while draft.environments[index].relays.count <= position { draft.environments[index].relays.append("") }
@@ -146,6 +198,7 @@ struct SettingsView: View {
                                 if checking == chain { ProgressView().controlSize(.small) }
                             }
                             if let result = checks["\(editing)-\(chain)"] { Text(result).font(.caption).textSelection(.enabled) }
+                            fallbackSettings(chain)
                             if editing == "testnet" && chain == "blake" && (environment.nodes[chain]?.url.isEmpty ?? true) {
                                 Text("No verified public Blake2b Testnet4 indexer is available. Configure your own Electrum server or Knots RPC node.").font(.caption).foregroundStyle(.secondary)
                             }

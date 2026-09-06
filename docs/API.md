@@ -316,3 +316,28 @@ activity ID, kind, higher total fee, expected current transaction ID and network
 Send status retains all variants and a separate state; swap status exposes
 current owner settlement fees/IDs and authorized variants. Funding acceleration
 is refused. See [the complete fee contract and recovery limits](FEES.md).
+
+### Ordered chain endpoints and readiness
+
+`Node` retains `kind`, `url`, `cookie`, and `certificate_sha256` as the primary
+entry. Its `fallbacks` field accepts up to three additional `Node` entries in
+priority order, without nested fallbacks or duplicate URLs. Omitting the field
+preserves existing settings and CLI configurations. Each candidate is validated
+for the same configured network and chain; no cross-chain substitution occurs.
+`CheckNode` checks the supplied primary entry, so clients call it separately for
+each fallback they want to test.
+
+`Status.connections` maps `btc` and `blake` to `ChainConnection`: `ready` marks
+current usable chain observations; `last_observation` is the Unix time of the
+last successful wallet/height refresh; `error` explains unavailable or stale
+observations. `sources` includes an incrementing `generation`, `failovers`,
+`last_failover` timestamp, and ordered `endpoints` with `url`, `kind`, `active`,
+`last_success`, `retry_after` and `error`. Status never returns RPC cookie
+contents. Existing height/balance fields retain their last observations during
+outages; consumers must consult readiness instead of interpreting those values
+as current or treating absence as proof of a transaction's nonpublication.
+
+A source generation change invalidates a composed wallet observation. Each
+source owns its own header caches, watch history and scanning provenance.
+Availability routing does not establish consensus or quorum agreement; see the
+[degraded action matrix](OPERATIONS.md#endpoint-failover-and-partial-connectivity).

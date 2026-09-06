@@ -9,12 +9,7 @@ import (
 	"github.com/blakeswap/blakeswap/internal/protocol"
 )
 
-type NodeConfig struct {
-	Kind              string `json:"kind"`
-	CertificateSHA256 string `json:"certificate_sha256"`
-	URL               string `json:"url"`
-	Cookie            string `json:"cookie"`
-}
+type NodeConfig = chain.Endpoint
 type TowerConfig = protocol.Tower
 type Config struct {
 	RescueFeeBPS        int64                   `json:"rescue_fee_bps,omitempty"`
@@ -58,6 +53,8 @@ type Swap struct {
 	Request            protocol.Request            `json:"request"`
 	Terms              *protocol.Terms             `json:"terms,omitempty"`
 	Secret             string                      `json:"secret,omitempty"`
+	SecretObserved     bool                        `json:"secret_observed"`
+	IncomingClaimSeen  bool                        `json:"incoming_claim_seen"`
 	SecretExposed      bool                        `json:"secret_exposed"`
 	Long               contract.HTLC               `json:"long"`
 	Short              contract.HTLC               `json:"short"`
@@ -139,28 +136,35 @@ type PublicSwap struct {
 	Takeover           uint32             `json:"takeover"`
 	RevealBefore       uint32             `json:"reveal_before"`
 }
+type ChainConnection struct {
+	Ready           bool                 `json:"ready"`
+	LastObservation int64                `json:"last_observation"`
+	Error           string               `json:"error"`
+	Sources         chain.EndpointStatus `json:"sources"`
+}
 type Status struct {
-	FeeLimits       map[chain.ID]FeeLimits    `json:"fee_limits"`
-	Funds           map[chain.ID]ChainBalance `json:"funds"`
-	Coins           []PublicCoin              `json:"coins"`
-	Sends           []PublicSend              `json:"sends"`
-	OwnWatchtower   protocol.Tower            `json:"own_watchtower"`
-	Watchtowers     []protocol.Tower          `json:"watchtowers"`
-	FundingFee      int64                     `json:"funding_fee"`
-	Network         chain.Network             `json:"network"`
-	Name            string                    `json:"name"`
-	Mode            string                    `json:"mode"`
-	PubKey          string                    `json:"pubkey"`
-	Addresses       map[chain.ID]string       `json:"addresses"`
-	Balances        map[chain.ID]int64        `json:"balances"`
-	Heights         map[chain.ID]uint32       `json:"heights"`
-	Paused          bool                      `json:"paused"`
-	Orders          []protocol.Offer          `json:"orders"`
-	Swaps           []PublicSwap              `json:"swaps"`
-	TowerJobs       []map[string]any          `json:"tower_jobs"`
-	PendingMessages int                       `json:"pending_messages"`
-	LastError       string                    `json:"last_error"`
-	Tower           TowerConfig               `json:"tower"`
+	FeeLimits       map[chain.ID]FeeLimits       `json:"fee_limits"`
+	Connections     map[chain.ID]ChainConnection `json:"connections"`
+	Funds           map[chain.ID]ChainBalance    `json:"funds"`
+	Coins           []PublicCoin                 `json:"coins"`
+	Sends           []PublicSend                 `json:"sends"`
+	OwnWatchtower   protocol.Tower               `json:"own_watchtower"`
+	Watchtowers     []protocol.Tower             `json:"watchtowers"`
+	FundingFee      int64                        `json:"funding_fee"`
+	Network         chain.Network                `json:"network"`
+	Name            string                       `json:"name"`
+	Mode            string                       `json:"mode"`
+	PubKey          string                       `json:"pubkey"`
+	Addresses       map[chain.ID]string          `json:"addresses"`
+	Balances        map[chain.ID]int64           `json:"balances"`
+	Heights         map[chain.ID]uint32          `json:"heights"`
+	Paused          bool                         `json:"paused"`
+	Orders          []protocol.Offer             `json:"orders"`
+	Swaps           []PublicSwap                 `json:"swaps"`
+	TowerJobs       []map[string]any             `json:"tower_jobs"`
+	PendingMessages int                          `json:"pending_messages"`
+	LastError       string                       `json:"last_error"`
+	Tower           TowerConfig                  `json:"tower"`
 }
 type Request struct {
 	Method string          `json:"method"`

@@ -4,11 +4,12 @@ import AppKit
 struct ChainHeightIndicator: View {
     let chain: String
     let height: UInt32?
+    var ready: Bool? = nil
 
     var body: some View {
         HStack(spacing: 6) {
             Text(symbol(chain))
-            if let height {
+            if let height, ready != false {
                 Text("#\(height)")
             } else {
                 ProgressView().controlSize(.mini)

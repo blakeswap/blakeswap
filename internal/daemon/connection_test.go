@@ -95,12 +95,17 @@ func TestOpenReportsEachChainOnlyAfterWalletData(t *testing.T) {
 			if e != nil {
 				defer e.Close()
 			}
-			if rejectWalletData != (err != nil) {
+			if err != nil {
 				t.Fatalf("unexpected startup result: %v", err)
 			}
 			want := []string{"wallet-btc", "ready-btc", "wallet-blake", "ready-blake"}
 			if rejectWalletData {
-				want = []string{"wallet-btc"}
+				want = []string{"wallet-btc", "wallet-blake"}
+				for _, c := range e.Status().Connections {
+					if c.Ready || c.LastObservation != 0 {
+						t.Fatal("unavailable chain reported ready")
+					}
+				}
 			}
 			mu.Lock()
 			defer mu.Unlock()

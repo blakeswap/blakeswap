@@ -1,0 +1,312 @@
+package daemon
+
+import (
+	"bytes"
+	"context"
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
+	"errors"
+	"strings"
+	"testing"
+	"time"
+
+	"fiatjaf.com/nostr"
+	"github.com/blakeswap/blakeswap/internal/chain"
+	"github.com/blakeswap/blakeswap/internal/contract"
+	"github.com/blakeswap/blakeswap/internal/protocol"
+	"github.com/blakeswap/blakeswap/internal/transport"
+	"github.com/btcsuite/btcd/wire"
+)
+
+func TestIsolatedManualAccelerationCannotPublishPrivateClaim(t *testing.T) {
+	for _, role := range []string{"maker", "taker"} {
+		t.Run(role, func(t *testing.T) {
+			e, s, b, secret := isolatedFixture(t, role)
+			target := s.Short
+			if role == "maker" {
+				target = s.Long
+			}
+			key, _ := e.swapKey(target.Chain, s.ID)
+			claim, err := contract.Spend(target, key, e.scripts[target.Chain], protocol.RescueFees[0], false, 0, nil, 0, secret)
+			if err != nil {
+				t.Fatal(err)
+			}
+			s.OwnerFeeCap, s.SelfClaim, s.SecretExposed = 20000, contract.Hex(claim), true
+			if err := e.save(); err != nil {
+				t.Fatal(err)
+			}
+			var saved State
+			if _, err := e.vault.Load(&saved); err != nil {
+				t.Fatal(err)
+			}
+			e.s = saved
+			s = saved.Swaps[s.ID]
+			b.broadcast = func(string) (string, error) {
+				t.Fatal("manual bump revealed private secret during peer outage")
+				return "", nil
+			}
+			params, _ := json.Marshal(BumpRequest{ID: s.ID, Kind: "claim", Fee: 6000, ExpectedTxID: claim.TxHash().String()})
+			if _, err := e.bumpTransaction(context.Background(), params); err == nil {
+				t.Fatal("private prepared claim bypassed gate")
+			}
+			if len(s.SelfClaims) != 0 || s.SecretObserved {
+				t.Fatal("blocked acceleration changed publication authority")
+			}
+		})
+	}
+}
+
+func TestIsolatedMempoolClaimKeepsAuthorizedVariantsAndDestination(t *testing.T) {
+	for _, role := range []string{"maker", "taker"} {
+		for _, cap := range []int64{0, 20000} {
+			t.Run(role+"/"+map[int64]string{0: "legacy", 20000: "authorized"}[cap], func(t *testing.T) {
+				e, s, b, secret := isolatedFixture(t, role)
+				target := s.Short
+				if role == "maker" {
+					target = s.Long
+				}
+				key, _ := e.swapKey(target.Chain, s.ID)
+				claim, err := contract.Spend(target, key, e.scripts[target.Chain], 2000, false, 0, nil, 0, secret)
+				if err != nil {
+					t.Fatal(err)
+				}
+				s.OwnerFeeCap, s.SelfClaim, s.SecretExposed, s.SecretObserved, s.ClaimAttempt = cap, contract.Hex(claim), true, true, 3
+				original := s.SelfClaim
+				e.scripts[target.Chain] = []byte{0x51} // A rotated receive address must not redirect saved variants.
+				b.spent = true
+				broadcasts := 0
+				b.broadcast = func(raw string) (string, error) {
+					broadcasts++
+					tx, err := contract.Parse(raw)
+					if err != nil {
+						t.Fatal(err)
+					}
+					wantFee := int64(2000)
+					if cap > 0 {
+						wantFee = 6000
+					}
+					if target.Amount-tx.TxOut[0].Value != wantFee || !bytes.Equal(tx.TxOut[0].PkScript, claim.TxOut[0].PkScript) {
+						t.Fatal("variant changed fee consent or destination")
+					}
+					var stored State
+					if _, err := e.vault.Load(&stored); err != nil {
+						t.Fatal(err)
+					}
+					persisted := stored.Swaps[s.ID]
+					if persisted.SelfClaims[persisted.ClaimVariant] != raw || persisted.OwnerFeeCap != cap || persisted.SelfClaim != original {
+						t.Fatal("variant was not durable")
+					}
+					return tx.TxHash().String(), nil
+				}
+				all := map[chain.ID]map[string]chain.Observation{target.Chain: {chain.OutpointKey(target.TxID, target.Vout): {Tx: claim, TxID: claim.TxHash().String()}}}
+				if err := e.advanceIsolatedSwap(context.Background(), s, all); err != nil || broadcasts != 1 {
+					t.Fatal(err, broadcasts)
+				}
+				if !s.IncomingClaimSeen {
+					t.Fatal("incoming witness guard lost")
+				}
+			})
+		}
+	}
+}
+
+func isolatedFixture(t *testing.T, role string) (*Engine, *Swap, *sendBackend, []byte) {
+	t.Helper()
+	e, b, _ := sendFixture(t)
+	maker, taker := nostr.Generate(), nostr.Generate()
+	offer := protocol.Offer{ID: transport.RandomID(), Maker: maker.Public().Hex(), Sell: chain.BTC, SellAmount: 1000000, BuyAmount: 2000000, Expires: time.Now().Unix() + 3600, Status: "open"}
+	raw, _ := offer.PublicJSON()
+	event := nostr.Event{Kind: transport.OfferKind, CreatedAt: nostr.Now(), Tags: nostr.Tags{{"d", offer.ID}, {"t", transport.Namespace}}, Content: string(raw)}
+	if err := transport.Sign(&event, maker); err != nil {
+		t.Fatal(err)
+	}
+	id := transport.RandomID()
+	keys, err := e.swapKeys(id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	secret := []byte(strings.Repeat("s", 32))
+	hash := sha256.Sum256(secret)
+	req := protocol.Request{ID: id, OfferEvent: event, Taker: taker.Public().Hex(), Hash: hex.EncodeToString(hash[:]), Keys: keys}
+	terms, err := protocol.NewTerms(req, keys, map[chain.ID]uint32{chain.BTC: 100, chain.Blake: 100})
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := &Swap{ID: id, Role: role, Request: req, Terms: &terms, Long: terms.Long, Short: terms.Short, Secret: hex.EncodeToString(secret), LongSent: true, ShortSent: true}
+	for _, c := range []*contract.HTLC{&s.Long, &s.Short} {
+		funding := wire.NewMsgTx(2)
+		funding.AddTxIn(wire.NewTxIn(&wire.OutPoint{}, nil, nil))
+		script, _ := c.PkScript()
+		funding.AddTxOut(wire.NewTxOut(c.Amount, script))
+		c.TxID = funding.TxHash().String()
+		if c == &s.Long {
+			s.LongFunding = contract.Hex(funding)
+		} else {
+			s.ShortFunding = contract.Hex(funding)
+		}
+	}
+	own, incoming := s.Long, s.Short
+	if role == "maker" {
+		own, incoming = s.Short, s.Long
+	}
+	pk, _ := incoming.PkScript()
+	b.coins = []chain.UTXO{{TxID: incoming.TxID, Vout: incoming.Vout, Amount: chain.Coins(incoming.Amount), Script: hex.EncodeToString(pk), Confirmations: 2}}
+	e.nodes = map[chain.ID]chain.Backend{incoming.Chain: b, own.Chain: &fundingLookupBackend{err: context.DeadlineExceeded}}
+	e.scanners = map[chain.ID]chain.SpendScanner{incoming.Chain: &settlementFeeScanner{observations: map[string]chain.Observation{}}, own.Chain: &settlementFeeScanner{observations: map[string]chain.Observation{}}}
+	e.chainFresh = map[chain.ID]bool{incoming.Chain: true, own.Chain: false}
+	e.heights = map[chain.ID]uint32{chain.BTC: 500, chain.Blake: 500}
+	e.clocks = e.heights
+	e.s.Swaps = map[string]*Swap{id: s}
+	if err := e.prepare(s, own); err != nil {
+		t.Fatal(err)
+	}
+	return e, s, b, secret
+}
+func TestIsolatedNeverRevealsPrivateOrPreparedSecretAndNeverRefunds(t *testing.T) {
+	for _, role := range []string{"maker", "taker"} {
+		for _, prepared := range []bool{false, true} {
+			t.Run(role+"/prepared="+map[bool]string{true: "yes", false: "no"}[prepared], func(t *testing.T) {
+				e, s, b, secret := isolatedFixture(t, role)
+				incoming := s.Short
+				if role == "maker" {
+					incoming = s.Long
+				}
+				if prepared {
+					key, _ := e.swapKey(incoming.Chain, s.ID)
+					tx, err := contract.Spend(incoming, key, e.scripts[incoming.Chain], protocol.RescueFees[0], false, 0, nil, 0, secret)
+					if err != nil {
+						t.Fatal(err)
+					}
+					s.SelfClaim = contract.Hex(tx)
+					s.SecretExposed = true
+					// Crash after signing/saving but before the first broadcast. Reload the
+					// exact durable state; these private bytes are still not public knowledge.
+					if err := e.save(); err != nil {
+						t.Fatal(err)
+					}
+					var saved State
+					if _, err := e.vault.Load(&saved); err != nil {
+						t.Fatal(err)
+					}
+					e.s = saved
+					s = e.s.Swaps[s.ID]
+				}
+				b.broadcast = func(string) (string, error) { t.Fatal("degraded first revelation/refund"); return "", nil }
+				if err := e.advanceSwap(context.Background(), s, map[chain.ID]map[string]chain.Observation{incoming.Chain: {}}); err == nil {
+					t.Fatal("private secret accepted")
+				}
+				if s.SecretObserved {
+					t.Fatal("private secret relabeled observed")
+				}
+			})
+		}
+	}
+}
+func TestIsolatedClaimsWithObservedWitnessAndPersistsIncomingClaimGuard(t *testing.T) {
+	for _, role := range []string{"maker", "taker"} {
+		t.Run(role, func(t *testing.T) {
+			e, s, b, secret := isolatedFixture(t, role)
+			incoming, own := s.Short, s.Long
+			if role == "maker" {
+				incoming, own = s.Long, s.Short
+			}
+			e.chainFresh[own.Chain] = true
+			e.chainFresh[incoming.Chain] = false
+			key, _ := e.swapKey(own.Chain, s.ID)
+			witness, err := contract.Spend(own, key, e.scripts[own.Chain], protocol.RescueFees[0], false, 0, nil, 0, secret)
+			if err != nil {
+				t.Fatal(err)
+			}
+			observations := map[chain.ID]map[string]chain.Observation{own.Chain: {chain.OutpointKey(own.TxID, own.Vout): {Tx: witness, TxID: witness.TxHash().String()}}}
+			_ = e.advanceIsolatedSwap(context.Background(), s, observations)
+			if !s.SecretObserved || !s.SecretExposed || s.IncomingClaimSeen {
+				t.Fatal("wrong secret provenance")
+			}
+			if err := e.save(); err != nil {
+				t.Fatal(err)
+			}
+			var saved State
+			if _, err := e.vault.Load(&saved); err != nil {
+				t.Fatal(err)
+			}
+			e.s = saved
+			s = e.s.Swaps[s.ID]
+			e.chainFresh[own.Chain] = false
+			e.chainFresh[incoming.Chain] = true
+			broadcasts := 0
+			b.broadcast = func(raw string) (string, error) {
+				broadcasts++
+				tx, err := contract.Parse(raw)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if _, ok := contract.ExtractSecret(incoming, tx); !ok {
+					t.Fatal("not a claim")
+				}
+				return tx.TxHash().String(), nil
+			}
+			if err := e.advanceSwap(context.Background(), s, map[chain.ID]map[string]chain.Observation{incoming.Chain: {}}); err != nil || broadcasts != 1 {
+				t.Fatal("observed-secret recovery failed", err, broadcasts)
+			}
+			claim, _ := contract.Parse(s.SelfClaim)
+			_ = e.advanceIsolatedSwap(context.Background(), s, map[chain.ID]map[string]chain.Observation{incoming.Chain: {chain.OutpointKey(incoming.TxID, incoming.Vout): {Tx: claim, TxID: claim.TxHash().String(), Confirmations: 2}}})
+			if !s.IncomingClaimSeen {
+				t.Fatal("incoming claim guard missing")
+			}
+			if err := e.save(); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := e.vault.Load(&saved); err != nil {
+				t.Fatal(err)
+			}
+			if !saved.Swaps[s.ID].IncomingClaimSeen {
+				t.Fatal("guard not durable")
+			}
+			// The incoming witness can disappear during a reorg. Even with both chains
+			// healthy and the refund deadline passed, it must not authorize a refund.
+			e.chainFresh[own.Chain] = true
+			b.spent = true
+			ownBackend := &fundingLookupBackend{tx: chain.Transaction{}}
+			e.nodes[own.Chain] = ownBackend
+			_ = e.advanceSwap(context.Background(), s, map[chain.ID]map[string]chain.Observation{incoming.Chain: {}, own.Chain: {}})
+			if len(ownBackend.broadcasts) != 0 {
+				t.Fatal("refunded after incoming claim reorg")
+			}
+		})
+	}
+}
+func TestIsolatedTargetEvidenceAndSafeSendProgress(t *testing.T) {
+	e, s, b, _ := isolatedFixture(t, "maker")
+	s.SecretObserved = true
+	b.broadcast = func(string) (string, error) { t.Fatal("claim without target evidence"); return "", nil }
+	if err := e.advanceSwap(context.Background(), s, nil); err == nil {
+		t.Fatal("missing scan treated as absence")
+	}
+	b.spent = true
+	if err := e.advanceSwap(context.Background(), s, map[chain.ID]map[string]chain.Observation{s.Long.Chain: {}}); err == nil {
+		t.Fatal("missing output accepted")
+	}
+	// An existing signed wallet send needs only its own chain. Missing peer data
+	// never permits a new send, but cannot suppress exact transaction recovery.
+	e, b, req := sendFixture(t)
+	b.broadcast = func(string) (string, error) { return "", errors.New("ambiguous") }
+	raw, _ := json.Marshal(req)
+	if _, err := e.sendCoins(context.Background(), raw); err != nil {
+		t.Fatal(err)
+	}
+	e.chainFresh = map[chain.ID]bool{chain.BTC: false, chain.Blake: true}
+	b.broadcast = func(raw string) (string, error) { tx, _ := contract.Parse(raw); return tx.TxHash().String(), nil }
+	e.s.Sends[req.ID].LastAttempt = 0
+	e.advanceSends(context.Background())
+	if !e.s.Sends[req.ID].Submitted {
+		t.Fatal("healthy signed send stalled on peer outage")
+	}
+}
+
+func TestMissingReadinessFailsClosed(t *testing.T) {
+	e := &Engine{heights: map[chain.ID]uint32{chain.BTC: 1000, chain.Blake: 1000}}
+	if e.fresh(chain.BTC) || e.eligible(chain.BTC, 1) || e.gate(nil, "reveal") == nil {
+		t.Fatal("uninitialized observations authorized an action")
+	}
+}
