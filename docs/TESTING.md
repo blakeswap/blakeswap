@@ -391,3 +391,9 @@ cover settlement in both directions after primary loss, blocked first
 revelation during a peer outage, persisted-witness claims while only the target
 chain is reachable, and refunds held until peer observation returns. Run the
 existing asynchronous settlement/refund/reorg matrix as a regression too.
+
+The Electrum real-chain harness waits for a successful tick and fresh observations
+of both chains after switching to a new local indexer. A cold bridge can exceed
+an initial request budget while building history; setup logs that cause and
+requires readiness within 20 seconds before creating an offer. Trade, refund and
+settlement assertions and production timeouts remain unchanged.

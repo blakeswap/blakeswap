@@ -119,6 +119,20 @@ func newHarness(t *testing.T, bps int64) *harness {
 			h.configs[name] = cfg
 			h.online(name)
 		}
+		// Open intentionally permits partial readiness. A new bridge may still
+		// be indexing historical blocks after its first bounded request. Trading
+		// fixtures require a successful complete observation of BOTH chains;
+		// establish it before any offer/funding assertion, preserving backoff.
+		for _, name := range []string{"maker", "taker", "tower"} {
+			e := h.engines[name]
+			for _, id := range []chain.ID{chain.BTC, chain.Blake} {
+				if !e.fresh(id) {
+					endpoint := e.nodes[id].(*chain.Failover).Status().Endpoints[0]
+					t.Logf("%s %s cold Electrum startup awaiting readiness: %s; endpoint error=%s retry_after=%d", name, id, e.chainErrors[id], endpoint.Error, endpoint.RetryAfter)
+				}
+			}
+			tickUntilConnected(t, e)
+		}
 	}
 	return h
 }
