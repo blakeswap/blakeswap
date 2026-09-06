@@ -62,7 +62,10 @@ The mnemonic restores derivation keys. Pending preimages, exact negotiated terms
 
 Public Electrum is the default and a material trust dependency. Raw transaction
 IDs, scripts, amounts, merkle branches, fork identity and individual header proof
-of work are checked, but the wallet does not build and validate the full header
+of work against the network limit are checked. Confirmation proofs link every
+header from the observed block to the subscribed tip, and median-time reads link
+their eleven headers. Cold reads of old transactions can require substantial
+header downloads. The wallet does not build and validate the full header
 chain, difficulty transitions, or most-work selection. A malicious indexer can
 omit spends or histories, present a stale/private branch, or misrepresent which
 valid block is canonical. That can undermine confirmation checks, replay ancestry,

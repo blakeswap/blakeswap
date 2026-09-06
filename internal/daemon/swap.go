@@ -91,13 +91,13 @@ func (e *Engine) advanceSwap(ctx context.Context, s *Swap, all map[chain.ID]map[
 	if err := s.Terms.Validate(); err != nil {
 		return err
 	}
-	// Retransmit an already-published funding transaction after node restart or
-	// mempool loss. This never signs a replacement or authorizes new terms.
+	// Reconcile prepared transactions even in older snapshots whose broadcast
+	// succeeded before the sent flag was saved. Lookup errors are not absence.
 	published, raw, fundingChain := s.LongSent, s.LongFunding, s.Long.Chain
 	if s.Role == "maker" {
 		published, raw, fundingChain = s.ShortSent, s.ShortFunding, s.Short.Chain
 	}
-	if published && raw != "" {
+	if raw != "" {
 		tx, err := contract.Parse(raw)
 		if err != nil {
 			return err
@@ -107,10 +107,18 @@ func (e *Engine) advanceSwap(ctx context.Context, s *Swap, all map[chain.ID]map[
 			if !chain.TransactionNotFound(err) {
 				return err
 			}
-			if err = e.save(); err != nil {
-				return err
+			if published {
+				// Publication was durably authorized before network IO. Resume
+				// that exact transaction even after the new-funding deadline.
+				if err = e.save(); err != nil {
+					return err
+				}
+				if err = e.broadcast(ctx, fundingChain, raw); err != nil {
+					return err
+				}
 			}
-			if err = e.broadcast(ctx, fundingChain, raw); err != nil {
+		} else if !published {
+			if err = e.recordFunding(s); err != nil {
 				return err
 			}
 		}
@@ -269,14 +277,10 @@ func (e *Engine) advanceSwap(ctx context.Context, s *Swap, all map[chain.ID]map[
 		}
 		phase := "fund-long"
 		raw := s.LongFunding
-		kind := "long-funded"
-		peer := s.Terms.Offer().Maker
 		id := s.Long.Chain
 		if s.Role == "maker" {
 			phase = "fund-short"
 			raw = s.ShortFunding
-			kind = "short-funded"
-			peer = s.Request.Taker
 			id = s.Short.Chain
 		}
 		if err := e.gate(s.Terms, phase); err != nil {
@@ -291,21 +295,12 @@ func (e *Engine) advanceSwap(ctx context.Context, s *Swap, all map[chain.ID]map[
 				return errors.New("taker funding no longer confirmed")
 			}
 		}
-		if err := e.save(); err != nil {
+		// Commit publication and its peer notification together before sending
+		// anything. A crash or ambiguous broadcast response must remain resumable.
+		if err := e.recordFunding(s); err != nil {
 			return err
 		}
 		if err := e.broadcast(ctx, id, raw); err != nil {
-			return err
-		}
-		if s.Role == "taker" {
-			s.LongSent = true
-		} else {
-			s.ShortSent = true
-		}
-		if err := e.queue(peer, kind, s.ID, fundingMessage{protocol.Digest(s.Terms), raw}); err != nil {
-			return err
-		}
-		if err := e.save(); err != nil {
 			return err
 		}
 		s.Stage = "funding broadcast"
@@ -390,6 +385,24 @@ func (e *Engine) advanceSwap(ctx context.Context, s *Swap, all map[chain.ID]map[
 		return e.broadcast(ctx, own.Chain, s.SelfRefunds[0])
 	}
 	return revealError
+}
+
+// The sent flag records an irrevocable decision to publish, not an RPC receipt.
+// The signed transaction and notification can both be retried after restart.
+func (e *Engine) recordFunding(s *Swap) error {
+	raw, kind, peer := s.LongFunding, "long-funded", s.Terms.Offer().Maker
+	if s.Role == "maker" {
+		raw, kind, peer = s.ShortFunding, "short-funded", s.Request.Taker
+	}
+	if err := e.queue(peer, kind, s.ID, fundingMessage{protocol.Digest(s.Terms), raw}); err != nil {
+		return err
+	}
+	if s.Role == "taker" {
+		s.LongSent = true
+	} else {
+		s.ShortSent = true
+	}
+	return e.save()
 }
 func (e *Engine) advanceTower(ctx context.Context, all map[chain.ID]map[string]chain.Observation) error {
 	for _, state := range e.s.TowerJobs {

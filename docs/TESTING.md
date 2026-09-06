@@ -96,6 +96,8 @@ See [Risks](RISKS.md) for the trust and liveness assumptions that remain necessa
 | Consensus timestamp finality | Real BTC and Blake2b nodes reject delayed claims/refunds at exactly MTP=locktime and accept after MTP advances one second |
 | Electrum transport | Invalid JSON, response ID confusion, missing results, explicit missing-transaction classification |
 | Indexer observation integrity | Real headers/transactions with forged genesis, raw transaction, merkle branch, UTXO amount and duplicate UTXO replies rejected |
+| Header observation continuity | Network PoW limits for both header formats, disconnected confirmation/median-time ranges, malformed/short batches, tip replacement, cached-range reorgs and resuming interrupted downloads |
+| Funding publication durability | Both roles crash before/after node acceptance, reopen past funding deadlines and confirm refunds; legacy snapshots reconcile observed funding while missing/error lookups cannot authorize late funding |
 | Actual Electrum swaps | All five asynchronous/restart/self-claim/tower/refund/reorg scenarios run through local Electrum fixtures indexing real regtest blocks |
 | Replay boundary | Shared/pre-fork ancestry rejected, absent opposite-chain coinbase never treated as exclusivity, mismatched transaction IDs/cancellation fail closed |
 | Network identity | Fork v2 header hash fixture from upstream, checkpoint/hash tampering, cross-network signed offer/mailbox rejection and key derivation separation |
