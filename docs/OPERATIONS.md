@@ -61,14 +61,14 @@ read locally and sent only as HTTP Basic auth to that configured endpoint; never
 embed them in the URL. The node must expose its wallet API and transaction index,
 with the selected network and Blake2b activation. Mainnet activation is 961640;
 Testnet4 is 150308; the fixture activates regtest at 1. The default regtest cookie
-paths are under your standard Bitcoin/BitcoinBlake2b application-support
-folders; update them for your own datadirs. No automatic node discovery or node
-process ownership is implied.
+settings leave the cookie fields empty to use the explicit local launcher
+registration described under [Local regtest discovery](#local-regtest-discovery).
+Custom nodes can use explicit cookie paths. The app does not start or own nodes.
 
 Regtest requires both external nodes to be running. In Settings or onboarding,
 use **Choose…** beside each RPC cookie path to select the hidden `.cookie` file
-from that node's `regtest` data folder. The default application-support paths do
-not apply to custom datadirs. For nodes started with `scripts/local.py nodes`,
+from that node's `regtest` data folder. Explicit paths must match your node’s
+actual datadir; leave the field empty only when using registered local fixtures. For nodes started with `scripts/local.py nodes`,
 use the checkout's `.local/btc/regtest/.cookie` and
 `.local/blake/regtest/.cookie`, with the script's configured RPC ports. Test both
 connections and save Settings. Selecting a trading network also shows that
@@ -92,10 +92,11 @@ Add a provider from the public list or use **Look up & add** with a shared npub.
 Private lookups and replies use encrypted Nostr mailboxes, so unlisted providers
 remain usable. Save favorites, then select one when enabling delayed protection
 in Create offer. The provider generates and signs both payout scripts and its fee;
-no script hex entry is needed. Both parties use the selected quote pinned in the
-signed offer. A taker can inspect the provider npub in the orderbook. Protected
-funding still requires durable receipts. Discovery and private lookup require a
-shared relay and a reachable provider; announcements expire after one hour and
+no script hex entry is needed. Each wallet independently selects and privately
+pins its own provider quote; the orderbook shows protection only to the maker,
+and Take offer offers a separate taker refund choice. Neither choice is included
+in the public offer or shared terms. Protected funding still requires durable
+receipts. Discovery and private lookup require a shared relay and a reachable provider; announcements expire after one hour and
 refresh every fifteen minutes. Listing does not prove reliability.
 
 ## Explicit developer fixtures
@@ -153,7 +154,7 @@ Restoring stale snapshots is not generally safe automatic recovery. Previously s
 
 **Daemon disconnected:** the desktop reconnects automatically; inspect the app data directory's `desktop.log`; for the separate CLI fixture, use `python3 scripts/dev.py up` and inspect `.local/<name>.log`. Check Settings and the configured endpoint before changing networks. A locked desktop does not stop the daemon; a sleeping/offline machine can stop timely responses.
 
-**Insufficient balance:** on regtest RPC, use the test faucet from Wallet, then mine two blocks. On public networks, wait for confirmations and ensure BTC inputs meet replay-ancestry requirements. Confirmed balance excludes unconfirmed change and locked HTLCs. Multiple open offers can overstate available inventory; reservation is serialized and funding still verifies actual unspent coins.
+**Insufficient balance:** on regtest RPC, use the test faucet from Wallet, then mine two blocks. On public networks, wait for confirmations and ensure BTC inputs meet replay-ancestry requirements. Confirmed balance excludes unconfirmed change and locked HTLCs. The displayed confirmed balance can include coins reserved by local open offers, trades, or sends. Coin control marks them locked; cancel an unreserved open order to release its coins. Local reservations prevent honest-client reuse, but remote offers are not proof of funds. Funding still verifies actual unspent coins.
 
 **Awaiting durable tower receipt:** ensure the selected tower and at least one shared relay are running. The daemon will not fund a protected leg based solely on a relay acknowledgment. Expired headroom may require a fresh offer/swap rather than continuing stale terms.
 
@@ -229,21 +230,33 @@ backup recovery scans confirmed receipt history, including spent outputs, from
 the saved index until it finds an unused address. Preserve current state backups:
 a phrase alone cannot reconstruct an address-use record erased by a reorg, nor
 recover pending swap state. Existing signed swap/tower transactions retain their
-original payout destinations.
+original payout destinations. Change and newly prepared swap payouts use the
+current receive address; watchtower quotes use stable index-zero payout scripts.
+Those shared destinations and combined-input transactions retain privacy costs
+despite rotation. The current receive-index limit is 10,000 per chain.
 
 
 ## Sending and coin control
 
 Choose **Send BTC** or **Send BLAKE** in Wallet. Enter the recipient, amount in sats,
-and exact total network fee in sats; select individual confirmed coins and review
-the chain, network, destination, fee and change before confirming. The send screen
+and exact total network fee in sats; select 1–50 individual confirmed coins and
+choose **Review send**, then **Confirm and send** after checking the chain, network,
+destination, amount, fee and change. **Send selected minus fee** fills the amount
+with the selected total less the fee, leaving no change. Sending this to your own
+current receive address consolidates the selected coins; there is no automatic
+consolidation service. BTC sends still require replay-safe ancestry. The send screen
 uses the displayed wallet and network throughout. The daemon checks them again.
 Locked coins are visible but cannot be selected. Cancel an open order to free its
 coins; a reserved order has become a trade and cannot be cancelled to withdraw its
-funding. Pending sends also retain their inputs. Outgoing transaction IDs and
-submission errors appear in Wallet. Network fees are manual; no fee estimator,
-fee replacement, or cancellation is provided. A rejected/low-fee broadcast remains
-saved for retry, so use an appropriate fee before confirming.
+funding. Pending sends also retain their inputs. The daemon persists the exact
+signed transaction before broadcast; ambiguous failures retry those same bytes.
+Retry an uncertain API request with the same ID and identical details rather than
+creating another payment. **Outgoing sends** shows transaction IDs, amounts, fees,
+confirmation counts, and errors in Wallet; submission alone is not confirmation.
+Network fees are manual; no fee estimator, fee replacement, or cancellation is provided. A rejected/low-fee broadcast remains
+saved for retry, so use an appropriate fee before confirming. Sends below six
+confirmations block network switching, including on regtest; send history is
+currently capped at 1,000 records.
 
 The maker serializes take requests and durably reserves an available order for one
 trade before sending acceptance. Other takers receive a rejection; a local pending
@@ -252,7 +265,12 @@ reserved transition and persistence pattern in
 [TradeManager](https://github.com/bisq-network/bisq/blob/master/core/src/main/java/bisq/core/trade/TradeManager.java)
 and [OpenOfferManager](https://github.com/bisq-network/bisq/blob/master/core/src/main/java/bisq/core/offer/OpenOfferManager.java).
 Relay propagation is asynchronous: another user can briefly see a stale offer,
-but cannot obtain a second accepted reservation.
+but cannot obtain a second accepted reservation from this daemon. Remote makers
+can run different software and advertise unbacked offers. Unanswered take requests
+expire at the signed offer deadline only before acceptance or prepared funding;
+accepted maker reservations with no prepared funding can expire when their
+funding window closes. Those safe expiry paths release unsigned intentions, not
+funded swaps. Never delete local state to try to cancel signed or published funding.
 
 After initial recovery, live RPC address allocations import from the current time
 and carry a separate completed-import marker, avoiding a historical rescan during

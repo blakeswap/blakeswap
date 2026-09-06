@@ -16,7 +16,7 @@ have explicit limitations. Read [Risks](docs/RISKS.md) before considering real f
 ## Build and install
 
 Repository and Go module: `github.com/blakeswap/blakeswap`.
-Requires macOS 15+, Xcode/Swift 6 tooling, Go toolchain downloads, and Python 3.
+Requires macOS 15+, compatible Xcode/Swift 6.1+ tooling, Go toolchain downloads, and Python 3.
 
 ```sh
 git clone https://github.com/blakeswap/blakeswap.git
@@ -24,8 +24,10 @@ cd blakeswap
 sh scripts/build-dmg.sh
 ```
 
-Download an Apple silicon (`arm64`) or Intel (`x86_64`) DMG from
-[GitHub Releases](https://github.com/blakeswap/blakeswap/releases), or build locally.
+The [release workflow](.github/workflows/release.yml) defines separate Apple silicon
+(`arm64`) and Intel (`x86_64`) DMGs. Check [GitHub Releases](https://github.com/blakeswap/blakeswap/releases)
+for available artifacts, or build locally; the workflow alone is not evidence that
+a particular release has built or shipped.
 Open `bin/Blakeswap-0.2.0-arm64.dmg` (or the Intel equivalent), drag the app into Applications, and open it.
 On first launch, choose a wallet name and create a new wallet or restore a BIP39
 recovery phrase or encrypted state backup. Setup checks three recovery words,
@@ -46,9 +48,13 @@ or silently change networks. [Operations](docs/OPERATIONS.md) lists the defaults
 trust assumptions.
 
 Wallet provides a QR for each chain’s current receive address and advances it after
-a confirmed receipt. Send supports individual coin selection and a manual total
-network fee. Open orders, active trades, and pending sends lock their funding coins;
-cancel an open order before withdrawing those coins.
+a confirmed receipt while continuing to watch historical addresses. Send supports
+individual coin selection, a manual total network fee, and review/confirmation of
+the payment. “Send selected minus fee” can consolidate selected coins to your own
+current receive address. Open orders, active trades, and pending sends lock their
+funding coins; cancel an open order before withdrawing those coins. Saved sends
+retry the same signed transaction and show outgoing IDs, confirmations, and errors
+in Wallet. See [sending and coin control](docs/OPERATIONS.md#sending-and-coin-control).
 
 ## Local regtest nodes
 

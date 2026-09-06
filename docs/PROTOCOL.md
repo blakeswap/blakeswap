@@ -183,7 +183,7 @@ Funding, refund templates, jobs, receipts, and first-reveal intent are committed
 
 ## Cancellation and timeout outcomes
 
-An unreserved offer can be cancelled by an authenticated local command; its signed cancellation is relayed and the maker refuses stale requests. Offers have no committed funding UTXO, so this cancellation does not need a chain transaction. Cancellation and reservation are serialized locally; whichever commits first wins. Public relays can temporarily disagree.
+An unreserved offer can be cancelled by an authenticated local command; its signed cancellation is relayed and the maker refuses stale requests. Open offers reserve local funding coins but create no signed or published funding transaction, so this cancellation releases the local reservation without a chain transaction. Cancellation and reservation are serialized locally; whichever commits first wins. Public relays can temporarily disagree.
 
 After acceptance/funding, “cancel” cannot revoke an HTLC or erase a signature another party possesses. The protocol completes a claim or waits for refunds. If the taker never reveals, both parties reclaim their respective outputs after timeout, with towers available after their extra grace. If a party misses a deadline after the secret has been released, an adverse claim/refund race can break the intended economic exchange. There is no arbitration service that can reverse chain settlement.
 
