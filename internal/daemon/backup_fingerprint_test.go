@@ -3,7 +3,7 @@ package daemon
 import "testing"
 
 func TestBackupFingerprintTracksRecoveryMaterialWithoutPollingNoise(t *testing.T) {
-	state := State{Version: 1, Swaps: map[string]*Swap{"swap": {ID: "swap", Role: "maker", Secret: "secret", SelfRefunds: []string{"signed refund"}}}, TowerJobs: map[string]*TowerJob{"job": {LastAttempt: 1, Attempt: 2}}, Outbox: map[string]*Delivery{"message": {LastAttempt: 1}}}
+	state := State{Version: 1, Swaps: map[string]*Swap{"swap": {ID: "swap", Role: "maker", Stage: "waiting", Secret: "secret", SelfRefunds: []string{"signed refund"}}}, TowerJobs: map[string]*TowerJob{"job": {LastAttempt: 1, Attempt: 2}}, Outbox: map[string]*Delivery{"message": {LastAttempt: 1}}}
 	initial, err := BackupFingerprint(state)
 	if err != nil {
 		t.Fatal(err)
@@ -52,5 +52,29 @@ func TestBackupFreshnessRecordsExportedStateWithoutClaimingLaterChanges(t *testi
 	status, err = StateBackupFreshness(state)
 	if err != nil || !status.StateChanged || status.LastExportAt != 123 {
 		t.Fatal("old snapshot marked newer state backed up", status, err)
+	}
+}
+
+func TestBackupFingerprintRetainsTerminalDecisionsAndNestedPolicy(t *testing.T) {
+	for _, change := range []string{"terminal-stage", "confirmation-policy", "receipt-error"} {
+		t.Run(change, func(t *testing.T) {
+			state := State{Swaps: map[string]*Swap{"swap": {ID: "swap", Stage: "awaiting taker funding"}}, TradeReceipts: map[string]*TradeReceipt{"receipt": {Snapshot: TradeQuoteSnapshot{Quote: TradeQuote{Timing: TradeTiming{Confirmations: 2}}}}}}
+			before, err := BackupFingerprint(state)
+			if err != nil {
+				t.Fatal(err)
+			}
+			switch change {
+			case "terminal-stage":
+				state.Swaps["swap"].Stage = "expired before funding"
+			case "confirmation-policy":
+				state.TradeReceipts["receipt"].Snapshot.Quote.Timing.Confirmations = 6
+			case "receipt-error":
+				state.TradeReceipts["receipt"].Result.Error = "rejected durable authorization"
+			}
+			after, err := BackupFingerprint(state)
+			if err != nil || before == after {
+				t.Fatal("meaningful durable decision or nested policy omitted from fingerprint", err)
+			}
+		})
 	}
 }
