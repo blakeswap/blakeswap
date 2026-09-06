@@ -268,3 +268,17 @@ background cycles, publishes status, and responds to manual refresh. They cover 
 refresh arriving during an older cycle, stale network bindings, and worker shutdown.
 Native tests verify maker-only protection labels and complete a two-chain swap
 while polling only Bob, then verify the manual refresh result after mining.
+
+Available-funds regressions verify the non-overlapping deposit partition,
+overlapping reservation owners, signed-send retention, pending change,
+confirmation and reorg transitions, separate contract principal, and unavailable
+contract observations. Preflight tests cover live output rechecks, reservations,
+duplicate inputs, wallet/network isolation, bounded concurrency outside the
+settlement mutex, and retry after backend failure. Replay tests explicitly cover
+mixed shared/exclusive sets, shared ancestry, depth exhaustion, backend errors,
+and changed canonical coinbases without cached evidence. Native tests check
+positive total balances with zero unlocked funds and bind readiness to exact
+wallet/network/form/input context. `TestRealFundsContractPrincipalAndPendingChange`
+and `TestRealSendsHonorCoinControlFeesAndOrderLocks` exercise these categories and
+preflight with actual BTC and Blake2b nodes; run the latter with the Electrum
+fixture as well.

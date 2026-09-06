@@ -63,6 +63,14 @@ struct SendCoinsView: View {
     @State private var reviewed: SendPlan?
     @State private var error: String?
     @State private var submitting = false
+    @State private var checkedFunds: FundsCheckKey?
+    @State private var activity: Blakeswap_V1_CoinHold?
+    private var fundsReady: Bool {
+        guard let reviewed else { return false }
+        return checkedFunds == FundsCheckKey(profile: context.profile, network: context.network, generation: model.generation,
+                                             chain: context.chain, amount: reviewed.request.amount, fee: reviewed.request.fee,
+                                             inputs: reviewed.request.inputs.map { "\($0.txid):\($0.vout)" })
+    }
 
     private var matchingWallet: Bool { model.profile == context.profile && model.network == context.network }
     private var coins: [Blakeswap_V1_WalletCoin] { matchingWallet ? (model.status?.coins ?? []).filter { $0.chain == context.chain } : [] }
@@ -96,6 +104,10 @@ struct SendCoinsView: View {
                                 Text(coin.address).font(.caption2.monospaced()).foregroundStyle(.secondary)
                             }
                         }.toggleStyle(.checkbox).disabled(reviewed != nil || !coin.canSend(network: context.network))
+                        ForEach(coin.holds, id: \.self) { hold in
+                            Button("\(hold.reason) · \(hold.id.prefix(12))… — View activity") { activity = hold }
+                                .font(.caption).buttonStyle(.link)
+                        }
                     }
                 }
             }.frame(minHeight: 150, maxHeight: 280)
@@ -113,11 +125,12 @@ struct SendCoinsView: View {
                 Text("Send \(reviewed.request.amount) \(symbol(context.chain)) sats on \(context.network.capitalized) to:")
                 Text(reviewed.request.destination).font(.body.monospaced()).textSelection(.enabled)
                 Text("Network fee: \(reviewed.request.fee) sats · Change to your wallet: \(reviewed.change) sats")
+                FundsPreflightView(chain: context.chain, amount: reviewed.request.amount, fee: reviewed.request.fee, inputs: reviewed.request.inputs, ready: $checkedFunds)
                 Text("This payment cannot be reversed after broadcast.").font(.caption).foregroundStyle(.secondary)
                 HStack {
                     Button("Back") { self.reviewed = nil }
                     Spacer()
-                    Button("Confirm and send") { Task { await submit(reviewed) } }.buttonStyle(.borderedProminent)
+                    Button("Confirm and send") { Task { await submit(reviewed) } }.buttonStyle(.borderedProminent).disabled(!fundsReady)
                 }
             } else {
                 HStack {
@@ -134,10 +147,13 @@ struct SendCoinsView: View {
         }.padding(28).frame(width: 640)
             .disabled(submitting || !matchingWallet)
             .interactiveDismissDisabled(submitting)
+            .sheet(item: $activity) { hold in
+                CoinActivityView(hold: hold, context: context)
+            }
     }
 
     private func submit(_ plan: SendPlan) async {
-        guard matchingWallet, !submitting else { return }
+        guard matchingWallet, fundsReady, !submitting else { return }
         submitting = true
         defer { submitting = false }
         do {
@@ -146,5 +162,44 @@ struct SendCoinsView: View {
             model.notice = sent.submitted ? "Sent transaction: \(sent.txid)" : "Send saved for retry: \(sent.txid). \(sent.error)"
             await model.refresh(); dismiss()
         } catch { self.error = error.localizedDescription }
+    }
+}
+
+
+extension Blakeswap_V1_CoinHold: Identifiable {
+    var idForDisplay: String { "\(kind)/\(id)" }
+}
+
+struct CoinActivityView: View {
+    @EnvironmentObject private var model: AppModel
+    @Environment(\.dismiss) private var dismiss
+    let hold: Blakeswap_V1_CoinHold
+    let context: SendContext
+    private var matching: Bool { model.profile == context.profile && model.network == context.network }
+    var body: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            Text("\(hold.kind.capitalized) activity").font(.title2.bold())
+            Text(hold.id).font(.caption.monospaced()).textSelection(.enabled)
+            Text(hold.reason)
+            if matching, let status = model.status {
+                if hold.kind == "offer", let order = status.orders.first(where: { $0.id == hold.id && $0.maker == status.pubkey }) {
+                    Text("\(order.status.capitalized): sell \(order.sellAmount) \(symbol(order.sell)) sats for \(order.buyAmount) \(symbol(order.buy)) sats")
+                    if order.status == "open" {
+                        Button("Cancel open order and release coins") {
+                            Task { if await model.command("offer.cancel", ["id": hold.id]) { dismiss() } }
+                        }.disabled(model.busy)
+                    }
+                } else if hold.kind == "swap", let swap = status.swaps.first(where: { $0.id == hold.id }) {
+                    Text("Stage: \(swap.stage)")
+                    if !swap.error.isEmpty { Text(swap.error) }
+                    Text("Funded swaps must settle or refund; their signed inputs cannot be released by cancellation.").font(.caption)
+                } else if hold.kind == "send", let send = status.sends.first(where: { $0.id == hold.id }) {
+                    Text("Send \(send.amount) \(symbol(send.chain)) sats to \(send.destination)")
+                    Text("\(send.confirmations) confirmations · \(send.txid)").font(.caption).textSelection(.enabled)
+                    if !send.error.isEmpty { Text(send.error) }
+                }
+            } else { Text("The wallet or network changed. Reopen this activity from the selected wallet.") }
+            Button("Close") { dismiss() }
+        }.padding(24).frame(width: 500)
     }
 }

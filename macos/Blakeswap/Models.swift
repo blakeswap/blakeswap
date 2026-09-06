@@ -73,15 +73,16 @@ extension Blakeswap_V1_Tower: Identifiable {
 }
 extension Blakeswap_V1_Status {
     var offerFundingFee: Int64 { fundingFee > 0 ? fundingFee : 2_000 }
-    func canSell(_ chain: String) -> Bool { (balances[chain] ?? 0) >= 100_000 + offerFundingFee }
+    func available(_ chain: String) -> Int64 { funds[chain]?.unlockedConfirmed ?? 0 }
+    func canSell(_ chain: String) -> Bool { available(chain) >= 100_000 + offerFundingFee }
     func offerValidation(sell: String, sellAmount: String, buyAmount: String) -> String? {
         guard ["btc", "blake"].contains(sell), !pubkey.isEmpty else { return "Waiting for your wallet balance." }
         guard let a = Int64(sellAmount), let b = Int64(buyAmount),
               (100_000...10_000_000_000).contains(a), (100_000...10_000_000_000).contains(b) else {
             return "Enter whole satoshi amounts from 100,000 to 10 billion."
         }
-        let balance = balances[sell] ?? 0
-        guard balance > 0 else { return "Deposit \(symbol(sell)) and wait for confirmation before creating an offer." }
+        let balance = available(sell)
+        guard balance > 0 else { return "No unlocked confirmed \(symbol(sell)) is available. Cancel an open order to release its coins, or deposit and wait for confirmation." }
         guard a <= balance - offerFundingFee else {
             return "Insufficient \(symbol(sell)): \(balance) sats available. Leave \(offerFundingFee) sats for the funding fee."
         }

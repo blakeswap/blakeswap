@@ -79,3 +79,48 @@ func TestReplayProofRequiresDivergentPostForkCoinbase(t *testing.T) {
 		t.Fatal("proof ignored cancellation")
 	}
 }
+
+func TestReplayProofMixedInputSetBoundsAndReorg(t *testing.T) {
+	network := Testnet
+	height := network.ForkHeight() + 100
+	shared, exclusive, other := proofCoin(height, 1), proofCoin(height+1, 2), proofCoin(height+1, 3)
+	btc := &proofBackend{txs: map[string]Transaction{shared.TxID: shared, exclusive.TxID: exclusive}, coins: map[uint32]Transaction{height: shared, height + 1: exclusive}}
+	blake := &proofBackend{coins: map[uint32]Transaction{height: shared, height + 1: other}}
+	tx := wire.NewMsgTx(2)
+	for _, coin := range []Transaction{shared, exclusive} {
+		point, _ := WireOutpoint(coin.TxID, 0)
+		tx.AddTxIn(wire.NewTxIn(&point, nil, nil))
+	}
+	if err := ProveBTCExclusive(context.Background(), network, btc, blake, tx); err != nil {
+		t.Fatal("one exclusive input must protect a mixed set", err)
+	}
+	// Replacing the observed opposite-chain block removes proof immediately.
+	blake.coins[height+1] = exclusive
+	if err := ProveBTCExclusive(context.Background(), network, btc, blake, tx); !errors.Is(err, ErrReplayUnsafe) {
+		t.Fatal("stale evidence after reorg", err)
+	}
+	blake.coins[height+1] = other
+	// A legitimate exclusive ancestor beyond the verifier's depth bound remains
+	// not proven; exhaustion must never become positive proof.
+	tip := exclusive
+	for i := 0; i < 66; i++ {
+		descendant := wire.NewMsgTx(2)
+		point, _ := WireOutpoint(tip.TxID, 0)
+		descendant.AddTxIn(wire.NewTxIn(&point, nil, nil))
+		descendant.AddTxOut(wire.NewTxOut(int64(1000000-i), []byte{txscript.OP_TRUE}))
+		var raw bytes.Buffer
+		_ = descendant.Serialize(&raw)
+		tip = Transaction{TxID: descendant.TxHash().String(), Hex: hex.EncodeToString(raw.Bytes()), Confirmations: 10}
+		btc.txs[tip.TxID] = tip
+	}
+	deep := wire.NewMsgTx(2)
+	point, _ := WireOutpoint(tip.TxID, 0)
+	deep.AddTxIn(wire.NewTxIn(&point, nil, nil))
+	if err := ProveBTCExclusive(context.Background(), network, btc, blake, deep); !errors.Is(err, ErrReplayUnsafe) {
+		t.Fatal("bounded proof should remain unproven", err)
+	}
+	delete(btc.txs, tip.TxID)
+	if err := ProveBTCExclusive(context.Background(), network, btc, blake, deep); err == nil || errors.Is(err, ErrReplayUnsafe) {
+		t.Fatal("backend errors must differ from bounded rejection", err)
+	}
+}

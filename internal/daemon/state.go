@@ -121,25 +121,26 @@ type PublicSwap struct {
 	RevealBefore       uint32             `json:"reveal_before"`
 }
 type Status struct {
-	Coins           []PublicCoin        `json:"coins"`
-	Sends           []PublicSend        `json:"sends"`
-	OwnWatchtower   protocol.Tower      `json:"own_watchtower"`
-	Watchtowers     []protocol.Tower    `json:"watchtowers"`
-	FundingFee      int64               `json:"funding_fee"`
-	Network         chain.Network       `json:"network"`
-	Name            string              `json:"name"`
-	Mode            string              `json:"mode"`
-	PubKey          string              `json:"pubkey"`
-	Addresses       map[chain.ID]string `json:"addresses"`
-	Balances        map[chain.ID]int64  `json:"balances"`
-	Heights         map[chain.ID]uint32 `json:"heights"`
-	Paused          bool                `json:"paused"`
-	Orders          []protocol.Offer    `json:"orders"`
-	Swaps           []PublicSwap        `json:"swaps"`
-	TowerJobs       []map[string]any    `json:"tower_jobs"`
-	PendingMessages int                 `json:"pending_messages"`
-	LastError       string              `json:"last_error"`
-	Tower           TowerConfig         `json:"tower"`
+	Funds           map[chain.ID]ChainBalance `json:"funds"`
+	Coins           []PublicCoin              `json:"coins"`
+	Sends           []PublicSend              `json:"sends"`
+	OwnWatchtower   protocol.Tower            `json:"own_watchtower"`
+	Watchtowers     []protocol.Tower          `json:"watchtowers"`
+	FundingFee      int64                     `json:"funding_fee"`
+	Network         chain.Network             `json:"network"`
+	Name            string                    `json:"name"`
+	Mode            string                    `json:"mode"`
+	PubKey          string                    `json:"pubkey"`
+	Addresses       map[chain.ID]string       `json:"addresses"`
+	Balances        map[chain.ID]int64        `json:"balances"`
+	Heights         map[chain.ID]uint32       `json:"heights"`
+	Paused          bool                      `json:"paused"`
+	Orders          []protocol.Offer          `json:"orders"`
+	Swaps           []PublicSwap              `json:"swaps"`
+	TowerJobs       []map[string]any          `json:"tower_jobs"`
+	PendingMessages int                       `json:"pending_messages"`
+	LastError       string                    `json:"last_error"`
+	Tower           TowerConfig               `json:"tower"`
 }
 type Request struct {
 	Method string          `json:"method"`

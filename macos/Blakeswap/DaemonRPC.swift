@@ -79,6 +79,10 @@ enum DaemonRPC {
                 let request = try Google_Protobuf_Empty(jsonUTF8Data: payload)
                 let response = try await service.getRecovery(request, metadata: metadata, options: options)
                 return try response.serializedData()
+            case "wallet.preflight":
+                let request = try Blakeswap_V1_FundsPreflightRequest(jsonUTF8Data: payload)
+                let response = try await service.preflightFunds(request, metadata: metadata, options: options)
+                return try response.serializedData()
             case "wallet.send":
                 let request = try Blakeswap_V1_SendCoinsRequest(jsonUTF8Data: payload)
                 let response = try await service.sendCoins(request, metadata: metadata, options: options)

@@ -19,13 +19,14 @@ import (
 )
 
 type PublicCoin struct {
-	Chain         chain.ID `json:"chain"`
-	TxID          string   `json:"txid"`
-	Vout          uint32   `json:"vout"`
-	Amount        int64    `json:"amount"`
-	Address       string   `json:"address"`
-	Confirmations int      `json:"confirmations"`
-	Reserved      bool     `json:"reserved"`
+	Chain         chain.ID   `json:"chain"`
+	TxID          string     `json:"txid"`
+	Vout          uint32     `json:"vout"`
+	Amount        int64      `json:"amount"`
+	Address       string     `json:"address"`
+	Confirmations int        `json:"confirmations"`
+	Reserved      bool       `json:"reserved"`
+	Holds         []CoinHold `json:"holds"`
 }
 type PublicSend struct {
 	ID            string   `json:"id"`
@@ -58,10 +59,11 @@ type SendRequest struct {
 func (e *Engine) publicCoins() []PublicCoin {
 	result := []PublicCoin{}
 	for _, id := range []chain.ID{chain.BTC, chain.Blake} {
-		reserved := e.reservedCoins(id, "")
+		holds := e.coinHolds(id)
 		for _, entry := range e.receiveBook[id] {
 			for _, coin := range e.walletCoins[id][hex.EncodeToString(entry.script)] {
-				result = append(result, PublicCoin{id, coin.TxID, coin.Vout, int64(coin.Amount), entry.address, coin.Confirmations, reserved[chain.OutpointKey(coin.TxID, coin.Vout)]})
+				owners := holds[chain.OutpointKey(coin.TxID, coin.Vout)]
+				result = append(result, PublicCoin{Chain: id, TxID: coin.TxID, Vout: coin.Vout, Amount: int64(coin.Amount), Address: entry.address, Confirmations: coin.Confirmations, Reserved: len(owners) > 0, Holds: owners})
 			}
 		}
 	}

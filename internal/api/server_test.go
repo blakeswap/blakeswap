@@ -35,7 +35,7 @@ func TestGRPCAndGatewayAuthenticationAndExactIntegers(t *testing.T) {
 		calls.Add(1)
 		switch r.Method {
 		case "status":
-			return daemon.Status{Name: "alice", Network: chain.Regtest, Balances: map[chain.ID]int64{chain.BTC: 9007199254740993}, Swaps: []daemon.PublicSwap{{ID: "test", Long: contract.HTLC{Chain: chain.BTC, Amount: 2000000, RefundHeight: 1800000000, TxID: "funding", Vout: 2}}}}, nil
+			return daemon.Status{Name: "alice", Network: chain.Regtest, Balances: map[chain.ID]int64{chain.BTC: 9007199254740993}, Funds: map[chain.ID]daemon.ChainBalance{chain.BTC: {TotalConfirmed: 9007199254740993, UnlockedConfirmed: 9007199254740990, ReservedConfirmed: 3, Unconfirmed: 7, HTLCLocked: 100000, HTLCAvailable: true}}, Coins: []daemon.PublicCoin{{Chain: chain.BTC, TxID: "coin", Amount: 3, Reserved: true, Holds: []daemon.CoinHold{{Kind: "offer", ID: "order", Reason: "Open order", Cancellable: true}}}}, Swaps: []daemon.PublicSwap{{ID: "test", Long: contract.HTLC{Chain: chain.BTC, Amount: 2000000, RefundHeight: 1800000000, TxID: "funding", Vout: 2}}}}, nil
 		case "offer.create":
 			var p struct {
 				SellAmount int64 `json:"sell_amount"`
@@ -73,6 +73,9 @@ func TestGRPCAndGatewayAuthenticationAndExactIntegers(t *testing.T) {
 	result, err := client.GetStatus(ctx, &emptypb.Empty{})
 	if err != nil || result.Balances["btc"] != 9007199254740993 {
 		t.Fatal(result, err)
+	}
+	if funds := result.Funds["btc"]; funds == nil || funds.UnlockedConfirmed != 9007199254740990 || funds.ReservedConfirmed != 3 || !funds.HtlcAvailable || len(result.Coins) != 1 || len(result.Coins[0].Holds) != 1 || !result.Coins[0].Holds[0].Cancellable {
+		t.Fatal("funds API mapping", result)
 	}
 	if len(result.Swaps) != 1 || result.Swaps[0].Long.Amount != 2000000 || result.Swaps[0].Long.RefundLocktime != 1800000000 || result.Swaps[0].Long.Txid != "funding" || result.Swaps[0].Long.Vout != 2 {
 		t.Fatal("HTLC API mapping dropped fields", result.Swaps)

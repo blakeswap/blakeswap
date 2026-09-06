@@ -75,7 +75,7 @@ func CheckStoredNetwork(c Config) error {
 // selected wallet. Standalone immutable-config daemons accept legacy callers.
 func CheckCommandNetwork(req Request, actual chain.Network, required bool) error {
 	switch req.Method {
-	case "status.refresh", "wallet.send", "tower.resolve", "offer.create", "offer.cancel", "swap.take", "pause", "regtest.mine", "regtest.faucet":
+	case "status.refresh", "wallet.preflight", "wallet.send", "tower.resolve", "offer.create", "offer.cancel", "swap.take", "pause", "regtest.mine", "regtest.faucet":
 	default:
 		return nil
 	}
