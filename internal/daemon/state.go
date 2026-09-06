@@ -91,6 +91,7 @@ type TowerJob struct {
 	Error       string       `json:"error,omitempty"`
 }
 type State struct {
+	ActivityReceipts            map[string]ReceiptEvidence `json:"activity_receipts"`
 	ActivityObservationSequence uint64                     `json:"activity_observation_sequence"`
 	ActivityVersion             int                        `json:"activity_version"`
 	Activities                  map[string]Activity        `json:"activities"`

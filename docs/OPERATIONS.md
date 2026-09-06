@@ -1,5 +1,13 @@
 # Configuration, operation, and recovery
 
+## Activity history
+
+Use Activity to filter linked payments and lifecycle records, inspect current and
+prior chain outcomes, navigate to an order/swap/send, and export the selected
+snapshot to CSV. Indexing warnings distinguish incomplete history from an empty
+wallet. Optional explorer templates are configured per chain and environment;
+no BLAKE explorer is guessed. See [coverage, timestamps, and export](ACTIVITY.md).
+
 ## Desktop network settings
 
 The app starts its own wallet daemon and defaults to mainnet. Settings contains

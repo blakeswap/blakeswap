@@ -272,6 +272,11 @@ func TestRealAsyncSwapRecoveryAndBounties(t *testing.T) {
 		t.Run(scenario.name, func(t *testing.T) {
 			h := newHarness(t, scenario.bps)
 			id := h.fundBoth(scenario.sell, scenario.bps)
+			defer func() {
+				if !t.Failed() {
+					assertSettledActivity(t, h, id)
+				}
+			}()
 			maker := h.swap("maker", id)
 			terms := *maker.Terms
 			short, long := maker.Short, maker.Long

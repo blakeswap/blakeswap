@@ -92,3 +92,11 @@ The wallet supports a narrow P2WPKH coin-selection path with bounded input count
 ## Remaining work before considering real funds
 
 At minimum: independent protocol and implementation audits; broader replay-safe coin selection/splitting support; per-chain security calibration; crash/fault injection at every durable boundary; rollback-safe recovery; adaptive bounded fees and pinning analysis; public-relay interoperability and cursor/retention design; provider incentives/admission; hardened key storage; privacy improvements; and broader platform/packaging verification. These remain unresolved by successful local-regtest demonstrations or public endpoint read checks.
+
+
+Activity history is an advisory, bounded projection, not a balance or tax report.
+It preserves observed lineage and explicit unknowns, but cannot reconstruct
+missing local lifecycle times or deposits omitted by an incomplete provider.
+Capacity, pagination, timestamp and classification limits are documented in
+[Activity](ACTIVITY.md). Reorgs and source changes can demote current outcomes;
+prior outcomes must not be summed as additional payments.

@@ -326,3 +326,30 @@ private minimal journal permissions/overwrite protection. It injects typed
 responses into the production review model; it is not a claim of automated
 pixel-level UI coverage. Build the bundle and use its helper for startup tests as
 described by `scripts/test-swift.sh`.
+
+
+## Activity history and export
+
+`TestActivity*` checks durable IDs, spent/rotated deposits, linked change without
+duplicate totals, missing creation-time migration, earlier replacement variants,
+reorg demotion, frozen pagination/FIFO eviction, capacity failures, exact CSV and
+formula escaping. Lifecycle tests hold history reads outside the engine lock,
+close/cancel/join them, and reject late wallet/network/source-generation replies.
+Chain tests verify historical receipt APIs rather than substituting current UTXOs.
+
+`TestRealActivityHistoryThroughTypedAPI` exercises both assets through generated
+authenticated gRPC: spent old-address deposits, exact send replacement fees/change,
+restart, a new deposit during frozen paging, reorg/reconsideration, and CSV export.
+`TestRealAsyncSwapRecoveryAndBounties` also checks linked funding, owner claim/refund,
+and tower-earned activity against actual settlement output amounts. Run serially
+against the isolated fixture, then repeat with `BLAKESWAP_TEST_ELECTRUM=1`:
+
+```sh
+BLAKESWAP_REGTEST="$PWD" sh scripts/go.sh test -p=1 ./internal/api ./internal/daemon -run 'TestReal(ActivityHistoryThroughTypedAPI|AsyncSwapRecoveryAndBounties)' -v -count=1
+```
+
+`ActivityTests` covers native loading/empty/error/retry states, frozen load-more,
+details/navigation IDs, discarded late replies after wallet/network/filter changes,
+whole-scope CSV chunks, and explicit chain/network explorer binding. These are
+production-model/view compilation tests, not pixel-level UI automation. Build a
+fresh packaged helper before running the complete native suite as described above.

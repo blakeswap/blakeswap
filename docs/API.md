@@ -210,6 +210,22 @@ Existing `CreateOffer`/`TakeOffer` remain compatible for explicit command-line
 callers; they do not synthesize a native review or an idempotent confirmation
 identity. New interactive clients should use the quote/confirm pair.
 
+### Activity history
+
+`ListActivity` / `activity.list` (`POST /v1/activity/query`) returns versioned,
+linked records for the selected wallet/network. `ExportActivity` /
+`activity.export` (`POST /v1/activity/export`) returns CSV chunks from the same
+snapshot. Both take `expected_wallet`, `expected_network`, optional type/status/
+chain/date filters, and `snapshot`, `cursor`, `limit` for stable pagination.
+Snapshots last ten minutes, with four retained per engine; changed or expired
+scope requires a refresh. Amounts are exact chain-specific satoshis; creation,
+recording, block and observation times have separate provenance.
+
+Environment Settings may include optional `explorers` keyed by `btc` and `blake`,
+each containing an HTTPS transaction URL template with one `{txid}`. The
+[activity reference](ACTIVITY.md) describes record semantics, indexing limits,
+reorgs, export safety, and the query contract.
+
 ### Coin control and sends
 
 Status includes `coins` (chain, outpoint, amount, address, confirmations, reserved)

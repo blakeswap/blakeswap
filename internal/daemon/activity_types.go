@@ -25,6 +25,7 @@ type Activity struct {
 	Kind           string                `json:"kind"`
 	Chain          chain.ID              `json:"chain"`
 	Direction      string                `json:"direction"`
+	Classification string                `json:"classification"`
 	Movement       bool                  `json:"movement"`
 	Amount         int64                 `json:"amount"`
 	Principal      int64                 `json:"principal"`
@@ -122,6 +123,16 @@ type ActivityExport struct {
 	CSV        string `json:"csv"`
 }
 type activitySnapshot struct {
-	Page   ActivityPage
-	Filter string
+	Page     ActivityPage
+	Filter   string
+	Sequence uint64
+}
+
+// ReceiptEvidence contains only public transaction facts needed to classify
+// historical change once its spent inputs have been indexed. No witnesses/raws.
+type ReceiptEvidence struct {
+	Inputs     []CoinOutpoint `json:"inputs"`
+	Total      int64          `json:"total"`
+	OwnedTotal int64          `json:"owned_total"`
+	Coinbase   bool           `json:"coinbase"`
 }

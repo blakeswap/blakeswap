@@ -87,6 +87,14 @@ enum DaemonRPC {
                 let request = try Blakeswap_V1_TradeQuoteRequest(jsonUTF8Data: payload)
                 let response = try await service.quoteTrade(request, metadata: metadata, options: options)
                 return try response.serializedData()
+            case "activity.list":
+                let request = try Blakeswap_V1_ActivityQuery(jsonUTF8Data: payload)
+                let response = try await service.listActivity(request, metadata: metadata, options: options)
+                return try response.serializedData()
+            case "activity.export":
+                let request = try Blakeswap_V1_ActivityQuery(jsonUTF8Data: payload)
+                let response = try await service.exportActivity(request, metadata: metadata, options: options)
+                return try response.serializedData()
             case "trade.confirm":
                 let request = try Blakeswap_V1_ConfirmTradeRequest(jsonUTF8Data: payload)
                 let response = try await service.confirmTrade(request, metadata: metadata, options: options)

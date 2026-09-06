@@ -75,7 +75,7 @@ func TestRPCHistoryIncludesSpentReceiptsAndPreservesBlockTime(t *testing.T) {
 		t.Fatal(err)
 	}
 	page, err := rpc.WithWallet("watch").AddressHistory(context.Background(), address, "", 1)
-	if err != nil || len(page.Transactions) != 1 || page.Complete || page.Next == "" || page.Source != "rpc:"+server.URL {
+	if err != nil || len(page.Transactions) != 1 || page.Complete || page.Next == "" || page.Source != historySource("rpc", server.URL) {
 		t.Fatal(page, err)
 	}
 	second, err := rpc.WithWallet("watch").AddressHistory(context.Background(), address, page.Next, 1)

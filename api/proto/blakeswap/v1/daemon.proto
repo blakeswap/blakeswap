@@ -16,6 +16,8 @@ option (grpc.gateway.protoc_gen_openapiv2.options.openapiv2_swagger) = {
 };
 
 service DaemonService {
+ rpc ListActivity(ActivityQuery) returns (ActivityPage) { option (google.api.http) = { post: "/v1/activity/query" body: "*" }; }
+ rpc ExportActivity(ActivityQuery) returns (ActivityExport) { option (google.api.http) = { post: "/v1/activity/export" body: "*" }; }
  rpc GetStatus(google.protobuf.Empty) returns (Status) { option (google.api.http) = { get: "/v1/status" }; }
  rpc RefreshStatus(RefreshStatusRequest) returns (Status) { option (google.api.http) = { post: "/v1/status/refresh" body: "*" }; }
  rpc ResolveWatchtower(ResolveWatchtowerRequest) returns (google.protobuf.Empty) { option (google.api.http) = { post: "/v1/watchtowers/resolve" body: "*" }; }
@@ -155,6 +157,7 @@ message Node {
  string certificate_sha256 = 4; // Optional explicit SHA256 of the Electrum server's DER certificate.
 }
 message Environment {
+ map<string,string> explorers = 9; // Optional per-chain transaction URL templates containing {txid}; no default explorer is guessed.
  string network = 1; // regtest, testnet (Testnet4), or mainnet.
  map<string,Node> nodes = 2; // Exactly btc and blake.
  repeated string relays = 3;
@@ -237,3 +240,126 @@ message ConfirmTradeRequest {
  string token = 1; string revision = 2; string request_id = 3; string expected_wallet = 4; string expected_network = 5;
 }
 message ConfirmTradeResult { string id = 1; string kind = 2; string state = 3; string error = 4; }
+
+message ActivityVariant {
+ string txid = 1;
+ int64 amount = 2;
+ int64 principal = 3;
+ int64 fee = 4;
+ bool fee_known = 5;
+ string fee_payer = 6;
+ int64 bounty = 7;
+}
+
+message ActivityRecord {
+ int32 version = 1;
+ string id = 2;
+ string group_id = 3;
+ string wallet = 4;
+ string network = 5;
+ string kind = 6;
+ string chain = 7;
+ string direction = 8;
+ string classification = 9;
+ bool movement = 10;
+ int64 amount = 11;
+ int64 principal = 12;
+ int64 fee = 13;
+ bool fee_known = 14;
+ string fee_payer = 15;
+ int64 bounty = 16;
+ string counter_chain = 17;
+ int64 counter_amount = 18;
+ string order_id = 19;
+ string swap_id = 20;
+ string send_id = 21;
+ repeated string related_ids = 22;
+ string address = 23;
+ repeated Outpoint outpoints = 24;
+ string txid = 25;
+ repeated string variants = 26;
+ string local_status = 27;
+ string status = 28;
+ int32 confirmations = 29;
+ int64 created_at = 30;
+ string created_source = 31;
+ int64 recorded_at = 32;
+ int64 updated_at = 33;
+ int64 block_time = 34;
+ string block_hash = 35;
+ string label = 36;
+ string source = 37;
+ uint64 generation = 38;
+ int64 observed_at = 39;
+ repeated ActivityVariant variant_amounts = 40;
+ repeated ActivityObservation observations = 41;
+ repeated ActivityOutcome history = 42;
+}
+
+message ActivityObservation {
+ uint64 sequence = 1;
+ string txid = 2;
+ string status = 3;
+ int32 confirmations = 4;
+ uint32 height = 5;
+ string block_hash = 6;
+ int64 block_time = 7;
+ int64 observed_at = 8;
+ string source = 9;
+ uint64 generation = 10;
+ string error = 11;
+}
+
+message ActivityOutcome {
+ string status = 1;
+ string txid = 2;
+ int64 amount = 3;
+ int64 fee = 4;
+ bool fee_known = 5;
+ string block_hash = 6;
+ int64 block_time = 7;
+ int64 observed_at = 8;
+ string source = 9;
+ uint64 generation = 10;
+}
+
+message ActivityIndex {
+ uint32 address = 1;
+ string after = 2;
+ string source = 3;
+ uint64 generation = 4;
+ int64 completed_pass = 5;
+ string error = 6;
+}
+
+message ActivityQuery {
+ string expected_wallet = 1;
+ string expected_network = 2;
+ string kind = 3;
+ string status = 4;
+ string chain = 5;
+ int64 from = 6;
+ int64 to = 7;
+ string snapshot = 8;
+ uint32 cursor = 9;
+ uint32 limit = 10;
+}
+
+message ActivityPage {
+ string snapshot = 1;
+ int64 expires = 2;
+ uint64 revision = 3;
+ uint32 total = 4;
+ uint32 next_cursor = 5;
+ repeated ActivityRecord records = 6;
+ map<string,ActivityIndex> index = 7;
+ string error = 8;
+}
+
+message ActivityExport {
+ string snapshot = 1;
+ int64 expires = 2;
+ uint32 next_cursor = 3;
+ uint32 total = 4;
+ string csv = 5;
+}

@@ -3,6 +3,8 @@ package chain
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"sort"
 
@@ -24,6 +26,13 @@ type AddressHistoryPage struct {
 	Complete     bool
 	Source       string
 	Generation   uint64
+}
+
+// Provenance identifies the endpoint without exposing credentials, query tokens
+// or private wallet paths in exported activity.
+func historySource(kind, endpoint string) string {
+	digest := sha256.Sum256([]byte(endpoint))
+	return kind + ":" + hex.EncodeToString(digest[:])
 }
 
 func historyPageIDs(ids []string, after string, limit int) ([]string, string, error) {
@@ -103,7 +112,7 @@ func (r *RPC) AddressHistory(ctx context.Context, address, after string, limit i
 	if err != nil {
 		return AddressHistoryPage{}, err
 	}
-	result := AddressHistoryPage{Source: "rpc:" + r.URL, Next: next, Complete: next == ""}
+	result := AddressHistoryPage{Source: historySource("rpc", r.URL), Next: next, Complete: next == ""}
 	for _, id := range page {
 		tx, err := r.Transaction(ctx, id)
 		if err != nil {
@@ -145,7 +154,7 @@ func (e *Electrum) AddressHistory(ctx context.Context, address, after string, li
 	if err != nil {
 		return AddressHistoryPage{}, err
 	}
-	result := AddressHistoryPage{Source: "electrum:" + e.endpoint.String(), Next: next, Complete: next == ""}
+	result := AddressHistoryPage{Source: historySource("electrum", e.endpoint.String()), Next: next, Complete: next == ""}
 	for _, id := range page {
 		tx, err := e.raw(ctx, id)
 		if err != nil {
@@ -181,7 +190,7 @@ type HistoryTransaction struct {
 }
 
 func (r *RPC) HistoryTransaction(ctx context.Context, id string, height uint32, block string) (HistoryTransaction, error) {
-	result := HistoryTransaction{Source: "rpc:" + r.URL}
+	result := HistoryTransaction{Source: historySource("rpc", r.URL)}
 	tx, err := r.Transaction(ctx, id)
 	result.Transaction = tx
 	if err != nil && height > 0 && block != "" && ctx.Err() == nil {
@@ -193,7 +202,7 @@ func (r *RPC) HistoryTransaction(ctx context.Context, id string, height uint32, 
 	return result, err
 }
 func (e *Electrum) HistoryTransaction(ctx context.Context, id string, height uint32, block string) (HistoryTransaction, error) {
-	result := HistoryTransaction{Source: "electrum:" + e.endpoint.String()}
+	result := HistoryTransaction{Source: historySource("electrum", e.endpoint.String())}
 	tx, err := e.Transaction(ctx, id)
 	result.Transaction = tx
 	if err != nil && height > 0 && block != "" && ctx.Err() == nil {
