@@ -6,6 +6,7 @@ import (
 	"encoding/binary"
 	"encoding/hex"
 	"encoding/json"
+	"fmt"
 	"math/big"
 	"net"
 	"strings"
@@ -234,5 +235,60 @@ func TestElectrumHeaderCacheChecksReorgAndExtension(t *testing.T) {
 	headers[5] = mineHeader(t, BTC, 5, headers[4], 0x207fffff)
 	if e.connectHeaders(context.Background(), 1, headers[1], 5, headers[5]) == nil {
 		t.Fatal("cached range survived disconnected reorg")
+	}
+}
+
+func TestElectrumResumesInterruptedHeaderRanges(t *testing.T) {
+	for _, reorg := range []bool{false, true} {
+		t.Run(fmt.Sprint("reorg=", reorg), func(t *testing.T) {
+			headers := map[uint32][]byte{}
+			for h := uint32(1); h <= 5; h++ {
+				headers[h] = mineHeader(t, BTC, h, headers[h-1], 0x207fffff)
+			}
+			var starts []uint32
+			interrupted := false
+			e := electrumFixture(t, Regtest, BTC, func(method string, p []json.RawMessage) any {
+				var start, count uint32
+				json.Unmarshal(p[0], &start)
+				if method == "blockchain.block.header" {
+					return hex.EncodeToString(headers[start])
+				}
+				json.Unmarshal(p[1], &count)
+				starts = append(starts, start)
+				if len(starts) == 2 {
+					interrupted = true
+					return map[string]any{"count": 0, "hex": ""}
+				}
+				count = min(count, 2)
+				var raw []byte
+				for h := start; h < start+count; h++ {
+					raw = append(raw, headers[h]...)
+				}
+				return map[string]any{"count": count, "hex": hex.EncodeToString(raw)}
+			})
+			if err := e.connectHeaders(context.Background(), 1, headers[1], 5, headers[5]); err == nil || !interrupted {
+				t.Fatal("partial proof returned success", err)
+			}
+			if cached, ok := e.ranges[1]; !ok || cached.end != 3 {
+				t.Fatal("verified progress lost on interruption")
+			}
+			if reorg {
+				headers[2][36] ^= 1
+				remineHeader(t, headers[2])
+				for h := uint32(3); h <= 5; h++ {
+					headers[h] = mineHeader(t, BTC, h, headers[h-1], 0x207fffff)
+				}
+			}
+			if err := e.connectHeaders(context.Background(), 1, headers[1], 5, headers[5]); err != nil {
+				t.Fatal(err)
+			}
+			want := uint32(4)
+			if reorg {
+				want = 2
+			}
+			if starts[2] != want {
+				t.Fatalf("resumed from %d, want %d after reorg=%v", starts[2], want, reorg)
+			}
+		})
 	}
 }

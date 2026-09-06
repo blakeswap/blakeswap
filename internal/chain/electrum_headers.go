@@ -5,7 +5,6 @@ import (
 	"context"
 	"encoding/hex"
 	"errors"
-	"time"
 
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
 )
@@ -63,23 +62,16 @@ func linkedHeaders(parent, child []byte) bool {
 
 // connectHeaders proves every link from an observed block to the subscribed
 // tip. It does not establish difficulty transitions or most-work canonicality.
-// Cache only completed ranges, and recheck both ends before extending a range
-// to a new tip. A same-height reorg therefore cannot reuse an old proof.
+// Cache verified batches so a caller's polling deadline does not discard all
+// progress. Recheck both ends before resuming; no confirmation count is exposed
+// until the full range reaches the subscribed tip.
 func (e *Electrum) connectHeaders(ctx context.Context, start uint32, first []byte, end uint32, last []byte) error {
-	// Bound the total download, not just each RPC: an indexer controls the
-	// advertised height and could otherwise keep a wallet busy indefinitely.
-	ctx, cancel := context.WithTimeout(ctx, 2*time.Minute)
-	defer cancel()
 	e.rangeMu.Lock()
 	defer e.rangeMu.Unlock()
 	if start > end {
 		return errors.New("invalid header range")
 	}
 	firstHash, err := HeaderHash(first)
-	if err != nil {
-		return err
-	}
-	lastHash, err := HeaderHash(last)
 	if err != nil {
 		return err
 	}
@@ -109,13 +101,14 @@ func (e *Electrum) connectHeaders(ctx context.Context, start uint32, first []byt
 			previous = h
 			position++
 		}
+		if e.ranges == nil || len(e.ranges) >= 128 {
+			e.ranges = make(map[uint32]headerRange)
+		}
+		hash, _ := HeaderHash(previous)
+		e.ranges[start] = headerRange{first: firstHash, last: hash, end: position}
 	}
 	if !bytes.Equal(previous, last) {
 		return errors.New("header range does not reach subscribed tip")
 	}
-	if e.ranges == nil || len(e.ranges) >= 128 {
-		e.ranges = make(map[uint32]headerRange)
-	}
-	e.ranges[start] = headerRange{first: firstHash, last: lastHash, end: end}
 	return nil
 }
