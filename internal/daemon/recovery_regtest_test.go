@@ -326,18 +326,47 @@ func TestRealPortableTowerRecovery(t *testing.T) {
 			}
 			faults[target.Chain].setDown(true)
 			restoreRecoveryArchive(t, h, "tower", archive)
-			tickDegraded(t, h.engines["tower"])
 			jobID := ""
 			for key, state := range h.engines["tower"].s.TowerJobs {
 				if state.Job.SwapID == id && state.Job.Kind == "claim" {
-					jobID = key
-					if state.Secret == "" {
-						t.Fatal("tower missed actual witness while target unavailable")
+					if jobID != "" || state.Job.Target != target || state.Job.Observe == nil || *state.Job.Observe != observe {
+						t.Fatal("fixture claim job does not uniquely match the restored contracts")
 					}
+					jobID = key
 				}
 			}
 			if jobID == "" {
 				t.Fatal("fixture has no authorized tower claim")
+			}
+			learned := h.engines["tower"].s.TowerJobs[jobID]
+			if learned.Secret != "" {
+				t.Fatal("archive unexpectedly contains the later public witness")
+			}
+			// Restoring resets historical cursors. An incomplete first scan is not
+			// evidence that the already-mined claim has been examined and forgotten.
+			observed := &captureTowerScan{SpendScanner: h.engines["tower"].towerScanners[observe.Chain]}
+			if os.Getenv("BLAKESWAP_TEST_ELECTRUM") == "" {
+				observed.firstBudget = 200 * time.Millisecond
+			}
+			h.engines["tower"].towerScanners[observe.Chain] = observed
+			tickDegraded(t, h.engines["tower"])
+			if observed.firstBudget > 0 {
+				if observed.result != nil || observed.err == nil || !strings.Contains(observed.err.Error(), "block scan progress retained") || !h.engines["tower"].fresh(observe.Chain) {
+					t.Fatal("first observation slice did not retain healthy bounded progress", observed.err)
+				}
+				t.Logf("observation %s scan retained progress while target was unavailable: %v", observe.Chain, observed.err)
+			}
+			witnessCtx, cancelWitness := context.WithTimeout(context.Background(), 30*time.Second)
+			defer cancelWitness()
+			for cycle := 0; learned.Secret == "" && cycle < 12 && witnessCtx.Err() == nil; cycle++ {
+				if learned.Broadcast != "" {
+					t.Fatal("tower published while target was unavailable")
+				}
+				time.Sleep(100 * time.Millisecond)
+				tickDegradedContext(t, h.engines["tower"], witnessCtx)
+			}
+			if learned.Secret == "" || learned.Broadcast != "" {
+				t.Fatal("tower failed bounded witness recovery while target unavailable", learned.Error)
 			}
 			archive = snapshotRecoveryArchive(t, h, "tower")
 			h.offline("tower")
