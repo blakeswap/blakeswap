@@ -101,4 +101,16 @@ final class ActivityTests: XCTestCase {
         settings.environments[1].explorers["blake"] = "javascript:{txid}"
         XCTAssertNil(activityExplorer(record: record, txid: txid, settings: settings))
     }
+    func testTowerOnlyEarningLinksToRetainedJobInsteadOfRemoteOwnerSwap() {
+        var earning = row("tower/job-identity")
+        earning.kind = "tower_earning"; earning.groupID = "tower/job-identity"; earning.swapID = "remote-owner-swap"
+        XCTAssertEqual(ActivityDestination.settlement(earning), ActivityDestination(page: "Wallet", anchor: "tower/job-identity"))
+        earning.groupID = ""
+        XCTAssertEqual(ActivityDestination.settlement(earning)?.anchor, "tower/job-identity")
+        earning.id = "unknown"
+        XCTAssertNil(ActivityDestination.settlement(earning))
+        earning.kind = "swap"
+        XCTAssertEqual(ActivityDestination.settlement(earning), ActivityDestination.swap("remote-owner-swap"))
+    }
+
 }

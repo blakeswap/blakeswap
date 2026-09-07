@@ -124,7 +124,7 @@ struct ActivityDetails: View {
                     if !record.address.isEmpty { Text("Address: \(record.address)").font(.caption.monospaced()) }
                     HStack {
                         if let target = ActivityDestination.order(record.orderID) { Button("Show order") { navigate(target) } }
-                        if let target = ActivityDestination.swap(record.swapID) { Button("Show swap") { navigate(target) } }
+                        if let target = ActivityDestination.settlement(record) { Button(record.kind == "tower_earning" ? "Show tower job" : "Show swap") { navigate(target) } }
                         if let target = ActivityDestination.send(record.sendID) { Button("Show send") { navigate(target) } }
                     }.disabled(!context.matches(app.tradeContext))
                     if !record.variants.isEmpty {

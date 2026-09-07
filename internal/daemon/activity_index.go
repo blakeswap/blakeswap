@@ -390,6 +390,10 @@ func (e *Engine) reconcileActivityReceipts() {
 		}
 		a := original
 		key := string(a.Chain) + "/" + a.TxID
+		evidence, evidenceKnown := e.activityReceiptEvidence(key)
+		if e.fatal != nil {
+			return
+		}
 		a.GroupID = a.ID
 		a.RelatedIDs = nil
 		a.Direction = "incoming"
@@ -399,6 +403,9 @@ func (e *Engine) reconcileActivityReceipts() {
 		parent, parentKnown := transactions[key]
 		if !parentKnown {
 			parent, parentKnown = e.archivedActivityParent(key)
+		}
+		if e.fatal != nil {
+			return
 		}
 		if parentKnown {
 			a.GroupID = parent.GroupID
@@ -425,7 +432,7 @@ func (e *Engine) reconcileActivityReceipts() {
 				a.Classification = "swap_payout"
 				a.Label = "Swap settlement receipt"
 			}
-		} else if evidence, ok := e.s.ActivityReceipts[key]; ok && !evidence.Coinbase {
+		} else if evidenceKnown && !evidence.Coinbase {
 			known := 0
 			for _, point := range evidence.Inputs {
 				if _, ok := owned[string(a.Chain)+"/"+pointKey(point)]; ok || e.archivedActivityOwns(string(a.Chain)+"/"+pointKey(point)) {

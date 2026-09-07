@@ -19,6 +19,14 @@ struct ActivityDestination: Equatable {
     let page: String
     let anchor: String
     static func order(_ id: String) -> Self? { id.isEmpty ? nil : Self(page: "Market", anchor: "order/" + id) }
+    static func settlement(_ record: Blakeswap_V1_ActivityRecord) -> Self? {
+        if record.kind == "tower_earning" {
+            let group = record.groupID.hasPrefix("tower/") ? record.groupID : record.id
+            guard group.hasPrefix("tower/"), group.count > 6 else { return nil }
+            return Self(page: "Wallet", anchor: group)
+        }
+        return swap(record.swapID)
+    }
     static func swap(_ id: String) -> Self? { id.isEmpty ? nil : Self(page: "Swaps", anchor: "swap/" + id) }
     static func send(_ id: String) -> Self? { id.isEmpty ? nil : Self(page: "Wallet", anchor: "send/" + id) }
 }

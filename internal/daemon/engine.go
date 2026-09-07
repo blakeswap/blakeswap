@@ -270,6 +270,9 @@ func (e *Engine) persistState() error {
 	e.reconcileStrategyExposure()
 	e.syncOrderRecords()
 	e.syncActivity()
+	if e.fatal != nil && !errors.Is(e.fatal, errEngineClosed) {
+		return e.fatal
+	}
 	parts, err := stateSemanticParts(e.s)
 	if err != nil {
 		return err

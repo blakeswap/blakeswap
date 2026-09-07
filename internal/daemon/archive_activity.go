@@ -171,3 +171,16 @@ func (e *Engine) compactActivity(remaining *int, valid map[chain.ID]bool) error 
 	}
 	return nil
 }
+
+func (e *Engine) activityReceiptEvidence(key string) (ReceiptEvidence, bool) {
+	if evidence, ok := e.s.ActivityReceipts[key]; ok {
+		return evidence, true
+	}
+	var evidence ReceiptEvidence
+	found, err := e.archivedValue("activity_receipts", key, &evidence)
+	if err != nil {
+		e.fatal = err
+		return evidence, false
+	}
+	return evidence, found
+}
