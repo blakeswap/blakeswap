@@ -29,6 +29,11 @@ func portableManifest(t *testing.T) backupManifest {
 	profile := backupWallet{ID: "source-profile", Name: "Personal", Identity: id, Mnemonic: mnemonic, Networks: map[chain.Network]*daemon.State{}}
 	for _, network := range []chain.Network{chain.Regtest, chain.Testnet, chain.Mainnet} {
 		profile.Networks[network] = &daemon.State{Version: 1, Network: network, Mnemonic: mnemonic, ReceiveIndexes: map[chain.ID]uint32{chain.BTC: 12, chain.Blake: 37}, Swaps: map[string]*daemon.Swap{"swap": {ID: "swap", Role: "maker", Secret: "private preimage", LongFunding: "saved transaction", SelfRefunds: []string{"saved refund"}}}}
+		state := profile.Networks[network]
+		state.ActivityVersion, state.ActivityRevision, state.ActivityObservationSequence = 1, 3, 9
+		state.Activities = map[string]daemon.Activity{"receive/known": {Version: 1, ID: "receive/known", Wallet: profile.ID, Network: network, Kind: "receive", Chain: chain.BTC, TxID: "transaction", Variants: []string{"transaction"}, Status: "confirmed", Confirmations: 2, Observations: []daemon.ActivityObservation{{Sequence: 9, TxID: "transaction", Status: "confirmed", Height: 10, BlockHash: "current-block", Source: "verified-source", Generation: 1}}, History: []daemon.ActivityOutcome{{TxID: "transaction", Status: "orphaned", BlockHash: "old-block", Source: "prior-source", Generation: 1}}}}
+		state.ActivityReceipts = map[string]daemon.ReceiptEvidence{"transaction": {Inputs: []daemon.CoinOutpoint{{TxID: "parent", Vout: 1}}, Total: 200000, OwnedTotal: 150000}}
+		state.ActivityIndexes = map[chain.ID]daemon.ActivityIndex{chain.BTC: {Address: 7, After: "cursor", Source: "verified-source", Generation: 1, CompletedPass: 100}}
 	}
 	return backupManifest{FormatVersion: 1, CreatedAt: time.Now().Unix(), Wallets: []backupWallet{profile}}
 }
@@ -97,7 +102,17 @@ func TestPortableManifestRejectsIdentityAndNetworkMismatch(t *testing.T) {
 		"seed mismatch":     func(m *backupManifest) { m.Wallets[0].Networks[chain.Regtest].Mnemonic = "different seed" },
 		"nil state":         func(m *backupManifest) { m.Wallets[0].Networks[chain.Regtest] = nil },
 		"nil swap":          func(m *backupManifest) { m.Wallets[0].Networks[chain.Regtest].Swaps["swap"] = nil },
-		"future format":     func(m *backupManifest) { m.FormatVersion++ },
+		"activity network mismatch": func(m *backupManifest) {
+			a := m.Wallets[0].Networks[chain.Regtest].Activities["receive/known"]
+			a.Network = chain.Mainnet
+			m.Wallets[0].Networks[chain.Regtest].Activities[a.ID] = a
+		},
+		"activity id mismatch": func(m *backupManifest) {
+			a := m.Wallets[0].Networks[chain.Regtest].Activities["receive/known"]
+			a.ID = "different"
+			m.Wallets[0].Networks[chain.Regtest].Activities["receive/known"] = a
+		},
+		"future format": func(m *backupManifest) { m.FormatVersion++ },
 	} {
 		t.Run(name, func(t *testing.T) {
 			manifest := portableManifest(t)

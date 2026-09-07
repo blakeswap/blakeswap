@@ -24,7 +24,7 @@ func BackupFingerprint(state State) (string, error) {
 	if err := decoder.Decode(&value); err != nil {
 		return "", err
 	}
-	for _, key := range []string{"backup", "book", "towers", "discovery_seen", "event_time"} {
+	for _, key := range []string{"backup", "book", "towers", "discovery_seen", "event_time", "activity_revision", "activity_observation_sequence", "activity_indexes", "activity_error"} {
 		delete(value, key)
 	}
 	stripFields := func(record any, keys ...string) {
@@ -49,6 +49,16 @@ func BackupFingerprint(state State) (string, error) {
 	if recovery, ok := value["recovery"].(map[string]any); ok {
 		stripFields(recovery["status"], "checked_at", "issues")
 	}
+	// Activity receipts, variants, outcomes, reorg history and provenance stay
+	// covered. Only current observation polling and coverage cursors are noise;
+	// these exclusions do not apply to historical outcomes or nested policy.
+	records("activities", func(record map[string]any) {
+		stripFields(record, "confirmations", "observed_at", "updated_at")
+		observations, _ := record["observations"].([]any)
+		for _, observation := range observations {
+			stripFields(observation, "sequence", "confirmations", "observed_at", "error")
+		}
+	})
 	records("swaps", func(record map[string]any) {
 		stripFields(record, "error", "claim_last_attempt", "refund_last_attempt", "claim_attempt", "refund_attempt", "long_confirmations", "short_confirmations")
 	})

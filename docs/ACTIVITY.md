@@ -133,3 +133,15 @@ Explorer links are optional per chain/environment in Settings. A transaction URL
 template must contain exactly one `{txid}`. HTTPS is required except HTTP loopback
 on regtest; credentials, queries and fragments are rejected. No explorer is
 guessed. Opening a link sends that transaction ID to the configured explorer.
+
+Portable state backups retain the encrypted activity ledger, historical outcomes,
+receipt classification facts and original recorded profile identity. After import,
+API pages and CSV exports use the newly selected local profile; the stored audit
+origin and chain provenance are preserved. Reopening marks old observations
+unknown and restarts historical coverage before accepting fresh provider evidence.
+Old orders remain quarantined from publication. Legacy cancelled orders with no
+ledger row remain visible with unknown creation time, and stale open orders are
+shown as quarantined rather than being resurrected or assigned a new expiry.
+Routine observation clocks, confirmation counts and indexing progress do not
+trigger a backup reminder; changed outcomes, replacement variants, reorg history
+and receipt evidence remain covered.

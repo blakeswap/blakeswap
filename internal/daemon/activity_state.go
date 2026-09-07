@@ -47,6 +47,11 @@ func activityOutcome(a Activity) ActivityOutcome {
 	return outcome
 }
 func activityMaterial(a Activity) string {
+	// Loading an old order with no variants may normalize nil to an empty
+	// slice. That representation change is not another historical outcome.
+	if len(a.Variants) == 0 {
+		a.Variants = nil
+	}
 	a.ObservedAt = 0 // Routine polling is not another economic outcome.
 	a.UpdatedAt = 0
 	return protocol.Digest(struct {
@@ -84,6 +89,11 @@ func (e *Engine) putActivity(next Activity, backfill bool) {
 	next.Wallet = e.Config.Name
 	next.Network = e.Config.Network
 	if exists {
+		// Retain the recorded origin after a portable import assigns a new local
+		// profile. API/CSV copies bind their wallet field to the current view.
+		if previous.Wallet != "" {
+			next.Wallet = previous.Wallet
+		}
 		next.CreatedAt, next.CreatedSource, next.RecordedAt = previous.CreatedAt, previous.CreatedSource, previous.RecordedAt
 		next.Variants = mergeActivityIDs(previous.Variants, next.Variants)
 		next.History = previous.History
@@ -161,6 +171,26 @@ func rawActivity(raws []string, id string) (int64, int64, int64, bool) {
 // Chain history enrichment has its own bounded pass after settlement work.
 func (e *Engine) syncActivity() {
 	backfill := e.s.ActivityVersion == 0
+	if e.s.Recovery != nil {
+		for id, event := range e.s.Recovery.Offers {
+			if _, live := e.s.Offers[id]; live {
+				continue // An explicitly created newer version owns the live row.
+			}
+			var o protocol.Offer
+			if json.Unmarshal([]byte(event.Content), &o) != nil {
+				continue
+			}
+			status := o.Status
+			if status == "open" {
+				status = "quarantined"
+			}
+			key := activityID("order", id)
+			// The signed order survives in the recovery archive. A legacy record
+			// may have no ledger timestamp; importing it cannot invent one or turn
+			// elapsed time into a new terminal decision/publication.
+			e.putActivity(Activity{ID: key, GroupID: key, Kind: "order", Chain: o.Sell, Direction: "info", Principal: o.SellAmount, CounterChain: o.Sell.Other(), CounterAmount: o.BuyAmount, OrderID: id, SwapID: o.Reservation, LocalStatus: status, Status: status, Label: "Restored order " + status}, true)
+		}
+	}
 	for id, event := range e.s.Offers {
 		var o protocol.Offer
 		if json.Unmarshal([]byte(event.Content), &o) != nil {

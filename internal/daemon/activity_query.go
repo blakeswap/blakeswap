@@ -71,6 +71,9 @@ func (e *Engine) activityPage(raw json.RawMessage) (ActivityPage, error) {
 		}
 		page := ActivityPage{Snapshot: transport.RandomID(), Expires: now + 600, Revision: e.s.ActivityRevision, Records: []Activity{}, Index: e.s.ActivityIndexes, Error: e.s.ActivityError}
 		for _, a := range e.s.Activities {
+			// A portable archive retains its original recorded profile internally;
+			// this frozen public view belongs to the selected local wallet.
+			a.Wallet = e.Config.Name
 			if a.Generation > 0 && !e.activitySourceCurrent(a.Chain, a.Generation) {
 				a.History = append(append([]ActivityOutcome{}, a.History...), activityOutcome(a))
 				a.Status = "unknown"

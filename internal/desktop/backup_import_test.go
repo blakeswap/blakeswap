@@ -66,6 +66,10 @@ func TestPortableImportIsolatedProfilePreservesExistingWallet(t *testing.T) {
 		if state.Recovery == nil || state.Recovery.Status.State != "recovering" || state.ReceiveIndexes[chain.Blake] != 37 || state.Swaps["swap"].SelfRefunds[0] != "saved refund" {
 			t.Fatal("import lost gate or recovery state")
 		}
+		activity := state.Activities["receive/known"]
+		if activity.Wallet != manifest.Wallets[0].ID || activity.Network != network || len(activity.History) != 1 || activity.History[0].BlockHash != "old-block" || activity.Observations[0].BlockHash != "current-block" || state.ActivityReceipts["transaction"].OwnedTotal != 150000 || state.ActivityIndexes[chain.BTC].After != "cursor" {
+			t.Fatal("import lost encrypted per-network activity, receipt, or source evidence")
+		}
 	}
 	request.Revision = m.settings.Revision
 	if _, err = m.importPortable(context.Background(), request); err == nil {

@@ -477,3 +477,10 @@ Portable storage/desktop tests cover chosen passwords, authenticated manifests, 
 With the isolated real-node fixture, run `TestRealPortableRestoreBeforeFundingPublication`, `TestRealPortableRestoreWitnessAndReorg` , `TestRealPortableRestorePreservesRefunds`, `TestRealPortableTowerRecovery`, and `TestRealPortablePaymentVariantsAndReceiveIndexes` through RPC and the Electrum fixture. They use the portable encrypted manifest shape and chosen password to reload daemon state against newer chain state. Private publication crash snapshots must not create funding or expose a secret. Actual witnessed claims recover through alternating chain outages, confirm with preserved authorizations, and return to recovery after an invalidated claim block. Actual owner refunds retain their signed ladder and become ready only after a positively observed incoming refund and both confirmed outcomes. Desktop/native tests separately cover the installer/profile boundary; real-node flags unset means these cases are skipped, not an integration pass.
 
 The portable tower case deliberately starts with cold observation and target RPC cursors. Each first 200ms slice must retain validated historical progress while withholding publication; subsequent paced cycles must learn the positive public witness and then recover the target claim within 12 cycles and a 30-second deadline per phase. Archive/restart and witness-block invalidation occur between those phases. Per-tick production budgets, target-outage holds, witness retention, exact bounty, refund suppression and confirmation assertions remain unchanged.
+
+`TestRestoredActivity*` and `TestRestoredLegacyOrders*` verify preserved audit
+origin with the current API/CSV profile, stale observation invalidation, retained
+prior outcomes, unknown-time legacy cancelled/open orders and no republication.
+Portable manifest/import tests round-trip activity, receipt and per-network
+history state. Fingerprint tests distinguish polling/progress changes from new
+replacement variants, receipt facts and reorg outcomes.

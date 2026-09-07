@@ -77,6 +77,16 @@ func validateBackupManifest(manifest *backupManifest) error {
 }
 
 func validateBackupState(state *daemon.State) error {
+	for id, activity := range state.Activities {
+		if activity.Version != 1 || activity.ID != id || activity.Network.Normalized() != state.Network.Normalized() || !activity.Chain.Valid() {
+			return errors.New("invalid activity identity or network in backup")
+		}
+	}
+	for id := range state.ActivityIndexes {
+		if !id.Valid() {
+			return errors.New("invalid activity history chain in backup")
+		}
+	}
 	for id, swap := range state.Swaps {
 		if swap == nil || swap.ID != id || (swap.Role != "maker" && swap.Role != "taker") {
 			return errors.New("invalid swap in backup")
