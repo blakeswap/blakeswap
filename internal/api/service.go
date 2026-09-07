@@ -321,3 +321,8 @@ func (s *Service) StopStrategy(ctx context.Context, in *pb.StopStrategyRequest) 
 	out := &pb.StrategyView{}
 	return out, s.command(ctx, "strategy.stop", in, out)
 }
+
+func (s *Service) ReportStrategy(ctx context.Context, in *pb.StrategyReportRequest) (*pb.StrategyView, error) {
+	out := &pb.StrategyView{}
+	return out, s.command(ctx, "strategy.report", in, out)
+}

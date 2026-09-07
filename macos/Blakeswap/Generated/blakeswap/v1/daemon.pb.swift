@@ -3419,6 +3419,8 @@ nonisolated struct Blakeswap_V1_StrategyView: Sendable {
 
   var observedAt: Int64 = 0
 
+  var reportIncluded: Bool = false
+
   var unknownFields = SwiftProtobuf.UnknownStorage()
 
   init() {}
@@ -3506,6 +3508,24 @@ nonisolated struct Blakeswap_V1_StopStrategyRequest: Sendable {
   var expectedRevision: UInt64 = 0
 
   var stop: Bool = false
+
+  var unknownFields = SwiftProtobuf.UnknownStorage()
+
+  init() {}
+}
+
+nonisolated struct Blakeswap_V1_StrategyReportRequest: Sendable {
+  // SwiftProtobuf.Message conformance is added in an extension below. See the
+  // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
+  // methods supported on all messages.
+
+  var id: String = String()
+
+  var expectedWallet: String = String()
+
+  var expectedNetwork: String = String()
+
+  var expectedRevision: UInt64 = 0
 
   var unknownFields = SwiftProtobuf.UnknownStorage()
 
@@ -10323,7 +10343,7 @@ nonisolated extension Blakeswap_V1_StrategyInventory: SwiftProtobuf.Message, Swi
 
 nonisolated extension Blakeswap_V1_StrategyView: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   static let protoMessageName: String = _protobuf_package + ".StrategyView"
-  static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}config\0\u{1}revision\0\u{1}enabled\0\u{3}restore_hold\0\u{1}tripped\0\u{1}decision\0\u{3}consecutive_failures\0\u{3}replacement_failures\0\u{3}btc_policy_id\0\u{3}blake_policy_id\0\u{1}inventory\0\u{1}quotes\0\u{3}active_quotes\0\u{3}active_swaps\0\u{3}observed_at\0")
+  static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}config\0\u{1}revision\0\u{1}enabled\0\u{3}restore_hold\0\u{1}tripped\0\u{1}decision\0\u{3}consecutive_failures\0\u{3}replacement_failures\0\u{3}btc_policy_id\0\u{3}blake_policy_id\0\u{1}inventory\0\u{1}quotes\0\u{3}active_quotes\0\u{3}active_swaps\0\u{3}observed_at\0\u{3}report_included\0")
 
   mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
     while let fieldNumber = try decoder.nextFieldNumber() {
@@ -10346,6 +10366,7 @@ nonisolated extension Blakeswap_V1_StrategyView: SwiftProtobuf.Message, SwiftPro
       case 13: try { try decoder.decodeSingularUInt32Field(value: &self.activeQuotes) }()
       case 14: try { try decoder.decodeSingularUInt32Field(value: &self.activeSwaps) }()
       case 15: try { try decoder.decodeSingularInt64Field(value: &self.observedAt) }()
+      case 16: try { try decoder.decodeSingularBoolField(value: &self.reportIncluded) }()
       default: break
       }
     }
@@ -10401,6 +10422,9 @@ nonisolated extension Blakeswap_V1_StrategyView: SwiftProtobuf.Message, SwiftPro
     if self.observedAt != 0 {
       try visitor.visitSingularInt64Field(value: self.observedAt, fieldNumber: 15)
     }
+    if self.reportIncluded != false {
+      try visitor.visitSingularBoolField(value: self.reportIncluded, fieldNumber: 16)
+    }
     try unknownFields.traverse(visitor: &visitor)
   }
 
@@ -10420,6 +10444,7 @@ nonisolated extension Blakeswap_V1_StrategyView: SwiftProtobuf.Message, SwiftPro
     if lhs.activeQuotes != rhs.activeQuotes {return false}
     if lhs.activeSwaps != rhs.activeSwaps {return false}
     if lhs.observedAt != rhs.observedAt {return false}
+    if lhs.reportIncluded != rhs.reportIncluded {return false}
     if lhs.unknownFields != rhs.unknownFields {return false}
     return true
   }
@@ -10615,6 +10640,51 @@ nonisolated extension Blakeswap_V1_StopStrategyRequest: SwiftProtobuf.Message, S
     if lhs.expectedNetwork != rhs.expectedNetwork {return false}
     if lhs.expectedRevision != rhs.expectedRevision {return false}
     if lhs.stop != rhs.stop {return false}
+    if lhs.unknownFields != rhs.unknownFields {return false}
+    return true
+  }
+}
+
+nonisolated extension Blakeswap_V1_StrategyReportRequest: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+  static let protoMessageName: String = _protobuf_package + ".StrategyReportRequest"
+  static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}id\0\u{3}expected_wallet\0\u{3}expected_network\0\u{3}expected_revision\0")
+
+  mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
+    while let fieldNumber = try decoder.nextFieldNumber() {
+      // The use of inline closures is to circumvent an issue where the compiler
+      // allocates stack space for every case branch when no optimizations are
+      // enabled. https://github.com/apple/swift-protobuf/issues/1034
+      switch fieldNumber {
+      case 1: try { try decoder.decodeSingularStringField(value: &self.id) }()
+      case 2: try { try decoder.decodeSingularStringField(value: &self.expectedWallet) }()
+      case 3: try { try decoder.decodeSingularStringField(value: &self.expectedNetwork) }()
+      case 4: try { try decoder.decodeSingularUInt64Field(value: &self.expectedRevision) }()
+      default: break
+      }
+    }
+  }
+
+  func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+    if !self.id.isEmpty {
+      try visitor.visitSingularStringField(value: self.id, fieldNumber: 1)
+    }
+    if !self.expectedWallet.isEmpty {
+      try visitor.visitSingularStringField(value: self.expectedWallet, fieldNumber: 2)
+    }
+    if !self.expectedNetwork.isEmpty {
+      try visitor.visitSingularStringField(value: self.expectedNetwork, fieldNumber: 3)
+    }
+    if self.expectedRevision != 0 {
+      try visitor.visitSingularUInt64Field(value: self.expectedRevision, fieldNumber: 4)
+    }
+    try unknownFields.traverse(visitor: &visitor)
+  }
+
+  static func ==(lhs: Blakeswap_V1_StrategyReportRequest, rhs: Blakeswap_V1_StrategyReportRequest) -> Bool {
+    if lhs.id != rhs.id {return false}
+    if lhs.expectedWallet != rhs.expectedWallet {return false}
+    if lhs.expectedNetwork != rhs.expectedNetwork {return false}
+    if lhs.expectedRevision != rhs.expectedRevision {return false}
     if lhs.unknownFields != rhs.unknownFields {return false}
     return true
   }

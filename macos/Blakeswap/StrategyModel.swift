@@ -93,6 +93,18 @@ final class StrategyModel: ObservableObject {
             strategies = result.strategies; loaded = true
         } catch { if context.matches(current()) { self.error = error.localizedDescription } }
     }
+    func report(_ strategy: Blakeswap_V1_StrategyView, current: () -> TradeContext) async {
+        guard !busy, context.matches(current()) else { return }
+        busy = true; error = nil; defer { busy = false }
+        do {
+            var q = Blakeswap_V1_StrategyReportRequest(); q.id = strategy.id; q.expectedWallet = context.profile; q.expectedNetwork = context.network; q.expectedRevision = strategy.revision
+            let data = try await call("strategy.report", q.jsonUTF8Data())
+            let r = try Blakeswap_V1_StrategyView(serializedBytes: data)
+            guard !Task.isCancelled, context.matches(current()) else { return }
+            guard r.id == strategy.id, r.revision == strategy.revision, r.config.wallet == context.profile, r.config.network == context.network, r.reportIncluded else { throw RPCError.message("Report changed; refresh current strategy.") }
+            if let i = strategies.firstIndex(where: { $0.id == r.id && $0.revision == r.revision }) { strategies[i] = r }
+        } catch { if context.matches(current()) { self.error = error.localizedDescription } }
+    }
     func review(_ draft: StrategyDraft, current: () -> TradeContext) async {
         guard !busy, context.matches(current()) else { return }
         busy = true; error = nil; review = nil; reviewedEdit = nil; defer { busy = false }

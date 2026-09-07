@@ -34,6 +34,10 @@ func Call(ctx context.Context, socket string, req daemon.Request) (json.RawMessa
 	var in proto.Message
 	var invoke func() (proto.Message, error)
 	switch req.Method {
+	case "strategy.report":
+		p := &pb.StrategyReportRequest{}
+		in = p
+		invoke = func() (proto.Message, error) { return client.ReportStrategy(ctx, p) }
 	case "strategy.list":
 		p := &pb.AutomationQuery{}
 		in = p

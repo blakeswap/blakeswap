@@ -128,6 +128,9 @@ func (e *Engine) status() Status {
 	return s
 }
 func (e *Engine) Command(ctx context.Context, req Request) (any, error) {
+	if req.Method == "strategy.report" {
+		return e.strategyReport(ctx, req.Params)
+	}
 	if req.Method == "trade.quote" {
 		return e.quoteTrade(ctx, req.Params)
 	}

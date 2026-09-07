@@ -103,7 +103,7 @@ func CheckCommandNetwork(req Request, actual chain.Network, required bool) error
 			return errors.New("automation network changed; reopen policy review")
 		}
 		return nil
-	case "automation.list", "automation.disable", "strategy.list", "strategy.stop":
+	case "automation.list", "automation.disable", "strategy.list", "strategy.stop", "strategy.report":
 	case "activity.list", "activity.export":
 		// Each activity query separately requires its immutable wallet/network.
 	case "trade.quote", "trade.confirm", "status.refresh", "wallet.preflight", "fee.quote", "transaction.bump", "wallet.send", "tower.resolve", "offer.create", "offer.cancel", "swap.take", "pause", "regtest.mine", "regtest.faucet":

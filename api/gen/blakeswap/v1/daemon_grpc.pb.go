@@ -20,6 +20,7 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
+	DaemonService_ReportStrategy_FullMethodName       = "/blakeswap.v1.DaemonService/ReportStrategy"
 	DaemonService_ListStrategies_FullMethodName       = "/blakeswap.v1.DaemonService/ListStrategies"
 	DaemonService_ReviewStrategy_FullMethodName       = "/blakeswap.v1.DaemonService/ReviewStrategy"
 	DaemonService_SaveStrategy_FullMethodName         = "/blakeswap.v1.DaemonService/SaveStrategy"
@@ -67,6 +68,7 @@ const (
 //
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
 type DaemonServiceClient interface {
+	ReportStrategy(ctx context.Context, in *StrategyReportRequest, opts ...grpc.CallOption) (*StrategyView, error)
 	ListStrategies(ctx context.Context, in *AutomationQuery, opts ...grpc.CallOption) (*StrategyList, error)
 	ReviewStrategy(ctx context.Context, in *StrategyEdit, opts ...grpc.CallOption) (*StrategyReview, error)
 	SaveStrategy(ctx context.Context, in *StrategyEdit, opts ...grpc.CallOption) (*StrategyView, error)
@@ -116,6 +118,16 @@ type daemonServiceClient struct {
 
 func NewDaemonServiceClient(cc grpc.ClientConnInterface) DaemonServiceClient {
 	return &daemonServiceClient{cc}
+}
+
+func (c *daemonServiceClient) ReportStrategy(ctx context.Context, in *StrategyReportRequest, opts ...grpc.CallOption) (*StrategyView, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(StrategyView)
+	err := c.cc.Invoke(ctx, DaemonService_ReportStrategy_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
 }
 
 func (c *daemonServiceClient) ListStrategies(ctx context.Context, in *AutomationQuery, opts ...grpc.CallOption) (*StrategyList, error) {
@@ -532,6 +544,7 @@ func (c *daemonServiceClient) CheckNode(ctx context.Context, in *CheckNodeReques
 // All implementations must embed UnimplementedDaemonServiceServer
 // for forward compatibility.
 type DaemonServiceServer interface {
+	ReportStrategy(context.Context, *StrategyReportRequest) (*StrategyView, error)
 	ListStrategies(context.Context, *AutomationQuery) (*StrategyList, error)
 	ReviewStrategy(context.Context, *StrategyEdit) (*StrategyReview, error)
 	SaveStrategy(context.Context, *StrategyEdit) (*StrategyView, error)
@@ -583,6 +596,9 @@ type DaemonServiceServer interface {
 // pointer dereference when methods are called.
 type UnimplementedDaemonServiceServer struct{}
 
+func (UnimplementedDaemonServiceServer) ReportStrategy(context.Context, *StrategyReportRequest) (*StrategyView, error) {
+	return nil, status.Error(codes.Unimplemented, "method ReportStrategy not implemented")
+}
 func (UnimplementedDaemonServiceServer) ListStrategies(context.Context, *AutomationQuery) (*StrategyList, error) {
 	return nil, status.Error(codes.Unimplemented, "method ListStrategies not implemented")
 }
@@ -725,6 +741,24 @@ func RegisterDaemonServiceServer(s grpc.ServiceRegistrar, srv DaemonServiceServe
 		t.testEmbeddedByValue()
 	}
 	s.RegisterService(&DaemonService_ServiceDesc, srv)
+}
+
+func _DaemonService_ReportStrategy_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(StrategyReportRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DaemonServiceServer).ReportStrategy(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: DaemonService_ReportStrategy_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DaemonServiceServer).ReportStrategy(ctx, req.(*StrategyReportRequest))
+	}
+	return interceptor(ctx, in, info, handler)
 }
 
 func _DaemonService_ListStrategies_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
@@ -1472,6 +1506,10 @@ var DaemonService_ServiceDesc = grpc.ServiceDesc{
 	ServiceName: "blakeswap.v1.DaemonService",
 	HandlerType: (*DaemonServiceServer)(nil),
 	Methods: []grpc.MethodDesc{
+		{
+			MethodName: "ReportStrategy",
+			Handler:    _DaemonService_ReportStrategy_Handler,
+		},
 		{
 			MethodName: "ListStrategies",
 			Handler:    _DaemonService_ListStrategies_Handler,

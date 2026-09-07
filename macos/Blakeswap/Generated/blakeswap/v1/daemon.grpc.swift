@@ -21,6 +21,19 @@ internal enum Blakeswap_V1_DaemonService: Sendable {
     internal static let descriptor = GRPCCore.ServiceDescriptor(fullyQualifiedService: "blakeswap.v1.DaemonService")
     /// Namespace for method metadata.
     internal enum Method: Sendable {
+        /// Namespace for "ReportStrategy" metadata.
+        internal enum ReportStrategy: Sendable {
+            /// Request type for "ReportStrategy".
+            internal typealias Input = Blakeswap_V1_StrategyReportRequest
+            /// Response type for "ReportStrategy".
+            internal typealias Output = Blakeswap_V1_StrategyView
+            /// Descriptor for "ReportStrategy".
+            internal static let descriptor = GRPCCore.MethodDescriptor(
+                service: GRPCCore.ServiceDescriptor(fullyQualifiedService: "blakeswap.v1.DaemonService"),
+                method: "ReportStrategy",
+                type: .unary
+            )
+        }
         /// Namespace for "ListStrategies" metadata.
         internal enum ListStrategies: Sendable {
             /// Request type for "ListStrategies".
@@ -556,6 +569,7 @@ internal enum Blakeswap_V1_DaemonService: Sendable {
         }
         /// Descriptors for all methods in the "blakeswap.v1.DaemonService" service.
         internal static let descriptors: [GRPCCore.MethodDescriptor] = [
+            ReportStrategy.descriptor,
             ListStrategies.descriptor,
             ReviewStrategy.descriptor,
             SaveStrategy.descriptor,
@@ -616,6 +630,25 @@ extension Blakeswap_V1_DaemonService {
     /// You don't need to implement this protocol directly, use the generated
     /// implementation, ``Client``.
     internal protocol ClientProtocol: Sendable {
+        /// Call the "ReportStrategy" method.
+        ///
+        /// - Parameters:
+        ///   - request: A request containing a single `Blakeswap_V1_StrategyReportRequest` message.
+        ///   - serializer: A serializer for `Blakeswap_V1_StrategyReportRequest` messages.
+        ///   - deserializer: A deserializer for `Blakeswap_V1_StrategyView` messages.
+        ///   - options: Options to apply to this RPC.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
+        /// - Returns: The result of `handleResponse`.
+        func reportStrategy<Result>(
+            request: GRPCCore.ClientRequest<Blakeswap_V1_StrategyReportRequest>,
+            serializer: some GRPCCore.MessageSerializer<Blakeswap_V1_StrategyReportRequest>,
+            deserializer: some GRPCCore.MessageDeserializer<Blakeswap_V1_StrategyView>,
+            options: GRPCCore.CallOptions,
+            onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Blakeswap_V1_StrategyView>) async throws -> Result
+        ) async throws -> Result where Result: Sendable
+
         /// Call the "ListStrategies" method.
         ///
         /// - Parameters:
@@ -1410,6 +1443,36 @@ extension Blakeswap_V1_DaemonService {
         ///   - client: A `GRPCCore.GRPCClient` providing a communication channel to the service.
         internal init(wrapping client: GRPCCore.GRPCClient<Transport>) {
             self.client = client
+        }
+
+        /// Call the "ReportStrategy" method.
+        ///
+        /// - Parameters:
+        ///   - request: A request containing a single `Blakeswap_V1_StrategyReportRequest` message.
+        ///   - serializer: A serializer for `Blakeswap_V1_StrategyReportRequest` messages.
+        ///   - deserializer: A deserializer for `Blakeswap_V1_StrategyView` messages.
+        ///   - options: Options to apply to this RPC.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
+        /// - Returns: The result of `handleResponse`.
+        internal func reportStrategy<Result>(
+            request: GRPCCore.ClientRequest<Blakeswap_V1_StrategyReportRequest>,
+            serializer: some GRPCCore.MessageSerializer<Blakeswap_V1_StrategyReportRequest>,
+            deserializer: some GRPCCore.MessageDeserializer<Blakeswap_V1_StrategyView>,
+            options: GRPCCore.CallOptions = .defaults,
+            onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Blakeswap_V1_StrategyView>) async throws -> Result = { response in
+                try response.message
+            }
+        ) async throws -> Result where Result: Sendable {
+            try await self.client.unary(
+                request: request,
+                descriptor: Blakeswap_V1_DaemonService.Method.ReportStrategy.descriptor,
+                serializer: serializer,
+                deserializer: deserializer,
+                options: options,
+                onResponse: handleResponse
+            )
         }
 
         /// Call the "ListStrategies" method.
@@ -2647,6 +2710,31 @@ extension Blakeswap_V1_DaemonService {
 // Helpers providing default arguments to 'ClientProtocol' methods.
 @available(macOS 15.0, iOS 18.0, watchOS 11.0, tvOS 18.0, visionOS 2.0, *)
 extension Blakeswap_V1_DaemonService.ClientProtocol {
+    /// Call the "ReportStrategy" method.
+    ///
+    /// - Parameters:
+    ///   - request: A request containing a single `Blakeswap_V1_StrategyReportRequest` message.
+    ///   - options: Options to apply to this RPC.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
+    /// - Returns: The result of `handleResponse`.
+    internal func reportStrategy<Result>(
+        request: GRPCCore.ClientRequest<Blakeswap_V1_StrategyReportRequest>,
+        options: GRPCCore.CallOptions = .defaults,
+        onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Blakeswap_V1_StrategyView>) async throws -> Result = { response in
+            try response.message
+        }
+    ) async throws -> Result where Result: Sendable {
+        try await self.reportStrategy(
+            request: request,
+            serializer: GRPCProtobuf.ProtobufSerializer<Blakeswap_V1_StrategyReportRequest>(),
+            deserializer: GRPCProtobuf.ProtobufDeserializer<Blakeswap_V1_StrategyView>(),
+            options: options,
+            onResponse: handleResponse
+        )
+    }
+
     /// Call the "ListStrategies" method.
     ///
     /// - Parameters:
@@ -3676,6 +3764,35 @@ extension Blakeswap_V1_DaemonService.ClientProtocol {
 // Helpers providing sugared APIs for 'ClientProtocol' methods.
 @available(macOS 15.0, iOS 18.0, watchOS 11.0, tvOS 18.0, visionOS 2.0, *)
 extension Blakeswap_V1_DaemonService.ClientProtocol {
+    /// Call the "ReportStrategy" method.
+    ///
+    /// - Parameters:
+    ///   - message: request message to send.
+    ///   - metadata: Additional metadata to send, defaults to empty.
+    ///   - options: Options to apply to this RPC, defaults to `.defaults`.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
+    /// - Returns: The result of `handleResponse`.
+    internal func reportStrategy<Result>(
+        _ message: Blakeswap_V1_StrategyReportRequest,
+        metadata: GRPCCore.Metadata = [:],
+        options: GRPCCore.CallOptions = .defaults,
+        onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Blakeswap_V1_StrategyView>) async throws -> Result = { response in
+            try response.message
+        }
+    ) async throws -> Result where Result: Sendable {
+        let request = GRPCCore.ClientRequest<Blakeswap_V1_StrategyReportRequest>(
+            message: message,
+            metadata: metadata
+        )
+        return try await self.reportStrategy(
+            request: request,
+            options: options,
+            onResponse: handleResponse
+        )
+    }
+
     /// Call the "ListStrategies" method.
     ///
     /// - Parameters:

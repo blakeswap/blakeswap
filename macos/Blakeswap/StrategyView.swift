@@ -30,6 +30,7 @@ struct StrategyView: View {
                         StrategyInventoryView(strategy: p)
                         StrategyPreviewView(quotes: p.quotes)
                         HStack {
+                            Button("Read confirmed activity report") { Task { await model.report(p, current: { app.tradeContext }) } }
                             Button("Edit / review limits") { draft = StrategyDraft(p) }
                             if p.enabled {
                                 Button("Pause and cancel open quotes") { Task { await model.stop(p, permanent: false, current: { app.tradeContext }) } }
@@ -65,7 +66,7 @@ struct StrategyInventoryView: View {
                         Text("Unlocked \(i.funds.unlockedConfirmed) · reserved \(i.funds.reservedConfirmed) · pending \(i.funds.unconfirmed) · HTLC locked \(i.funds.htlcAvailable ? String(i.funds.htlcLocked) : "unknown") sats")
                         Text("Wallet exposure \(i.exposure) sats. Gross authorization: \(i.committedVolume) committed + \(i.reservedVolume) reserved sats.")
                         Text("Shared fee/rescue authorization: \(i.committedFees) committed + \(i.reservedFees) reserved sats.")
-                        Text("Currently confirmed completed volume \(i.confirmedVolume) sats · known confirmed fees \(i.knownFees) sats · rescue bounties \(i.knownBounties) sats · \(i.unknownFees) outcomes with unknown fee.")
+                        if strategy.reportIncluded { Text("Currently confirmed completed volume \(i.confirmedVolume) sats · known confirmed fees \(i.knownFees) sats · rescue bounties \(i.knownBounties) sats · \(i.unknownFees) outcomes with unknown fee.") }
                     }.font(.caption).foregroundStyle(.secondary)
                 }
             }
@@ -81,7 +82,7 @@ struct StrategyPreviewView: View {
             ForEach(quotes, id: \.sell) { q in
                 VStack(alignment: .leading, spacing: 3) {
                     Text("Sell \(q.sellAmount) \(q.sell.uppercased()) sats → receive \(q.buyAmount) \(q.sell == "btc" ? "BLAKE" : "BTC") sats").font(.caption.bold())
-                    Text(q.reason).font(.caption).foregroundStyle(q.ready ? .secondary : .orange)
+                    Text(q.reason).font(.caption).foregroundStyle(q.ready ? Color.secondary : Color.orange)
                     if q.ready {
                         Text("Exact BLAKE/BTC \(q.rate.numerator)/\(q.rate.denominator). Worst-case allowance: \(q.btcFees) BTC sats + \(q.blakeFees) BLAKE sats.").font(.caption)
                     }

@@ -302,3 +302,146 @@ func TestStrategyMonitoringRetainsParentAuthorityDuringChildPause(t *testing.T) 
 		}
 	}
 }
+
+func TestStrategyUnknownImportedChargesRetainExposureSlots(t *testing.T) {
+	e, p := strategyFixture(t)
+	child := e.s.Automations[strategyPolicyID(p.Config.ID, chain.Blake)]
+	p.Config.Blake.VolumeLimit = 5000000
+	child.Config = p.Config.policy(chain.Blake)
+	id := transport.RandomID()
+	child.Charges[id] = &AutomationCharge{OfferID: id, State: "reserved", Volume: 900000, BTCFees: 20000, BlakeFees: 22000, Uncertain: true}
+	// Explicitly resumed imported allowance still knows of an uncertain possible
+	// obligation, despite quarantine removing its live event and reservation.
+	if err := e.strategyRisk(p, chain.Blake, 200000, 202000, 2000, ""); err == nil {
+		t.Fatal("uncertain imported exposure disappeared with the live offer")
+	}
+}
+
+func TestStrategyExactRemainingManualFeeBudgetExecutes(t *testing.T) {
+	e, p := strategyFixture(t)
+	edit := StrategyEdit{Config: p.Config, ExpectedRevision: p.Revision, Enabled: true}
+	edit.Config.BlakeFeeBudget = 22000
+	edit.Config.BTCFeeBudget = 20000
+	saveStrategyTest(t, e, edit)
+	child := e.s.Automations[strategyPolicyID(p.Config.ID, chain.Blake)]
+	e.s.Automations[strategyPolicyID(p.Config.ID, chain.BTC)].NextAction = time.Now().Unix() + 3600
+	child.NextAction = 0
+	if err := e.strategyRisk(p, chain.Blake, 200000, 202021, 2000, ""); err != nil {
+		t.Fatal("reviewed exact fee does not fit", err)
+	}
+	e.runAutomations(context.Background())
+	if child.CurrentOfferID == "" {
+		t.Fatalf("exact selected 2000-sat fee fits budgets but executor refuses: child=%q parent=%q", child.Decision, p.Decision)
+	}
+}
+
+func TestStrategyExposurePositiveProofAndReorgDoNotRefundCharges(t *testing.T) {
+	e, p := strategyFixture(t)
+	child := e.s.Automations[strategyPolicyID(p.Config.ID, chain.Blake)]
+	id := transport.RandomID()
+	o := protocol.Offer{ID: id, Network: e.Config.Network, Maker: e.identity.Public().Hex(), Sell: chain.Blake, SellAmount: 200000, BuyAmount: 202000, Status: "open", Expires: time.Now().Unix() + 120}
+	event, err := e.signOffer(o, nostr.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := &Swap{ID: transport.RandomID(), Role: "maker", Request: protocol.Request{OfferEvent: event}, Stage: "refunded", ShortFunding: "durable signed funding", LongFunding: "peer funding", ShortSpend: strings.Repeat("c", 64), LongSpend: strings.Repeat("d", 64), ShortConfirmations: 2, LongConfirmations: 2}
+	s.Short.TxID = strings.Repeat("a", 64)
+	s.Long.TxID = strings.Repeat("b", 64)
+	e.s.Swaps[s.ID] = s
+	child.Charges[id] = automationCharge(child.Config, id, 202000, 2000)
+	child.Charges[id].State = "committed"
+	u, _, n := e.strategyUsage(p.Config, "")
+	if u[chain.Blake].Exposure != 200000 || n != 1 {
+		t.Fatal("cached outcome prematurely cleared exposure", u, n)
+	}
+	e.recordStrategyExposure(s)
+	e.reconcileStrategyExposure()
+	u, _, n = e.strategyUsage(p.Config, "")
+	if u[chain.Blake].Exposure != 0 || n != 0 || u[chain.Blake].CommittedVolume != 200000 {
+		t.Fatal("positive outcome changed consumption", u, n)
+	}
+	proof := *child.Charges[id].ExposureSettled
+	delete(e.s.Swaps, s.ID) // Simulate positively settled archival, never plain absence.
+	u, _, n = e.strategyUsage(p.Config, "")
+	if u[chain.Blake].Exposure != 0 || n != 0 {
+		t.Fatal("stored settlement identity lost at archive boundary")
+	}
+	e.s.Swaps[s.ID] = s
+	s.ShortConfirmations = 0
+	s.Stage = "awaiting chain confirmations"
+	e.reconcileStrategyExposure()
+	if !child.Charges[id].ExposureSettled.Held {
+		t.Fatal("contradicted proof remained usable")
+	}
+	u, _, n = e.strategyUsage(p.Config, "")
+	if u[chain.Blake].Exposure != 200000 || n != 1 || u[chain.Blake].CommittedVolume != 200000 {
+		t.Fatal("reorg erased budget or exposure", u, n)
+	}
+	child.Charges[id].ExposureSettled = &proof
+	holdImportedAutomations(&e.s)
+	if !child.Charges[id].ExposureSettled.Held || child.Charges[id].ExposureSettled.SwapID != s.ID {
+		t.Fatal("import reused or deleted historical proof")
+	}
+}
+
+func TestStrategyReportUsesActualConfirmedActivityAndIsAdvisory(t *testing.T) {
+	e, p := strategyFixture(t)
+	child := e.s.Automations[strategyPolicyID(p.Config.ID, chain.Blake)]
+	order := transport.RandomID()
+	child.Charges[order] = automationCharge(child.Config, order, 202000, 6500)
+	child.Charges[order].State = "committed"
+	now := time.Now().Unix()
+	for _, a := range []Activity{
+		{ID: "fund", Kind: "swap_funding", Chain: chain.Blake, OrderID: order, SwapID: "swap", TxID: "funding", Principal: 200000, Fee: 6500, FeeKnown: true, FeePayer: "wallet", Movement: true, Status: "confirmed", Confirmations: 2, ObservedAt: now},
+		{ID: "claim", Kind: "swap_claim", Chain: chain.BTC, OrderID: order, SwapID: "swap", TxID: "claim", Principal: 202000, Amount: 196000, Fee: 6000, FeeKnown: true, FeePayer: "wallet", Movement: true, Status: "confirmed", Confirmations: 2, ObservedAt: now},
+		{ID: "refund", Kind: "swap_refund", Chain: chain.Blake, OrderID: order, SwapID: "refunded", TxID: "refund", Principal: 200000, Fee: 2000, FeeKnown: true, FeePayer: "wallet", Movement: true, Status: "confirmed", Confirmations: 2, ObservedAt: now},
+		{ID: "pending", Kind: "swap_claim", Chain: chain.BTC, OrderID: order, SwapID: "pending", TxID: "pending", Fee: 20000, FeeKnown: true, FeePayer: "wallet", Movement: true, Status: "mempool", ObservedAt: now},
+	} {
+		e.s.Activities[a.ID] = a
+	}
+	raw, _ := json.Marshal(map[string]any{"id": p.Config.ID, "expected_wallet": e.Config.Name, "expected_network": string(e.Config.Network), "expected_revision": p.Revision})
+	before, _ := json.Marshal(e.s)
+	v, err := e.strategyReport(context.Background(), raw)
+	after, _ := json.Marshal(e.s)
+	if err != nil || !v.ReportIncluded || v.Inventory[chain.Blake].KnownFees != 8500 || v.Inventory[chain.BTC].KnownFees != 6000 || v.Inventory[chain.Blake].ConfirmedVolume != 200000 || v.Inventory[chain.BTC].ConfirmedVolume != 0 {
+		t.Fatal(v, err)
+	}
+	if string(before) != string(after) {
+		t.Fatal("report changed accounting")
+	}
+	if e.strategyView(p).ReportIncluded {
+		t.Fatal("ordinary list/review ran lifetime report")
+	}
+	cancelled, cancel := context.WithCancel(context.Background())
+	cancel()
+	if _, err := e.strategyReport(cancelled, raw); err == nil {
+		t.Fatal("partial cancelled report returned")
+	}
+	a := e.s.Activities["claim"]
+	a.Status = "unknown"
+	a.Confirmations = 0
+	e.s.Activities["claim"] = a
+	v, err = e.strategyReport(context.Background(), raw)
+	if err != nil || v.Inventory[chain.Blake].ConfirmedVolume != 0 || v.Inventory[chain.Blake].CommittedVolume != 200000 {
+		t.Fatal("reorg report restored authorization", v, err)
+	}
+}
+
+func TestStrategyExternalOrderIDCannotHideLocalUncertainExposure(t *testing.T) {
+	e, p := strategyFixture(t)
+	child := e.s.Automations[strategyPolicyID(p.Config.ID, chain.Blake)]
+	id := transport.RandomID()
+	child.Charges[id] = &AutomationCharge{OfferID: id, State: "reserved", Volume: 200000, Uncertain: true}
+	other := nostr.Generate()
+	o := protocol.Offer{ID: id, Network: e.Config.Network, Maker: other.Public().Hex(), Sell: chain.BTC, SellAmount: 200000, BuyAmount: 200000, Status: "open", Expires: time.Now().Unix() + 120}
+	raw, _ := o.PublicJSON()
+	event := nostr.Event{Kind: transport.OfferKind, CreatedAt: nostr.Now(), Tags: nostr.Tags{{"d", id}, {"t", chain.Regtest.Namespace()}}, Content: string(raw)}
+	if err := transport.Sign(&event, other); err != nil {
+		t.Fatal(err)
+	}
+	e.s.Swaps["rejected-other"] = &Swap{ID: "rejected-other", Role: "taker", Request: protocol.Request{OfferEvent: event}, Stage: "rejected"}
+	u, _, n := e.strategyUsage(p.Config, "")
+	if u[chain.Blake].Exposure != 200000 || n != 1 {
+		t.Fatal("external maker ID collided with local authority", u, n)
+	}
+}

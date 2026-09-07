@@ -28,6 +28,8 @@ import (
 var errEngineClosed = errors.New("engine closed")
 
 type Engine struct {
+	strategyVerifiedSwaps    map[string]bool
+	strategyReporting        atomic.Bool
 	automationBusy           atomic.Bool
 	automationCancel         context.CancelFunc
 	marketObservedAt         int64
@@ -242,6 +244,7 @@ func (e *Engine) save() error {
 // while Close joins them. Protocol execution remains blocked by errEngineClosed.
 func (e *Engine) persistState() error {
 	e.reconcileAutomations()
+	e.reconcileStrategyExposure()
 	e.syncOrderRecords()
 	e.syncActivity()
 	if err := e.vault.Save(e.s); err != nil {
@@ -383,6 +386,7 @@ func (e *Engine) tickProtocol(ctx context.Context) error {
 	if e.fatal != nil {
 		return e.fatal
 	}
+	e.strategyVerifiedSwaps = map[string]bool{}
 	e.recoveryRefunds = map[string]bool{}
 	refreshErr := e.refresh(ctx)
 	e.advanceSends(ctx)

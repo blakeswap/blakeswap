@@ -53,13 +53,14 @@ type AutomationConfig struct {
 	ReferenceSpreadBPS int64          `json:"reference_spread_bps"`
 }
 type AutomationCharge struct {
-	OfferID   string `json:"offer_id"`
-	Volume    int64  `json:"volume"`
-	BTCFees   int64  `json:"btc_fees"`
-	BlakeFees int64  `json:"blake_fees"`
-	State     string `json:"state"` // reserved, committed, released; committed never reverses.
-	Successor string `json:"successor"`
-	Uncertain bool   `json:"uncertain,omitempty"` // Imported reservations cannot be refunded or transferred by reauthorization.
+	ExposureSettled *StrategyExposureProof `json:"exposure_settled,omitempty"`
+	OfferID         string                 `json:"offer_id"`
+	Volume          int64                  `json:"volume"`
+	BTCFees         int64                  `json:"btc_fees"`
+	BlakeFees       int64                  `json:"blake_fees"`
+	State           string                 `json:"state"` // reserved, committed, released; committed never reverses.
+	Successor       string                 `json:"successor"`
+	Uncertain       bool                   `json:"uncertain,omitempty"` // Imported reservations cannot be refunded or transferred by reauthorization.
 }
 type AutomationPolicy struct {
 	Config            AutomationConfig             `json:"config"`
@@ -629,7 +630,7 @@ func (e *Engine) runAutomations(ctx context.Context) {
 	var strategyQuote StrategyQuote
 	if config.StrategyID != "" {
 		strategy := e.s.MakerStrategies[config.StrategyID]
-		config, strategyQuote, strategyFields, err = e.strategyPlan(strategy, config.Sell, now)
+		config, strategyQuote, strategyFields, err = e.planStrategy(strategy, config.Sell, now, false)
 		rate, events = strategyQuote.Rate, strategyQuote.ReferenceEvents
 	}
 	if err != nil {
@@ -819,6 +820,9 @@ func holdImportedAutomations(s *State) {
 			continue
 		}
 		for _, c := range p.Charges {
+			if c != nil && c.ExposureSettled != nil {
+				c.ExposureSettled.Held = true
+			}
 			if c != nil && c.State == "reserved" {
 				c.Uncertain = true
 			}

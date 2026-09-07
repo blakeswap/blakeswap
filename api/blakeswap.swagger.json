@@ -915,6 +915,38 @@
         ]
       }
     },
+    "/v1/strategies/report": {
+      "post": {
+        "operationId": "DaemonService_ReportStrategy",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1StrategyView"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/googleRpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/v1StrategyReportRequest"
+            }
+          }
+        ],
+        "tags": [
+          "DaemonService"
+        ]
+      }
+    },
     "/v1/strategies/review": {
       "post": {
         "operationId": "DaemonService_ReviewStrategy",
@@ -3753,6 +3785,24 @@
         }
       }
     },
+    "v1StrategyReportRequest": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "expected_wallet": {
+          "type": "string"
+        },
+        "expected_network": {
+          "type": "string"
+        },
+        "expected_revision": {
+          "type": "string",
+          "format": "uint64"
+        }
+      }
+    },
     "v1StrategyReview": {
       "type": "object",
       "properties": {
@@ -3875,6 +3925,9 @@
         "observed_at": {
           "type": "string",
           "format": "int64"
+        },
+        "report_included": {
+          "type": "boolean"
         }
       }
     },

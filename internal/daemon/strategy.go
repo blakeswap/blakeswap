@@ -99,6 +99,7 @@ type StrategyInventory struct {
 	UnknownFees     int          `json:"unknown_fees"`
 }
 type StrategyView struct {
+	ReportIncluded      bool                           `json:"report_included"`
 	Config              StrategyConfig                 `json:"config"`
 	Revision            uint64                         `json:"revision"`
 	Enabled             bool                           `json:"enabled"`
@@ -171,14 +172,16 @@ func (e *Engine) strategyUsage(c StrategyConfig, except string) (map[chain.ID]St
 	quotes, swaps := 0, 0
 	seen := map[string]bool{}
 	for _, s := range e.s.Swaps {
-		if strategySettled(s, e.Config.Network.Confirmations()) {
-			continue
-		}
 		o, err := historicalOffer(s.Request.OfferEvent)
 		if err != nil {
 			continue
 		}
-		seen[o.ID] = true
+		if s.Role == "maker" && o.Maker == e.identity.Public().Hex() {
+			seen[o.ID] = true
+		}
+		if strategySettled(s, e.Config.Network.Confirmations()) && ((s.ShortFunding == "" && s.LongFunding == "" && s.Short.TxID == "" && s.Long.TxID == "") || e.strategyVerifiedSwaps[s.ID]) {
+			continue
+		}
 		asset, amount := o.Sell, o.SellAmount
 		if s.Role == "taker" {
 			asset, amount = o.Sell.Other(), o.BuyAmount
@@ -199,10 +202,29 @@ func (e *Engine) strategyUsage(c StrategyConfig, except string) (map[chain.ID]St
 		if o.Status != "reserved" && (o.Status != "open" || o.Expires <= time.Now().Unix()) {
 			continue
 		}
+		seen[id] = true
 		v := u[o.Sell]
 		v.Exposure += o.SellAmount
 		u[o.Sell] = v
 		quotes++
+	}
+	// Quarantine/absence is not evidence that old authorization was unfunded.
+	// The same durable charge occupies one exposure slot until a represented
+	// obligation or explicit positive settlement proof accounts for it.
+	for _, p := range e.s.Automations {
+		for id, c := range p.Charges {
+			if seen[id] || c.State == "released" || (id == except && !c.Uncertain) {
+				continue
+			}
+			if c.ExposureSettled != nil && !c.ExposureSettled.Held {
+				continue
+			}
+			seen[id] = true
+			v := u[p.Config.Sell]
+			v.Exposure += c.Volume
+			u[p.Config.Sell] = v
+			swaps++
+		}
 	}
 	return u, quotes, swaps
 }
@@ -594,6 +616,9 @@ func (e *Engine) strategySource(p *AutomationPolicy, now int64) OrderActionField
 	return OrderActionFields{}
 }
 func (e *Engine) strategyPlan(p *MakerStrategy, sell chain.ID, now int64) (AutomationConfig, StrategyQuote, OrderActionFields, error) {
+	return e.planStrategy(p, sell, now, true)
+}
+func (e *Engine) planStrategy(p *MakerStrategy, sell chain.ID, now int64, preview bool) (AutomationConfig, StrategyQuote, OrderActionFields, error) {
 	c := p.Config.policy(sell)
 	q := StrategyQuote{Sell: sell}
 	fields := OrderActionFields{}
@@ -634,7 +659,14 @@ func (e *Engine) strategyPlan(p *MakerStrategy, sell chain.ID, now int64) (Autom
 	// estimate and repeats every invariant at confirmation and maker acceptance.
 	charge := automationCharge(c, "", buy, c.MaxFundingFee)
 	q.BTCFees, q.BlakeFees = charge.BTCFees, charge.BlakeFees
-	if err = e.strategyRisk(p, sell, amount, buy, c.MaxFundingFee, source); err != nil {
+	fee := c.FundingFee
+	if fee == 0 {
+		fee = 1
+	} // An estimate is obtained before any authorization.
+	if preview {
+		fee = c.MaxFundingFee
+	}
+	if err = e.strategyRisk(p, sell, amount, buy, fee, source); err != nil {
 		return c, q, fields, err
 	}
 	q.Ready = true
@@ -656,7 +688,6 @@ func (e *Engine) strategyView(p *MakerStrategy) StrategyView {
 		}
 		v.Quotes = append(v.Quotes, q)
 	}
-	e.strategyActivity(&v)
 	return v
 }
 
@@ -779,58 +810,4 @@ func validateStrategyState(s *State) error {
 		}
 	}
 	return nil
-}
-
-// Activity reporting is read-only. Fees are actual observed outcomes, never the
-// conservative authorization charge. Neither totals nor receipts fund a quote.
-func (e *Engine) strategyActivity(v *StrategyView) {
-	owned := map[string]bool{}
-	for _, id := range []chain.ID{chain.BTC, chain.Blake} {
-		if p := e.s.Automations[strategyPolicyID(v.Config.ID, id)]; p != nil {
-			for order := range p.Charges {
-				owned[order] = true
-			}
-		}
-	}
-	funding, claims := map[string]Activity{}, map[string]Activity{}
-	seen := map[string]bool{}
-	now := time.Now().Unix()
-	for _, a := range e.s.Activities {
-		if !owned[a.OrderID] || a.TxID == "" {
-			continue
-		}
-		projectActivityObservation(&a, e.Config.Network.Confirmations(), now)
-		if a.Generation > 0 && !e.activitySourceCurrent(a.Chain, a.Generation) {
-			continue
-		}
-		if a.Status != "confirmed" || a.Confirmations < e.Config.Network.Confirmations() || a.ObservedAt <= 0 || a.ObservedAt > now || now-a.ObservedAt > 120 {
-			continue
-		}
-		if a.Kind == "swap_funding" {
-			funding[a.SwapID] = a
-		}
-		if a.Kind == "swap_claim" {
-			claims[a.SwapID] = a
-		}
-		key := string(a.Chain) + "/" + a.TxID
-		if seen[key] || a.FeePayer != "wallet" || !a.Movement {
-			continue
-		}
-		seen[key] = true
-		item := v.Inventory[a.Chain]
-		if a.FeeKnown {
-			item.KnownFees += a.Fee
-		} else {
-			item.UnknownFees++
-		}
-		item.KnownBounties += a.Bounty
-		v.Inventory[a.Chain] = item
-	}
-	for swap, f := range funding {
-		if _, ok := claims[swap]; ok {
-			item := v.Inventory[f.Chain]
-			item.ConfirmedVolume += f.Principal
-			v.Inventory[f.Chain] = item
-		}
-	}
 }

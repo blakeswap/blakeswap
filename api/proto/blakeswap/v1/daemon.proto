@@ -16,6 +16,7 @@ option (grpc.gateway.protoc_gen_openapiv2.options.openapiv2_swagger) = {
 };
 
 service DaemonService {
+ rpc ReportStrategy(StrategyReportRequest) returns (StrategyView) { option (google.api.http) = { post: "/v1/strategies/report" body: "*" }; }
  rpc ListStrategies(AutomationQuery) returns (StrategyList) { option (google.api.http) = { post: "/v1/strategies/query" body: "*" }; }
  rpc ReviewStrategy(StrategyEdit) returns (StrategyReview) { option (google.api.http) = { post: "/v1/strategies/review" body: "*" }; }
  rpc SaveStrategy(StrategyEdit) returns (StrategyView) { option (google.api.http) = { put: "/v1/strategies" body: "*" }; }
@@ -517,7 +518,7 @@ message StrategyView {
  string decision = 6; uint32 consecutive_failures = 7; uint32 replacement_failures = 8;
  string btc_policy_id = 9; string blake_policy_id = 10;
  map<string, StrategyInventory> inventory = 11; repeated StrategyQuote quotes = 12;
- uint32 active_quotes = 13; uint32 active_swaps = 14; int64 observed_at = 15;
+ uint32 active_quotes = 13; uint32 active_swaps = 14; int64 observed_at = 15; bool report_included = 16;
 }
 message StrategyList { string wallet = 1; string network = 2; repeated StrategyView strategies = 3; }
 message StrategyReview {
@@ -528,3 +529,5 @@ message StopStrategyRequest {
  string id = 1; string expected_wallet = 2; string expected_network = 3;
  uint64 expected_revision = 4; bool stop = 5;
 }
+
+message StrategyReportRequest { string id = 1; string expected_wallet = 2; string expected_network = 3; uint64 expected_revision = 4; }

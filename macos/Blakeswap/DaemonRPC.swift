@@ -102,6 +102,10 @@ enum DaemonRPC {
                 let request = try Blakeswap_V1_ActivityQuery(jsonUTF8Data: payload)
                 let response = try await service.listActivity(request, metadata: metadata, options: options)
                 return try response.serializedData()
+            case "strategy.report":
+                let request = try Blakeswap_V1_StrategyReportRequest(jsonUTF8Data: payload)
+                let response = try await service.reportStrategy(request, metadata: metadata, options: options)
+                return try response.serializedData()
             case "strategy.list":
                 let request = try Blakeswap_V1_AutomationQuery(jsonUTF8Data: payload)
                 let response = try await service.listStrategies(request, metadata: metadata, options: options)
