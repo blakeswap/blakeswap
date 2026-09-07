@@ -104,7 +104,11 @@ explicitly acknowledge potentially omitted spending when enabling. Saving or
 disabling a policy retains the import hold. A newly authorized action uses fresh
 funds and a new request/offer ID. Re-importing holds policies again and preserves
 all accounting, receipt and successor identities. Backups and future archives
-must retain these facts.
+must retain these facts. Import and daemon startup reject malformed policy or
+charge records before installing or executing them; accounting is never repaired
+by silently dropping records. Routine cadence/decision/reference polling stays
+in the full archive but does not mark a backup stale. Policy authorization,
+holds, pending receipts, charges, successors and actual offer actions do.
 
 Current capacities are 32 policies per wallet and the existing durable
 order/confirmation history limits. Capacity exhaustion pauses with a visible

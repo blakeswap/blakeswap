@@ -133,6 +133,9 @@ func Open(ctx context.Context, c Config) (*Engine, error) {
 	if en.s.Network.Normalized() != c.Network {
 		return fail(errors.New("state belongs to a different network; use its own data directory"))
 	}
+	if err := ValidateAutomationState(&en.s); err != nil {
+		return fail(err)
+	}
 	en.invalidateActivitySession()
 	if en.s.Recovery != nil {
 		en.s.Recovery.Status.State = "recovering"

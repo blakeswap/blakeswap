@@ -54,6 +54,9 @@ func PrepareRecovery(s *State, snapshotAt int64, legacy bool) error {
 	if s == nil || s.Version != 1 || snapshotAt <= 0 {
 		return errors.New("invalid recovery snapshot")
 	}
+	if err := ValidateAutomationState(s); err != nil {
+		return err
+	}
 	holdImportedAutomations(s)
 	r := s.Recovery
 	if r == nil {

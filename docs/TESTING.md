@@ -525,3 +525,11 @@ accounting and re-import. `TestImportedAutomationNeverResumesOldSpendingAuthorit
 uses actual encrypted legacy and portable first-wallet installation paths.
 `TestAutomationBackupPreservesAuthorizationAndUncertainty` verifies deep-copy
 and backup fingerprint coverage for uncertainty and successor identity.
+
+`TestAutomationInvalidDurableState*` verifies malformed policy/charge pointers,
+identities and accounting are rejected before daemon load or recovery, without
+changing durable state or leaking the vault lock. `TestAutomationMalformedBackup*`
+checks authenticated legacy/portable import rejects those records before profile
+publication and preserves existing settings, wallets and source files. Backup
+fingerprint tests retain all archive fields while distinguishing no-op cadence
+checks from configuration, holds, receipts, charges and real actions.

@@ -1,7 +1,9 @@
 package desktop
 
 import (
+	"bytes"
 	"context"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -13,6 +15,7 @@ import (
 	"github.com/blakeswap/blakeswap/internal/daemon"
 	"github.com/blakeswap/blakeswap/internal/storage"
 	"github.com/blakeswap/blakeswap/internal/wallet"
+	"google.golang.org/protobuf/proto"
 )
 
 // Import must revoke stale automatic authority before any engine starts, for
@@ -79,5 +82,77 @@ func TestImportedAutomationNeverResumesOldSpendingAuthority(t *testing.T) {
 				t.Fatal("import erased or reinterpreted accepted request identity")
 			}
 		})
+	}
+}
+
+func TestAutomationMalformedBackupRejectedBeforeInstallation(t *testing.T) {
+	for _, format := range []string{"legacy", "portable"} {
+		for _, mode := range []string{"nil-policy", "nil-charge-map", "nil-charge"} {
+			t.Run(format+"/"+mode, func(t *testing.T) {
+				m := setupManager(t)
+				state := daemon.State{Version: 1, Network: chain.Regtest, Mnemonic: "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about", Automations: map[string]*daemon.AutomationPolicy{"policy": {Config: daemon.AutomationConfig{ID: "policy"}, Charges: map[string]*daemon.AutomationCharge{}}}}
+				switch mode {
+				case "nil-policy":
+					state.Automations["policy"] = nil
+				case "nil-charge-map":
+					state.Automations["policy"].Charges = nil
+				case "nil-charge":
+					state.Automations["policy"].Charges["offer"] = nil
+				}
+				path := filepath.Join(t.TempDir(), "invalid.blakeswap")
+				password := []byte("malformed archive test password")
+				if format == "legacy" {
+					if err := saveVault(path, password, state); err != nil {
+						t.Fatal(err)
+					}
+				} else {
+					identity, err := backupIdentity(state.Mnemonic)
+					if err != nil {
+						t.Fatal(err)
+					}
+					manifest := backupManifest{FormatVersion: 1, CreatedAt: time.Now().Unix(), Wallets: []backupWallet{{ID: "original", Name: "Original", Identity: identity, Mnemonic: state.Mnemonic, Networks: map[chain.Network]*daemon.State{chain.Regtest: &state}}}}
+					if err := storage.WritePortable(context.Background(), path, password, manifest); err != nil {
+						t.Fatal(err)
+					}
+				}
+				source, err := os.ReadFile(path)
+				if err != nil {
+					t.Fatal(err)
+				}
+				before := proto.Clone(m.settings)
+				if _, err = m.prepareFirstWallet(context.Background(), &pb.PrepareFirstWalletRequest{Name: "Restored", BackupPath: path, BackupPassword: string(password), Revision: m.settings.Revision}); err == nil {
+					t.Fatal("invalid automation installed")
+				}
+				if !proto.Equal(before, m.settings) {
+					t.Fatal("rejected import changed settings")
+				}
+				if _, err = os.Lstat(filepath.Join(m.root, "wallets", "alice")); !os.IsNotExist(err) {
+					t.Fatal("rejected import published profile", err)
+				}
+				after, err := os.ReadFile(path)
+				if err != nil || !bytes.Equal(source, after) {
+					t.Fatal("rejected import changed source archive", err)
+				}
+				// Post-onboarding import uses the same validator before creating a new
+				// profile; a bad archive cannot disturb the already installed wallet.
+				if format == "portable" && mode == "nil-charge" {
+					existing := installedManager(t)
+					before = proto.Clone(existing.settings)
+					seed, secret, err := readMaster(filepath.Join(existing.root, "wallets", "alice"))
+					clear(secret)
+					if err != nil {
+						t.Fatal(err)
+					}
+					if _, err = existing.importPortable(context.Background(), portableImportRequest{Path: path, Password: string(password), Name: "Restored", Revision: existing.settings.Revision}); err == nil {
+						t.Fatal("invalid additional profile installed")
+					}
+					restored, secret, err := readMaster(filepath.Join(existing.root, "wallets", "alice"))
+					clear(secret)
+					if err != nil || seed != restored || !proto.Equal(before, existing.settings) {
+						t.Fatal("bad archive disturbed existing profile", err)
+					}
+				}
+			})
+		}
 	}
 }

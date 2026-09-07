@@ -49,6 +49,12 @@ func BackupFingerprint(state State) (string, error) {
 	if recovery, ok := value["recovery"].(map[string]any); ok {
 		stripFields(recovery["status"], "checked_at", "issues")
 	}
+	// Keep the complete policy in the archive, but a no-op cadence check or
+	// advisory reference refresh does not create new recovery obligations.
+	// Config, revisions, holds, pending grants, charges and real actions remain.
+	records("automations", func(record map[string]any) {
+		stripFields(record, "next_action", "decision", "reference_events", "reference_observed")
+	})
 	// Activity receipts, variants, outcomes, reorg history and provenance stay
 	// covered. Only current observation polling and coverage cursors are noise;
 	// these exclusions do not apply to historical outcomes or nested policy.

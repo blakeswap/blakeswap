@@ -165,3 +165,72 @@ func TestAutomationBackupPreservesAuthorizationAndUncertainty(t *testing.T) {
 		t.Fatal("backup fingerprint ignored successor identity", err)
 	}
 }
+
+func TestAutomationBackupFingerprintIgnoresPollingRetainsAuthority(t *testing.T) {
+	e, p := automationFixture(t)
+	e.runAutomations(context.Background())
+	id := p.CurrentOfferID
+	if id == "" {
+		t.Fatal(p.Decision)
+	}
+	p.NextAction = 0
+	before, err := BackupFingerprint(e.s)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = e.RecordBackup(before, time.Now().Unix()); err != nil {
+		t.Fatal(err)
+	}
+	e.runAutomations(context.Background())
+	if p.CurrentOfferID != id || p.Pending != nil || len(p.Charges) != 1 {
+		t.Fatal("no-op probe created authority")
+	}
+	fresh, err := StateBackupFreshness(e.s)
+	if err != nil || fresh.StateChanged {
+		t.Fatal("no-op policy tick marked backup stale", fresh, err)
+	}
+	p.NextAction++
+	p.Decision = "another observation"
+	p.ReferenceObserved++
+	p.ReferenceEvents = []string{"polled-reference"}
+	after, err := BackupFingerprint(e.s)
+	if err != nil || after != before {
+		t.Fatal("polling fields changed fingerprint", err)
+	}
+	snapshot, err := e.BackupSnapshot()
+	if err != nil {
+		t.Fatal(err)
+	}
+	saved := snapshot.Automations[p.Config.ID]
+	if saved.NextAction != p.NextAction || saved.Decision != p.Decision || saved.ReferenceObserved != p.ReferenceObserved || len(saved.ReferenceEvents) != 1 {
+		t.Fatal("full archive dropped polling state")
+	}
+	raw, _ := json.Marshal(snapshot)
+	cases := map[string]func(*State, *AutomationPolicy){
+		"config":        func(s *State, p *AutomationPolicy) { p.Config.Cadence++ },
+		"revision":      func(s *State, p *AutomationPolicy) { p.Revision++ },
+		"enabled":       func(s *State, p *AutomationPolicy) { p.Enabled = false },
+		"hold":          func(s *State, p *AutomationPolicy) { p.RestoreHold = true },
+		"identity":      func(s *State, p *AutomationPolicy) { p.WalletKey = "changed" },
+		"pending":       func(s *State, p *AutomationPolicy) { p.Pending = &ConfirmTradeRequest{RequestID: "new-grant"} },
+		"charge":        func(s *State, p *AutomationPolicy) { p.Charges[id].Volume++ },
+		"uncertainty":   func(s *State, p *AutomationPolicy) { p.Charges[id].Uncertain = true },
+		"successor":     func(s *State, p *AutomationPolicy) { p.Charges[id].Successor = "next" },
+		"current-offer": func(s *State, p *AutomationPolicy) { p.CurrentOfferID = "next" },
+		"action-time":   func(s *State, p *AutomationPolicy) { p.LastAction++ },
+		"receipt":       func(s *State, p *AutomationPolicy) { s.TradeReceipts[id].Digest = "changed" },
+	}
+	for name, change := range cases {
+		t.Run(name, func(t *testing.T) {
+			var state State
+			if err := json.Unmarshal(raw, &state); err != nil {
+				t.Fatal(err)
+			}
+			change(&state, state.Automations[p.Config.ID])
+			fingerprint, err := BackupFingerprint(state)
+			if err != nil || fingerprint == before {
+				t.Fatal("meaningful authority omitted from fingerprint", err)
+			}
+		})
+	}
+}
