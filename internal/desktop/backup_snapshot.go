@@ -72,7 +72,7 @@ func (m *Manager) backupSnapshotLocked(ctx context.Context, selected string, all
 						if openErr != nil {
 							return entry, openErr
 						}
-						_, err = vault.Load(&snapshot)
+						snapshot, err = daemon.LoadCompleteState(vault)
 						closeErr := vault.Close()
 						if err == nil {
 							err = closeErr

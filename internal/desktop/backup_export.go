@@ -76,7 +76,7 @@ func (m *Manager) recordPortableLocked(manifest backupManifest) error {
 					return err
 				}
 				if engine := m.engines[profile.ID]; engine != nil && engine.Config.Network.Normalized() == network {
-					if err := engine.RecordBackup(fingerprint, manifest.CreatedAt); err != nil {
+					if err := engine.RecordBackupSnapshot(fingerprint, daemon.BackupSemanticToken(*snapshot), manifest.CreatedAt); err != nil {
 						return err
 					}
 					continue
@@ -99,7 +99,7 @@ func (m *Manager) recordPortableLocked(manifest backupManifest) error {
 					if live.Mnemonic != profile.Mnemonic || live.Network.Normalized() != network {
 						return errors.New("network state changed identity")
 					}
-					live.Backup = &daemon.BackupRecord{CreatedAt: manifest.CreatedAt, Fingerprint: fingerprint}
+					live.Backup = &daemon.BackupRecord{CreatedAt: manifest.CreatedAt, Fingerprint: fingerprint, SemanticToken: daemon.BackupSemanticToken(*snapshot)}
 					return vault.Save(live)
 				}()
 				closeErr := vault.Close()

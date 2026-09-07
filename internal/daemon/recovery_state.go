@@ -51,8 +51,22 @@ const recoveryCoverage = "Recovery checks the obligations recorded in this file.
 // vault. It intentionally never erases signed transactions, secret knowledge,
 // receipts, pending payments or earlier recovery holds.
 func PrepareRecovery(s *State, snapshotAt int64, legacy bool) error {
-	if s == nil || s.Version != 1 || snapshotAt <= 0 {
+	if s == nil || (s.Version != 1 && s.Version != 2) || snapshotAt <= 0 {
 		return errors.New("invalid recovery snapshot")
+	}
+	if err := ValidateArchiveState(*s); err != nil {
+		return err
+	}
+	if len(s.Archive) > 0 {
+		complete, err := CompleteState(*s)
+		if err != nil {
+			return err
+		}
+		*s = complete
+	}
+	if s.Capacity != nil {
+		s.Capacity.Anchors = nil
+		s.Capacity.Reactivating = false
 	}
 	if err := ValidateAutomationState(s); err != nil {
 		return err

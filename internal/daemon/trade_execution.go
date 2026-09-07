@@ -95,8 +95,8 @@ func (e *Engine) createOffer(ctx context.Context, raw json.RawMessage, receipt *
 	if oldOwner == "" && available < o.SellAmount+fee {
 		return nil, fmt.Errorf("insufficient unlocked confirmed %s balance: need %d sats including the %d-sat funding fee; available %d sats", o.Sell, o.SellAmount+fee, fee, available)
 	}
-	if len(e.s.Offers) >= 1000 {
-		return nil, errors.New("order capacity reached")
+	if err := e.admitWork("offer"); err != nil {
+		return nil, err
 	}
 	selectionOwner := "offer/" + o.ID
 	if oldOwner != "" {
@@ -198,8 +198,8 @@ func (e *Engine) takeOffer(ctx context.Context, raw json.RawMessage, receipt *Tr
 	if err != nil {
 		return nil, err
 	}
-	if len(e.s.Swaps) >= 1000 {
-		return nil, errors.New("swap capacity")
+	if err := e.admitWork("swap"); err != nil {
+		return nil, err
 	}
 	id := tradeRequestID(receipt)
 	secret, err := hex.DecodeString(transport.RandomID())

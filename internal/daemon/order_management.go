@@ -66,6 +66,21 @@ func (e *Engine) orderSource(p OrderActionFields, now int64) (protocol.Offer, er
 		}
 		event, ok = e.s.Recovery.Offers[p.SourceOfferID]
 	}
+	if !ok && p.OrderAction == "recreate" {
+		if err := e.recoveryTradingReady(); err != nil {
+			return empty, err
+		}
+		for _, kind := range []string{"offers", "quarantined_offers"} {
+			var err error
+			ok, err = e.archivedValue(kind, p.SourceOfferID, &event)
+			if err != nil {
+				return empty, err
+			}
+			if ok {
+				break
+			}
+		}
+	}
 	if !ok || event.ID.Hex() != p.SourceEventID {
 		return empty, errors.New("source order changed; refresh and review it again")
 	}

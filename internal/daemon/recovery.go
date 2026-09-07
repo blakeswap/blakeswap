@@ -13,6 +13,9 @@ import (
 
 func (e *Engine) restoredSwap(id string) bool { return e.s.Recovery != nil && e.s.Recovery.Swaps[id] }
 func (e *Engine) recoveryTradingReady() error {
+	if err := e.archiveHold(); err != nil {
+		return err
+	}
 	if e.s.Recovery == nil {
 		return nil
 	}

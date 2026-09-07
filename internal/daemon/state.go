@@ -7,6 +7,7 @@ import (
 	"github.com/blakeswap/blakeswap/internal/chain"
 	"github.com/blakeswap/blakeswap/internal/contract"
 	"github.com/blakeswap/blakeswap/internal/protocol"
+	"github.com/blakeswap/blakeswap/internal/storage"
 )
 
 type NodeConfig = chain.Endpoint
@@ -28,15 +29,16 @@ type Config struct {
 	Tower               TowerConfig             `json:"tower"`
 }
 type Delivery struct {
-	Expires     int64       `json:"expires,omitempty"`
-	Type        string      `json:"type,omitempty"`
-	Event       nostr.Event `json:"event"`
-	To          string      `json:"to"`
-	MessageID   string      `json:"message_id"`
-	Digest      string      `json:"digest"`
-	IsAck       bool        `json:"is_ack"`
-	LastAttempt int64       `json:"last_attempt"`
-	Published   bool        `json:"published"`
+	Acknowledged bool        `json:"acknowledged,omitempty"`
+	Expires      int64       `json:"expires,omitempty"`
+	Type         string      `json:"type,omitempty"`
+	Event        nostr.Event `json:"event"`
+	To           string      `json:"to"`
+	MessageID    string      `json:"message_id"`
+	Digest       string      `json:"digest"`
+	IsAck        bool        `json:"is_ack"`
+	LastAttempt  int64       `json:"last_attempt"`
+	Published    bool        `json:"published"`
 }
 type Swap struct {
 	ClaimVariant       int                         `json:"claim_variant,omitempty"`
@@ -90,6 +92,10 @@ type TowerJob struct {
 type State struct {
 	MakerStrategies             map[string]*MakerStrategy    `json:"maker_strategies,omitempty"`
 	Automations                 map[string]*AutomationPolicy `json:"automations,omitempty"`
+	SeenSemantics               map[string]bool              `json:"seen_semantics,omitempty"`
+	TradeTokens                 map[string]string            `json:"trade_tokens,omitempty"`
+	Capacity                    *CapacityRecord              `json:"capacity,omitempty"`
+	Archive                     []storage.ArchiveRecord      `json:"archive,omitempty"`
 	OrderRecords                map[string]OrderRecord       `json:"order_records,omitempty"`
 	Recovery                    *RecoveryRecord              `json:"recovery,omitempty"`
 	Backup                      *BackupRecord                `json:"backup,omitempty"`

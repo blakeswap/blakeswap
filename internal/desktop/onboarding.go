@@ -275,11 +275,11 @@ func readStateBackupBounded(root, source, password string, maxBytes int64) (*dae
 		return nil, errors.New("cannot unlock backup; check its password and file")
 	}
 	defer vault.Close()
-	var state daemon.State
-	if _, err := vault.Load(&state); err != nil {
+	state, err := daemon.LoadCompleteState(vault)
+	if err != nil {
 		return nil, errors.New("invalid wallet backup")
 	}
-	if state.Version != 1 || !state.Network.Valid() {
+	if (state.Version != 1 && state.Version != 2) || !state.Network.Valid() {
 		return nil, errors.New("unsupported wallet backup")
 	}
 	if _, err := wallet.FromMnemonic(state.Mnemonic); err != nil {

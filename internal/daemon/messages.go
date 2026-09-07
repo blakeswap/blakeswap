@@ -72,6 +72,17 @@ func (e *Engine) handle(from string, m transport.Message) error {
 		if job.Owner != from || m.SwapID != job.SwapID {
 			return errors.New("job sender mismatch")
 		}
+		if e.s.TowerJobs[job.ID] == nil {
+			var archived TowerJob
+			if found, err := e.archivedValue("tower_jobs", job.ID, &archived); err != nil {
+				return err
+			} else if found {
+				if archived.Job.Owner != from || protocol.Digest(archived.Job) != protocol.Digest(job) {
+					return errors.New("job ID collision")
+				}
+				return e.queue(from, "tower-receipt", m.SwapID, protocol.Receipt{JobID: job.ID, Digest: protocol.Digest(job)})
+			}
+		}
 		bps := e.ownTower().BPS
 		if existing := e.s.TowerJobs[job.ID]; existing != nil {
 			bps = existing.Job.BPS // An identical retry must still receive its durable receipt.
@@ -79,8 +90,10 @@ func (e *Engine) handle(from string, m transport.Message) error {
 		if err := job.Validate(e.ownTower().Scripts, bps); err != nil {
 			return err
 		}
-		if len(e.s.TowerJobs) >= 1000 && e.s.TowerJobs[job.ID] == nil {
-			return errors.New("tower job capacity")
+		if e.s.TowerJobs[job.ID] == nil {
+			if err := e.admitWork("tower"); err != nil {
+				return err
+			}
 		}
 		if existing := e.s.TowerJobs[job.ID]; existing != nil {
 			if protocol.Digest(existing.Job) != protocol.Digest(job) {
@@ -148,6 +161,9 @@ func (e *Engine) handle(from string, m transport.Message) error {
 		if !ok {
 			return errors.New("local offer protection policy is missing")
 		}
+		if err := e.admitWork("swap"); err != nil {
+			return err
+		}
 		keys, err := e.swapKeys(request.ID)
 		if err != nil {
 			return err
@@ -190,6 +206,9 @@ func (e *Engine) handle(from string, m transport.Message) error {
 		}
 		if len(reason.Reason) > 160 {
 			return errors.New("rejection too long")
+		}
+		if s.Stage == "rejected" {
+			return nil
 		}
 		s.Stage = "rejected"
 		delete(e.s.CoinReservations, "swap/"+s.ID)

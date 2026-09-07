@@ -107,11 +107,20 @@ func (e *Engine) sendCoins(ctx context.Context, raw json.RawMessage) (PublicSend
 		}
 		return previous.public(), nil
 	}
+	var archived WalletSend
+	if found, err := e.archivedValue("sends", p.ID, &archived); err != nil {
+		return PublicSend{}, err
+	} else if found {
+		if archived.Digest != digest {
+			return PublicSend{}, errors.New("send request ID already used with different details")
+		}
+		return archived.public(), nil
+	}
 	if err := e.recoveryTradingReady(); err != nil {
 		return PublicSend{}, err
 	}
-	if len(e.s.Sends) >= 1000 {
-		return PublicSend{}, errors.New("send history capacity reached")
+	if err := e.admitWork("send"); err != nil {
+		return PublicSend{}, err
 	}
 	address, err := btcutil.DecodeAddress(p.Destination, e.Config.Network.Params())
 	if err != nil || !address.IsForNet(e.Config.Network.Params()) {
@@ -227,6 +236,7 @@ func (e *Engine) advanceSend(ctx context.Context, send *WalletSend) {
 		}
 		v.Confirmations = 0
 		if err == nil {
+			e.noteArchivePayment(send, v.TxID, t)
 			v.Confirmations = t.Confirmations
 			if e.recoveryPaymentConfirmed(send, v.TxID, t) {
 				verifiedRecovery = true

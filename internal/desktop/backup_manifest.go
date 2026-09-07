@@ -65,7 +65,7 @@ func validateBackupManifest(manifest *backupManifest) error {
 			return errors.New("backup must describe each wallet's network state")
 		}
 		for network, state := range profile.Networks {
-			if network == "" || !network.Valid() || state == nil || state.Version != 1 || state.Network.Normalized() != network || state.Mnemonic != profile.Mnemonic {
+			if network == "" || !network.Valid() || state == nil || (state.Version != 1 && state.Version != 2) || state.Network.Normalized() != network || state.Mnemonic != profile.Mnemonic {
 				return errors.New("backup network state does not match its wallet manifest")
 			}
 			if err := validateBackupState(state); err != nil {
@@ -77,6 +77,14 @@ func validateBackupManifest(manifest *backupManifest) error {
 }
 
 func validateBackupState(state *daemon.State) error {
+	if err := daemon.ValidateArchiveState(*state); err != nil {
+		return err
+	}
+	logical, err := daemon.CompleteState(*state)
+	if err != nil {
+		return err
+	}
+	state = &logical
 	if err := daemon.ValidateAutomationState(state); err != nil {
 		return err
 	}

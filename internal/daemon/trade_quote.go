@@ -14,7 +14,6 @@ import (
 
 const tradeQuoteLifetime int64 = 120
 const tradeQuoteCapacity = 64
-const tradeReceiptCapacity = 1000
 
 type TradeQuoteRequest struct {
 	FeeSelection
@@ -366,6 +365,19 @@ func (e *Engine) confirmTrade(ctx context.Context, raw json.RawMessage) (Confirm
 		e.s.TradeReceipts = map[string]*TradeReceipt{}
 	}
 	receipt := e.s.TradeReceipts[p.RequestID]
+	if receipt == nil {
+		var archived TradeReceipt
+		if found, err := e.archivedValue("trade_receipts", p.RequestID, &archived); err != nil {
+			e.mu.Unlock()
+			return ConfirmTradeResult{}, err
+		} else if found {
+			e.mu.Unlock()
+			if archived.Digest != digest {
+				return ConfirmTradeResult{}, errors.New("confirmation identity cannot be reused for changed terms")
+			}
+			return archived.Result, nil
+		}
+	}
 	if receipt != nil {
 		if receipt.Digest != digest {
 			e.mu.Unlock()
@@ -377,19 +389,35 @@ func (e *Engine) confirmTrade(ctx context.Context, raw json.RawMessage) (Confirm
 			return result, nil
 		}
 	} else {
-		if len(e.s.TradeReceipts) >= tradeReceiptCapacity {
+		if err := e.admitWork("receipt"); err != nil {
 			e.mu.Unlock()
-			return ConfirmTradeResult{}, errors.New("trade confirmation history capacity reached")
+			return ConfirmTradeResult{}, err
 		}
 		s, ok := e.tradeQuotes[p.Token]
 		receipt = &TradeReceipt{Digest: digest, Snapshot: s, Result: ConfirmTradeResult{ID: p.RequestID, Kind: s.Quote.Kind, State: "pending"}}
 		var invalid error
+		priorToken := e.s.TradeTokens[p.Token]
+		if priorToken == "" {
+			if _, err := e.archivedValue("trade_tokens", p.Token, &priorToken); err != nil {
+				e.mu.Unlock()
+				return ConfirmTradeResult{}, err
+			}
+		}
+		if priorToken != "" && priorToken != p.RequestID {
+			invalid = errors.New("quote already confirmed with another request ID; retry the original confirmation")
+		}
 		for _, prior := range e.s.TradeReceipts {
 			if prior.Snapshot.Quote.Token == p.Token {
 				invalid = errors.New("quote already confirmed with another request ID; retry the original confirmation")
 			}
 		}
 		e.s.TradeReceipts[p.RequestID] = receipt
+		if protocol.Hex32(s.Quote.Token) && priorToken == "" {
+			if e.s.TradeTokens == nil {
+				e.s.TradeTokens = map[string]string{}
+			}
+			e.s.TradeTokens[s.Quote.Token] = p.RequestID
+		}
 		if !ok || s.Quote.Revision != p.Revision || s.Quote.Wallet != p.ExpectedWallet || string(s.Quote.Network) != p.ExpectedNetwork {
 			invalid = errors.New("quote is unavailable or changed; review it again")
 		}
@@ -399,7 +427,16 @@ func (e *Engine) confirmTrade(ctx context.Context, raw json.RawMessage) (Confirm
 		if e.s.Recovery != nil {
 			_, usedRecovery = e.s.Recovery.Offers[p.RequestID]
 		}
-		if usedOffer || usedHistory || usedRecovery || e.s.Swaps[p.RequestID] != nil {
+		archivedIdentity := false
+		for _, kind := range []string{"offers", "order_records", "quarantined_offers", "swaps"} {
+			_, found, err := e.archiveRecord(kind, p.RequestID)
+			if err != nil {
+				e.mu.Unlock()
+				return ConfirmTradeResult{}, err
+			}
+			archivedIdentity = archivedIdentity || found
+		}
+		if usedOffer || usedHistory || usedRecovery || archivedIdentity || e.s.Swaps[p.RequestID] != nil {
 			invalid = errors.New("request ID is already in use")
 		}
 		if invalid == nil {

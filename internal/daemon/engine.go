@@ -32,6 +32,17 @@ type Engine struct {
 	strategyReporting        atomic.Bool
 	automationBusy           atomic.Bool
 	automationCancel         context.CancelFunc
+	historyMu                sync.Mutex
+	mailboxWindow            int64
+	mailboxAdmissions        map[string]int
+	semanticParts            *semanticParts
+	archiveOrigins           map[string][32]byte
+	archivePuts              map[string]storage.ArchiveRecord
+	archiveDeletes           map[string]storage.ArchiveKey
+	archiveCurrent           map[chain.ID]recoveryCheckpoint
+	archiveSends             map[string]bool
+	backupFingerprint        string
+	stateBytes               uint64
 	marketObservedAt         int64
 	marketAllRelays          bool
 	recoveryRefunds          map[string]bool
@@ -129,7 +140,7 @@ func Open(ctx context.Context, c Config) (*Engine, error) {
 	if c.InitialMnemonic != "" && c.InitialMnemonic != en.s.Mnemonic {
 		return fail(errors.New("wallet seed differs from this profile"))
 	}
-	if en.s.Version != 1 {
+	if en.s.Version != 1 && en.s.Version != 2 {
 		return fail(errors.New("unsupported state version"))
 	}
 	if en.s.Network.Normalized() != c.Network {
@@ -247,10 +258,35 @@ func (e *Engine) persistState() error {
 	e.reconcileStrategyExposure()
 	e.syncOrderRecords()
 	e.syncActivity()
-	if err := e.vault.Save(e.s); err != nil {
+	parts, err := stateSemanticParts(e.s)
+	if err != nil {
+		return err
+	}
+	token, err := e.nextSemanticToken(parts)
+	if err != nil {
+		return err
+	}
+	if e.s.Capacity == nil {
+		e.s.Capacity = &CapacityRecord{}
+	}
+	e.s.Capacity.SemanticToken, e.s.Capacity.ActiveFingerprint = token, parts.Active
+	encoded, err := json.Marshal(e.s)
+	if err != nil {
+		return err
+	}
+	stateBytes := uint64(len(encoded))
+	clear(encoded)
+	stats, err := e.vault.CommitArchive(e.s, e.pendingArchive(), 0)
+	if err == nil && e.s.Capacity != nil && (stats.Count != e.s.Capacity.Archived.Count || stats.Bytes != e.s.Capacity.Archived.Bytes) {
+		err = errors.New("active and archive ownership checkpoints disagree")
+	}
+	if err != nil {
 		e.fatal = fmt.Errorf("durability failure; execution stopped: %w", err)
 		return e.fatal
 	}
+	e.archivePuts, e.archiveDeletes, e.archiveOrigins = nil, nil, nil
+	e.semanticParts = &parts
+	e.backupFingerprint, e.stateBytes = parts.Complete, stateBytes
 	return nil
 }
 
@@ -349,6 +385,9 @@ func (e *Engine) refreshChain(ctx context.Context, id chain.ID) error {
 	}
 	e.balances[id] = balance
 	e.refreshHTLCBalance(ctx, id)
+	if err := e.refreshArchiveCheckpoint(ctx, id); err != nil {
+		return err
+	}
 	return e.refreshRecoveryCheckpoint(ctx, id)
 }
 func (e *Engine) Run(ctx context.Context) error {
@@ -388,6 +427,7 @@ func (e *Engine) tickProtocol(ctx context.Context) error {
 	}
 	e.strategyVerifiedSwaps = map[string]bool{}
 	e.recoveryRefunds = map[string]bool{}
+	e.archiveSends = map[string]bool{}
 	refreshErr := e.refresh(ctx)
 	e.advanceSends(ctx)
 	// Payment lookups must not extend evidence beyond a checkpoint that reorged
@@ -472,6 +512,10 @@ func (e *Engine) tickProtocol(ctx context.Context) error {
 		e.lastError = "watchtower: " + towerErr.Error()
 	}
 	e.reconcileRecovery(observations, towerObservations)
+	if archiveErr := e.compactArchive(ctx, observations, towerObservations); archiveErr != nil {
+		e.lastError = "archive: " + archiveErr.Error()
+	}
+	e.reconcileArchiveHolds(observations, towerObservations)
 	if err = e.save(); err != nil {
 		return err
 	}
@@ -497,6 +541,25 @@ func (e *Engine) queue(to, typ, swapID string, body any) error {
 	id := protocol.Digest([]string{to, typ, swapID, string(raw)})
 	if e.s.Outbox[id] != nil {
 		return nil
+	}
+	var previous Delivery
+	if found, err := e.archivedValue("outbox", id, &previous); err != nil {
+		return err
+	} else if found {
+		if previous.To != to || previous.Type != typ {
+			return errors.New("archived delivery identity mismatch")
+		}
+		if previous.Acknowledged {
+			return nil
+		}
+		if previous.IsAck {
+			if _, err := e.activateArchived("outbox", id); err != nil {
+				return err
+			}
+			e.s.Outbox[id].LastAttempt = 0
+			return nil
+		}
+		return errors.New("archived delivery has no acknowledgment evidence")
 	}
 	pub, err := nostr.PubKeyFromHex(to)
 	if err != nil {
@@ -594,12 +657,15 @@ func (e *Engine) receive(event nostr.Event) error {
 		e.s.DiscoverySeen[key] = expires
 		return e.save()
 	}
-	if len(e.s.Seen) > 10000 || len(e.s.Outbox) > 10000 {
-		return errors.New("mailbox capacity reached")
-	}
 	digest := protocol.Digest(m)
 	seenKey := from.Hex() + ":" + m.ID
-	if previous := e.s.Seen[seenKey]; previous != "" {
+	previous := e.s.Seen[seenKey]
+	if previous == "" {
+		if _, err := e.archivedValue("seen", seenKey, &previous); err != nil {
+			return err
+		}
+	}
+	if previous != "" {
 		if previous != digest {
 			return errors.New("message ID reused with different contents")
 		}
@@ -617,15 +683,44 @@ func (e *Engine) receive(event nostr.Event) error {
 			return err
 		}
 		if delivery := e.s.Outbox[a.ID]; delivery != nil && delivery.To == from.Hex() && delivery.Digest == a.Digest && !delivery.IsAck {
-			delete(e.s.Outbox, a.ID)
+			delivery.Acknowledged = true
+			if err := e.stageArchive("outbox", a.ID); err != nil {
+				return err
+			}
+		} else {
+			// Unsolicited/duplicate ACKs carry no new recovery fact. They must
+			// not consume lifetime dedup space or prevent matching ACK drainage.
+			return nil
 		}
 	} else {
+		semantic, err := mailboxSemantic(from.Hex(), m)
+		if err != nil {
+			return err
+		}
+		priorSemantic := e.s.SeenSemantics[semantic]
+		if !priorSemantic {
+			if _, err := e.archivedValue("seen_semantics", semantic, &priorSemantic); err != nil {
+				return err
+			}
+		}
+		if priorSemantic {
+			if err := e.admitMailboxAlias(from.Hex()); err != nil {
+				return err
+			}
+		}
+		if err = e.admitMailbox(from.Hex(), m); err != nil {
+			return err
+		}
 		if err = e.handle(from.Hex(), m); err != nil {
 			return err
 		}
 		if err = e.queue(from.Hex(), "ack", m.SwapID, map[string]string{"id": m.ID, "digest": digest}); err != nil {
 			return err
 		}
+		if e.s.SeenSemantics == nil {
+			e.s.SeenSemantics = map[string]bool{}
+		}
+		e.s.SeenSemantics[semantic] = true
 	}
 	e.s.Seen[seenKey] = digest
 	return e.save()

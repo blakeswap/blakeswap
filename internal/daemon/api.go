@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"github.com/blakeswap/blakeswap/internal/chain"
 	"github.com/blakeswap/blakeswap/internal/protocol"
+	"os"
 	"path/filepath"
 	"sort"
 	"time"
@@ -16,11 +17,16 @@ func (e *Engine) Status() Status { e.mu.Lock(); defer e.mu.Unlock(); return e.st
 func (e *Engine) status() Status {
 	s := Status{Network: e.Config.Network, Name: e.Config.Name, Mode: e.Config.Mode, PubKey: e.identity.Public().Hex(), Addresses: map[chain.ID]string{}, Balances: map[chain.ID]int64{}, Heights: map[chain.ID]uint32{}, Paused: e.s.Paused, Orders: []protocol.Offer{}, Swaps: []PublicSwap{}, TowerJobs: []map[string]any{}, LastError: e.lastError, Tower: e.Config.Tower}
 	s.Actions = e.walletActions(time.Now().Unix())
-	var backupErr error
-	s.Backup, backupErr = StateBackupFreshness(e.s)
-	if backupErr != nil {
-		s.Backup = BackupFreshness{StateChanged: true, Reminder: "Recovery state could not be checked; retain the last backup and inspect the wallet error before exporting."}
+	if e.semanticParts != nil {
+		s.Backup = backupFreshness(e.s, e.backupFingerprint)
+	} else {
+		var backupErr error
+		s.Backup, backupErr = StateBackupFreshness(e.s)
+		if backupErr != nil {
+			s.Backup = BackupFreshness{StateChanged: true, Reminder: "Recovery state could not be checked; retain the last backup and inspect the wallet error before exporting."}
+		}
 	}
+
 	if e.s.Recovery != nil {
 		r := e.s.Recovery.Status
 		r.Issues = append([]RecoveryIssue(nil), r.Issues...)
@@ -151,6 +157,9 @@ func (e *Engine) Command(ctx context.Context, req Request) (any, error) {
 			return nil, err
 		}
 		return e.Status(), nil
+	}
+	if req.Method == "market.list" || req.Method == "activity.list" || req.Method == "activity.export" {
+		return e.historyCommand(ctx, req)
 	}
 	e.mu.Lock()
 	defer e.mu.Unlock()
@@ -293,8 +302,16 @@ func (e *Engine) Command(ctx context.Context, req Request) (any, error) {
 		if err := e.save(); err != nil {
 			return nil, err
 		}
+		// The legacy reader intentionally accepts at most 64 MiB. Check the
+		// actual bbolt copy (including allocated pages) before reporting success.
 		if err := e.vault.Backup(path); err != nil {
+			_ = os.Remove(path)
 			return nil, err
+		}
+		info, err := os.Stat(path)
+		if err != nil || info.Size() > 64<<20 {
+			_ = os.Remove(path)
+			return nil, errors.New("legacy database backup exceeds its 64 MiB restore limit; export this wallet using the portable backup action")
 		}
 		return map[string]string{"path": path}, nil
 	default:
