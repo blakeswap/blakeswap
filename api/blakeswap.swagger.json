@@ -116,6 +116,38 @@
         ]
       }
     },
+    "/v1/market/query": {
+      "post": {
+        "operationId": "DaemonService_ListMarket",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1MarketPage"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/googleRpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/v1MarketQuery"
+            }
+          }
+        ],
+        "tags": [
+          "DaemonService"
+        ]
+      }
+    },
     "/v1/offers": {
       "post": {
         "operationId": "DaemonService_CreateOffer",
@@ -174,6 +206,18 @@
           },
           {
             "name": "expected_network",
+            "in": "query",
+            "required": false,
+            "type": "string"
+          },
+          {
+            "name": "expected_wallet",
+            "in": "query",
+            "required": false,
+            "type": "string"
+          },
+          {
+            "name": "expected_event_id",
             "in": "query",
             "required": false,
             "type": "string"
@@ -1980,6 +2024,16 @@
         },
         "expected_network": {
           "type": "string"
+        },
+        "expected_wallet": {
+          "type": "string"
+        },
+        "source_offer_id": {
+          "type": "string"
+        },
+        "source_event_id": {
+          "type": "string",
+          "description": "Exact current own offer for replacement funding only."
         }
       }
     },
@@ -2090,6 +2144,170 @@
         "vout": {
           "type": "integer",
           "format": "int64"
+        }
+      }
+    },
+    "v1MarketOrder": {
+      "type": "object",
+      "properties": {
+        "offer": {
+          "$ref": "#/definitions/v1Offer"
+        },
+        "event_id": {
+          "type": "string"
+        },
+        "own": {
+          "type": "boolean"
+        },
+        "side": {
+          "type": "string"
+        },
+        "btc_amount": {
+          "type": "string",
+          "format": "int64"
+        },
+        "blake_amount": {
+          "type": "string",
+          "format": "int64"
+        },
+        "rate": {
+          "type": "string"
+        },
+        "status": {
+          "type": "string"
+        },
+        "availability": {
+          "type": "string"
+        },
+        "publication": {
+          "type": "string"
+        },
+        "acknowledged_at": {
+          "type": "string",
+          "format": "int64"
+        },
+        "created_at": {
+          "type": "string",
+          "format": "int64"
+        },
+        "replaces": {
+          "type": "string"
+        },
+        "replaced_by": {
+          "type": "string"
+        },
+        "recreated_from": {
+          "type": "string"
+        },
+        "swap_ids": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "activity_id": {
+          "type": "string"
+        },
+        "can_take": {
+          "type": "boolean"
+        },
+        "can_cancel": {
+          "type": "boolean"
+        },
+        "can_replace": {
+          "type": "boolean"
+        },
+        "can_recreate": {
+          "type": "boolean"
+        }
+      }
+    },
+    "v1MarketPage": {
+      "type": "object",
+      "properties": {
+        "wallet": {
+          "type": "string"
+        },
+        "network": {
+          "type": "string"
+        },
+        "records": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/v1MarketOrder"
+          }
+        },
+        "revision": {
+          "type": "string"
+        },
+        "total": {
+          "type": "integer",
+          "format": "int64"
+        },
+        "next_offset": {
+          "type": "integer",
+          "format": "int64"
+        },
+        "more": {
+          "type": "boolean"
+        },
+        "observed_at": {
+          "type": "string",
+          "format": "int64"
+        },
+        "all_relays": {
+          "type": "boolean"
+        }
+      }
+    },
+    "v1MarketQuery": {
+      "type": "object",
+      "properties": {
+        "expected_wallet": {
+          "type": "string"
+        },
+        "expected_network": {
+          "type": "string"
+        },
+        "owner": {
+          "type": "string",
+          "description": "all, mine, others; independent of side."
+        },
+        "side": {
+          "type": "string",
+          "description": "all, buy_btc, sell_btc from the selected wallet's perspective."
+        },
+        "status": {
+          "type": "string",
+          "description": "all, open, pending, reserved, filled, cancelled, expired, refunded."
+        },
+        "btc_min": {
+          "type": "string",
+          "format": "int64"
+        },
+        "btc_max": {
+          "type": "string",
+          "format": "int64",
+          "description": "Exact BTC satoshis; zero means unbounded."
+        },
+        "sort": {
+          "type": "string",
+          "description": "rate (BLAKE per BTC), size (BTC), expiry."
+        },
+        "descending": {
+          "type": "boolean"
+        },
+        "offset": {
+          "type": "integer",
+          "format": "int64"
+        },
+        "limit": {
+          "type": "integer",
+          "format": "int64"
+        },
+        "revision": {
+          "type": "string"
         }
       }
     },
@@ -2716,6 +2934,15 @@
         },
         "error": {
           "type": "string"
+        },
+        "order_action": {
+          "type": "string"
+        },
+        "source_offer_id": {
+          "type": "string"
+        },
+        "source_event_id": {
+          "type": "string"
         }
       }
     },
@@ -2774,6 +3001,16 @@
         "owner_fee_cap": {
           "type": "string",
           "format": "int64"
+        },
+        "order_action": {
+          "type": "string",
+          "description": "Empty creates/takes normally; maker may replace or recreate."
+        },
+        "source_offer_id": {
+          "type": "string"
+        },
+        "source_event_id": {
+          "type": "string"
         }
       },
       "description": "Read-only review. Amounts describe the maker's signed offer/draft; the response\norients economics to the selected wallet. Every fee is native to its chain."

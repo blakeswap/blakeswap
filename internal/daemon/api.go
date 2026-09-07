@@ -146,6 +146,8 @@ func (e *Engine) Command(ctx context.Context, req Request) (any, error) {
 		return nil, e.fatal
 	}
 	switch req.Method {
+	case "market.list":
+		return e.marketPage(req.Params)
 	case "activity.list":
 		return e.activityPage(req.Params)
 	case "activity.export":
@@ -182,29 +184,7 @@ func (e *Engine) Command(ctx context.Context, req Request) (any, error) {
 	case "offer.create":
 		return e.createOffer(ctx, req.Params, nil)
 	case "offer.cancel":
-		var p struct {
-			ID string `json:"id"`
-		}
-		if err := json.Unmarshal(req.Params, &p); err != nil {
-			return nil, err
-		}
-		event, ok := e.s.Offers[p.ID]
-		if !ok {
-			return nil, errors.New("unknown own offer")
-		}
-		o, err := protocol.DecodeOffer(event, int64(event.CreatedAt))
-		if err != nil {
-			return nil, err
-		}
-		if o.Status != "open" {
-			return nil, errors.New("only unreserved offers can be cancelled; committed swaps settle or refund")
-		}
-		o.Status = "cancelled"
-		delete(e.s.CoinReservations, "offer/"+o.ID)
-		if err = e.publishOffer(o); err != nil {
-			return nil, err
-		}
-		return e.ownOffer(o), e.save()
+		return e.cancelOffer(req.Params)
 	case "swap.take":
 		return e.takeOffer(ctx, req.Params, nil)
 	case "regtest.mine":

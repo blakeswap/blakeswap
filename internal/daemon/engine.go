@@ -28,6 +28,8 @@ import (
 var errEngineClosed = errors.New("engine closed")
 
 type Engine struct {
+	marketObservedAt         int64
+	marketAllRelays          bool
 	activityBusy             atomic.Bool
 	activityCancel           context.CancelFunc
 	activityReaders          sync.WaitGroup
@@ -223,6 +225,7 @@ func (e *Engine) save() error {
 // persistState is also used by already registered immutable-witness readers
 // while Close joins them. Protocol execution remains blocked by errEngineClosed.
 func (e *Engine) persistState() error {
+	e.syncOrderRecords()
 	e.syncActivity()
 	if err := e.vault.Save(e.s); err != nil {
 		e.fatal = fmt.Errorf("durability failure; execution stopped: %w", err)
@@ -373,12 +376,15 @@ func (e *Engine) tickProtocol(ctx context.Context) error {
 		e.lastError = "watchtower discovery: " + err.Error()
 	}
 	filters := []nostr.Filter{{Kinds: []nostr.Kind{transport.TowerKind}, Tags: nostr.TagMap{"t": {e.Config.Network.Namespace()}}}, {Kinds: []nostr.Kind{transport.OfferKind}, Tags: nostr.TagMap{"t": {e.Config.Network.Namespace()}}}, {Kinds: []nostr.Kind{1059}, Tags: nostr.TagMap{"p": {e.identity.Public().Hex()}}}}
+	e.marketAllRelays = len(e.Config.Relays) > 0
 	for _, url := range e.Config.Relays {
 		events, err := transport.PullAs(ctx, url, e.identity, filters...)
 		if err != nil {
+			e.marketAllRelays = false
 			e.lastError = fmt.Sprintf("relay %s: %v", url, err)
 			continue
 		}
+		e.marketObservedAt = time.Now().Unix()
 		sort.Slice(events, func(i, j int) bool { return events[i].CreatedAt < events[j].CreatedAt })
 		for _, event := range events {
 			if event.Kind == transport.TowerKind {
@@ -506,7 +512,7 @@ func (e *Engine) flush(ctx context.Context) error {
 			continue
 		}
 		d.LastAttempt = now
-		all := true
+		all := len(e.Config.Relays) > 0
 		for _, url := range e.Config.Relays {
 			if err := transport.Publish(ctx, url, d.Event); err != nil {
 				e.lastError = fmt.Sprintf("relay %s: %v", url, err)
@@ -514,6 +520,13 @@ func (e *Engine) flush(ctx context.Context) error {
 			}
 		}
 		d.Published = all
+		if all && d.Event.Kind == transport.OfferKind {
+			id := transport.Tag(d.Event, "d")
+			if record, ok := e.s.OrderRecords[id]; ok && record.EventID == d.Event.ID.Hex() {
+				record.Publication, record.AcknowledgedAt = "relay_acknowledged", now
+				e.s.OrderRecords[id] = record
+			}
+		}
 		if (d.To == "" || (d.Expires > 0 && d.Type != "tower-query")) && all {
 			delete(e.s.Outbox, id)
 		}
@@ -582,19 +595,39 @@ func (e *Engine) receive(event nostr.Event) error {
 	return e.save()
 }
 func (e *Engine) publishOffer(o protocol.Offer) error {
-	raw, err := o.PublicJSON()
-	if err != nil {
-		return err
-	}
 	at := nostr.Now()
 	if at <= e.s.EventTime {
 		at = e.s.EventTime + 1
 	}
-	e.s.EventTime = at
-	event := nostr.Event{Kind: transport.OfferKind, CreatedAt: at, Tags: nostr.Tags{{"d", o.ID}, {"t", e.Config.Network.Namespace()}, {"expiration", strconv.FormatInt(o.Expires, 10)}}, Content: string(raw)}
-	if err = transport.Sign(&event, e.identity); err != nil {
+	event, err := e.signOffer(o, at)
+	if err != nil {
 		return err
 	}
+	e.stageOffer(o, event)
+	return nil
+}
+
+func (e *Engine) signOffer(o protocol.Offer, at nostr.Timestamp) (nostr.Event, error) {
+	raw, err := o.PublicJSON()
+	if err != nil {
+		return nostr.Event{}, err
+	}
+	event := nostr.Event{Kind: transport.OfferKind, CreatedAt: at, Tags: nostr.Tags{{"d", o.ID}, {"t", e.Config.Network.Namespace()}, {"expiration", strconv.FormatInt(o.Expires, 10)}}, Content: string(raw)}
+	if err = transport.Sign(&event, e.identity); err != nil {
+		return nostr.Event{}, err
+	}
+	return event, nil
+}
+
+func (e *Engine) stageOffer(o protocol.Offer, event nostr.Event) {
+	e.syncOrderRecords()
+	record, exists := e.s.OrderRecords[o.ID]
+	if !exists {
+		record.CreatedAt = time.Now().Unix()
+	}
+	record.Offer, record.EventID, record.Publication, record.AcknowledgedAt = o, event.ID.Hex(), "local_committed", 0
+	e.s.OrderRecords[o.ID] = record
+	e.s.EventTime = event.CreatedAt
 	for id, d := range e.s.Outbox {
 		if d.Event.Kind == transport.OfferKind && transport.Tag(d.Event, "d") == o.ID {
 			delete(e.s.Outbox, id)
@@ -603,7 +636,6 @@ func (e *Engine) publishOffer(o protocol.Offer) error {
 	e.s.Offers[o.ID] = event
 	e.ingestOffer(event)
 	e.queueEvent(event)
-	return nil
 }
 func (e *Engine) swapKey(id chain.ID, swapID string) (*btcec.PrivateKey, error) {
 	return e.keys.Spending(id, "swap/"+swapID)

@@ -429,3 +429,41 @@ details/navigation IDs, discarded late replies after wallet/network/filter chang
 whole-scope CSV chunks, and explicit chain/network explorer binding. These are
 production-model/view compilation tests, not pixel-level UI automation. Build a
 fresh packaged helper before running the complete native suite as described above.
+
+## Market discovery and durable management
+
+`TestMarket*` checks arbitrary-precision rate comparisons above int64 product
+bounds, rates with the same rounded display, both directions and independent
+owner/amount filters, deterministic ties, revision-checked pages, expiry bounds,
+stale/pending availability, and own history after the public book disappears.
+`TestOrderReplacement*` and `TestOrderCancellation*` race maker acceptance,
+validate exact source/wallet changes, reject insufficient new funds, check a
+single exclusive reservation, and reopen an actual vault interrupted between
+pending authorization and the atomic replacement save. Identical retries survive
+quote expiry and changed request revisions fail. Terminal refunded orders retain
+signed terms and can only be recreated with a fresh quote.
+
+`TestMarketTypedFieldsAndOrderReviewBinding` covers protobuf conversion of exact
+amounts, custom expiry, publication/lineage, and review/cancellation bindings.
+The desktop advisory lifecycle regression includes `market.list`: it cannot hold
+the global lifecycle lock or outlive engine closure. Native `MarketTests` covers
+all displayed statuses, publication labels, empty filtered results, paging, stale
+wallet/network/generation/filter responses, cancellation binding, management
+review fields, and order-to-swap destinations.
+
+`TestRealManagedOrderThroughTypedAPI` requires actual BTC and Blake regtest nodes.
+For each sell direction it creates an offer with custom expiry, distinguishes
+local commit from positive relay ACK, replaces it, submits a deliberately stale
+signed request, verifies rejection before funding, then settles the accepted new
+version and reopens its linked history/confirmation receipt. Run RPC and Electrum
+separately, with the shared fixture locked and real-node packages serialized:
+
+```sh
+BLAKESWAP_REGTEST=/absolute/path/to/task-fixture \
+BLAKESWAP_BTC_RPC_PORT=39443 BLAKESWAP_BLAKE_RPC_PORT=49443 \
+  sh scripts/go.sh test -race -count=1 -p 1 ./internal/api -run '^TestRealManagedOrderThroughTypedAPI$' -v
+# Repeat with BLAKESWAP_TEST_ELECTRUM=1 against the same isolated native nodes.
+```
+
+Ordinary tests without `BLAKESWAP_REGTEST` skip this matrix and are not integration
+evidence. No public offers, wallets, funds, or relay writes are needed.

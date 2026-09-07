@@ -47,7 +47,8 @@ account that can read those files.
 | SetPaused | PUT `/v1/pause` | Compatibility endpoint: pausing is rejected; resume clears legacy state |
 | ResolveWatchtower | POST `/v1/watchtowers/resolve` | Request an encrypted signed quote by npub or hex public key |
 | CreateOffer | POST `/v1/offers` | Exact chain/amount pair, optional expiry, and maker-only private tower selection |
-| CancelOffer | DELETE `/v1/offers/{id}` | Cancel an unreserved local offer |
+| CancelOffer | DELETE `/v1/offers/{id}` | Cancel an unreserved local offer; optional exact wallet/event binding |
+| ListMarket | POST `/v1/market/query` | Exact oriented sorting, independent filters, durable own-order history and publication/lineage |
 | TakeOffer | POST `/v1/swaps` | Compatibility direct request for a signed maker offer |
 | QuoteTrade | POST `/v1/trades/quote` | Read-only maker/taker economics, exact candidate funds, short-lived bound review |
 | ConfirmTrade | POST `/v1/trades/confirm` | Revalidate one reviewed quote and durably authorize one offer/request identity |
@@ -357,3 +358,14 @@ A source generation change invalidates a composed wallet observation. Each
 source owns its own header caches, watch history and scanning provenance.
 Availability routing does not establish consensus or quorum agreement; see the
 [degraded action matrix](OPERATIONS.md#endpoint-failover-and-partial-connectivity).
+
+## Market management
+
+See [the market contract](MARKET.md#api) for `ListMarket` filters, exact BLAKE/BTC
+rate comparisons, revision-checked pages, historical statuses, and publication
+ACK semantics. `QuoteTrade` adds `order_action`, `source_offer_id`, and
+`source_event_id` for maker replacement/recreation. Its existing confirmation
+receipt makes reservation transfer and ambiguous retries durable. `QuoteFee`
+accepts the same source IDs for an explicitly wallet-bound replacement funding
+review; ordinary preflight cannot borrow that reservation. Custom `expires`
+remains an exact Unix timestamp bounded by the daemon to seven days.

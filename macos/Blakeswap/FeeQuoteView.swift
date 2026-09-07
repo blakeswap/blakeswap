@@ -12,9 +12,9 @@ struct FeeReview {
 }
 
 func feeReviewKey(profile: String, network: String, kind: String, chain: String, amount: String,
-                  destination: String = "", fee: String, automatic: Bool, generation: UInt64 = 0, inputs: [Blakeswap_V1_Outpoint] = []) -> String {
+                  destination: String = "", fee: String, automatic: Bool, generation: UInt64 = 0, inputs: [Blakeswap_V1_Outpoint] = [], sourceOfferID: String = "", sourceEventID: String = "") -> String {
     [profile, network, String(generation), kind, chain, amount, destination, fee, String(automatic),
-     inputs.map { "\($0.txid):\($0.vout)" }.sorted().joined(separator: ",")].joined(separator: "|")
+     inputs.map { "\($0.txid):\($0.vout)" }.sorted().joined(separator: ","), sourceOfferID, sourceEventID].joined(separator: "|")
 }
 
 struct FeeQuoteControl: View {
@@ -24,12 +24,14 @@ struct FeeQuoteControl: View {
     let amount: String
     var destination = ""
     var inputs: [Blakeswap_V1_Outpoint] = []
+    var sourceOfferID = ""
+    var sourceEventID = ""
     @Binding var fee: String
     @Binding var automatic: Bool
     @Binding var review: FeeReview?
     @State private var error: String?
     @State private var refreshID = 0
-    private var key: String { feeReviewKey(profile: model.profile, network: model.network, kind: kind, chain: chain, amount: amount, destination: destination, fee: fee, automatic: automatic, generation: model.generation, inputs: inputs) }
+    private var key: String { feeReviewKey(profile: model.profile, network: model.network, kind: kind, chain: chain, amount: amount, destination: destination, fee: fee, automatic: automatic, generation: model.generation, inputs: inputs, sourceOfferID: sourceOfferID, sourceEventID: sourceEventID) }
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
             Toggle("Use this chain’s fee estimate (6 blocks)", isOn: $automatic)
@@ -60,6 +62,7 @@ struct FeeQuoteControl: View {
         request.kind = kind; request.chain = chain; request.amount = amountValue
         request.destination = destination; request.inputs = inputs
         request.fee = automatic ? 0 : (Int64(fee) ?? 0); request.target = 6; request.expectedNetwork = network
+        request.expectedWallet = profile; request.sourceOfferID = sourceOfferID; request.sourceEventID = sourceEventID
         do {
             let raw = try await DaemonRPC.call(root: model.root, profile: profile, method: "fee.quote", payload: request.jsonUTF8Data())
             let quote = try Blakeswap_V1_FeeQuote(serializedBytes: raw)

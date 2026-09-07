@@ -86,6 +86,10 @@ func Call(ctx context.Context, socket string, req daemon.Request) (json.RawMessa
 		p := &pb.ActivityQuery{}
 		in = p
 		invoke = func() (proto.Message, error) { return client.ListActivity(ctx, p) }
+	case "market.list":
+		p := &pb.MarketQuery{}
+		in = p
+		invoke = func() (proto.Message, error) { return client.ListMarket(ctx, p) }
 	case "activity.export":
 		p := &pb.ActivityQuery{}
 		in = p

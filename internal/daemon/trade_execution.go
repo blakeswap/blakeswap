@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"fiatjaf.com/nostr"
 	"fmt"
 	"github.com/blakeswap/blakeswap/internal/protocol"
 	"github.com/blakeswap/blakeswap/internal/transport"
@@ -19,6 +20,21 @@ func (e *Engine) createOffer(ctx context.Context, raw json.RawMessage, receipt *
 	var o protocol.Offer
 	if err := json.Unmarshal(raw, &o); err != nil {
 		return nil, err
+	}
+	var action OrderActionFields
+	if err := json.Unmarshal(raw, &action); err != nil {
+		return nil, err
+	}
+	if (action.OrderAction != "" || action.SourceOfferID != "" || action.SourceEventID != "") && receipt == nil {
+		return nil, errors.New("order replacement and recreation require a reviewed confirmation")
+	}
+	source, err := e.orderSource(action, time.Now().Unix())
+	if err != nil {
+		return nil, err
+	}
+	oldOwner := ""
+	if action.OrderAction == "replace" {
+		oldOwner = "offer/" + source.ID
 	}
 	o.Network = e.Config.Network
 	o.ID = tradeRequestID(receipt)
@@ -64,29 +80,70 @@ func (e *Engine) createOffer(ctx context.Context, raw json.RawMessage, receipt *
 	}()
 	fee := e.fundingFee("offer/" + o.ID)
 	available := e.chainBalances(e.publicCoins())[o.Sell].UnlockedConfirmed
-	if available < o.SellAmount+fee {
+	if oldOwner == "" && available < o.SellAmount+fee {
 		return nil, fmt.Errorf("insufficient unlocked confirmed %s balance: need %d sats including the %d-sat funding fee; available %d sats", o.Sell, o.SellAmount+fee, fee, available)
 	}
 	if len(e.s.Offers) >= 1000 {
 		return nil, errors.New("order capacity reached")
 	}
-	if err := e.reserveCoins("offer/"+o.ID, o.Sell, o.SellAmount+fee); err != nil {
+	selectionOwner := "offer/" + o.ID
+	if oldOwner != "" {
+		selectionOwner = oldOwner
+	}
+	candidate, err := e.reservationCandidate(selectionOwner, o.Sell, o.SellAmount+fee)
+	if err != nil {
 		delete(e.s.CoinReservations, "offer/"+o.ID)
 		return nil, err
 	}
+	if e.s.CoinReservations == nil {
+		e.s.CoinReservations = map[string]CoinReservation{}
+	}
+	e.s.CoinReservations["offer/"+o.ID] = candidate
 	if err := e.validateTradeInputs("offer/"+o.ID, receipt); err != nil {
 		return nil, err
 	}
 	if err := e.validateFundingReview("offer/"+o.ID, o.Sell); err != nil {
 		return nil, err
 	}
+	// Sign both events before changing the source offer. The engine lock excludes
+	// acceptance and cancellation until this single durable transition completes.
+	at := nostr.Now()
+	if at <= e.s.EventTime {
+		at = e.s.EventTime + 1
+	}
+	var cancelled nostr.Event
+	if oldOwner != "" {
+		source.Status = "cancelled"
+		cancelled, err = e.signOffer(source, at)
+		if err != nil {
+			return nil, err
+		}
+		at++
+	}
+	created, err := e.signOffer(o, at)
+	if err != nil {
+		return nil, err
+	}
+	if oldOwner != "" {
+		e.stageOffer(source, cancelled)
+		old := e.s.OrderRecords[source.ID]
+		old.ReplacedBy, old.CancelledEventID = o.ID, action.SourceEventID
+		e.s.OrderRecords[source.ID] = old
+		delete(e.s.CoinReservations, oldOwner)
+	}
 	if e.s.OfferTowers == nil {
 		e.s.OfferTowers = map[string]protocol.Tower{}
 	}
 	e.s.OfferTowers[o.ID] = tower
-	if err := e.publishOffer(o); err != nil {
-		return nil, err
+	e.stageOffer(o, created)
+	record := e.s.OrderRecords[o.ID]
+	if oldOwner != "" {
+		record.Replaces = source.ID
 	}
+	if action.OrderAction == "recreate" {
+		record.RecreatedFrom = source.ID
+	}
+	e.s.OrderRecords[o.ID] = record
 	acceptTrade(receipt)
 	return o, e.save()
 }

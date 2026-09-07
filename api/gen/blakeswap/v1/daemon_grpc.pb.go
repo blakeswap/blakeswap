@@ -20,6 +20,7 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
+	DaemonService_ListMarket_FullMethodName         = "/blakeswap.v1.DaemonService/ListMarket"
 	DaemonService_ListActivity_FullMethodName       = "/blakeswap.v1.DaemonService/ListActivity"
 	DaemonService_ExportActivity_FullMethodName     = "/blakeswap.v1.DaemonService/ExportActivity"
 	DaemonService_GetStatus_FullMethodName          = "/blakeswap.v1.DaemonService/GetStatus"
@@ -54,6 +55,7 @@ const (
 //
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
 type DaemonServiceClient interface {
+	ListMarket(ctx context.Context, in *MarketQuery, opts ...grpc.CallOption) (*MarketPage, error)
 	ListActivity(ctx context.Context, in *ActivityQuery, opts ...grpc.CallOption) (*ActivityPage, error)
 	ExportActivity(ctx context.Context, in *ActivityQuery, opts ...grpc.CallOption) (*ActivityExport, error)
 	GetStatus(ctx context.Context, in *emptypb.Empty, opts ...grpc.CallOption) (*Status, error)
@@ -90,6 +92,16 @@ type daemonServiceClient struct {
 
 func NewDaemonServiceClient(cc grpc.ClientConnInterface) DaemonServiceClient {
 	return &daemonServiceClient{cc}
+}
+
+func (c *daemonServiceClient) ListMarket(ctx context.Context, in *MarketQuery, opts ...grpc.CallOption) (*MarketPage, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(MarketPage)
+	err := c.cc.Invoke(ctx, DaemonService_ListMarket_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
 }
 
 func (c *daemonServiceClient) ListActivity(ctx context.Context, in *ActivityQuery, opts ...grpc.CallOption) (*ActivityPage, error) {
@@ -376,6 +388,7 @@ func (c *daemonServiceClient) CheckNode(ctx context.Context, in *CheckNodeReques
 // All implementations must embed UnimplementedDaemonServiceServer
 // for forward compatibility.
 type DaemonServiceServer interface {
+	ListMarket(context.Context, *MarketQuery) (*MarketPage, error)
 	ListActivity(context.Context, *ActivityQuery) (*ActivityPage, error)
 	ExportActivity(context.Context, *ActivityQuery) (*ActivityExport, error)
 	GetStatus(context.Context, *emptypb.Empty) (*Status, error)
@@ -414,6 +427,9 @@ type DaemonServiceServer interface {
 // pointer dereference when methods are called.
 type UnimplementedDaemonServiceServer struct{}
 
+func (UnimplementedDaemonServiceServer) ListMarket(context.Context, *MarketQuery) (*MarketPage, error) {
+	return nil, status.Error(codes.Unimplemented, "method ListMarket not implemented")
+}
 func (UnimplementedDaemonServiceServer) ListActivity(context.Context, *ActivityQuery) (*ActivityPage, error) {
 	return nil, status.Error(codes.Unimplemented, "method ListActivity not implemented")
 }
@@ -517,6 +533,24 @@ func RegisterDaemonServiceServer(s grpc.ServiceRegistrar, srv DaemonServiceServe
 		t.testEmbeddedByValue()
 	}
 	s.RegisterService(&DaemonService_ServiceDesc, srv)
+}
+
+func _DaemonService_ListMarket_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(MarketQuery)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DaemonServiceServer).ListMarket(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: DaemonService_ListMarket_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DaemonServiceServer).ListMarket(ctx, req.(*MarketQuery))
+	}
+	return interceptor(ctx, in, info, handler)
 }
 
 func _DaemonService_ListActivity_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
@@ -1030,6 +1064,10 @@ var DaemonService_ServiceDesc = grpc.ServiceDesc{
 	ServiceName: "blakeswap.v1.DaemonService",
 	HandlerType: (*DaemonServiceServer)(nil),
 	Methods: []grpc.MethodDesc{
+		{
+			MethodName: "ListMarket",
+			Handler:    _DaemonService_ListMarket_Handler,
+		},
 		{
 			MethodName: "ListActivity",
 			Handler:    _DaemonService_ListActivity_Handler,

@@ -180,6 +180,10 @@ type FundsPreflight struct {
 // Network IO runs without the engine lock and only one proof per wallet runs at
 // once. Signing retains its independent conservative ProveBTCExclusive gate.
 func (e *Engine) preflightFunds(ctx context.Context, req Request) (FundsPreflight, error) {
+	return e.preflightFundsForOrder(ctx, req, OrderActionFields{})
+}
+
+func (e *Engine) preflightFundsForOrder(ctx context.Context, req Request, allowance OrderActionFields) (FundsPreflight, error) {
 	var p FundsPreflightRequest
 	if err := json.Unmarshal(req.Params, &p); err != nil {
 		return FundsPreflight{}, err
@@ -202,7 +206,12 @@ func (e *Engine) preflightFunds(ctx context.Context, req Request) (FundsPrefligh
 		return result, errors.New("preflight requires a chain, amount, fee and at most 50 inputs")
 	}
 	coins := e.knownCoins(p.Chain)
-	reserved := e.reservedCoins(p.Chain, "")
+	owner, ownerErr := e.replacementOwner(allowance)
+	if ownerErr != nil {
+		e.mu.Unlock()
+		return result, ownerErr
+	}
+	reserved := e.reservedCoins(p.Chain, owner)
 	network, btc, blake, node := e.Config.Network, e.nodes[chain.BTC], e.nodes[chain.Blake], e.nodes[p.Chain]
 	e.mu.Unlock()
 	if !e.preflightBusy.CompareAndSwap(false, true) {

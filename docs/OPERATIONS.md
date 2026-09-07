@@ -386,3 +386,14 @@ reads. Those immutable facts survive an incomplete scan, a failed endpoint
 attempt and a restart; they do not make its partial snapshot current. A storage
 failure stops publication and is never retried as an endpoint failure. Local and
 tower RPC scans share the same bounded catch-up classification.
+
+## Managing your market orders
+
+Use [Market](MARKET.md) to filter by your buy/sell direction, compare exact prices,
+and inspect your durable open/finished order history. Edit / replace requires a
+fresh economics review and transfers the old offer's reservation atomically to a
+new ID. Cancelled rows report local commitment separately from relay storage ACK.
+A stale relay copy cannot revive the cancelled maker offer. Retry saved
+confirmation after a lost response; it resolves the same authorized identity.
+Recreate makes a deliberate new offer after fresh checks and never renews one
+automatically. Accepted/funded swaps continue their settlement or refund protocol.

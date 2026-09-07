@@ -70,6 +70,12 @@ func (e *Engine) reserveCoins(owner string, id chain.ID, target int64) error {
 	if e.s.CoinReservations == nil {
 		e.s.CoinReservations = map[string]CoinReservation{}
 	}
+	candidate, err := e.reservationCandidate(owner, id, target)
+	e.s.CoinReservations[owner] = candidate
+	return err
+}
+
+func (e *Engine) reservationCandidate(owner string, id chain.ID, target int64) (CoinReservation, error) {
 	reserved := e.reservedCoins(id, owner)
 	var selected []CoinOutpoint
 	var total int64
@@ -89,8 +95,7 @@ func (e *Engine) reserveCoins(owner string, id chain.ID, target int64) error {
 		selected = append(selected, CoinOutpoint{coin.TxID, coin.Vout})
 		total += int64(coin.Amount)
 		if total == target || total >= target+contract.Dust {
-			e.s.CoinReservations[owner] = CoinReservation{id, selected}
-			return nil
+			return CoinReservation{id, selected}, nil
 		}
 		if len(selected) >= 50 {
 			break
@@ -98,8 +103,7 @@ func (e *Engine) reserveCoins(owner string, id chain.ID, target int64) error {
 	}
 	// Existing underfunded orders keep their available coins locked, so deposits
 	// cannot be withdrawn out from under an already-advertised obligation.
-	e.s.CoinReservations[owner] = CoinReservation{id, selected}
-	return errors.New("insufficient unlocked confirmed coins; cancel an open order to release its coins")
+	return CoinReservation{id, selected}, errors.New("insufficient unlocked confirmed coins; cancel an open order to release its coins")
 }
 
 // Reconcile persisted reservations for legacy wallets and newly confirmed coins.

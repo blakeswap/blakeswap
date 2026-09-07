@@ -110,7 +110,8 @@ final class TradeReviewModel: ObservableObject {
             let result = try Blakeswap_V1_TradeQuote(serializedBytes: data)
             guard !Task.isCancelled, context.matches(current()) else { return }
             guard result.wallet == context.profile, result.walletKey == context.walletKey, result.network == context.network,
-                  result.kind == request.kind else { throw RPCError.message("The wallet changed while quoting. Reopen the review.") }
+                  result.kind == request.kind, result.orderAction == request.orderAction,
+                  result.sourceOfferID == request.sourceOfferID, result.sourceEventID == request.sourceEventID else { throw RPCError.message("The wallet or source order changed while quoting. Reopen the review.") }
             quote = result
             if !result.ready { error = result.error.isEmpty ? result.funds.message : result.error }
         } catch {
