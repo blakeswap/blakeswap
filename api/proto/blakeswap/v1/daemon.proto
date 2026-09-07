@@ -16,6 +16,7 @@ option (grpc.gateway.protoc_gen_openapiv2.options.openapiv2_swagger) = {
 };
 
 service DaemonService {
+ rpc ListMarket(MarketQuery) returns (MarketPage) { option (google.api.http) = { post: "/v1/market/query" body: "*" }; }
  rpc ListActivity(ActivityQuery) returns (ActivityPage) { option (google.api.http) = { post: "/v1/activity/query" body: "*" }; }
  rpc ExportActivity(ActivityQuery) returns (ActivityExport) { option (google.api.http) = { post: "/v1/activity/export" body: "*" }; }
  rpc GetStatus(google.protobuf.Empty) returns (Status) { option (google.api.http) = { get: "/v1/status" }; }
@@ -58,7 +59,7 @@ message CreateOfferRequest {
  int64 tower_bps = 4;
  int64 expires = 5; // Unix seconds; zero means 24 hours.
 }
-message CancelOfferRequest { string id = 1; string expected_network = 2; }
+message CancelOfferRequest { string id = 1; string expected_network = 2; string expected_wallet = 3; string expected_event_id = 4; }
 message TakeOfferRequest {
  int64 funding_fee = 6; int64 rate_sat_kvb = 7; int64 fee_timestamp = 8; int64 owner_fee_cap = 9;
  string maker = 1; string id = 2; string expected_network = 3;
@@ -208,6 +209,7 @@ message FeeLimits { int64 send = 1; int64 funding = 2; int64 owner = 3; int64 to
 message FeeQuoteRequest {
  string kind = 1; string chain = 2; string destination = 3; int64 amount = 4;
  int64 fee = 5; uint32 target = 6; repeated Outpoint inputs = 7; string expected_network = 8;
+ string expected_wallet = 9; string source_offer_id = 10; string source_event_id = 11; // Exact current own offer for replacement funding only.
 }
 message FeeQuote {
  FeeEstimate estimate = 1; FeeLimits limits = 2; int64 fee = 3; int64 amount = 4;
@@ -225,6 +227,8 @@ message TradeQuoteRequest {
  int64 sell_amount = 7; int64 buy_amount = 8; int64 expires = 9;
  int64 tower_bps = 10; string tower_pubkey = 11;
  int64 funding_fee = 12; int64 rate_sat_kvb = 13; int64 fee_timestamp = 14; int64 owner_fee_cap = 15;
+ string order_action = 16; // Empty creates/takes normally; maker may replace or recreate.
+ string source_offer_id = 17; string source_event_id = 18;
 }
 message TradeFeePolicy { int64 funding_fee = 1; int64 rate_sat_kvb = 2; int64 fee_timestamp = 3; int64 owner_fee_cap = 4; }
 message TradeTiming {
@@ -245,6 +249,31 @@ message TradeQuote {
  TradeFeePolicy fees = 21; int64 funding_size = 22; Tower provider = 23;
  string provider_revision = 24; string tower_coverage = 25; TradeTiming timing = 26;
  repeated TradeOutcome outcomes = 27; FundsPreflight funds = 28; bool ready = 29; string error = 30;
+ string order_action = 31; string source_offer_id = 32; string source_event_id = 33;
+}
+
+message MarketQuery {
+ string expected_wallet = 1; string expected_network = 2;
+ string owner = 3; // all, mine, others; independent of side.
+ string side = 4; // all, buy_btc, sell_btc from the selected wallet's perspective.
+ string status = 5; // all, open, pending, reserved, filled, cancelled, expired, refunded.
+ int64 btc_min = 6; int64 btc_max = 7; // Exact BTC satoshis; zero means unbounded.
+ string sort = 8; // rate (BLAKE per BTC), size (BTC), expiry.
+ bool descending = 9; uint32 offset = 10; uint32 limit = 11; string revision = 12;
+}
+message MarketOrder {
+ Offer offer = 1; string event_id = 2; bool own = 3; string side = 4;
+ int64 btc_amount = 5; int64 blake_amount = 6; string rate = 7;
+ string status = 8; string availability = 9; string publication = 10;
+ int64 acknowledged_at = 11; int64 created_at = 12;
+ string replaces = 13; string replaced_by = 14; string recreated_from = 15;
+ repeated string swap_ids = 16; string activity_id = 17;
+ bool can_take = 18; bool can_cancel = 19; bool can_replace = 20; bool can_recreate = 21;
+}
+message MarketPage {
+ string wallet = 1; string network = 2; repeated MarketOrder records = 3;
+ string revision = 4; uint32 total = 5; uint32 next_offset = 6; bool more = 7;
+ int64 observed_at = 8; bool all_relays = 9;
 }
 // Keep this exact identity through an uncertain response. A persisted receipt
 // returns the same accepted result after restart/expiry, never a second trade.

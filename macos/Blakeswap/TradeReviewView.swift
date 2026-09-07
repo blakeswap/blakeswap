@@ -12,6 +12,7 @@ struct TradeComposer: View {
     @Environment(\.dismiss) private var dismiss
     let context: TradeContext
     let order: Order?
+    let management: ManageOfferContext?
     @StateObject private var review: TradeReviewModel
     @State private var sell = "btc"
     @State private var sellAmount = "1000000"
@@ -21,15 +22,22 @@ struct TradeComposer: View {
     @State private var fundingFee = "2000"
     @State private var automaticFee = false
     @State private var feeReview: FeeReview?
+    @State private var expires = Date().addingTimeInterval(86_400)
 
-    init(context: TradeContext, root: String, order: Order? = nil) {
-        self.context = context; self.order = order
+    init(context: TradeContext, root: String, order: Order? = nil, management: ManageOfferContext? = nil) {
+        self.context = context; self.order = order; self.management = management
         _review = StateObject(wrappedValue: TradeReviewModel(context: context, root: root))
+        if let original = management?.order.offer {
+            _sell = State(initialValue: original.sell)
+            _sellAmount = State(initialValue: String(original.sellAmount)); _buyAmount = State(initialValue: String(original.buyAmount))
+            _protection = State(initialValue: original.towerBps > 0)
+        }
     }
     private var matching: Bool { context.matches(model.tradeContext) }
     private var paidChain: String { order?.buy ?? sell }
     private var paidAmount: String { order.map { String($0.buyAmount) } ?? sellAmount }
-    private var feeKey: String { feeReviewKey(profile: context.profile, network: context.network, kind: "funding", chain: paidChain, amount: paidAmount, fee: fundingFee, automatic: automaticFee, generation: context.generation) }
+    private var replacement: ManageOfferContext? { management?.action == "replace" ? management : nil }
+    private var feeKey: String { feeReviewKey(profile: context.profile, network: context.network, kind: "funding", chain: paidChain, amount: paidAmount, fee: fundingFee, automatic: automaticFee, generation: context.generation, sourceOfferID: replacement?.order.offer.id ?? "", sourceEventID: replacement?.order.eventID ?? "") }
     private var currentFee: FeeReview? { feeReview?.key == feeKey ? feeReview : nil }
     private var towers: [Blakeswap_V1_Tower] {
         let favorites = model.settings?.environments.first(where: { $0.network == context.network })?.favoriteWatchtowers ?? []
@@ -39,12 +47,13 @@ struct TradeComposer: View {
     private var validDraft: Bool {
         guard currentFee != nil, !protection || selectedTower != nil else { return false }
         if order != nil { return true }
+        guard expires > Date(), expires <= Date().addingTimeInterval(7 * 86_400) else { return false }
         guard let a = Int64(sellAmount), let b = Int64(buyAmount) else { return false }
         return (100_000...10_000_000_000).contains(a) && (100_000...10_000_000_000).contains(b)
     }
     var body: some View {
         VStack(alignment: .leading, spacing: 18) {
-            Text(review.pending != nil ? "Saved trade confirmation" : (order == nil ? "Create an offer" : "Take offer")).font(.title2.bold())
+            Text(review.pending != nil ? "Saved trade confirmation" : (management.map { $0.action == "replace" ? "Replace your offer" : "Recreate your offer" } ?? (order == nil ? "Create an offer" : "Take offer"))).font(.title2.bold())
             Text("Wallet \(model.settings?.wallets.first(where: { $0.id == context.profile })?.name ?? context.profile) · \(context.network.capitalized)").foregroundStyle(.secondary)
             if !matching {
                 Text("The wallet or network changed. Close this window and reopen the review for the selected wallet.").foregroundStyle(.orange)
@@ -68,8 +77,8 @@ struct TradeComposer: View {
         }.padding(28).frame(width: 620)
             .interactiveDismissDisabled(review.busy)
             .task {
-                if order == nil, !(model.status?.canReviewOffer(sell) ?? false), model.status?.canReviewOffer("blake") == true { sell = "blake" }
-                towerID = towers.first?.pubkey ?? ""
+                if order == nil, management == nil, !(model.status?.canReviewOffer(sell) ?? false), model.status?.canReviewOffer("blake") == true { sell = "blake" }
+                towerID = management?.order.offer.tower.pubkey ?? towers.first?.pubkey ?? ""
             }
             .onChange(of: review.acceptedID) { _, id in
                 guard let id, matching else { return }
@@ -91,8 +100,12 @@ struct TradeComposer: View {
                 }
                 TextField("Sell principal (sats)", text: $sellAmount).accessibilityIdentifier("sell-amount")
                 TextField("Receive principal (sats)", text: $buyAmount).accessibilityIdentifier("buy-amount")
+                DatePicker("Offer expiry (up to 7 days)", selection: $expires, in: Date()...Date().addingTimeInterval(7 * 86_400), displayedComponents: [.date, .hourAndMinute]).accessibilityIdentifier("offer-expiry")
+                if let management {
+                    Text(management.action == "replace" ? "Confirming creates a new order and cancels this unreserved offer. Its coins stay reserved until the change is saved. An accepted order cannot be edited." : "This is a new order with a new ID. Funds, fees and optional protection are checked again.").font(.caption).foregroundStyle(.secondary)
+                }
             }
-            FeeQuoteControl(kind: "funding", chain: paidChain, amount: paidAmount, fee: $fundingFee, automatic: $automaticFee, review: $feeReview)
+            FeeQuoteControl(kind: "funding", chain: paidChain, amount: paidAmount, sourceOfferID: replacement?.order.offer.id ?? "", sourceEventID: replacement?.order.eventID ?? "", fee: $fundingFee, automatic: $automaticFee, review: $feeReview)
             Toggle("Protect my side with a watchtower", isOn: $protection)
             if protection {
                 Picker("Favorite watchtower", selection: $towerID) {
@@ -112,6 +125,10 @@ struct TradeComposer: View {
         request.sell = order?.sell ?? sell
         request.sellAmount = order?.sellAmount ?? (Int64(sellAmount) ?? 0)
         request.buyAmount = order?.buyAmount ?? (Int64(buyAmount) ?? 0)
+        if order == nil { request.expires = Int64(expires.timeIntervalSince1970) }
+        if let management {
+            request.orderAction = management.action; request.sourceOfferID = management.order.offer.id; request.sourceEventID = management.order.eventID
+        }
         request.fundingFee = fee.quote.fee; request.ownerFeeCap = 20_000
         if fee.automatic { request.rateSatKvb = fee.quote.estimate.rateSatKvb; request.feeTimestamp = fee.quote.estimate.timestamp }
         let tower = protection ? selectedTower : nil
@@ -145,6 +162,10 @@ struct TradeEconomicsReview: View {
                 ScrollView {
                     VStack(alignment: .leading, spacing: 12) {
                         if let q = review.quote {
+                            if !q.orderAction.isEmpty {
+                                Text(q.orderAction == "replace" ? "Replace and locally cancel your current order" : "Create a new order from your prior terms").font(.headline)
+                                Text("Source order: \(q.sourceOfferID)").font(.caption.monospaced()).textSelection(.enabled)
+                            }
                             Text("Review economics").font(.headline)
                             Text("Pay: \(q.paidPrincipal) \(symbol(q.paidChain)) sats principal + \(q.fees.fundingFee) sats funding fee = \(q.paidTotal) \(symbol(q.paidChain)) sats.")
                             Text("Receive principal: \(q.receivedPrincipal) \(symbol(q.receivedChain)) sats. Claim fees are deducted from this asset.")
@@ -185,7 +206,7 @@ struct TradeEconomicsReview: View {
                 HStack {
                     if review.pending == nil { Button("Back") { review.back() }.disabled(review.busy) }
                     Spacer()
-                    Button(review.pending == nil ? (review.quote?.kind == "maker" ? "Confirm and publish" : "Confirm swap request") : "Retry saved confirmation") {
+                    Button(review.pending == nil ? (review.quote?.orderAction == "replace" ? "Confirm replacement" : (review.quote?.kind == "maker" ? "Confirm and publish" : "Confirm swap request")) : "Retry saved confirmation") {
                         Task { await review.confirm(current: { model.tradeContext }) }
                     }.buttonStyle(MintButton())
                         .disabled(review.busy || !review.context.matches(model.tradeContext) || (review.pending == nil && (review.quote?.ready != true || (review.quote?.expires ?? 0) <= Int64(clock.date.timeIntervalSince1970))))

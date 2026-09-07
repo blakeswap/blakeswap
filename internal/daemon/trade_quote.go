@@ -18,6 +18,7 @@ const tradeReceiptCapacity = 1000
 
 type TradeQuoteRequest struct {
 	FeeSelection
+	OrderActionFields
 	Kind            string   `json:"kind"`
 	ExpectedWallet  string   `json:"expected_wallet"`
 	ExpectedNetwork string   `json:"expected_network"`
@@ -51,6 +52,7 @@ type TradeOutcome struct {
 	NetMax    int64    `json:"net_max"`
 }
 type TradeQuote struct {
+	OrderActionFields
 	Token             string         `json:"token"`
 	Revision          string         `json:"revision"`
 	Kind              string         `json:"kind"`
@@ -133,6 +135,13 @@ func (e *Engine) tradeSnapshot(p TradeQuoteRequest, now int64) (TradeQuoteSnapsh
 	if p.Kind != "maker" && p.Kind != "taker" {
 		return s, errors.New("trade quote kind must be maker or taker")
 	}
+	if p.Kind != "maker" && (p.OrderAction != "" || p.SourceOfferID != "" || p.SourceEventID != "") {
+		return s, errors.New("order management requires a maker quote")
+	}
+	source, err := e.orderSource(p.OrderActionFields, now)
+	if err != nil {
+		return s, err
+	}
 	if p.FundingFee < 1 || (p.OwnerFeeCap != 0 && p.OwnerFeeCap != 20000) || p.Rate < 0 {
 		return s, errors.New("review an explicit bounded funding and owner fee policy")
 	}
@@ -173,7 +182,11 @@ func (e *Engine) tradeSnapshot(p TradeQuoteRequest, now int64) (TradeQuoteSnapsh
 		return s, errors.New("watchtower proof expired; refresh before reviewing")
 	}
 	q := TradeQuote{Kind: p.Kind, Wallet: e.Config.Name, WalletKey: e.identity.Public().Hex(), Network: e.Config.Network, Created: now, Expires: now + tradeQuoteLifetime, OfferEventID: eventID, OfferID: o.ID, OfferMaker: o.Maker, OfferExpires: o.Expires, Fees: p.FeeSelection, Provider: tower, ProviderRevision: protocol.Digest(tower), TowerCoverage: "none", Outcomes: []TradeOutcome{}}
+	q.OrderActionFields = p.OrderActionFields
 	q.Expires = min(q.Expires, o.Expires)
+	if p.OrderAction == "replace" {
+		q.Expires = min(q.Expires, source.Expires)
+	}
 	if tower.BPS > 0 {
 		q.Expires = min(q.Expires, tower.Expires)
 	}
@@ -237,6 +250,9 @@ func (e *Engine) validateTradeSource(s TradeQuoteSnapshot, now int64) error {
 	if err := s.Offer.Validate(now); err != nil {
 		return err
 	}
+	if _, err := e.orderSource(p.OrderActionFields, now); err != nil {
+		return err
+	}
 	if p.Kind == "taker" {
 		event, ok := e.s.Book[p.Maker+":"+p.ID]
 		if !ok || event.ID.Hex() != q.OfferEventID {
@@ -275,7 +291,8 @@ func (e *Engine) quoteTrade(ctx context.Context, raw json.RawMessage) (TradeQuot
 	if err != nil {
 		return TradeQuote{}, err
 	}
-	feeRaw, _ := json.Marshal(FeeQuoteRequest{Kind: "funding", Chain: s.Quote.PaidChain, Amount: s.Quote.PaidPrincipal, Fee: p.FundingFee})
+	allow := replacementFields(p)
+	feeRaw, _ := json.Marshal(FeeQuoteRequest{Kind: "funding", Chain: s.Quote.PaidChain, Amount: s.Quote.PaidPrincipal, Fee: p.FundingFee, ExpectedWallet: p.ExpectedWallet, SourceOfferID: allow.SourceOfferID, SourceEventID: allow.SourceEventID})
 	fee, err := e.quoteFee(ctx, feeRaw)
 	if err != nil {
 		s.Quote.Error = err.Error()
@@ -283,7 +300,7 @@ func (e *Engine) quoteTrade(ctx context.Context, raw json.RawMessage) (TradeQuot
 	}
 	s.Quote.FundingSize = fee.VSize
 	fundsRaw, _ := json.Marshal(FundsPreflightRequest{Chain: s.Quote.PaidChain, Amount: s.Quote.PaidPrincipal, Fee: p.FundingFee, Inputs: fee.Inputs})
-	funds, err := e.preflightFunds(ctx, Request{Method: "wallet.preflight", Params: fundsRaw})
+	funds, err := e.preflightFundsForOrder(ctx, Request{Method: "wallet.preflight", Params: fundsRaw}, allow)
 	if err != nil {
 		return s.Quote, err
 	}
@@ -395,7 +412,7 @@ func (e *Engine) confirmTrade(ctx context.Context, raw json.RawMessage) (Confirm
 	s := receipt.Snapshot
 	e.mu.Unlock()
 	fundsRaw, _ := json.Marshal(FundsPreflightRequest{Chain: s.Quote.PaidChain, Amount: s.Quote.PaidPrincipal, Fee: s.Quote.Fees.FundingFee, Inputs: s.Quote.Funds.Inputs})
-	funds, readErr := e.preflightFunds(ctx, Request{Method: "wallet.preflight", Params: fundsRaw})
+	funds, readErr := e.preflightFundsForOrder(ctx, Request{Method: "wallet.preflight", Params: fundsRaw}, replacementFields(s.Request))
 	e.mu.Lock()
 	defer e.mu.Unlock()
 	defer delete(e.tradeConfirming, p.RequestID)

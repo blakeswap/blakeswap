@@ -66,6 +66,12 @@ once authorizes the automatic swap sequence within the reviewed limits. Cancelli
 the review commits nothing. If the response is lost, use the saved-confirmation
 resume action to retry the same request after restart. See [reviewed swaps](docs/API.md#reviewed-swaps).
 
+Market shows your buy/sell direction, exact rate ordering, size/expiry sorting,
+and independent owner/amount filters. Your durable order history includes
+cancellation publication, replacement lineage, and links to swaps. Unreserved
+orders can be replaced through a fresh economics review; finished/expired orders
+can be deliberately recreated with a new ID. See [market management](docs/MARKET.md).
+
 Activity provides linked deposit, send, order, swap, refund, and tower history,
 including spent deposits at old receive addresses. Filter a snapshot, inspect
 related orders/swaps, or export exact asset-specific amounts and fee provenance

@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"net/http/httptest"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -13,6 +14,7 @@ import (
 	"fiatjaf.com/nostr"
 	"github.com/blakeswap/blakeswap/internal/chain"
 	"github.com/blakeswap/blakeswap/internal/protocol"
+	"github.com/blakeswap/blakeswap/internal/relay"
 	"github.com/blakeswap/blakeswap/internal/storage"
 	"github.com/blakeswap/blakeswap/internal/transport"
 )
@@ -269,8 +271,59 @@ func TestRealDiscoveredTraderWatchtowerAndOfferBalance(t *testing.T) {
 	}
 }
 
+// Publication tests need a positive relay acknowledgement. An empty relay list
+// is an offline queue, not a stand-in for successful remote storage.
+func discoveryPublicationRelay(t *testing.T) string {
+	t.Helper()
+	r, err := relay.Open(filepath.Join(t.TempDir(), "relay.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	server := httptest.NewServer(r)
+	t.Cleanup(func() { server.Close(); r.Close() })
+	return "ws" + strings.TrimPrefix(server.URL, "http")
+}
+
+func TestDiscoveryWithoutRelaysRetainsUnpublishedMessages(t *testing.T) {
+	provider, client := discoveryEngine(t), discoveryEngine(t)
+	if err := client.resolveTower(provider.ownTower().Npub); err != nil {
+		t.Fatal(err)
+	}
+	for _, d := range client.s.Outbox {
+		if err := provider.receive(d.Event); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, e := range []*Engine{client, provider} {
+		before := len(e.s.Outbox)
+		if before == 0 {
+			t.Fatal("missing pending discovery message")
+		}
+		if err := e.flush(context.Background()); err != nil {
+			t.Fatal(err)
+		}
+		if len(e.s.Outbox) != before {
+			t.Fatal("no-relay flush discarded unsent discovery")
+		}
+		for _, d := range e.s.Outbox {
+			if d.Published {
+				t.Fatal("no relay was counted as a positive acknowledgement")
+			}
+		}
+		var saved State
+		if _, err := e.vault.Load(&saved); err != nil {
+			t.Fatal(err)
+		}
+		if len(saved.Outbox) != before {
+			t.Fatal("unsent discovery queue was not durable")
+		}
+	}
+}
+
 func TestDiscoveryMailboxIsSeparateBoundedAndExpires(t *testing.T) {
 	provider, client := discoveryEngine(t), discoveryEngine(t)
+	url := discoveryPublicationRelay(t)
+	provider.Config.Relays, client.Config.Relays = []string{url}, []string{url}
 	for i := 0; i < 10001; i++ {
 		client.s.Seen[fmt.Sprint(i)] = "existing protocol message"
 	}
@@ -319,6 +372,8 @@ func TestDiscoveryMailboxIsSeparateBoundedAndExpires(t *testing.T) {
 
 func TestOfflineFavoriteQueriesOnlyOncePerExpiryPeriod(t *testing.T) {
 	provider, client := discoveryEngine(t), discoveryEngine(t)
+	url := discoveryPublicationRelay(t)
+	provider.Config.Relays, client.Config.Relays = []string{url}, []string{url}
 	client.Config.FavoriteWatchtowers = []string{provider.ownTower().Npub}
 	for i := 0; i < 5; i++ {
 		if err := client.refreshFavoriteTowers(); err != nil {

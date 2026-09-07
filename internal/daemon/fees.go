@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"sort"
 	"time"
 
 	"github.com/blakeswap/blakeswap/internal/chain"
@@ -38,13 +39,16 @@ type FeeSelection struct {
 }
 
 type FeeQuoteRequest struct {
-	Kind        string         `json:"kind"`
-	Chain       chain.ID       `json:"chain"`
-	Destination string         `json:"destination"`
-	Amount      int64          `json:"amount"`
-	Fee         int64          `json:"fee"`
-	Target      uint32         `json:"target"`
-	Inputs      []CoinOutpoint `json:"inputs"`
+	ExpectedWallet string         `json:"expected_wallet,omitempty"`
+	SourceOfferID  string         `json:"source_offer_id,omitempty"`
+	SourceEventID  string         `json:"source_event_id,omitempty"`
+	Kind           string         `json:"kind"`
+	Chain          chain.ID       `json:"chain"`
+	Destination    string         `json:"destination"`
+	Amount         int64          `json:"amount"`
+	Fee            int64          `json:"fee"`
+	Target         uint32         `json:"target"`
+	Inputs         []CoinOutpoint `json:"inputs"`
 }
 
 type FeeQuote struct {
@@ -98,7 +102,27 @@ func (e *Engine) quoteFee(ctx context.Context, raw json.RawMessage) (FeeQuote, e
 		return FeeQuote{}, err
 	}
 	coins := e.knownCoins(p.Chain)
-	reserved := e.reservedCoins(p.Chain, "")
+	owner := ""
+	if p.SourceOfferID != "" || p.SourceEventID != "" {
+		if p.Kind != "funding" || p.ExpectedWallet != e.Config.Name {
+			e.mu.Unlock()
+			return FeeQuote{}, errors.New("replacement fee quote requires its wallet and funding purpose")
+		}
+		var err error
+		owner, err = e.replacementOwner(OrderActionFields{OrderAction: "replace", SourceOfferID: p.SourceOfferID, SourceEventID: p.SourceEventID})
+		if err != nil {
+			e.mu.Unlock()
+			return FeeQuote{}, err
+		}
+		prior := map[string]bool{}
+		for _, point := range e.s.CoinReservations[owner].Inputs {
+			prior[pointKey(point)] = true
+		}
+		sort.SliceStable(coins, func(i, j int) bool {
+			return prior[chain.OutpointKey(coins[i].TxID, coins[i].Vout)] && !prior[chain.OutpointKey(coins[j].TxID, coins[j].Vout)]
+		})
+	}
+	reserved := e.reservedCoins(p.Chain, owner)
 	network, node := e.Config.Network, e.nodes[p.Chain]
 	changeScript := append([]byte(nil), e.scripts[p.Chain]...)
 	e.mu.Unlock()

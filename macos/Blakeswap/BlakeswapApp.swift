@@ -101,7 +101,6 @@ struct ContentView: View {
     @State private var pendingTrade: PendingTradeConfirmation?
     @State private var takingOrder: TakeOfferContext?
     @State private var sendContext: SendContext?
-    @State private var orderFilter: OrderFilter = .all
     var body: some View {
         HStack(spacing: 0) {
             sidebar
@@ -143,7 +142,6 @@ struct ContentView: View {
         .sheet(item: $creatingOffer, onDismiss: refreshPendingTrade) { context in TradeComposer(context: context, root: model.root).environmentObject(model) }
         .sheet(item: $resumingTrade, onDismiss: refreshPendingTrade) { context in TradeComposer(context: context, root: model.root).environmentObject(model) }
         .task(id: model.profile + "|" + model.network + "|" + String(model.generation)) { refreshPendingTrade() }
-        .onChange(of: model.activityDestination) { _, target in if target?.page == "Market" { orderFilter = .all } }
         .sheet(item: $takingOrder, onDismiss: refreshPendingTrade) { context in TradeComposer(context: context.wallet, root: model.root, order: context.order).environmentObject(model) }
         .sheet(isPresented: Binding(get: { model.recovery != nil }, set: { if !$0 { model.recovery = nil } })) {
             VStack(alignment: .leading, spacing: 20) {
@@ -230,7 +228,6 @@ struct ContentView: View {
         pendingTrade = try? TradeConfirmationJournal(root: model.root).load(profile: model.profile, network: model.network)
     }
     private func market(_ status: DaemonStatus) -> some View {
-        let orders = orderFilter.orders(in: status)
         return VStack(alignment: .leading, spacing: 26) {
             HStack(spacing: 16) { balanceCard("btc", status); balanceCard("blake", status) }
             if pendingTrade != nil {
@@ -248,42 +245,8 @@ struct ContentView: View {
                 Spacer()
                 Button { creatingOffer = model.tradeContext } label: { Label("Create offer", systemImage: "plus") }.buttonStyle(MintButton()).disabled(model.busy || !["btc", "blake"].contains(where: status.canReviewOffer)).accessibilityIdentifier("create-offer")
             }
-            HStack(spacing: 6) {
-                ForEach(OrderFilter.allCases, id: \.self) { filter in
-                    OrderFilterTab(filter: filter, count: filter.orders(in: status).count, selected: orderFilter == filter) { orderFilter = filter }
-                }
-                Spacer(minLength: 0)
-            }
-            .padding(.bottom, 10)
-            .overlay(alignment: .bottom) { Rectangle().fill(Color.white.opacity(0.07)).frame(height: 1) }
-            .accessibilityElement(children: .contain).accessibilityLabel("Show open orders").accessibilityIdentifier("order-filter")
-            if !["btc", "blake"].contains(where: status.canReviewOffer) {
-                Text("Deposit BTC or BLAKE and wait for confirmation to create an offer. The sell balance must cover the amount and funding fee.").font(.callout).foregroundStyle(.secondary)
-            }
-            if orders.isEmpty {
-                ContentUnavailableView("No matching open orders", systemImage: "arrow.left.arrow.right")
-                    .frame(maxWidth: .infinity).padding(28).background(panel.opacity(0.5), in: RoundedRectangle(cornerRadius: 14))
-            } else {
-                VStack(spacing: 0) {
-                    HStack { Text("MAKER SELLS").frame(maxWidth: .infinity, alignment: .leading); Text("MAKER RECEIVES").frame(maxWidth: .infinity, alignment: .leading); Text("STATUS").frame(width: 124, alignment: .leading) }
-                        .font(.system(size: 10, weight: .semibold)).tracking(1.2).foregroundStyle(.secondary).padding(18)
-                    ForEach(orders, id: \.bookID) { order in
-                        Divider().opacity(0.4)
-                        HStack(spacing: 10) {
-                            VStack(alignment: .leading, spacing: 6) { Text("\(units(order.sellAmount)) \(symbol(order.sell))").font(.system(.body, design: .monospaced)); Text(order.maker == status.pubkey ? "Your offer" : "Maker \(order.maker.prefix(10))…").font(.caption).foregroundStyle(.secondary)
-                                if let protection = order.protectionLabel(viewer: status.pubkey) { Text(protection).font(.caption).foregroundStyle(.secondary) }
-                                if order.maker == status.pubkey && order.hasTower { Text(String(order.tower.npub.prefix(18)) + "…").font(.caption2.monospaced()).foregroundStyle(.secondary).help(order.tower.npub).textSelection(.enabled) } }.frame(maxWidth: .infinity, alignment: .leading)
-                            Text("\(units(order.buyAmount)) \(symbol(order.buy))").font(.system(.body, design: .monospaced)).frame(maxWidth: .infinity, alignment: .leading)
-                            Group {
-                                if order.status == "open" {
-                                    if order.maker == status.pubkey { Button("Cancel") { Task { await model.command("offer.cancel", ["id": order.id]) } } }
-                                    else { Button("Take offer") { takingOrder = TakeOfferContext(order: order, wallet: model.tradeContext) }.tint(mint).accessibilityIdentifier("take-offer-\(order.id)") }
-                                } else { Text(order.status.capitalized).foregroundStyle(order.status == "filled" ? mint : .secondary).font(.caption) }
-                            }.frame(width: 124, alignment: .leading).disabled(model.busy)
-                        }.padding(18).id("order/" + order.id)
-                    }
-                }.background(panel.opacity(0.6), in: RoundedRectangle(cornerRadius: 14))
-            }
+            MarketView(context: model.tradeContext, root: model.root)
+                .id(model.profile + "|" + model.network + "|" + String(model.generation))
             Label("Quitting stops your daemon. Keep the app open during funded swaps unless a watchtower is armed.", systemImage: "clock.arrow.circlepath")
                 .font(.callout).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
         }

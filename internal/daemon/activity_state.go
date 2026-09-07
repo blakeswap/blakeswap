@@ -170,7 +170,17 @@ func (e *Engine) syncActivity() {
 		if o.Status == "open" && o.Expires <= time.Now().Unix() {
 			o.Status = "expired"
 		}
-		e.putActivity(Activity{ID: key, GroupID: key, Kind: "order", Chain: o.Sell, Direction: "info", Principal: o.SellAmount, CounterChain: o.Sell.Other(), CounterAmount: o.BuyAmount, OrderID: id, SwapID: o.Reservation, LocalStatus: o.Status, Status: o.Status, Label: "Order " + o.Status}, backfill)
+		record := e.s.OrderRecords[id]
+		related := []string{}
+		for _, linked := range []string{record.Replaces, record.ReplacedBy, record.RecreatedFrom} {
+			if linked != "" {
+				related = append(related, activityID("order", linked))
+			}
+		}
+		if o.Reservation != "" {
+			related = append(related, activityID("swap", o.Reservation))
+		}
+		e.putActivity(Activity{ID: key, GroupID: key, Kind: "order", Chain: o.Sell, Direction: "info", Principal: o.SellAmount, CounterChain: o.Sell.Other(), CounterAmount: o.BuyAmount, OrderID: id, SwapID: o.Reservation, LocalStatus: o.Status, Status: o.Status, Label: "Order " + o.Status, CreatedAt: record.CreatedAt, RelatedIDs: related}, backfill)
 	}
 	for id, send := range e.s.Sends {
 		key := activityID("send", id)

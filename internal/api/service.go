@@ -264,6 +264,11 @@ func (s *Service) ListActivity(ctx context.Context, in *pb.ActivityQuery) (*pb.A
 	out := &pb.ActivityPage{}
 	return out, s.command(ctx, "activity.list", in, out)
 }
+
+func (s *Service) ListMarket(ctx context.Context, in *pb.MarketQuery) (*pb.MarketPage, error) {
+	out := &pb.MarketPage{}
+	return out, s.command(ctx, "market.list", in, out)
+}
 func (s *Service) ExportActivity(ctx context.Context, in *pb.ActivityQuery) (*pb.ActivityExport, error) {
 	out := &pb.ActivityExport{}
 	return out, s.command(ctx, "activity.export", in, out)

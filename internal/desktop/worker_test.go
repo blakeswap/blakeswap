@@ -206,7 +206,7 @@ func (f *advisoryFixture) Command(ctx context.Context, req daemon.Request) (any,
 }
 
 func TestPreflightDoesNotHoldLifecycleLockAndStopsBeforeEngineClose(t *testing.T) {
-	for _, method := range []string{"wallet.preflight", "trade.quote", "trade.confirm", "activity.list", "activity.export"} {
+	for _, method := range []string{"wallet.preflight", "trade.quote", "trade.confirm", "activity.list", "activity.export", "market.list"} {
 		t.Run(method, func(t *testing.T) {
 			entered, cancelled, release := make(chan struct{}), make(chan struct{}), make(chan struct{})
 			alice := &advisoryFixture{workerFixture: &workerFixture{name: "alice"}, command: func(ctx context.Context, req daemon.Request) (any, error) {
