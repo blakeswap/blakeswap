@@ -10,6 +10,20 @@ import (
 	"time"
 )
 
+// Register before taking the lifecycle lock, including direct typed handlers
+// that do not pass through command. Retire only after their view is published.
+func (m *Manager) beginAction() func() {
+	m.actionCommands.Add(1)
+	m.actionVersion.Add(1)
+	return func() { m.actionVersion.Add(1); m.actionCommands.Add(-1) }
+}
+
+func (m *Manager) beginInstallation() func() {
+	m.installations.Add(1)
+	finish := m.beginAction()
+	return func() { finish(); m.installations.Add(-1) }
+}
+
 func (m *Manager) actionSummary(ctx context.Context, req daemon.Request) (daemon.ActionSummary, error) {
 	if err := ctx.Err(); err != nil {
 		return daemon.ActionSummary{}, err
@@ -61,5 +75,11 @@ func (m *Manager) actionSummary(ctx context.Context, req daemon.Request) (daemon
 			wallets[i].Known = false
 		}
 	}
-	return daemon.SummarizeActions(network, v.settings.Revision, wallets, time.Now().Unix()), nil
+	summary := daemon.SummarizeActions(network, v.settings.Revision, wallets, time.Now().Unix())
+	if m.installations.Load() > 0 || m.unpublishedInstalls.Load() > 0 {
+		summary.InstallationPending = true
+		summary.Complete = false
+		summary.RequiresMonitoring = true
+	}
+	return summary, nil
 }

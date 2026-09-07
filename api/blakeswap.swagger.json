@@ -1430,6 +1430,9 @@
         },
         "requires_monitoring": {
           "type": "boolean"
+        },
+        "installation_pending": {
+          "type": "boolean"
         }
       }
     },

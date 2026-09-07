@@ -115,7 +115,7 @@ final class ShutdownCoordinator {
         let current = try? await summary()
         // Unknown is distinct from an actual obligation, and still offers an
         // explicit Quit. A successful empty/settled check needs no prompt.
-        if current == nil || current!.requiresMonitoring || !current!.complete {
+        if current == nil || current!.requiresMonitoring || !current!.complete || current!.installationPending {
             guard await decision(current) else { return false }
         }
         await daemon.stop()
@@ -141,6 +141,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         alert.messageText = "Stop Blakeswap monitoring?"
         var lines = ["Quitting stops the wallet daemon and locally accepted rescue jobs. Notifications do not monitor chains while the app is closed."]
         if let summary {
+            if summary.installationPending { lines.append("A wallet installation is pending or incomplete. Its obligations are not yet fully included. Allow setup to finish, or reopen Blakeswap after an installation error.") }
             for wallet in summary.wallets {
                 if !wallet.known { lines.append("\(wallet.walletID): local obligation state could not be checked.") }
                 let active = wallet.actions.filter(\.requiresMonitoring)

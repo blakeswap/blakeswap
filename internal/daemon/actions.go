@@ -48,12 +48,13 @@ type WalletActions struct {
 	Actions    []WalletAction `json:"actions"`
 }
 type ActionSummary struct {
-	Network            chain.Network   `json:"network"`
-	SettingsRevision   uint64          `json:"settings_revision"`
-	ObservedAt         int64           `json:"observed_at"`
-	Wallets            []WalletActions `json:"wallets"`
-	Complete           bool            `json:"complete"`
-	RequiresMonitoring bool            `json:"requires_monitoring"`
+	InstallationPending bool            `json:"installation_pending"`
+	Network             chain.Network   `json:"network"`
+	SettingsRevision    uint64          `json:"settings_revision"`
+	ObservedAt          int64           `json:"observed_at"`
+	Wallets             []WalletActions `json:"wallets"`
+	Complete            bool            `json:"complete"`
+	RequiresMonitoring  bool            `json:"requires_monitoring"`
 }
 
 const ActionSnapshotMaxAge int64 = 90

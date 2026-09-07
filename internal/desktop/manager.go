@@ -30,24 +30,29 @@ import (
 type Manager struct {
 	actionCommands atomic.Int64
 	actionVersion  atomic.Uint64
-	mu             sync.Mutex
-	view           atomic.Pointer[desktopView]
-	root           string
-	settings       *pb.Settings
-	engines        map[string]*daemon.Engine
-	workers        map[string]*walletWorker
-	configs        map[string]daemon.Config
-	lastError      string
-	restart        bool
-	stopped        bool
-	openings       map[string]*networkOpening
-	runtimeCtx     context.Context
-	runtimeDir     string
-	runtimeSession string
-	servers        map[string]*api.Server
-	actionReady    func(daemon.WalletActions)
-	storedActions  map[string]daemon.WalletActions
-	chainReady     func(chain.ID, uint32)
+	installations  atomic.Int64
+	// A successful directory rename can outlive a failed settings publication.
+	// Startup authenticates/reconciles the durable markers before this manager
+	// is constructed; a running manager retains the hold until publication.
+	unpublishedInstalls atomic.Int64
+	mu                  sync.Mutex
+	view                atomic.Pointer[desktopView]
+	root                string
+	settings            *pb.Settings
+	engines             map[string]*daemon.Engine
+	workers             map[string]*walletWorker
+	configs             map[string]daemon.Config
+	lastError           string
+	restart             bool
+	stopped             bool
+	openings            map[string]*networkOpening
+	runtimeCtx          context.Context
+	runtimeDir          string
+	runtimeSession      string
+	servers             map[string]*api.Server
+	actionReady         func(daemon.WalletActions)
+	storedActions       map[string]daemon.WalletActions
+	chainReady          func(chain.ID, uint32)
 }
 
 type networkOpening struct {
@@ -206,6 +211,7 @@ func (m *Manager) readSettings(ctx context.Context) (*pb.Settings, error) {
 	return proto.Clone(m.settings).(*pb.Settings), nil
 }
 func (m *Manager) writeSettings(ctx context.Context, next *pb.Settings) (*pb.Settings, error) {
+	defer m.beginAction()()
 	if err := validate(next); err != nil {
 		return nil, status.Error(codes.InvalidArgument, err.Error())
 	}
@@ -277,9 +283,7 @@ func (m *Manager) command(ctx context.Context, profile string, req daemon.Reques
 		return m.actionSummary(ctx, req)
 	}
 	if req.Method != "status" {
-		m.actionCommands.Add(1)
-		m.actionVersion.Add(1)
-		defer func() { m.actionVersion.Add(1); m.actionCommands.Add(-1) }()
+		defer m.beginAction()()
 	}
 
 	if req.Method == "automation.list" || req.Method == "automation.review" || req.Method == "automation.save" || req.Method == "automation.disable" || req.Method == "wallet.preflight" || req.Method == "fee.quote" || req.Method == "trade.quote" || req.Method == "trade.confirm" || req.Method == "activity.list" || req.Method == "activity.export" || req.Method == "market.list" {

@@ -29,7 +29,7 @@ func TestActionSummaryAuthenticatedTypedAllWallets(t *testing.T) {
 		if err := json.Unmarshal(r.Params, &p); err != nil || r.Method != "actions.summary" || !p.Refresh {
 			t.Fatal(r, err)
 		}
-		return daemon.ActionSummary{Network: chain.Mainnet, SettingsRevision: 9007199254740993, ObservedAt: 1800000000, Complete: false, RequiresMonitoring: true, Wallets: []daemon.WalletActions{{WalletID: "other-wallet", Network: chain.Mainnet, Known: true, Source: "live", Actions: []daemon.WalletAction{{ID: "swap/id", Kind: "swap", ObjectID: "id", State: "owner_claim", RequiresMonitoring: true, FirstReveal: true, TowerReady: true, Deadlines: []daemon.ActionDeadline{{Kind: "reveal", Chain: chain.BTC, Unit: "median_time", Target: 1800000100, Observed: 1800000000, ObservedAt: 1800000010, Remaining: 100, Certain: true, Band: "approaching"}}}}}, {WalletID: "opening", Network: chain.Mainnet}}}, nil
+		return daemon.ActionSummary{InstallationPending: true, Network: chain.Mainnet, SettingsRevision: 9007199254740993, ObservedAt: 1800000000, Complete: false, RequiresMonitoring: true, Wallets: []daemon.WalletActions{{WalletID: "other-wallet", Network: chain.Mainnet, Known: true, Source: "live", Actions: []daemon.WalletAction{{ID: "swap/id", Kind: "swap", ObjectID: "id", State: "owner_claim", RequiresMonitoring: true, FirstReveal: true, TowerReady: true, Deadlines: []daemon.ActionDeadline{{Kind: "reveal", Chain: chain.BTC, Unit: "median_time", Target: 1800000100, Observed: 1800000000, ObservedAt: 1800000010, Remaining: 100, Certain: true, Band: "approaching"}}}}}, {WalletID: "opening", Network: chain.Mainnet}}}, nil
 	}}
 	server, err := Listen(context.Background(), filepath.Join(dir, "rpc.sock"), service)
 	if err != nil {
@@ -50,7 +50,7 @@ func TestActionSummaryAuthenticatedTypedAllWallets(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if result.SettingsRevision != 9007199254740993 || len(result.Wallets) != 2 || result.Complete || !result.RequiresMonitoring {
+	if !result.InstallationPending || result.SettingsRevision != 9007199254740993 || len(result.Wallets) != 2 || result.Complete || !result.RequiresMonitoring {
 		t.Fatal(result)
 	}
 	a := result.Wallets[0].Actions[0]

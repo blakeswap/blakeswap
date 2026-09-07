@@ -75,6 +75,7 @@ func (m *Manager) setupGuard(ctx context.Context, revision uint64, stages ...str
 }
 
 func (m *Manager) prepareFirstWallet(ctx context.Context, request *pb.PrepareFirstWalletRequest) (*pb.FirstWallet, error) {
+	defer m.beginInstallation()()
 	if err := validateWalletName(request.Name); err != nil {
 		return nil, status.Error(codes.InvalidArgument, err.Error())
 	}
@@ -192,6 +193,7 @@ func (m *Manager) prepareFirstWallet(ctx context.Context, request *pb.PrepareFir
 	if err := os.Rename(staging, target); err != nil {
 		return nil, err
 	}
+	m.unpublishedInstalls.Add(1)
 	if err := syncDirectory(walletRoot); err != nil {
 		return nil, err
 	}
@@ -201,6 +203,7 @@ func (m *Manager) prepareFirstWallet(ctx context.Context, request *pb.PrepareFir
 	}
 	m.settings = next
 	m.publishView()
+	m.unpublishedInstalls.Add(-1)
 	return m.firstWalletLocked()
 }
 
@@ -366,6 +369,7 @@ func readMaster(root string) (string, []byte, error) {
 	return state.Mnemonic, password, nil
 }
 func (m *Manager) confirmFirstWallet(ctx context.Context, request *pb.ConfirmFirstWalletRequest) (*pb.Settings, error) {
+	defer m.beginAction()()
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	if err := m.setupGuard(ctx, request.Revision, "backup"); err != nil {
@@ -408,6 +412,7 @@ func (m *Manager) exportFirstWallet(ctx context.Context, request *pb.ExportFirst
 	return &pb.Backup{Path: result.Path}, nil
 }
 func (m *Manager) finishOnboarding(ctx context.Context, next *pb.Settings) (*pb.Settings, error) {
+	defer m.beginAction()()
 	if err := validate(next); err != nil {
 		return nil, status.Error(codes.InvalidArgument, err.Error())
 	}

@@ -2987,6 +2987,8 @@ nonisolated struct Blakeswap_V1_ActionSummary: Sendable {
 
   var requiresMonitoring: Bool = false
 
+  var installationPending: Bool = false
+
   var unknownFields = SwiftProtobuf.UnknownStorage()
 
   init() {}
@@ -9089,7 +9091,7 @@ nonisolated extension Blakeswap_V1_ActionSummaryRequest: SwiftProtobuf.Message, 
 
 nonisolated extension Blakeswap_V1_ActionSummary: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   static let protoMessageName: String = _protobuf_package + ".ActionSummary"
-  static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}network\0\u{3}settings_revision\0\u{3}observed_at\0\u{1}wallets\0\u{1}complete\0\u{3}requires_monitoring\0")
+  static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}network\0\u{3}settings_revision\0\u{3}observed_at\0\u{1}wallets\0\u{1}complete\0\u{3}requires_monitoring\0\u{3}installation_pending\0")
 
   mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
     while let fieldNumber = try decoder.nextFieldNumber() {
@@ -9103,6 +9105,7 @@ nonisolated extension Blakeswap_V1_ActionSummary: SwiftProtobuf.Message, SwiftPr
       case 4: try { try decoder.decodeRepeatedMessageField(value: &self.wallets) }()
       case 5: try { try decoder.decodeSingularBoolField(value: &self.complete) }()
       case 6: try { try decoder.decodeSingularBoolField(value: &self.requiresMonitoring) }()
+      case 7: try { try decoder.decodeSingularBoolField(value: &self.installationPending) }()
       default: break
       }
     }
@@ -9127,6 +9130,9 @@ nonisolated extension Blakeswap_V1_ActionSummary: SwiftProtobuf.Message, SwiftPr
     if self.requiresMonitoring != false {
       try visitor.visitSingularBoolField(value: self.requiresMonitoring, fieldNumber: 6)
     }
+    if self.installationPending != false {
+      try visitor.visitSingularBoolField(value: self.installationPending, fieldNumber: 7)
+    }
     try unknownFields.traverse(visitor: &visitor)
   }
 
@@ -9137,6 +9143,7 @@ nonisolated extension Blakeswap_V1_ActionSummary: SwiftProtobuf.Message, SwiftPr
     if lhs.wallets != rhs.wallets {return false}
     if lhs.complete != rhs.complete {return false}
     if lhs.requiresMonitoring != rhs.requiresMonitoring {return false}
+    if lhs.installationPending != rhs.installationPending {return false}
     if lhs.unknownFields != rhs.unknownFields {return false}
     return true
   }

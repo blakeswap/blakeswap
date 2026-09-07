@@ -67,7 +67,12 @@ final class AppModel: ObservableObject {
  await refreshMonitoring()
         } catch is CancellationError {
             // Closing the app while its helper starts is not a connection failure.
-        } catch { if selected == profile && expected == generation { connectionError = error.localizedDescription } }
+        } catch {
+            if selected == profile && expected == generation {
+                connectionError = error.localizedDescription
+                monitoring.unavailable()
+            }
+        }
     }
     func openMonitoring(_ route: AlertDestination) {
         guard route.network == network, settings?.wallets.contains(where: { $0.id == route.wallet }) == true else { notice = "This notification belongs to another saved network. Select that network in Settings to inspect it."; return }

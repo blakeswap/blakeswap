@@ -36,6 +36,24 @@ final class DaemonProcessTests: XCTestCase {
 
 extension DaemonProcessTests {
     @MainActor
+    func testPendingInstallationOffersStayOpenAndExplicitQuit() async throws {
+        guard let helper = ProcessInfo.processInfo.environment["BLAKESWAP_TEST_HELPER"] else { throw XCTSkip("Set BLAKESWAP_TEST_HELPER to the freshly built helper") }
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        let daemon = DaemonProcess(root: root.path, executable: URL(fileURLWithPath: helper))
+        addTeardownBlock { await daemon.stop(); try? FileManager.default.removeItem(at: root) }
+        try daemon.start(); try await daemon.waitUntilReady(profile: "alice")
+        var value = ActionSummary(); value.complete = true; value.installationPending = true
+        var quit = false; var prompts = 0
+        let coordinator = ShutdownCoordinator(daemon: daemon, summary: { value }, decision: { summary in
+            XCTAssertTrue(summary?.installationPending == true); prompts += 1; return quit
+        })
+        let stayed = await coordinator.requestQuit()
+        XCTAssertFalse(stayed); XCTAssertTrue(daemon.isRunning)
+        quit = true
+        let stopped = await coordinator.requestQuit()
+        XCTAssertTrue(stopped); XCTAssertFalse(daemon.isRunning); XCTAssertEqual(prompts, 2)
+    }
+    @MainActor
     func testSecondActualHelperCannotRemoveFirstOwnersRuntime() async throws {
         guard let helper = ProcessInfo.processInfo.environment["BLAKESWAP_TEST_HELPER"] else { throw XCTSkip("Set BLAKESWAP_TEST_HELPER to the freshly built helper") }
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)

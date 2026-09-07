@@ -14,6 +14,11 @@ unknown. Unknown does not claim a funded trade exists; it means the app cannot
 complete the all-wallet check. Ordinary endpoint outages do not reverse saved
 positive settlement outcomes. A known reorg hold reopens monitoring despite the
 old displayed outcome, and remains visible until positive evidence resolves it.
+Restore/setup requests and direct Settings changes also participate in the
+in-flight check. A wallet installed before a failed Settings publication remains
+explicitly pending/incomplete; the app does not claim its obligations are being
+monitored. Reopening authenticates the retained installation and publishes its
+wallet profile before ordinary monitoring can resume. Explicit Quit stays available.
 
 ## Timing and action information
 
@@ -63,6 +68,9 @@ local timer is presented as a substitute for chain monitoring. Sleep/wake and
 session reconnection request fresh worker checks; the interruption banner stays
 visible until the affected observations are current. One unavailable wallet
 cannot silence a fresh deadline in a different wallet.
+Interruption, helper failure and expired snapshots invalidate displayed deadline
+certainty immediately. Old block counts are labelled timing unavailable until
+fresh eligible observations arrive, including after an early startup failure.
 If notification submission suspends, a new observation or monitoring interruption
 invalidates the remaining batch. Submission also rechecks the observation age.
 An interrupted batch is consumed without a later burst.

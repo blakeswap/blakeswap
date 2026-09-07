@@ -442,3 +442,9 @@ publication. Reveal timing includes the independently advancing peer safety
 margin and both-chain freshness; timestamp settlement finality is strictly
 after MTP=locktime. No keys, preimages, signed bytes, destinations or amounts are
 included. See [Monitoring](MONITORING.md) for notifications, privacy and shutdown.
+The aggregate `installation_pending` flag identifies active or incompletely
+published wallet installation. It forces `complete=false` and
+`requires_monitoring=true`, including when an encrypted profile was durably
+installed but Settings publication failed. It does not assert that this profile
+is already monitored. Direct setup/import/Settings mutation is covered by the
+same in-flight guard as wallet commands.

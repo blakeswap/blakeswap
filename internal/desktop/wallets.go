@@ -53,6 +53,7 @@ func (m *Manager) writeRuntime() error {
 }
 
 func (m *Manager) createWallet(ctx context.Context, request *pb.CreateWalletRequest) (*pb.Settings, error) {
+	defer m.beginAction()()
 	if err := validateWalletName(request.Name); err != nil {
 		return nil, status.Error(codes.InvalidArgument, err.Error())
 	}

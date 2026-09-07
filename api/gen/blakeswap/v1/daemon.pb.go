@@ -7976,15 +7976,16 @@ func (x *ActionSummaryRequest) GetRefresh() bool {
 }
 
 type ActionSummary struct {
-	state              protoimpl.MessageState `protogen:"open.v1"`
-	Network            string                 `protobuf:"bytes,1,opt,name=network,proto3" json:"network,omitempty"`
-	SettingsRevision   uint64                 `protobuf:"varint,2,opt,name=settings_revision,json=settingsRevision,proto3" json:"settings_revision,omitempty"`
-	ObservedAt         int64                  `protobuf:"varint,3,opt,name=observed_at,json=observedAt,proto3" json:"observed_at,omitempty"`
-	Wallets            []*WalletActions       `protobuf:"bytes,4,rep,name=wallets,proto3" json:"wallets,omitempty"`
-	Complete           bool                   `protobuf:"varint,5,opt,name=complete,proto3" json:"complete,omitempty"`
-	RequiresMonitoring bool                   `protobuf:"varint,6,opt,name=requires_monitoring,json=requiresMonitoring,proto3" json:"requires_monitoring,omitempty"`
-	unknownFields      protoimpl.UnknownFields
-	sizeCache          protoimpl.SizeCache
+	state               protoimpl.MessageState `protogen:"open.v1"`
+	Network             string                 `protobuf:"bytes,1,opt,name=network,proto3" json:"network,omitempty"`
+	SettingsRevision    uint64                 `protobuf:"varint,2,opt,name=settings_revision,json=settingsRevision,proto3" json:"settings_revision,omitempty"`
+	ObservedAt          int64                  `protobuf:"varint,3,opt,name=observed_at,json=observedAt,proto3" json:"observed_at,omitempty"`
+	Wallets             []*WalletActions       `protobuf:"bytes,4,rep,name=wallets,proto3" json:"wallets,omitempty"`
+	Complete            bool                   `protobuf:"varint,5,opt,name=complete,proto3" json:"complete,omitempty"`
+	RequiresMonitoring  bool                   `protobuf:"varint,6,opt,name=requires_monitoring,json=requiresMonitoring,proto3" json:"requires_monitoring,omitempty"`
+	InstallationPending bool                   `protobuf:"varint,7,opt,name=installation_pending,json=installationPending,proto3" json:"installation_pending,omitempty"`
+	unknownFields       protoimpl.UnknownFields
+	sizeCache           protoimpl.SizeCache
 }
 
 func (x *ActionSummary) Reset() {
@@ -8055,6 +8056,13 @@ func (x *ActionSummary) GetComplete() bool {
 func (x *ActionSummary) GetRequiresMonitoring() bool {
 	if x != nil {
 		return x.RequiresMonitoring
+	}
+	return false
+}
+
+func (x *ActionSummary) GetInstallationPending() bool {
+	if x != nil {
+		return x.InstallationPending
 	}
 	return false
 }
@@ -9215,7 +9223,7 @@ const file_blakeswap_v1_daemon_proto_rawDesc = "" +
 	"\vcancel_open\x18\x05 \x01(\bR\n" +
 	"cancelOpen\"0\n" +
 	"\x14ActionSummaryRequest\x12\x18\n" +
-	"\arefresh\x18\x01 \x01(\bR\arefresh\"\xfb\x01\n" +
+	"\arefresh\x18\x01 \x01(\bR\arefresh\"\xae\x02\n" +
 	"\rActionSummary\x12\x18\n" +
 	"\anetwork\x18\x01 \x01(\tR\anetwork\x12+\n" +
 	"\x11settings_revision\x18\x02 \x01(\x04R\x10settingsRevision\x12\x1f\n" +
@@ -9223,7 +9231,8 @@ const file_blakeswap_v1_daemon_proto_rawDesc = "" +
 	"observedAt\x125\n" +
 	"\awallets\x18\x04 \x03(\v2\x1b.blakeswap.v1.WalletActionsR\awallets\x12\x1a\n" +
 	"\bcomplete\x18\x05 \x01(\bR\bcomplete\x12/\n" +
-	"\x13requires_monitoring\x18\x06 \x01(\bR\x12requiresMonitoring\"\xcb\x01\n" +
+	"\x13requires_monitoring\x18\x06 \x01(\bR\x12requiresMonitoring\x121\n" +
+	"\x14installation_pending\x18\a \x01(\bR\x13installationPending\"\xcb\x01\n" +
 	"\rWalletActions\x12\x16\n" +
 	"\x06source\x18\x06 \x01(\tR\x06source\x12\x1b\n" +
 	"\twallet_id\x18\x01 \x01(\tR\bwalletId\x12\x18\n" +

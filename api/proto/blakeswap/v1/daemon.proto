@@ -470,7 +470,7 @@ message DisableAutomationRequest {
 }
 // Refresh queues bounded all-wallet worker reconciliation; this read never waits on nodes.
 message ActionSummaryRequest { bool refresh = 1; }
-message ActionSummary { string network = 1; uint64 settings_revision = 2; int64 observed_at = 3; repeated WalletActions wallets = 4; bool complete = 5; bool requires_monitoring = 6; }
+message ActionSummary { string network = 1; uint64 settings_revision = 2; int64 observed_at = 3; repeated WalletActions wallets = 4; bool complete = 5; bool requires_monitoring = 6; bool installation_pending = 7; }
 message WalletActions { string source = 6; string wallet_id = 1; string network = 2; bool known = 3; int64 observed_at = 4; repeated WalletAction actions = 5; }
 message WalletAction { string id = 1; string kind = 2; string object_id = 3; string state = 4; bool requires_monitoring = 5; bool uncertain = 6; bool first_reveal = 7; bool tower_ready = 8; repeated ActionDeadline deadlines = 9; }
 message ActionDeadline { string kind = 1; string chain = 2; string unit = 3; uint32 target = 4; uint32 observed = 5; int64 observed_at = 6; int64 remaining = 7; bool certain = 8; string band = 9; string reason = 10; }

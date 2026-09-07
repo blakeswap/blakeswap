@@ -160,13 +160,37 @@ extension Blakeswap_V1_ActionDeadline {
         do { try store.save(updated); journal = updated; preferences = next; deliveryGeneration &+= 1 } catch { self.error = error.localizedDescription }
     }
     func requestPermission() async { permissionGranted = await delivery.permission(request: true) }
-    func interruption() { deliveryGeneration &+= 1; interrupted = true; interruptionTime = now() }
-    func unavailable() { deliveryGeneration &+= 1; interrupted = true }
+    func interruption() {
+        deliveryGeneration &+= 1; interrupted = true; interruptionTime = now()
+        if let current = summary { summary = displaySnapshot(current, invalidate: true) }
+    }
+    func unavailable() { interruption() }
+    private func displaySnapshot(_ value: ActionSummary, invalidate: Bool = false) -> ActionSummary {
+        var result = value
+        let current = now()
+        let summaryFresh = !invalidate && value.observedAt <= current && current - value.observedAt <= 90
+        for i in result.wallets.indices {
+            let wallet = result.wallets[i]
+            let fresh = summaryFresh && wallet.known && wallet.source == "live" && wallet.observedAt <= current && current - wallet.observedAt <= 90 && (interruptionTime == 0 || wallet.observedAt > interruptionTime)
+            for j in result.wallets[i].actions.indices {
+                for k in result.wallets[i].actions[j].deadlines.indices {
+                    let deadline = result.wallets[i].actions[j].deadlines[k]
+                    if !fresh || deadline.observedAt > current || current - deadline.observedAt > 90 || (interruptionTime != 0 && deadline.observedAt <= interruptionTime) {
+                        result.wallets[i].actions[j].deadlines[k].certain = false
+                        result.wallets[i].actions[j].deadlines[k].band = "unknown"
+                        result.wallets[i].actions[j].deadlines[k].reason = "Monitoring was interrupted or the observation is stale."
+                        if result.wallets[i].actions[j].requiresMonitoring { result.wallets[i].actions[j].uncertain = true }
+                    }
+                }
+            }
+        }
+        return result
+    }
     private func hash(_ text: String) -> String { SHA256.hash(data: Data(text.utf8)).map { String(format: "%02x", $0) }.joined() }
     func reconcile(_ next: ActionSummary) async {
         deliveryGeneration &+= 1
         let generation = deliveryGeneration
-        summary = next
+        summary = displaySnapshot(next)
         guard !processing else { return }; processing = true; defer { processing = false }
         var current = now()
         guard journalReady, next.observedAt <= current, current - next.observedAt <= 90 else { interrupted = true; return }
@@ -177,7 +201,11 @@ extension Blakeswap_V1_ActionDeadline {
         permissionGranted = await delivery.permission(request: false)
         guard generation == deliveryGeneration else { return }
         current = now()
-        guard next.observedAt <= current, current - next.observedAt <= 90 else { interrupted = true; return }
+        guard next.observedAt <= current, current - next.observedAt <= 90 else {
+            interrupted = true
+            summary = displaySnapshot(next, invalidate: true)
+            return
+        }
         var updated = journal
         var deliveries: [(String, String, Int64)] = []
         var currentEvents = Set<String>()
@@ -225,7 +253,11 @@ extension Blakeswap_V1_ActionDeadline {
                 // Awaiting the OS can yield to sleep, a failed refresh or a newer
                 // summary. Never submit the remainder of an obsolete batch.
                 guard generation == deliveryGeneration else { break }
-                guard now() >= observedAt, now() - observedAt <= 90 else { interrupted = true; break }
+                guard now() >= observedAt, now() - observedAt <= 90 else {
+                    interrupted = true
+                    if let current = summary { summary = displaySnapshot(current, invalidate: true) }
+                    break
+                }
                 try await delivery.deliver(id: id, body: body)
             }
         } catch { self.error = error.localizedDescription }
@@ -241,6 +273,7 @@ struct MonitoringView: View {
             if model.interrupted { Text("Monitoring was interrupted. Rechecking current chain observations; timing may be unavailable.").foregroundStyle(.orange) }
             if let error = model.error { Text(error).font(.caption).foregroundStyle(.orange) }
             if let summary = model.summary {
+                if summary.installationPending { Text("A wallet installation is pending or incomplete. Its obligations are not yet fully included. Allow setup to finish, or reopen Blakeswap after an installation error.").foregroundStyle(.orange) }
                 ForEach(summary.wallets, id: \.walletID) { wallet in
                     if !wallet.known { Text("\(wallet.walletID): local obligation state is being checked. Quitting will stop that check.").foregroundStyle(.orange) }
                     ForEach(wallet.actions.filter(\.requiresMonitoring), id: \.id) { action in

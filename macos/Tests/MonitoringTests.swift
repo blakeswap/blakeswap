@@ -88,6 +88,34 @@ final class MonitoringTests: XCTestCase {
 }
 
 extension MonitoringTests {
+    @MainActor func testInterruptedUnavailableAndExpiredSnapshotsInvalidateDisplayedTiming() async throws {
+        for change in ["sleep", "unavailable", "expired"] {
+            let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString); defer { try? FileManager.default.removeItem(at: root) }
+            let delivery = RecordingAlerts(); var now: Int64 = 1000
+            let model = MonitoringModel(root: root.path, delivery: delivery, now: { now })
+            var value = summary(now: now, firstReveal: true)
+            var deadline = Blakeswap_V1_ActionDeadline(); deadline.kind = "reveal"; deadline.chain = "btc"; deadline.unit = "blocks"; deadline.observedAt = now; deadline.certain = true; deadline.band = "approaching"; deadline.remaining = 6; deadline.target = 106
+            value.wallets[0].actions[0].deadlines = [deadline]
+            await model.reconcile(value)
+            XCTAssertTrue(model.summary!.wallets[0].actions[0].deadlines[0].display.contains("6 blocks"))
+            now += 100
+            switch change {
+            case "sleep": model.interruption()
+            case "unavailable": model.unavailable()
+            default: await model.reconcile(value)
+            }
+            XCTAssertTrue(model.interrupted)
+            XCTAssertTrue(model.summary!.wallets[0].actions[0].deadlines[0].display.contains("timing unavailable"), change)
+            // A fresh wallet regains timing independently of an offline peer wallet.
+            now += 1; value.observedAt = now; value.wallets[0].observedAt = now; value.wallets[0].actions[0].deadlines[0].observedAt = now
+            var offline = Blakeswap_V1_WalletActions(); offline.walletID = "offline"; offline.known = false
+            value.wallets.append(offline); value.complete = false
+            await model.reconcile(value)
+            XCTAssertTrue(model.interrupted)
+            XCTAssertTrue(model.summary!.wallets[0].actions[0].deadlines[0].certain)
+            XCTAssertEqual(delivery.delivered.count, 2, "Fresh observations must not replay the already consumed event")
+        }
+    }
     @MainActor func testDefaultNotificationProviderIsSafeOutsideAppBundle() async throws {
         XCTAssertNotEqual(Bundle.main.bundleURL.pathExtension, "app")
         let provider = SystemAlertDelivery()
