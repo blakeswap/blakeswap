@@ -244,6 +244,13 @@ func (e *Engine) advanceSend(ctx context.Context, send *WalletSend) {
 				}
 			}
 		}
+		if verifiedRecovery && e.fresh(send.Chain) {
+			// These signed variants conflict with one another. A positively confirmed
+			// variant resolves this payment without waiting for replaced siblings.
+			// Tick rechecks the canonical checkpoint after the bounded send phase.
+			lookupError = nil
+			break
+		}
 	}
 	if lookupError != nil {
 		send.Error = lookupError.Error()

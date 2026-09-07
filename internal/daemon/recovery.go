@@ -77,21 +77,7 @@ func (e *Engine) advanceRestoredSwap(ctx context.Context, s *Swap, all map[chain
 	if err := s.Terms.Validate(); err != nil {
 		return err
 	}
-	for _, c := range []contract.HTLC{s.Long, s.Short} {
-		if !e.fresh(c.Chain) || all[c.Chain] == nil {
-			continue
-		}
-		obs, ok := observation(all, c)
-		txid, confirmations := "", 0
-		if ok {
-			txid, confirmations = obs.TxID, obs.Confirmations
-		}
-		if c.Chain == s.Long.Chain {
-			s.LongSpend, s.LongConfirmations = txid, confirmations
-		} else {
-			s.ShortSpend, s.ShortConfirmations = txid, confirmations
-		}
-	}
+	terminalStable := e.observeSwapSpends(s, all)
 	if e.recoverySwapResolved(s, all) {
 		if recoverySwapOwnInactive(s) {
 			return nil
@@ -116,6 +102,16 @@ func (e *Engine) advanceRestoredSwap(ctx context.Context, s *Swap, all map[chain
 	}
 	if recoverySwapOwnInactive(s) {
 		return errors.New("own funding is durably canceled; waiting for positive refund of the known peer contract")
+	}
+	if terminalStable {
+		// Connection uncertainty changes recovery readiness, not a previously
+		// confirmed outcome. This also preserves refunded history without a secret.
+		return nil
+	}
+	if terminalSwapStage(s.Stage) {
+		// Keep the contradiction after updating the display observations, so the
+		// isolated claimant cannot mistake newly cleared fields for stable history.
+		s.Stage = "recovery awaiting positive settlement evidence"
 	}
 	own := s.Long
 	if s.Role == "maker" {

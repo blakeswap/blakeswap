@@ -158,15 +158,27 @@ func TestRealPortableRestoreWitnessAndReorg(t *testing.T) {
 					t.Error(err)
 				}
 			}()
+			h.offline("maker")
+			h.online("maker") // Reopen the persisted completed outcome after the reorg.
+			maker = h.swap("maker", id)
+			maker.ClaimLastAttempt = 0 // Make the existing signed retry interval eligible.
 			tickUntilConnected(t, h.engines["maker"])
 			maker = h.swap("maker", id)
+			if terminalSwapStage(maker.Stage) || maker.ClaimLastAttempt == 0 {
+				t.Fatal("reorged restored claim did not reopen and retry", maker.Stage, maker.Error)
+			}
 			if h.engines["maker"].Status().Recovery.State == "ready" || !maker.IncomingClaimSeen || !maker.SecretObserved {
 				t.Fatal("reorg forgot witness or retained ready state")
 			}
 			if err = h.engines["maker"].checkRefundAcceleration(h.ctx, maker, maker.Short); err == nil {
 				t.Fatal("reorg enabled restored refund after incoming claim")
 			}
-			t.Logf("portable restored %s claim %s; positive ready -> reorg recovery hold", sell, tx.TxHash())
+			h.minePending()
+			tickUntilConnected(t, h.engines["maker"])
+			if h.engines["maker"].Status().Recovery.State != "ready" || h.swap("maker", id).Stage != "completed" {
+				t.Fatal("authorized restored claim did not reconfirm after reorg", h.engines["maker"].Status().Recovery)
+			}
+			t.Logf("portable restored %s claim %s; positive ready -> reorg signed retry -> reconfirmed ready", sell, tx.TxHash())
 		})
 	}
 }
@@ -526,6 +538,88 @@ func TestRealPortablePaymentVariantsAndReceiveIndexes(t *testing.T) {
 			if !e.reservedCoins(id, "")[pointKey(inputs[0])] {
 				t.Fatal("reorg released exact payment inputs")
 			}
+		})
+	}
+}
+
+func TestRealPortableTowerRefundObservesConfirmedOutcome(t *testing.T) {
+	for _, sell := range []chain.ID{chain.BTC, chain.Blake} {
+		t.Run(string(sell), func(t *testing.T) {
+			h := newHarness(t, 50)
+			id := h.fundBothFees(sell, 50, 6500, 20000)
+			target := h.swap("maker", id).Short
+			h.offline("maker")
+			h.offline("taker")
+			tower := h.engines["tower"]
+			var jobID string
+			for key, state := range tower.s.TowerJobs {
+				if state.Job.SwapID == id && state.Job.Kind == "refund" && state.Job.Target == target {
+					if jobID != "" {
+						t.Fatal("duplicate target refund job")
+					}
+					jobID = key
+				}
+			}
+			if jobID == "" {
+				t.Fatal("missing actual signed tower refund")
+			}
+			// This portable profile retained one authorized recovery job. Its
+			// publication and later confirmation occur after the exported snapshot.
+			job := tower.s.TowerJobs[jobID].Job
+			tower.s.TowerJobs = map[string]*TowerJob{jobID: tower.s.TowerJobs[jobID]}
+			archive := snapshotRecoveryArchive(t, h, "tower")
+			h.offline("tower")
+			if height := h.height(target.Chain); height <= job.Lock {
+				h.mine(target.Chain, job.Lock+1-height)
+			}
+			raw := job.Templates[len(job.Templates)-1]
+			tx, err := contract.Parse(raw)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, err = h.nodes[target.Chain].Broadcast(h.ctx, raw); err != nil {
+				t.Fatal("previously authorized tower refund rejected", err)
+			}
+			h.mine(target.Chain, 6)
+			restoreRecoveryArchive(t, h, "tower", archive)
+			tower = h.engines["tower"]
+			state := tower.s.TowerJobs[jobID]
+			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+			defer cancel()
+			for cycle := 0; cycle < 12 && ctx.Err() == nil; cycle++ {
+				tickDegradedContext(t, tower, ctx)
+				if state.LastAttempt != 0 || state.Attempt != 0 {
+					t.Fatal("restored refund was published during reconciliation")
+				}
+				if state.Confirmed >= 6 && tower.Status().Recovery.State == "ready" {
+					break
+				}
+				time.Sleep(100 * time.Millisecond)
+			}
+			if state.Confirmed < 6 || state.Broadcast != tx.TxHash().String() || tower.Status().Recovery.State != "ready" || tower.CanChangeNetwork() != nil {
+				t.Fatal("confirmed restored tower job remained active", state.Error, tower.Status().Recovery, tower.CanChangeNetwork())
+			}
+			activity, found := tower.s.Activities[activityID("tower", jobID)]
+			if !found || activity.TxID != state.Broadcast || activity.LocalStatus != "confirmed" || activity.Amount != protocol.Bounty(target.Amount, job.BPS) {
+				t.Fatal("restored bounty history lost actual settled outcome", activity)
+			}
+			record, err := h.nodes[target.Chain].Transaction(h.ctx, state.Broadcast)
+			if err != nil || record.BlockHash == "" {
+				t.Fatal("confirmed refund block unavailable", err)
+			}
+			if err = h.nodes[target.Chain].Call(h.ctx, "invalidateblock", nil, record.BlockHash); err != nil {
+				t.Fatal(err)
+			}
+			defer func() {
+				if err := h.nodes[target.Chain].Call(h.ctx, "reconsiderblock", nil, record.BlockHash); err != nil {
+					t.Error(err)
+				}
+			}()
+			tickDegraded(t, tower)
+			if state.Confirmed != 0 || state.LastAttempt != 0 || state.Attempt != 0 || tower.CanChangeNetwork() == nil || tower.Status().Recovery.State == "ready" {
+				t.Fatal("tower refund reorg failed to reopen held obligation", state.Error, tower.Status().Recovery)
+			}
+			t.Logf("restored %s tower refund %s observed without publication; bounty retained and reorg reopened recovery", target.Chain, state.Broadcast)
 		})
 	}
 }
