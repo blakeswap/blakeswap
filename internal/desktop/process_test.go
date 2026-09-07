@@ -49,6 +49,7 @@ func TestDesktopSubprocess(t *testing.T) {
 	}
 }
 func TestDesktopOwnedProcessLifecycle(t *testing.T) {
+	t.Setenv("BLAKESWAP_DESKTOP_SESSION", "isolated-process-test-launch")
 	for _, scenario := range []string{"terminate", "parent-death"} {
 		t.Run(scenario, func(t *testing.T) {
 			root := t.TempDir()
@@ -105,6 +106,13 @@ func TestDesktopOwnedProcessLifecycle(t *testing.T) {
 			var endpoints map[string]api.Endpoint
 			if err = json.Unmarshal(raw, &endpoints); err != nil {
 				t.Fatal(err)
+			}
+			var owned map[string]runtimeEndpoint
+			if err = json.Unmarshal(raw, &owned); err != nil {
+				t.Fatal(err)
+			}
+			if owned["alice"].OwnerPID <= 0 || owned["alice"].OwnerSession != "isolated-process-test-launch" {
+				t.Fatal("runtime missing child ownership")
 			}
 			ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 			defer cancel()

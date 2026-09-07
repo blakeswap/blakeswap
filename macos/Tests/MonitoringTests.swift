@@ -88,6 +88,54 @@ final class MonitoringTests: XCTestCase {
 }
 
 extension MonitoringTests {
+    @MainActor func testDefaultNotificationProviderIsSafeOutsideAppBundle() async throws {
+        XCTAssertNotEqual(Bundle.main.bundleURL.pathExtension, "app")
+        let provider = SystemAlertDelivery()
+        let allowed = await provider.permission(request: false)
+        let requested = await provider.permission(request: true)
+        XCTAssertFalse(allowed); XCTAssertFalse(requested)
+        provider.remove(ids: []); provider.remove(ids: ["obsolete"])
+        do { try await provider.deliver(id: "private-id", body: "Private message"); XCTFail("Unbundled delivery unexpectedly succeeded") }
+        catch { XCTAssertTrue(error.localizedDescription.contains("app bundle")) }
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString); defer { try? FileManager.default.removeItem(at: root) }
+        let model = MonitoringModel(root: root.path, now: { 1000 })
+        await model.reconcile(summary(now: 1000)); XCTAssertFalse(model.permissionGranted); XCTAssertNil(model.error)
+    }
+    @MainActor func testInterruptionStopsRemainingSuspendedDeliveryBatch() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString); defer { try? FileManager.default.removeItem(at: root) }
+        let delivery = SuspendedAlerts(); var now: Int64 = 1000
+        let model = MonitoringModel(root: root.path, delivery: delivery, now: { now })
+        var value = summary(now: now, firstReveal: true)
+        var deadline = Blakeswap_V1_ActionDeadline(); deadline.kind = "reveal"; deadline.chain = "btc"; deadline.observedAt = now; deadline.certain = true; deadline.band = "approaching"; deadline.target = 120
+        value.wallets[0].actions[0].deadlines = [deadline]
+        let pending = Task { await model.reconcile(value) }
+        await delivery.waitForSubmission()
+        now += 1; model.interruption()
+        delivery.resume(); await pending.value
+        XCTAssertEqual(delivery.delivered.count, 1, "A suspended old batch must not submit its deadline after monitoring is interrupted")
+        XCTAssertTrue(model.interrupted)
+    }
+    @MainActor func testSuspendedBatchHonorsPreferencesNewSummaryAndObservationAge() async throws {
+        for change in ["preferences", "summary", "age"] {
+            let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString); defer { try? FileManager.default.removeItem(at: root) }
+            let delivery = SuspendedAlerts(); var now: Int64 = 1000
+            let model = MonitoringModel(root: root.path, delivery: delivery, now: { now })
+            var value = summary(now: now, firstReveal: true)
+            var deadline = Blakeswap_V1_ActionDeadline(); deadline.kind = "reveal"; deadline.chain = "btc"; deadline.observedAt = now; deadline.certain = true; deadline.band = "approaching"; deadline.target = 120
+            value.wallets[0].actions[0].deadlines = [deadline]
+            let pending = Task { await model.reconcile(value) }
+            await delivery.waitForSubmission()
+            switch change {
+            case "preferences": var prefs = model.preferences; prefs.deadlines = false; model.setPreferences(prefs)
+            case "summary":
+                await model.reconcile(summary(now: now, state: "completed"))
+                XCTAssertEqual(model.summary?.wallets[0].actions[0].state, "completed")
+            default: now += 91
+            }
+            delivery.resume(); await pending.value
+            XCTAssertEqual(delivery.delivered.count, 1, "Obsolete batch continued after \(change)")
+        }
+    }
     @MainActor func testFreshWalletDeadlineSurvivesOtherWalletOutageAfterWake() async throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString); defer { try? FileManager.default.removeItem(at: root) }
         let delivery = RecordingAlerts(); var now: Int64 = 1000
@@ -113,6 +161,25 @@ extension MonitoringTests {
         XCTAssertEqual(delivery.delivered.count, 1, "A known durable reorg hold is actionable even before fresh settlement evidence returns")
         await model.reconcile(reopened); XCTAssertEqual(delivery.delivered.count, 1)
     }
+}
+
+@MainActor final class SuspendedAlerts: AlertDelivery {
+    var delivered: [String] = []
+    private var continuation: CheckedContinuation<Void, Never>?
+    private var started: CheckedContinuation<Void, Never>?
+    func permission(request: Bool) async -> Bool { true }
+    func deliver(id: String, body: String) async throws {
+        delivered.append(id)
+        if delivered.count == 1 {
+            await withCheckedContinuation { continuation = $0; started?.resume(); started = nil }
+        }
+    }
+    func waitForSubmission() async {
+        if continuation != nil { return }
+        await withCheckedContinuation { started = $0 }
+    }
+    func resume() { continuation?.resume(); continuation = nil }
+    func remove(ids: [String]) {}
 }
 
 extension MonitoringTests {

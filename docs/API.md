@@ -24,7 +24,9 @@ explicit same-origin serving and authorization design before relaxing this.
 
 Each daemon start generates a fresh 256-bit bearer token. The Unix socket and
 its `<socket>.json` endpoint file have mode 0600. Desktop discovery is the private
-`runtime.json` in the app data directory, mapping profile to `{socket,http,token}`.
+`runtime.json` in the app data directory maps profile to `{socket,http,token,owner_pid,owner_session}`.
+The optional launch session and owner PID bind native readiness and cleanup to
+the actual child. They do not replace the private API token or grant API access.
 The desktop creates short socket paths in a private OS temporary directory to
 avoid macOS Unix-socket path limits. These files are removed on orderly shutdown
 and parent-death shutdown; hard-killing the daemon itself may leave stale runtime

@@ -75,22 +75,27 @@ struct AlertStore {
 }
 @MainActor final class SystemAlertDelivery: NSObject, AlertDelivery, UNUserNotificationCenterDelegate {
     var navigate: ((String) -> Void)?
+    private var available: Bool { Bundle.main.bundleURL.pathExtension == "app" }
     private var center: UNUserNotificationCenter { .current() }
     func permission(request: Bool) async -> Bool {
-        guard Bundle.main.bundleURL.pathExtension == "app" else { return false }
+        guard available else { return false }
  center.delegate = self
         if request { _ = try? await center.requestAuthorization(options: [.alert, .sound]) }
         let status = await center.notificationSettings().authorizationStatus
         return status == .authorized || status == .provisional
     }
     func deliver(id: String, body: String) async throws {
+        guard available else { throw RPCError.message("Notifications require the Blakeswap app bundle.") }
         let content = UNMutableNotificationContent()
         content.title = "Blakeswap"; content.body = body
         // The opaque identifier resolves through our private journal. No wallet,
         // order/transaction ID, address, amount or secret enters lock-screen text.
         try await center.add(UNNotificationRequest(identifier: id, content: content, trigger: nil))
     }
-    func remove(ids: [String]) { center.removePendingNotificationRequests(withIdentifiers: ids); center.removeDeliveredNotifications(withIdentifiers: ids) }
+    func remove(ids: [String]) {
+        guard available, !ids.isEmpty else { return }
+        center.removePendingNotificationRequests(withIdentifiers: ids); center.removeDeliveredNotifications(withIdentifiers: ids)
+    }
     nonisolated func userNotificationCenter(_ center: UNUserNotificationCenter, didReceive response: UNNotificationResponse) async {
         await MainActor.run { self.navigate?(response.notification.request.identifier) }
     }
@@ -140,6 +145,7 @@ extension Blakeswap_V1_ActionDeadline {
     private var journal = AlertJournal()
     private var journalReady = false
     private var processing = false
+    private var deliveryGeneration: UInt64 = 0
     private var interruptionTime: Int64 = 0
     init(root: String, delivery: AlertDelivery? = nil, now: @escaping () -> Int64 = { Int64(Date().timeIntervalSince1970) }) {
         store = AlertStore(root: root); self.delivery = delivery ?? SystemAlertDelivery(); self.now = now
@@ -151,24 +157,29 @@ extension Blakeswap_V1_ActionDeadline {
     func setPreferences(_ next: AlertPreferences) {
         guard journalReady else { return }
         var updated = journal; updated.preferences = next
-        do { try store.save(updated); journal = updated; preferences = next } catch { self.error = error.localizedDescription }
+        do { try store.save(updated); journal = updated; preferences = next; deliveryGeneration &+= 1 } catch { self.error = error.localizedDescription }
     }
     func requestPermission() async { permissionGranted = await delivery.permission(request: true) }
-    func interruption() { interrupted = true; interruptionTime = now() }
-    func unavailable() { interrupted = true }
+    func interruption() { deliveryGeneration &+= 1; interrupted = true; interruptionTime = now() }
+    func unavailable() { deliveryGeneration &+= 1; interrupted = true }
     private func hash(_ text: String) -> String { SHA256.hash(data: Data(text.utf8)).map { String(format: "%02x", $0) }.joined() }
     func reconcile(_ next: ActionSummary) async {
-        guard !processing else { return }; processing = true; defer { processing = false }
+        deliveryGeneration &+= 1
+        let generation = deliveryGeneration
         summary = next
-        let current = now()
+        guard !processing else { return }; processing = true; defer { processing = false }
+        var current = now()
         guard journalReady, next.observedAt <= current, current - next.observedAt <= 90 else { interrupted = true; return }
         let caughtUp = next.complete && next.wallets.allSatisfy { wallet in
             wallet.known && (!interrupted || wallet.source == "stored" || wallet.observedAt > interruptionTime) && wallet.actions.allSatisfy { !$0.requiresMonitoring || (!$0.uncertain && $0.deadlines.allSatisfy { $0.certain && (!interrupted || $0.observedAt > interruptionTime) }) }
         }
         if caughtUp { interrupted = false }
         permissionGranted = await delivery.permission(request: false)
+        guard generation == deliveryGeneration else { return }
+        current = now()
+        guard next.observedAt <= current, current - next.observedAt <= 90 else { interrupted = true; return }
         var updated = journal
-        var deliveries: [(String, String)] = []
+        var deliveries: [(String, String, Int64)] = []
         var currentEvents = Set<String>()
         for wallet in next.wallets where wallet.known && wallet.source == "live" {
             let scope = next.network + "|" + wallet.walletID
@@ -177,18 +188,18 @@ extension Blakeswap_V1_ActionDeadline {
             for action in wallet.actions {
                 let key = hash(scope + "|" + action.id)
                 let previous = journal.states[key]
-                var events: [(String, String, String)] = []
+                var events: [(String, String, String, Int64)] = []
                 if action.requiresMonitoring {
                     let state = action.state + "|" + String(action.towerReady) + "|" + String(action.firstReveal)
                     let reopened = previous == "completed" || previous == "refunded"
-                    events.append((reopened ? "reopened" : state, reopened || ["attention", "reopened", "recovery_required"].contains(action.state) ? "attention" : "transition", action.firstReveal ? "A swap needs this app for its first secret revelation. An external tower cannot perform it." : action.monitoringTitle + ". Open Blakeswap to review."))
+                    events.append((reopened ? "reopened" : state, reopened || ["attention", "reopened", "recovery_required"].contains(action.state) ? "attention" : "transition", action.firstReveal ? "A swap needs this app for its first secret revelation. An external tower cannot perform it." : action.monitoringTitle + ". Open Blakeswap to review.", wallet.observedAt))
                     for deadline in action.deadlines where deadline.certain && deadline.observedAt <= current && current - deadline.observedAt <= 90 && (interruptionTime == 0 || deadline.observedAt > interruptionTime) && ["approaching", "reached"].contains(deadline.band) {
-                        events.append((deadline.kind + "|" + deadline.chain + "|" + String(deadline.target) + "|" + deadline.band, "deadline", deadline.kind.hasPrefix("reveal") ? "A first-revelation cutoff is near or reached. Keep Blakeswap open and review the swap." : "A contract deadline needs monitoring. Open Blakeswap to review."))
+                        events.append((deadline.kind + "|" + deadline.chain + "|" + String(deadline.target) + "|" + deadline.band, "deadline", deadline.kind.hasPrefix("reveal") ? "A first-revelation cutoff is near or reached. Keep Blakeswap open and review the swap." : "A contract deadline needs monitoring. Open Blakeswap to review.", deadline.observedAt))
                     }
                 } else if ["completed", "refunded"].contains(action.state) {
-                    events.append((action.state, "completed", "A settlement was confirmed. Open Blakeswap to review."))
+                    events.append((action.state, "completed", "A settlement was confirmed. Open Blakeswap to review.", wallet.observedAt))
                 }
-                for (event, category, body) in events {
+                for (event, category, body, observedAt) in events {
                     let id = hash(key + "|" + event)
                     currentEvents.insert(id)
                     updated.routes[id] = AlertDestination(network: next.network, wallet: wallet.walletID, kind: action.kind, object: action.objectID)
@@ -199,7 +210,7 @@ extension Blakeswap_V1_ActionDeadline {
                     // Establish an initial terminal baseline without replaying old
                     // success. Suppressed/denied events are consumed, never burst later.
                     if category == "completed" && (!initialized || previous == nil) { continue }
-                    if preferences.permits(category) && permissionGranted { deliveries.append((id, body)) }
+                    if preferences.permits(category) && permissionGranted { deliveries.append((id, body, min(next.observedAt, wallet.observedAt, observedAt))) }
                 }
             }
             updated.initialized.insert(scope)
@@ -210,7 +221,13 @@ extension Blakeswap_V1_ActionDeadline {
             let obsolete = journal.routes.keys.filter { !currentEvents.contains($0) }
             journal = updated
             delivery.remove(ids: obsolete)
-            for (id, body) in deliveries { try await delivery.deliver(id: id, body: body) }
+            for (id, body, observedAt) in deliveries {
+                // Awaiting the OS can yield to sleep, a failed refresh or a newer
+                // summary. Never submit the remainder of an obsolete batch.
+                guard generation == deliveryGeneration else { break }
+                guard now() >= observedAt, now() - observedAt <= 90 else { interrupted = true; break }
+                try await delivery.deliver(id: id, body: body)
+            }
         } catch { self.error = error.localizedDescription }
     }
 }
@@ -222,6 +239,7 @@ struct MonitoringView: View {
         VStack(alignment: .leading, spacing: 10) {
             Text("Monitoring across wallets").font(.headline)
             if model.interrupted { Text("Monitoring was interrupted. Rechecking current chain observations; timing may be unavailable.").foregroundStyle(.orange) }
+            if let error = model.error { Text(error).font(.caption).foregroundStyle(.orange) }
             if let summary = model.summary {
                 ForEach(summary.wallets, id: \.walletID) { wallet in
                     if !wallet.known { Text("\(wallet.walletID): local obligation state is being checked. Quitting will stop that check.").foregroundStyle(.orange) }

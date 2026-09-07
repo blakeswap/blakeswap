@@ -43,6 +43,7 @@ type Manager struct {
 	openings       map[string]*networkOpening
 	runtimeCtx     context.Context
 	runtimeDir     string
+	runtimeSession string
 	servers        map[string]*api.Server
 	actionReady    func(daemon.WalletActions)
 	storedActions  map[string]daemon.WalletActions
@@ -164,7 +165,7 @@ func Run(ctx context.Context, root string, parent int) error {
 	if err != nil {
 		return err
 	}
-	m := &Manager{root: root, settings: settings, engines: map[string]*daemon.Engine{}, configs: map[string]daemon.Config{}, restart: true}
+	m := &Manager{root: root, settings: settings, engines: map[string]*daemon.Engine{}, configs: map[string]daemon.Config{}, restart: true, runtimeSession: os.Getenv("BLAKESWAP_DESKTOP_SESSION")}
 	if settings.OnboardingStage == "" {
 		m.lastError = "Connecting"
 	}

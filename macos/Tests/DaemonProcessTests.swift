@@ -36,6 +36,49 @@ final class DaemonProcessTests: XCTestCase {
 
 extension DaemonProcessTests {
     @MainActor
+    func testSecondActualHelperCannotRemoveFirstOwnersRuntime() async throws {
+        guard let helper = ProcessInfo.processInfo.environment["BLAKESWAP_TEST_HELPER"] else { throw XCTSkip("Set BLAKESWAP_TEST_HELPER to the freshly built helper") }
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        let first = DaemonProcess(root: root.path, executable: URL(fileURLWithPath: helper))
+        let second = DaemonProcess(root: root.path, executable: URL(fileURLWithPath: helper))
+        addTeardownBlock { await second.stop(); await first.stop(); try? FileManager.default.removeItem(at: root) }
+        try first.start(); try await first.waitUntilReady(profile: "alice")
+        let runtime = root.appendingPathComponent("runtime.json")
+        let original = try Data(contentsOf: runtime)
+        let endpoint = try DaemonRPC.endpoint(root: root.path, profile: "alice")
+        try second.start()
+        do { try await second.waitUntilReady(profile: "alice"); XCTFail("Another owner's manifest cannot make this child ready") } catch {}
+        // The second child cannot acquire desktop.lock. Its exit does not grant
+        // ownership of the runtime published by the first child.
+        for _ in 0..<200 { if !second.isRunning { break }; try await Task.sleep(nanoseconds: 10_000_000) }
+        XCTAssertFalse(second.isRunning)
+        await second.stop()
+        XCTAssertTrue(first.isRunning)
+        XCTAssertEqual(try? Data(contentsOf: runtime), original)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: endpoint.socket))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: endpoint.socket + ".json"))
+        let status = try await DaemonRPC.call(root: root.path, profile: "alice", method: "status")
+        XCTAssertFalse(status.isEmpty)
+    }
+    @MainActor
+    func testForcedActualHelperCleanupUsesItsLaunchIdentity() async throws {
+        guard let helper = ProcessInfo.processInfo.environment["BLAKESWAP_TEST_HELPER"] else { throw XCTSkip("Set BLAKESWAP_TEST_HELPER to the freshly built helper") }
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        let daemon = DaemonProcess(root: root.path, executable: URL(fileURLWithPath: helper), shutdownTimeout: 0.15)
+        addTeardownBlock { await daemon.stop(); try? FileManager.default.removeItem(at: root) }
+        try daemon.start(); try await daemon.waitUntilReady(profile: "alice")
+        let endpoint = try DaemonRPC.endpoint(root: root.path, profile: "alice")
+        let pid = try XCTUnwrap(endpoint.ownerPID)
+        XCTAssertFalse(try XCTUnwrap(endpoint.ownerSession).isEmpty)
+        // Suspend only our isolated child so Go defers cannot handle SIGTERM.
+        XCTAssertEqual(kill(pid, SIGSTOP), 0)
+        await daemon.stop()
+        XCTAssertFalse(daemon.isRunning)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: root.appendingPathComponent("runtime.json").path))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: endpoint.socket))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: endpoint.socket + ".json"))
+    }
+    @MainActor
     func testActualHelperLastWindowStayOpenThenExplicitQuitCleansRuntime() async throws {
         guard let helper = ProcessInfo.processInfo.environment["BLAKESWAP_TEST_HELPER"] else { throw XCTSkip("Set BLAKESWAP_TEST_HELPER to the freshly built helper") }
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)

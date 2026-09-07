@@ -31,10 +31,19 @@ func (m *Manager) startAPI(profile string) error {
 	return nil
 }
 
+// The native owner uses the PID and launch nonce to distinguish its child from
+// another helper that already holds this installation's lock. Neither value
+// grants API authority; the private endpoint token remains required.
+type runtimeEndpoint struct {
+	api.Endpoint
+	OwnerPID     int    `json:"owner_pid"`
+	OwnerSession string `json:"owner_session,omitempty"`
+}
+
 func (m *Manager) writeRuntime() error {
-	endpoints := map[string]api.Endpoint{}
+	endpoints := map[string]runtimeEndpoint{}
 	for id, server := range m.servers {
-		endpoints[id] = server.Endpoint
+		endpoints[id] = runtimeEndpoint{Endpoint: server.Endpoint, OwnerPID: os.Getpid(), OwnerSession: m.runtimeSession}
 	}
 	raw, err := json.Marshal(endpoints)
 	if err != nil {

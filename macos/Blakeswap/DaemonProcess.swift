@@ -7,6 +7,7 @@ import Darwin
 final class DaemonProcess {
     static let shared = DaemonProcess()
     private var child: Process?
+    private var childSession: String?
     private var stopping = false
     private let executable: URL?
     private var log: FileHandle?
@@ -32,8 +33,12 @@ final class DaemonProcess {
         let process = Process()
         process.executableURL = helper
         process.arguments = ["desktop", "--data-dir", root, "--parent-pid", String(ProcessInfo.processInfo.processIdentifier)]
+        let session = UUID().uuidString
+        var environment = ProcessInfo.processInfo.environment
+        environment["BLAKESWAP_DESKTOP_SESSION"] = session
+        process.environment = environment
         process.standardOutput = log; process.standardError = log
-        try process.run(); child = process
+        try process.run(); child = process; childSession = session
     }
     func waitUntilReady(profile: String, timeout: TimeInterval = 15) async throws {
         let deadline = ProcessInfo.processInfo.systemUptime + timeout
@@ -45,8 +50,12 @@ final class DaemonProcess {
                 throw RPCError.message("The wallet service exited during startup (code \(process.terminationStatus)). Reopen Blakeswap or check desktop.log for details.")
             }
             do {
-                _ = try DaemonRPC.endpoint(root: root, profile: profile)
-                return
+                let endpoint = try DaemonRPC.endpoint(root: root, profile: profile)
+                if owns(endpoint, process: process) { return }
+                // A previous runtime can remain while this child is opening, or
+                // belong to a different helper that rejected our child's lock.
+                guard ProcessInfo.processInfo.systemUptime < deadline else { throw RPCError.message("The wallet service did not publish its own runtime.") }
+                try await Task.sleep(nanoseconds: 50_000_000)
             } catch let error as CocoaError where error.code == .fileNoSuchFile || error.code == .fileReadNoSuchFile {
                 // The helper publishes its private manifest only after opening its API listeners.
                 guard ProcessInfo.processInfo.systemUptime < deadline else {
@@ -56,12 +65,17 @@ final class DaemonProcess {
             }
         }
     }
+    private func owns(_ endpoint: DaemonEndpoint, process: Process) -> Bool {
+        guard let session = childSession else { return false }
+        return endpoint.ownerPID == process.processIdentifier && endpoint.ownerSession == session
+    }
     func stop() async {
         stopping = true
         guard let process = child else { return }
         let runtime = URL(fileURLWithPath: root).appendingPathComponent("runtime.json")
         let runtimeData = try? Data(contentsOf: runtime)
- let endpoints = runtimeData.flatMap { try? JSONDecoder().decode([String: DaemonEndpoint].self, from: $0) } ?? [:]
+        let endpoints = runtimeData.flatMap { try? JSONDecoder().decode([String: DaemonEndpoint].self, from: $0) } ?? [:]
+        let ownsRuntime = !endpoints.isEmpty && endpoints.values.allSatisfy { owns($0, process: process) }
         if process.isRunning { process.terminate() }
         let deadline = ProcessInfo.processInfo.systemUptime + shutdownTimeout
         while process.isRunning && ProcessInfo.processInfo.systemUptime < deadline {
@@ -71,7 +85,7 @@ final class DaemonProcess {
         await Task.detached { process.waitUntilExit() }.value
         // A forced exit cannot run Go defers. Remove only the owned helper's
         // validated private temporary runtime; external node services are untouched.
-        for directory in Set(endpoints.values.map { URL(fileURLWithPath: $0.socket).deletingLastPathComponent() }) {
+        for directory in Set(endpoints.values.filter { owns($0, process: process) }.map { URL(fileURLWithPath: $0.socket).deletingLastPathComponent() }) {
             let temporary = URL(fileURLWithPath: NSTemporaryDirectory()).resolvingSymlinksInPath()
             let resolved = directory.resolvingSymlinksInPath()
             if resolved.deletingLastPathComponent() == temporary && resolved.lastPathComponent.hasPrefix("blakeswap-"),
@@ -81,8 +95,8 @@ final class DaemonProcess {
                 try? FileManager.default.removeItem(at: directory)
             }
         }
-        if let runtimeData, (try? Data(contentsOf: runtime)) == runtimeData { try? FileManager.default.removeItem(at: runtime) }
-        try? log?.close(); log = nil; child = nil
+        if ownsRuntime, let runtimeData, (try? Data(contentsOf: runtime)) == runtimeData { try? FileManager.default.removeItem(at: runtime) }
+        try? log?.close(); log = nil; child = nil; childSession = nil
     }
 }
 

@@ -63,6 +63,9 @@ local timer is presented as a substitute for chain monitoring. Sleep/wake and
 session reconnection request fresh worker checks; the interruption banner stays
 visible until the affected observations are current. One unavailable wallet
 cannot silence a fresh deadline in a different wallet.
+If notification submission suspends, a new observation or monitoring interruption
+invalidates the remaining batch. Submission also rechecks the observation age.
+An interrupted batch is consumed without a later burst.
 
 ## Closing the app
 
@@ -77,6 +80,9 @@ helper that does not exit after the grace interval is terminated forcibly; its
 owned private runtime is removed after process exit. The native process will
 not restart the helper once shutdown begins. External consensus nodes are not
 stopped, and no background service or orphan monitoring process is installed.
+Runtime entries carry the helper PID and a unique native launch nonce. Readiness
+and forced cleanup require both to match the owned child. A second helper that
+fails to acquire the installation lock cannot delete the first helper's runtime.
 
 Tests use deterministic observation times and an injected notification provider.
 Native lifecycle tests use the freshly built real helper with private test

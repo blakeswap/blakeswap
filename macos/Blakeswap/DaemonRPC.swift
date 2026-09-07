@@ -7,6 +7,13 @@ struct DaemonEndpoint: Decodable {
     let socket: String
     let http: String
     let token: String
+    let ownerPID: Int32?
+    let ownerSession: String?
+    enum CodingKeys: String, CodingKey {
+        case socket, http, token
+        case ownerPID = "owner_pid"
+        case ownerSession = "owner_session"
+    }
 }
 
 enum DaemonRPC {
