@@ -296,3 +296,8 @@ func (s *Service) DisableAutomation(ctx context.Context, in *pb.DisableAutomatio
 	out := &pb.AutomationView{}
 	return out, s.command(ctx, "automation.disable", in, out)
 }
+
+func (s *Service) GetActionSummary(ctx context.Context, in *pb.ActionSummaryRequest) (*pb.ActionSummary, error) {
+	out := &pb.ActionSummary{}
+	return out, s.command(ctx, "actions.summary", in, out)
+}

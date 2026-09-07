@@ -10,8 +10,10 @@ struct BlakeswapApp: App {
             AppRootView().environmentObject(model)
                 .frame(minWidth: 1060, minHeight: 730)
                 .preferredColorScheme(.dark)
+ .background(LastWindowGuard())
                 .task {
-                    NSApp.activate(ignoringOtherApps: true)
+                    appDelegate.configure(model: model)
+ NSApp.activate(ignoringOtherApps: true)
                     while !Task.isCancelled {
                         await model.refresh()
                         // Avoid the cross-module generic Clock specialization crash:
@@ -117,7 +119,8 @@ struct ContentView: View {
                                 Text(error).foregroundStyle(.secondary)
                             }.padding(24).frame(maxWidth: .infinity, alignment: .leading).background(panel, in: RoundedRectangle(cornerRadius: 16))
                         }
-                        if model.page == "Settings", let settings = model.settings { SettingsView(settings: settings).id(settings.revision) }
+                        MonitoringView(model: model.monitoring, open: model.openMonitoring)
+ if model.page == "Settings", let settings = model.settings { SettingsView(settings: settings).id(settings.revision) }
                         else if let status = model.status {
                             if model.page == "Market" { market(status) }
                             else if model.page == "Swaps" { swaps(status) }
@@ -249,7 +252,7 @@ struct ContentView: View {
                 .id("automation|" + model.profile + "|" + model.network + "|" + String(model.generation))
             MarketView(context: model.tradeContext, root: model.root)
                 .id(model.profile + "|" + model.network + "|" + String(model.generation))
-            Label("Quitting stops your daemon. Keep the app open during funded swaps unless a watchtower is armed.", systemImage: "clock.arrow.circlepath")
+            Label("Quitting stops monitoring. A tower cannot perform a taker’s first secret revelation.", systemImage: "clock.arrow.circlepath")
                 .font(.callout).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
         }
     }

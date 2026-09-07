@@ -1,0 +1,115 @@
+import Foundation
+import XCTest
+@testable import Blakeswap
+
+@MainActor final class RecordingAlerts: AlertDelivery {
+    var allowed = true
+    var delivered: [(String, String)] = []
+    var removed: [String] = []
+    func permission(request: Bool) async -> Bool { allowed }
+    func deliver(id: String, body: String) async throws { delivered.append((id, body)) }
+    func remove(ids: [String]) { removed += ids }
+}
+final class MonitoringTests: XCTestCase {
+    private func summary(now: Int64, state: String = "confirming", firstReveal: Bool = false) -> ActionSummary {
+        var action = WalletAction(); action.id = "swap/private-local-id"; action.kind = "swap"; action.objectID = "private-local-id"
+        action.state = state; action.requiresMonitoring = state != "completed"; action.firstReveal = firstReveal
+        var wallet = Blakeswap_V1_WalletActions(); wallet.walletID = "other-wallet"; wallet.network = "regtest"; wallet.known = true; wallet.observedAt = now; wallet.source = "live"; wallet.actions = [action]
+        var summary = ActionSummary(); summary.network = "regtest"; summary.settingsRevision = 1; summary.observedAt = now; summary.complete = true; summary.requiresMonitoring = action.requiresMonitoring; summary.wallets = [wallet]
+        return summary
+    }
+    @MainActor func testPrivateDedupAcrossRestartPreferencesAndPermissionDenial() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString); defer { try? FileManager.default.removeItem(at: root) }
+        let delivery = RecordingAlerts(); let now: Int64 = 1000
+        var model = MonitoringModel(root: root.path, delivery: delivery, now: { now })
+        let value = summary(now: now, firstReveal: true)
+        await model.reconcile(value); await model.reconcile(value)
+        XCTAssertEqual(delivery.delivered.count, 1)
+        XCTAssertTrue(delivery.delivered[0].1.contains("external tower cannot"))
+        XCTAssertFalse(delivery.delivered[0].1.contains("other-wallet")); XCTAssertFalse(delivery.delivered[0].1.contains("private-local-id"))
+        model = MonitoringModel(root: root.path, delivery: delivery, now: { now })
+        await model.reconcile(value); XCTAssertEqual(delivery.delivered.count, 1)
+        var prefs = model.preferences; prefs.completed = false; model.setPreferences(prefs)
+        await model.reconcile(summary(now: now, state: "completed")); XCTAssertEqual(delivery.delivered.count, 1)
+        prefs.completed = true; model.setPreferences(prefs)
+        await model.reconcile(summary(now: now, state: "completed")); XCTAssertEqual(delivery.delivered.count, 1)
+        delivery.allowed = false
+        await model.reconcile(summary(now: now, state: "owner_claim"))
+        delivery.allowed = true
+        await model.reconcile(summary(now: now, state: "owner_claim")); XCTAssertEqual(delivery.delivered.count, 1, "Denied events must not burst when permission changes")
+        let journal = root.appendingPathComponent("notifications/journal.json")
+        let attributes = try FileManager.default.attributesOfItem(atPath: journal.path)
+        XCTAssertEqual((attributes[.posixPermissions] as? NSNumber)?.intValue, 0o600)
+    }
+    @MainActor func testTerminalBaselineReorgReopensWithoutObsoleteSuccess() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString); defer { try? FileManager.default.removeItem(at: root) }
+        let delivery = RecordingAlerts(); let now: Int64 = 1000
+        let model = MonitoringModel(root: root.path, delivery: delivery, now: { now })
+        await model.reconcile(summary(now: now, state: "completed")); XCTAssertTrue(delivery.delivered.isEmpty)
+        await model.reconcile(summary(now: now, state: "confirming"))
+        XCTAssertEqual(delivery.delivered.count, 1)
+        await model.reconcile(summary(now: now, state: "confirming"))
+        XCTAssertEqual(delivery.delivered.count, 1, "Reopened transition must not generate a second generic transition")
+        await model.reconcile(summary(now: now, state: "completed"))
+        XCTAssertEqual(delivery.delivered.count, 1, "A reorg must not replay its obsolete success")
+        XCTAssertFalse(delivery.removed.isEmpty)
+    }
+    @MainActor func testWakeWaitsForFreshClockAndRecomputesDeadline() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString); defer { try? FileManager.default.removeItem(at: root) }
+        let delivery = RecordingAlerts(); var now: Int64 = 1000
+        let model = MonitoringModel(root: root.path, delivery: delivery, now: { now })
+        var value = summary(now: now, firstReveal: true)
+        var deadline = Blakeswap_V1_ActionDeadline(); deadline.kind = "reveal"; deadline.chain = "btc"; deadline.unit = "blocks"; deadline.target = 120; deadline.observed = 116; deadline.remaining = 4; deadline.observedAt = now; deadline.certain = true; deadline.band = "approaching"
+        value.wallets[0].actions[0].deadlines = [deadline]
+        model.interruption(); await model.reconcile(value)
+        XCTAssertTrue(model.interrupted); XCTAssertTrue(delivery.delivered.isEmpty)
+        now += 5; value.observedAt = now; value.wallets[0].observedAt = now
+        value.wallets[0].actions[0].deadlines[0].observedAt = now
+        await model.reconcile(value)
+        XCTAssertFalse(model.interrupted); XCTAssertEqual(delivery.delivered.count, 2)
+        await model.reconcile(value); XCTAssertEqual(delivery.delivered.count, 2)
+        value.wallets[0].actions[0].deadlines[0].certain = false
+        value.wallets[0].actions[0].deadlines[0].band = "unknown"
+        XCTAssertTrue(value.wallets[0].actions[0].deadlines[0].display.contains("timing unavailable"))
+        await model.reconcile(value); XCTAssertEqual(delivery.delivered.count, 2)
+    }
+    @MainActor func testStoredTerminalCannotEmitNewSuccessAndUnsafeJournalRefused() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString); defer { try? FileManager.default.removeItem(at: root) }
+        let delivery = RecordingAlerts(); let now: Int64 = 1000
+        let model = MonitoringModel(root: root.path, delivery: delivery, now: { now })
+        var value = summary(now: now, state: "completed"); value.wallets[0].source = "stored"
+        await model.reconcile(value); XCTAssertTrue(delivery.delivered.isEmpty)
+        let file = root.appendingPathComponent("notifications/journal.json")
+        try FileManager.default.setAttributes([.posixPermissions: 0o644], ofItemAtPath: file.path)
+        let broken = MonitoringModel(root: root.path, delivery: delivery, now: { now })
+        await broken.reconcile(summary(now: now)); XCTAssertNotNil(broken.error); XCTAssertTrue(delivery.delivered.isEmpty)
+    }
+}
+
+extension MonitoringTests {
+    @MainActor func testFreshWalletDeadlineSurvivesOtherWalletOutageAfterWake() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString); defer { try? FileManager.default.removeItem(at: root) }
+        let delivery = RecordingAlerts(); var now: Int64 = 1000
+        let model = MonitoringModel(root: root.path, delivery: delivery, now: { now })
+        model.interruption(); now += 10
+        var value = summary(now: now, firstReveal: true)
+        var deadline = Blakeswap_V1_ActionDeadline(); deadline.kind = "reveal"; deadline.chain = "btc"; deadline.unit = "blocks"; deadline.observedAt = now; deadline.certain = true; deadline.band = "approaching"; deadline.remaining = 2; deadline.target = 120
+        value.wallets[0].actions[0].deadlines = [deadline]
+        var offline = Blakeswap_V1_WalletActions(); offline.walletID = "offline"; offline.known = false
+        value.wallets.append(offline); value.complete = false
+        await model.reconcile(value)
+        XCTAssertTrue(model.interrupted, "The installation still has interrupted monitoring")
+        XCTAssertEqual(delivery.delivered.count, 2, "Healthy wallet transition and fresh deadline must not be suppressed by another wallet")
+        await model.reconcile(value); XCTAssertEqual(delivery.delivered.count, 2)
+    }
+    @MainActor func testDurableReorgAttentionDoesNotRequireCertainDeadline() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString); defer { try? FileManager.default.removeItem(at: root) }
+        let delivery = RecordingAlerts(); let now: Int64 = 1000
+        let model = MonitoringModel(root: root.path, delivery: delivery, now: { now })
+        await model.reconcile(summary(now: now, state: "completed"))
+        var reopened = summary(now: now, state: "reopened"); reopened.wallets[0].actions[0].uncertain = true
+        await model.reconcile(reopened)
+        XCTAssertEqual(delivery.delivered.count, 1, "A known durable reorg hold is actionable even before fresh settlement evidence returns")
+        await model.reconcile(reopened); XCTAssertEqual(delivery.delivered.count, 1)
+    }
+}

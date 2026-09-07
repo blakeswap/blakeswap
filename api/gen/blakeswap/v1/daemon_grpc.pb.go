@@ -27,6 +27,7 @@ const (
 	DaemonService_ListMarket_FullMethodName           = "/blakeswap.v1.DaemonService/ListMarket"
 	DaemonService_ListActivity_FullMethodName         = "/blakeswap.v1.DaemonService/ListActivity"
 	DaemonService_ExportActivity_FullMethodName       = "/blakeswap.v1.DaemonService/ExportActivity"
+	DaemonService_GetActionSummary_FullMethodName     = "/blakeswap.v1.DaemonService/GetActionSummary"
 	DaemonService_GetStatus_FullMethodName            = "/blakeswap.v1.DaemonService/GetStatus"
 	DaemonService_RefreshStatus_FullMethodName        = "/blakeswap.v1.DaemonService/RefreshStatus"
 	DaemonService_ResolveWatchtower_FullMethodName    = "/blakeswap.v1.DaemonService/ResolveWatchtower"
@@ -69,6 +70,7 @@ type DaemonServiceClient interface {
 	ListMarket(ctx context.Context, in *MarketQuery, opts ...grpc.CallOption) (*MarketPage, error)
 	ListActivity(ctx context.Context, in *ActivityQuery, opts ...grpc.CallOption) (*ActivityPage, error)
 	ExportActivity(ctx context.Context, in *ActivityQuery, opts ...grpc.CallOption) (*ActivityExport, error)
+	GetActionSummary(ctx context.Context, in *ActionSummaryRequest, opts ...grpc.CallOption) (*ActionSummary, error)
 	GetStatus(ctx context.Context, in *emptypb.Empty, opts ...grpc.CallOption) (*Status, error)
 	RefreshStatus(ctx context.Context, in *RefreshStatusRequest, opts ...grpc.CallOption) (*Status, error)
 	ResolveWatchtower(ctx context.Context, in *ResolveWatchtowerRequest, opts ...grpc.CallOption) (*emptypb.Empty, error)
@@ -172,6 +174,16 @@ func (c *daemonServiceClient) ExportActivity(ctx context.Context, in *ActivityQu
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(ActivityExport)
 	err := c.cc.Invoke(ctx, DaemonService_ExportActivity_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *daemonServiceClient) GetActionSummary(ctx context.Context, in *ActionSummaryRequest, opts ...grpc.CallOption) (*ActionSummary, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ActionSummary)
+	err := c.cc.Invoke(ctx, DaemonService_GetActionSummary_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -479,6 +491,7 @@ type DaemonServiceServer interface {
 	ListMarket(context.Context, *MarketQuery) (*MarketPage, error)
 	ListActivity(context.Context, *ActivityQuery) (*ActivityPage, error)
 	ExportActivity(context.Context, *ActivityQuery) (*ActivityExport, error)
+	GetActionSummary(context.Context, *ActionSummaryRequest) (*ActionSummary, error)
 	GetStatus(context.Context, *emptypb.Empty) (*Status, error)
 	RefreshStatus(context.Context, *RefreshStatusRequest) (*Status, error)
 	ResolveWatchtower(context.Context, *ResolveWatchtowerRequest) (*emptypb.Empty, error)
@@ -538,6 +551,9 @@ func (UnimplementedDaemonServiceServer) ListActivity(context.Context, *ActivityQ
 }
 func (UnimplementedDaemonServiceServer) ExportActivity(context.Context, *ActivityQuery) (*ActivityExport, error) {
 	return nil, status.Error(codes.Unimplemented, "method ExportActivity not implemented")
+}
+func (UnimplementedDaemonServiceServer) GetActionSummary(context.Context, *ActionSummaryRequest) (*ActionSummary, error) {
+	return nil, status.Error(codes.Unimplemented, "method GetActionSummary not implemented")
 }
 func (UnimplementedDaemonServiceServer) GetStatus(context.Context, *emptypb.Empty) (*Status, error) {
 	return nil, status.Error(codes.Unimplemented, "method GetStatus not implemented")
@@ -769,6 +785,24 @@ func _DaemonService_ExportActivity_Handler(srv interface{}, ctx context.Context,
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(DaemonServiceServer).ExportActivity(ctx, req.(*ActivityQuery))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _DaemonService_GetActionSummary_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ActionSummaryRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DaemonServiceServer).GetActionSummary(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: DaemonService_GetActionSummary_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DaemonServiceServer).GetActionSummary(ctx, req.(*ActionSummaryRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -1329,6 +1363,10 @@ var DaemonService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "ExportActivity",
 			Handler:    _DaemonService_ExportActivity_Handler,
+		},
+		{
+			MethodName: "GetActionSummary",
+			Handler:    _DaemonService_GetActionSummary_Handler,
 		},
 		{
 			MethodName: "GetStatus",

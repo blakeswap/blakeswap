@@ -28,24 +28,29 @@ import (
 )
 
 type Manager struct {
-	mu         sync.Mutex
-	view       atomic.Pointer[desktopView]
-	root       string
-	settings   *pb.Settings
-	engines    map[string]*daemon.Engine
-	workers    map[string]*walletWorker
-	configs    map[string]daemon.Config
-	lastError  string
-	restart    bool
-	stopped    bool
-	openings   map[string]*networkOpening
-	runtimeCtx context.Context
-	runtimeDir string
-	servers    map[string]*api.Server
-	chainReady func(chain.ID, uint32)
+	actionCommands atomic.Int64
+	actionVersion  atomic.Uint64
+	mu             sync.Mutex
+	view           atomic.Pointer[desktopView]
+	root           string
+	settings       *pb.Settings
+	engines        map[string]*daemon.Engine
+	workers        map[string]*walletWorker
+	configs        map[string]daemon.Config
+	lastError      string
+	restart        bool
+	stopped        bool
+	openings       map[string]*networkOpening
+	runtimeCtx     context.Context
+	runtimeDir     string
+	servers        map[string]*api.Server
+	actionReady    func(daemon.WalletActions)
+	storedActions  map[string]daemon.WalletActions
+	chainReady     func(chain.ID, uint32)
 }
 
 type networkOpening struct {
+	actions atomic.Pointer[daemon.WalletActions]
 	cancel  context.CancelFunc
 	done    chan networkResult
 	mu      sync.Mutex
@@ -89,7 +94,13 @@ func (m *Manager) publishView() {
 	for _, wallet := range m.settings.Wallets {
 		profile := wallet.Id
 		s := daemon.Status{Name: profile, Mode: "trader", Network: chain.Network(m.settings.ActiveNetwork), LastError: m.lastError}
+		if a := m.storedActions[profile]; !m.restart && a.Network == s.Network {
+			s.Actions = a
+		}
 		if job := m.openings[profile]; job != nil && !m.restart {
+			if a := job.actions.Load(); a != nil {
+				s.Actions = *a
+			}
 			s.Heights = job.readyHeights()
 		}
 		if e := m.engines[profile]; e != nil && !m.restart {
@@ -260,7 +271,18 @@ func (m *Manager) writeSettings(ctx context.Context, next *pb.Settings) (*pb.Set
 	return proto.Clone(saved).(*pb.Settings), nil
 }
 func (m *Manager) command(ctx context.Context, profile string, req daemon.Request) (any, error) {
+
+	if req.Method == "actions.summary" {
+		return m.actionSummary(ctx, req)
+	}
+	if req.Method != "status" {
+		m.actionCommands.Add(1)
+		m.actionVersion.Add(1)
+		defer func() { m.actionVersion.Add(1); m.actionCommands.Add(-1) }()
+	}
+
 	if req.Method == "automation.list" || req.Method == "automation.review" || req.Method == "automation.save" || req.Method == "automation.disable" || req.Method == "wallet.preflight" || req.Method == "fee.quote" || req.Method == "trade.quote" || req.Method == "trade.confirm" || req.Method == "activity.list" || req.Method == "activity.export" || req.Method == "market.list" {
+
 		return m.preflightFunds(ctx, profile, req)
 	}
 	if req.Method == "status.refresh" {
@@ -301,6 +323,11 @@ func (m *Manager) command(ctx context.Context, profile string, req daemon.Reques
 			s.LastError = m.lastError
 		}
 		return s, nil
+	}
+	worker := m.workers[profile]
+	if worker != nil {
+		worker.busy.Add(1)
+		defer worker.busy.Add(-1)
 	}
 	result, err := e.Command(ctx, req)
 	if worker := m.workers[profile]; worker != nil {
@@ -344,6 +371,12 @@ func (m *Manager) connect(ctx context.Context) {
 			case result := <-job.done:
 				job.cancel()
 				delete(m.openings, profile.Id)
+				if a := job.actions.Load(); a != nil {
+					if m.storedActions == nil {
+						m.storedActions = map[string]daemon.WalletActions{}
+					}
+					m.storedActions[profile.Id] = *a
+				}
 				if result.err != nil {
 					result.manager.closeNetwork()
 					m.lastError = result.err.Error()
@@ -361,6 +394,7 @@ func (m *Manager) connect(ctx context.Context) {
 		openingCtx, cancel := context.WithCancel(ctx)
 		job := &networkOpening{cancel: cancel, done: make(chan networkResult, 1)}
 		worker.chainReady = job.chainReady
+		worker.actionReady = func(a daemon.WalletActions) { job.actions.Store(&a) }
 		m.openings[profile.Id] = job
 		m.lastError = "Connecting; RPC wallet history may still be synchronizing"
 		go func() { err := worker.openNetwork(openingCtx); job.done <- networkResult{worker, err} }()
@@ -417,6 +451,11 @@ func (m *Manager) openNetwork(ctx context.Context) error {
 		m.configs[profile] = cfg
 		if m.engines[profile] != nil {
 			continue
+		}
+		if m.actionReady != nil {
+			if a, err := daemon.LoadStoredActions(cfg); err == nil {
+				m.actionReady(a)
+			}
 		}
 		e, err := daemon.Open(ctx, cfg)
 		if err != nil {

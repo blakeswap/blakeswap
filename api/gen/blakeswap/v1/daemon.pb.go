@@ -2880,6 +2880,7 @@ func (x *TowerJob) GetError() string {
 
 type Status struct {
 	state           protoimpl.MessageState      `protogen:"open.v1"`
+	Actions         *WalletActions              `protobuf:"bytes,26,opt,name=actions,proto3" json:"actions,omitempty"`
 	Backup          *BackupFreshness            `protobuf:"bytes,23,opt,name=backup,proto3" json:"backup,omitempty"`
 	Recovery        *RecoveryProgress           `protobuf:"bytes,24,opt,name=recovery,proto3" json:"recovery,omitempty"`
 	FeeLimits       map[string]*FeeLimits       `protobuf:"bytes,21,rep,name=fee_limits,json=feeLimits,proto3" json:"fee_limits,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
@@ -2936,6 +2937,13 @@ func (x *Status) ProtoReflect() protoreflect.Message {
 // Deprecated: Use Status.ProtoReflect.Descriptor instead.
 func (*Status) Descriptor() ([]byte, []int) {
 	return file_blakeswap_v1_daemon_proto_rawDescGZIP(), []int{35}
+}
+
+func (x *Status) GetActions() *WalletActions {
+	if x != nil {
+		return x.Actions
+	}
+	return nil
 }
 
 func (x *Status) GetBackup() *BackupFreshness {
@@ -7922,6 +7930,443 @@ func (x *DisableAutomationRequest) GetCancelOpen() bool {
 	return false
 }
 
+// Refresh queues bounded all-wallet worker reconciliation; this read never waits on nodes.
+type ActionSummaryRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Refresh       bool                   `protobuf:"varint,1,opt,name=refresh,proto3" json:"refresh,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ActionSummaryRequest) Reset() {
+	*x = ActionSummaryRequest{}
+	mi := &file_blakeswap_v1_daemon_proto_msgTypes[84]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ActionSummaryRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ActionSummaryRequest) ProtoMessage() {}
+
+func (x *ActionSummaryRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_blakeswap_v1_daemon_proto_msgTypes[84]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ActionSummaryRequest.ProtoReflect.Descriptor instead.
+func (*ActionSummaryRequest) Descriptor() ([]byte, []int) {
+	return file_blakeswap_v1_daemon_proto_rawDescGZIP(), []int{84}
+}
+
+func (x *ActionSummaryRequest) GetRefresh() bool {
+	if x != nil {
+		return x.Refresh
+	}
+	return false
+}
+
+type ActionSummary struct {
+	state              protoimpl.MessageState `protogen:"open.v1"`
+	Network            string                 `protobuf:"bytes,1,opt,name=network,proto3" json:"network,omitempty"`
+	SettingsRevision   uint64                 `protobuf:"varint,2,opt,name=settings_revision,json=settingsRevision,proto3" json:"settings_revision,omitempty"`
+	ObservedAt         int64                  `protobuf:"varint,3,opt,name=observed_at,json=observedAt,proto3" json:"observed_at,omitempty"`
+	Wallets            []*WalletActions       `protobuf:"bytes,4,rep,name=wallets,proto3" json:"wallets,omitempty"`
+	Complete           bool                   `protobuf:"varint,5,opt,name=complete,proto3" json:"complete,omitempty"`
+	RequiresMonitoring bool                   `protobuf:"varint,6,opt,name=requires_monitoring,json=requiresMonitoring,proto3" json:"requires_monitoring,omitempty"`
+	unknownFields      protoimpl.UnknownFields
+	sizeCache          protoimpl.SizeCache
+}
+
+func (x *ActionSummary) Reset() {
+	*x = ActionSummary{}
+	mi := &file_blakeswap_v1_daemon_proto_msgTypes[85]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ActionSummary) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ActionSummary) ProtoMessage() {}
+
+func (x *ActionSummary) ProtoReflect() protoreflect.Message {
+	mi := &file_blakeswap_v1_daemon_proto_msgTypes[85]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ActionSummary.ProtoReflect.Descriptor instead.
+func (*ActionSummary) Descriptor() ([]byte, []int) {
+	return file_blakeswap_v1_daemon_proto_rawDescGZIP(), []int{85}
+}
+
+func (x *ActionSummary) GetNetwork() string {
+	if x != nil {
+		return x.Network
+	}
+	return ""
+}
+
+func (x *ActionSummary) GetSettingsRevision() uint64 {
+	if x != nil {
+		return x.SettingsRevision
+	}
+	return 0
+}
+
+func (x *ActionSummary) GetObservedAt() int64 {
+	if x != nil {
+		return x.ObservedAt
+	}
+	return 0
+}
+
+func (x *ActionSummary) GetWallets() []*WalletActions {
+	if x != nil {
+		return x.Wallets
+	}
+	return nil
+}
+
+func (x *ActionSummary) GetComplete() bool {
+	if x != nil {
+		return x.Complete
+	}
+	return false
+}
+
+func (x *ActionSummary) GetRequiresMonitoring() bool {
+	if x != nil {
+		return x.RequiresMonitoring
+	}
+	return false
+}
+
+type WalletActions struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Source        string                 `protobuf:"bytes,6,opt,name=source,proto3" json:"source,omitempty"`
+	WalletId      string                 `protobuf:"bytes,1,opt,name=wallet_id,json=walletId,proto3" json:"wallet_id,omitempty"`
+	Network       string                 `protobuf:"bytes,2,opt,name=network,proto3" json:"network,omitempty"`
+	Known         bool                   `protobuf:"varint,3,opt,name=known,proto3" json:"known,omitempty"`
+	ObservedAt    int64                  `protobuf:"varint,4,opt,name=observed_at,json=observedAt,proto3" json:"observed_at,omitempty"`
+	Actions       []*WalletAction        `protobuf:"bytes,5,rep,name=actions,proto3" json:"actions,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *WalletActions) Reset() {
+	*x = WalletActions{}
+	mi := &file_blakeswap_v1_daemon_proto_msgTypes[86]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *WalletActions) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*WalletActions) ProtoMessage() {}
+
+func (x *WalletActions) ProtoReflect() protoreflect.Message {
+	mi := &file_blakeswap_v1_daemon_proto_msgTypes[86]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use WalletActions.ProtoReflect.Descriptor instead.
+func (*WalletActions) Descriptor() ([]byte, []int) {
+	return file_blakeswap_v1_daemon_proto_rawDescGZIP(), []int{86}
+}
+
+func (x *WalletActions) GetSource() string {
+	if x != nil {
+		return x.Source
+	}
+	return ""
+}
+
+func (x *WalletActions) GetWalletId() string {
+	if x != nil {
+		return x.WalletId
+	}
+	return ""
+}
+
+func (x *WalletActions) GetNetwork() string {
+	if x != nil {
+		return x.Network
+	}
+	return ""
+}
+
+func (x *WalletActions) GetKnown() bool {
+	if x != nil {
+		return x.Known
+	}
+	return false
+}
+
+func (x *WalletActions) GetObservedAt() int64 {
+	if x != nil {
+		return x.ObservedAt
+	}
+	return 0
+}
+
+func (x *WalletActions) GetActions() []*WalletAction {
+	if x != nil {
+		return x.Actions
+	}
+	return nil
+}
+
+type WalletAction struct {
+	state              protoimpl.MessageState `protogen:"open.v1"`
+	Id                 string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	Kind               string                 `protobuf:"bytes,2,opt,name=kind,proto3" json:"kind,omitempty"`
+	ObjectId           string                 `protobuf:"bytes,3,opt,name=object_id,json=objectId,proto3" json:"object_id,omitempty"`
+	State              string                 `protobuf:"bytes,4,opt,name=state,proto3" json:"state,omitempty"`
+	RequiresMonitoring bool                   `protobuf:"varint,5,opt,name=requires_monitoring,json=requiresMonitoring,proto3" json:"requires_monitoring,omitempty"`
+	Uncertain          bool                   `protobuf:"varint,6,opt,name=uncertain,proto3" json:"uncertain,omitempty"`
+	FirstReveal        bool                   `protobuf:"varint,7,opt,name=first_reveal,json=firstReveal,proto3" json:"first_reveal,omitempty"`
+	TowerReady         bool                   `protobuf:"varint,8,opt,name=tower_ready,json=towerReady,proto3" json:"tower_ready,omitempty"`
+	Deadlines          []*ActionDeadline      `protobuf:"bytes,9,rep,name=deadlines,proto3" json:"deadlines,omitempty"`
+	unknownFields      protoimpl.UnknownFields
+	sizeCache          protoimpl.SizeCache
+}
+
+func (x *WalletAction) Reset() {
+	*x = WalletAction{}
+	mi := &file_blakeswap_v1_daemon_proto_msgTypes[87]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *WalletAction) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*WalletAction) ProtoMessage() {}
+
+func (x *WalletAction) ProtoReflect() protoreflect.Message {
+	mi := &file_blakeswap_v1_daemon_proto_msgTypes[87]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use WalletAction.ProtoReflect.Descriptor instead.
+func (*WalletAction) Descriptor() ([]byte, []int) {
+	return file_blakeswap_v1_daemon_proto_rawDescGZIP(), []int{87}
+}
+
+func (x *WalletAction) GetId() string {
+	if x != nil {
+		return x.Id
+	}
+	return ""
+}
+
+func (x *WalletAction) GetKind() string {
+	if x != nil {
+		return x.Kind
+	}
+	return ""
+}
+
+func (x *WalletAction) GetObjectId() string {
+	if x != nil {
+		return x.ObjectId
+	}
+	return ""
+}
+
+func (x *WalletAction) GetState() string {
+	if x != nil {
+		return x.State
+	}
+	return ""
+}
+
+func (x *WalletAction) GetRequiresMonitoring() bool {
+	if x != nil {
+		return x.RequiresMonitoring
+	}
+	return false
+}
+
+func (x *WalletAction) GetUncertain() bool {
+	if x != nil {
+		return x.Uncertain
+	}
+	return false
+}
+
+func (x *WalletAction) GetFirstReveal() bool {
+	if x != nil {
+		return x.FirstReveal
+	}
+	return false
+}
+
+func (x *WalletAction) GetTowerReady() bool {
+	if x != nil {
+		return x.TowerReady
+	}
+	return false
+}
+
+func (x *WalletAction) GetDeadlines() []*ActionDeadline {
+	if x != nil {
+		return x.Deadlines
+	}
+	return nil
+}
+
+type ActionDeadline struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Kind          string                 `protobuf:"bytes,1,opt,name=kind,proto3" json:"kind,omitempty"`
+	Chain         string                 `protobuf:"bytes,2,opt,name=chain,proto3" json:"chain,omitempty"`
+	Unit          string                 `protobuf:"bytes,3,opt,name=unit,proto3" json:"unit,omitempty"`
+	Target        uint32                 `protobuf:"varint,4,opt,name=target,proto3" json:"target,omitempty"`
+	Observed      uint32                 `protobuf:"varint,5,opt,name=observed,proto3" json:"observed,omitempty"`
+	ObservedAt    int64                  `protobuf:"varint,6,opt,name=observed_at,json=observedAt,proto3" json:"observed_at,omitempty"`
+	Remaining     int64                  `protobuf:"varint,7,opt,name=remaining,proto3" json:"remaining,omitempty"`
+	Certain       bool                   `protobuf:"varint,8,opt,name=certain,proto3" json:"certain,omitempty"`
+	Band          string                 `protobuf:"bytes,9,opt,name=band,proto3" json:"band,omitempty"`
+	Reason        string                 `protobuf:"bytes,10,opt,name=reason,proto3" json:"reason,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ActionDeadline) Reset() {
+	*x = ActionDeadline{}
+	mi := &file_blakeswap_v1_daemon_proto_msgTypes[88]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ActionDeadline) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ActionDeadline) ProtoMessage() {}
+
+func (x *ActionDeadline) ProtoReflect() protoreflect.Message {
+	mi := &file_blakeswap_v1_daemon_proto_msgTypes[88]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ActionDeadline.ProtoReflect.Descriptor instead.
+func (*ActionDeadline) Descriptor() ([]byte, []int) {
+	return file_blakeswap_v1_daemon_proto_rawDescGZIP(), []int{88}
+}
+
+func (x *ActionDeadline) GetKind() string {
+	if x != nil {
+		return x.Kind
+	}
+	return ""
+}
+
+func (x *ActionDeadline) GetChain() string {
+	if x != nil {
+		return x.Chain
+	}
+	return ""
+}
+
+func (x *ActionDeadline) GetUnit() string {
+	if x != nil {
+		return x.Unit
+	}
+	return ""
+}
+
+func (x *ActionDeadline) GetTarget() uint32 {
+	if x != nil {
+		return x.Target
+	}
+	return 0
+}
+
+func (x *ActionDeadline) GetObserved() uint32 {
+	if x != nil {
+		return x.Observed
+	}
+	return 0
+}
+
+func (x *ActionDeadline) GetObservedAt() int64 {
+	if x != nil {
+		return x.ObservedAt
+	}
+	return 0
+}
+
+func (x *ActionDeadline) GetRemaining() int64 {
+	if x != nil {
+		return x.Remaining
+	}
+	return 0
+}
+
+func (x *ActionDeadline) GetCertain() bool {
+	if x != nil {
+		return x.Certain
+	}
+	return false
+}
+
+func (x *ActionDeadline) GetBand() string {
+	if x != nil {
+		return x.Band
+	}
+	return ""
+}
+
+func (x *ActionDeadline) GetReason() string {
+	if x != nil {
+		return x.Reason
+	}
+	return ""
+}
+
 var File_blakeswap_v1_daemon_proto protoreflect.FileDescriptor
 
 const file_blakeswap_v1_daemon_proto_rawDesc = "" +
@@ -8202,8 +8647,9 @@ const file_blakeswap_v1_daemon_proto_rawDesc = "" +
 	"\tbroadcast\x18\x06 \x01(\tR\tbroadcast\x12$\n" +
 	"\rconfirmations\x18\a \x01(\x05R\rconfirmations\x12'\n" +
 	"\x0fsecret_observed\x18\b \x01(\bR\x0esecretObserved\x12\x14\n" +
-	"\x05error\x18\t \x01(\tR\x05error\"\xab\f\n" +
+	"\x05error\x18\t \x01(\tR\x05error\"\xe2\f\n" +
 	"\x06Status\x125\n" +
+	"\aactions\x18\x1a \x01(\v2\x1b.blakeswap.v1.WalletActionsR\aactions\x125\n" +
 	"\x06backup\x18\x17 \x01(\v2\x1d.blakeswap.v1.BackupFreshnessR\x06backup\x12:\n" +
 	"\brecovery\x18\x18 \x01(\v2\x1e.blakeswap.v1.RecoveryProgressR\brecovery\x12B\n" +
 	"\n" +
@@ -8767,7 +9213,49 @@ const file_blakeswap_v1_daemon_proto_rawDesc = "" +
 	"\x10expected_network\x18\x03 \x01(\tR\x0fexpectedNetwork\x12+\n" +
 	"\x11expected_revision\x18\x04 \x01(\x04R\x10expectedRevision\x12\x1f\n" +
 	"\vcancel_open\x18\x05 \x01(\bR\n" +
-	"cancelOpen2\xe6\x1d\n" +
+	"cancelOpen\"0\n" +
+	"\x14ActionSummaryRequest\x12\x18\n" +
+	"\arefresh\x18\x01 \x01(\bR\arefresh\"\xfb\x01\n" +
+	"\rActionSummary\x12\x18\n" +
+	"\anetwork\x18\x01 \x01(\tR\anetwork\x12+\n" +
+	"\x11settings_revision\x18\x02 \x01(\x04R\x10settingsRevision\x12\x1f\n" +
+	"\vobserved_at\x18\x03 \x01(\x03R\n" +
+	"observedAt\x125\n" +
+	"\awallets\x18\x04 \x03(\v2\x1b.blakeswap.v1.WalletActionsR\awallets\x12\x1a\n" +
+	"\bcomplete\x18\x05 \x01(\bR\bcomplete\x12/\n" +
+	"\x13requires_monitoring\x18\x06 \x01(\bR\x12requiresMonitoring\"\xcb\x01\n" +
+	"\rWalletActions\x12\x16\n" +
+	"\x06source\x18\x06 \x01(\tR\x06source\x12\x1b\n" +
+	"\twallet_id\x18\x01 \x01(\tR\bwalletId\x12\x18\n" +
+	"\anetwork\x18\x02 \x01(\tR\anetwork\x12\x14\n" +
+	"\x05known\x18\x03 \x01(\bR\x05known\x12\x1f\n" +
+	"\vobserved_at\x18\x04 \x01(\x03R\n" +
+	"observedAt\x124\n" +
+	"\aactions\x18\x05 \x03(\v2\x1a.blakeswap.v1.WalletActionR\aactions\"\xb4\x02\n" +
+	"\fWalletAction\x12\x0e\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\x12\x12\n" +
+	"\x04kind\x18\x02 \x01(\tR\x04kind\x12\x1b\n" +
+	"\tobject_id\x18\x03 \x01(\tR\bobjectId\x12\x14\n" +
+	"\x05state\x18\x04 \x01(\tR\x05state\x12/\n" +
+	"\x13requires_monitoring\x18\x05 \x01(\bR\x12requiresMonitoring\x12\x1c\n" +
+	"\tuncertain\x18\x06 \x01(\bR\tuncertain\x12!\n" +
+	"\ffirst_reveal\x18\a \x01(\bR\vfirstReveal\x12\x1f\n" +
+	"\vtower_ready\x18\b \x01(\bR\n" +
+	"towerReady\x12:\n" +
+	"\tdeadlines\x18\t \x03(\v2\x1c.blakeswap.v1.ActionDeadlineR\tdeadlines\"\x87\x02\n" +
+	"\x0eActionDeadline\x12\x12\n" +
+	"\x04kind\x18\x01 \x01(\tR\x04kind\x12\x14\n" +
+	"\x05chain\x18\x02 \x01(\tR\x05chain\x12\x12\n" +
+	"\x04unit\x18\x03 \x01(\tR\x04unit\x12\x16\n" +
+	"\x06target\x18\x04 \x01(\rR\x06target\x12\x1a\n" +
+	"\bobserved\x18\x05 \x01(\rR\bobserved\x12\x1f\n" +
+	"\vobserved_at\x18\x06 \x01(\x03R\n" +
+	"observedAt\x12\x1c\n" +
+	"\tremaining\x18\a \x01(\x03R\tremaining\x12\x18\n" +
+	"\acertain\x18\b \x01(\bR\acertain\x12\x12\n" +
+	"\x04band\x18\t \x01(\tR\x04band\x12\x16\n" +
+	"\x06reason\x18\n" +
+	" \x01(\tR\x06reason2\xdb\x1e\n" +
 	"\rDaemonService\x12p\n" +
 	"\x0fListAutomations\x12\x1d.blakeswap.v1.AutomationQuery\x1a\x1c.blakeswap.v1.AutomationList\" \x82\xd3\xe4\x93\x02\x1a:\x01*\"\x15/v1/automations/query\x12s\n" +
 	"\x10ReviewAutomation\x12\x1c.blakeswap.v1.AutomationEdit\x1a\x1e.blakeswap.v1.AutomationReview\"!\x82\xd3\xe4\x93\x02\x1b:\x01*\"\x16/v1/automations/review\x12h\n" +
@@ -8776,7 +9264,8 @@ const file_blakeswap_v1_daemon_proto_rawDesc = "" +
 	"\n" +
 	"ListMarket\x12\x19.blakeswap.v1.MarketQuery\x1a\x18.blakeswap.v1.MarketPage\"\x1b\x82\xd3\xe4\x93\x02\x15:\x01*\"\x10/v1/market/query\x12f\n" +
 	"\fListActivity\x12\x1b.blakeswap.v1.ActivityQuery\x1a\x1a.blakeswap.v1.ActivityPage\"\x1d\x82\xd3\xe4\x93\x02\x17:\x01*\"\x12/v1/activity/query\x12k\n" +
-	"\x0eExportActivity\x12\x1b.blakeswap.v1.ActivityQuery\x1a\x1c.blakeswap.v1.ActivityExport\"\x1e\x82\xd3\xe4\x93\x02\x18:\x01*\"\x13/v1/activity/export\x12M\n" +
+	"\x0eExportActivity\x12\x1b.blakeswap.v1.ActivityQuery\x1a\x1c.blakeswap.v1.ActivityExport\"\x1e\x82\xd3\xe4\x93\x02\x18:\x01*\"\x13/v1/activity/export\x12s\n" +
+	"\x10GetActionSummary\x12\".blakeswap.v1.ActionSummaryRequest\x1a\x1b.blakeswap.v1.ActionSummary\"\x1e\x82\xd3\xe4\x93\x02\x18:\x01*\"\x13/v1/actions/summary\x12M\n" +
 	"\tGetStatus\x12\x16.google.protobuf.Empty\x1a\x14.blakeswap.v1.Status\"\x12\x82\xd3\xe4\x93\x02\f\x12\n" +
 	"/v1/status\x12h\n" +
 	"\rRefreshStatus\x12\".blakeswap.v1.RefreshStatusRequest\x1a\x14.blakeswap.v1.Status\"\x1d\x82\xd3\xe4\x93\x02\x17:\x01*\"\x12/v1/status/refresh\x12w\n" +
@@ -8828,7 +9317,7 @@ func file_blakeswap_v1_daemon_proto_rawDescGZIP() []byte {
 	return file_blakeswap_v1_daemon_proto_rawDescData
 }
 
-var file_blakeswap_v1_daemon_proto_msgTypes = make([]protoimpl.MessageInfo, 95)
+var file_blakeswap_v1_daemon_proto_msgTypes = make([]protoimpl.MessageInfo, 100)
 var file_blakeswap_v1_daemon_proto_goTypes = []any{
 	(*RefreshStatusRequest)(nil),        // 0: blakeswap.v1.RefreshStatusRequest
 	(*ResolveWatchtowerRequest)(nil),    // 1: blakeswap.v1.ResolveWatchtowerRequest
@@ -8914,18 +9403,23 @@ var file_blakeswap_v1_daemon_proto_goTypes = []any{
 	(*AutomationEdit)(nil),              // 81: blakeswap.v1.AutomationEdit
 	(*AutomationReview)(nil),            // 82: blakeswap.v1.AutomationReview
 	(*DisableAutomationRequest)(nil),    // 83: blakeswap.v1.DisableAutomationRequest
-	nil,                                 // 84: blakeswap.v1.Swap.TowerPaymentsEntry
-	nil,                                 // 85: blakeswap.v1.Tower.ScriptsEntry
-	nil,                                 // 86: blakeswap.v1.Status.FeeLimitsEntry
-	nil,                                 // 87: blakeswap.v1.Status.AddressesEntry
-	nil,                                 // 88: blakeswap.v1.Status.BalancesEntry
-	nil,                                 // 89: blakeswap.v1.Status.HeightsEntry
-	nil,                                 // 90: blakeswap.v1.Status.FundsEntry
-	nil,                                 // 91: blakeswap.v1.Status.ConnectionsEntry
-	nil,                                 // 92: blakeswap.v1.Environment.ExplorersEntry
-	nil,                                 // 93: blakeswap.v1.Environment.NodesEntry
-	nil,                                 // 94: blakeswap.v1.ActivityPage.IndexEntry
-	(*emptypb.Empty)(nil),               // 95: google.protobuf.Empty
+	(*ActionSummaryRequest)(nil),        // 84: blakeswap.v1.ActionSummaryRequest
+	(*ActionSummary)(nil),               // 85: blakeswap.v1.ActionSummary
+	(*WalletActions)(nil),               // 86: blakeswap.v1.WalletActions
+	(*WalletAction)(nil),                // 87: blakeswap.v1.WalletAction
+	(*ActionDeadline)(nil),              // 88: blakeswap.v1.ActionDeadline
+	nil,                                 // 89: blakeswap.v1.Swap.TowerPaymentsEntry
+	nil,                                 // 90: blakeswap.v1.Tower.ScriptsEntry
+	nil,                                 // 91: blakeswap.v1.Status.FeeLimitsEntry
+	nil,                                 // 92: blakeswap.v1.Status.AddressesEntry
+	nil,                                 // 93: blakeswap.v1.Status.BalancesEntry
+	nil,                                 // 94: blakeswap.v1.Status.HeightsEntry
+	nil,                                 // 95: blakeswap.v1.Status.FundsEntry
+	nil,                                 // 96: blakeswap.v1.Status.ConnectionsEntry
+	nil,                                 // 97: blakeswap.v1.Environment.ExplorersEntry
+	nil,                                 // 98: blakeswap.v1.Environment.NodesEntry
+	nil,                                 // 99: blakeswap.v1.ActivityPage.IndexEntry
+	(*emptypb.Empty)(nil),               // 100: google.protobuf.Empty
 }
 var file_blakeswap_v1_daemon_proto_depIdxs = []int32{
 	12,  // 0: blakeswap.v1.WalletCoin.holds:type_name -> blakeswap.v1.CoinHold
@@ -8939,143 +9433,149 @@ var file_blakeswap_v1_daemon_proto_depIdxs = []int32{
 	33,  // 8: blakeswap.v1.Offer.tower:type_name -> blakeswap.v1.Tower
 	31,  // 9: blakeswap.v1.Swap.long:type_name -> blakeswap.v1.HTLC
 	31,  // 10: blakeswap.v1.Swap.short:type_name -> blakeswap.v1.HTLC
-	84,  // 11: blakeswap.v1.Swap.tower_payments:type_name -> blakeswap.v1.Swap.TowerPaymentsEntry
-	85,  // 12: blakeswap.v1.Tower.scripts:type_name -> blakeswap.v1.Tower.ScriptsEntry
-	27,  // 13: blakeswap.v1.Status.backup:type_name -> blakeswap.v1.BackupFreshness
-	29,  // 14: blakeswap.v1.Status.recovery:type_name -> blakeswap.v1.RecoveryProgress
-	86,  // 15: blakeswap.v1.Status.fee_limits:type_name -> blakeswap.v1.Status.FeeLimitsEntry
-	87,  // 16: blakeswap.v1.Status.addresses:type_name -> blakeswap.v1.Status.AddressesEntry
-	88,  // 17: blakeswap.v1.Status.balances:type_name -> blakeswap.v1.Status.BalancesEntry
-	89,  // 18: blakeswap.v1.Status.heights:type_name -> blakeswap.v1.Status.HeightsEntry
-	30,  // 19: blakeswap.v1.Status.orders:type_name -> blakeswap.v1.Offer
-	32,  // 20: blakeswap.v1.Status.swaps:type_name -> blakeswap.v1.Swap
-	34,  // 21: blakeswap.v1.Status.tower_jobs:type_name -> blakeswap.v1.TowerJob
-	33,  // 22: blakeswap.v1.Status.tower:type_name -> blakeswap.v1.Tower
-	90,  // 23: blakeswap.v1.Status.funds:type_name -> blakeswap.v1.Status.FundsEntry
-	91,  // 24: blakeswap.v1.Status.connections:type_name -> blakeswap.v1.Status.ConnectionsEntry
-	11,  // 25: blakeswap.v1.Status.coins:type_name -> blakeswap.v1.WalletCoin
-	17,  // 26: blakeswap.v1.Status.sends:type_name -> blakeswap.v1.WalletSend
-	33,  // 27: blakeswap.v1.Status.own_watchtower:type_name -> blakeswap.v1.Tower
-	33,  // 28: blakeswap.v1.Status.watchtowers:type_name -> blakeswap.v1.Tower
-	36,  // 29: blakeswap.v1.EndpointStatus.endpoints:type_name -> blakeswap.v1.EndpointHealth
-	37,  // 30: blakeswap.v1.ChainConnection.sources:type_name -> blakeswap.v1.EndpointStatus
-	39,  // 31: blakeswap.v1.Node.fallbacks:type_name -> blakeswap.v1.Node
-	92,  // 32: blakeswap.v1.Environment.explorers:type_name -> blakeswap.v1.Environment.ExplorersEntry
-	93,  // 33: blakeswap.v1.Environment.nodes:type_name -> blakeswap.v1.Environment.NodesEntry
-	33,  // 34: blakeswap.v1.Environment.tower:type_name -> blakeswap.v1.Tower
-	47,  // 35: blakeswap.v1.FirstWallet.settings:type_name -> blakeswap.v1.Settings
-	18,  // 36: blakeswap.v1.FirstWallet.recovery:type_name -> blakeswap.v1.Recovery
-	41,  // 37: blakeswap.v1.Settings.wallets:type_name -> blakeswap.v1.WalletProfile
-	40,  // 38: blakeswap.v1.Settings.environments:type_name -> blakeswap.v1.Environment
-	39,  // 39: blakeswap.v1.CheckNodeRequest.node:type_name -> blakeswap.v1.Node
-	10,  // 40: blakeswap.v1.FeeQuoteRequest.inputs:type_name -> blakeswap.v1.Outpoint
-	50,  // 41: blakeswap.v1.FeeQuote.estimate:type_name -> blakeswap.v1.FeeEstimate
-	51,  // 42: blakeswap.v1.FeeQuote.limits:type_name -> blakeswap.v1.FeeLimits
-	10,  // 43: blakeswap.v1.FeeQuote.inputs:type_name -> blakeswap.v1.Outpoint
-	58,  // 44: blakeswap.v1.TradeQuote.fees:type_name -> blakeswap.v1.TradeFeePolicy
-	33,  // 45: blakeswap.v1.TradeQuote.provider:type_name -> blakeswap.v1.Tower
-	59,  // 46: blakeswap.v1.TradeQuote.timing:type_name -> blakeswap.v1.TradeTiming
-	60,  // 47: blakeswap.v1.TradeQuote.outcomes:type_name -> blakeswap.v1.TradeOutcome
-	15,  // 48: blakeswap.v1.TradeQuote.funds:type_name -> blakeswap.v1.FundsPreflight
-	30,  // 49: blakeswap.v1.MarketOrder.offer:type_name -> blakeswap.v1.Offer
-	63,  // 50: blakeswap.v1.MarketPage.records:type_name -> blakeswap.v1.MarketOrder
-	10,  // 51: blakeswap.v1.ActivityRecord.outpoints:type_name -> blakeswap.v1.Outpoint
-	67,  // 52: blakeswap.v1.ActivityRecord.variant_amounts:type_name -> blakeswap.v1.ActivityVariant
-	69,  // 53: blakeswap.v1.ActivityRecord.observations:type_name -> blakeswap.v1.ActivityObservation
-	70,  // 54: blakeswap.v1.ActivityRecord.history:type_name -> blakeswap.v1.ActivityOutcome
-	68,  // 55: blakeswap.v1.ActivityPage.records:type_name -> blakeswap.v1.ActivityRecord
-	94,  // 56: blakeswap.v1.ActivityPage.index:type_name -> blakeswap.v1.ActivityPage.IndexEntry
-	75,  // 57: blakeswap.v1.AutomationConfig.rate:type_name -> blakeswap.v1.AutomationRate
-	75,  // 58: blakeswap.v1.AutomationConfig.min_rate:type_name -> blakeswap.v1.AutomationRate
-	75,  // 59: blakeswap.v1.AutomationConfig.max_rate:type_name -> blakeswap.v1.AutomationRate
-	76,  // 60: blakeswap.v1.AutomationView.config:type_name -> blakeswap.v1.AutomationConfig
-	77,  // 61: blakeswap.v1.AutomationView.usage:type_name -> blakeswap.v1.AutomationUsage
-	78,  // 62: blakeswap.v1.AutomationList.policies:type_name -> blakeswap.v1.AutomationView
-	76,  // 63: blakeswap.v1.AutomationEdit.config:type_name -> blakeswap.v1.AutomationConfig
-	76,  // 64: blakeswap.v1.AutomationReview.config:type_name -> blakeswap.v1.AutomationConfig
-	77,  // 65: blakeswap.v1.AutomationReview.usage:type_name -> blakeswap.v1.AutomationUsage
-	51,  // 66: blakeswap.v1.Status.FeeLimitsEntry.value:type_name -> blakeswap.v1.FeeLimits
-	13,  // 67: blakeswap.v1.Status.FundsEntry.value:type_name -> blakeswap.v1.ChainBalance
-	38,  // 68: blakeswap.v1.Status.ConnectionsEntry.value:type_name -> blakeswap.v1.ChainConnection
-	39,  // 69: blakeswap.v1.Environment.NodesEntry.value:type_name -> blakeswap.v1.Node
-	71,  // 70: blakeswap.v1.ActivityPage.IndexEntry.value:type_name -> blakeswap.v1.ActivityIndex
-	79,  // 71: blakeswap.v1.DaemonService.ListAutomations:input_type -> blakeswap.v1.AutomationQuery
-	81,  // 72: blakeswap.v1.DaemonService.ReviewAutomation:input_type -> blakeswap.v1.AutomationEdit
-	81,  // 73: blakeswap.v1.DaemonService.SaveAutomation:input_type -> blakeswap.v1.AutomationEdit
-	83,  // 74: blakeswap.v1.DaemonService.DisableAutomation:input_type -> blakeswap.v1.DisableAutomationRequest
-	62,  // 75: blakeswap.v1.DaemonService.ListMarket:input_type -> blakeswap.v1.MarketQuery
-	72,  // 76: blakeswap.v1.DaemonService.ListActivity:input_type -> blakeswap.v1.ActivityQuery
-	72,  // 77: blakeswap.v1.DaemonService.ExportActivity:input_type -> blakeswap.v1.ActivityQuery
-	95,  // 78: blakeswap.v1.DaemonService.GetStatus:input_type -> google.protobuf.Empty
-	0,   // 79: blakeswap.v1.DaemonService.RefreshStatus:input_type -> blakeswap.v1.RefreshStatusRequest
-	1,   // 80: blakeswap.v1.DaemonService.ResolveWatchtower:input_type -> blakeswap.v1.ResolveWatchtowerRequest
-	2,   // 81: blakeswap.v1.DaemonService.SetPaused:input_type -> blakeswap.v1.SetPausedRequest
-	3,   // 82: blakeswap.v1.DaemonService.CreateOffer:input_type -> blakeswap.v1.CreateOfferRequest
-	4,   // 83: blakeswap.v1.DaemonService.CancelOffer:input_type -> blakeswap.v1.CancelOfferRequest
-	5,   // 84: blakeswap.v1.DaemonService.TakeOffer:input_type -> blakeswap.v1.TakeOfferRequest
-	7,   // 85: blakeswap.v1.DaemonService.Mine:input_type -> blakeswap.v1.MineRequest
-	8,   // 86: blakeswap.v1.DaemonService.Faucet:input_type -> blakeswap.v1.FaucetRequest
-	95,  // 87: blakeswap.v1.DaemonService.GetRecovery:input_type -> google.protobuf.Empty
-	14,  // 88: blakeswap.v1.DaemonService.PreflightFunds:input_type -> blakeswap.v1.FundsPreflightRequest
-	57,  // 89: blakeswap.v1.DaemonService.QuoteTrade:input_type -> blakeswap.v1.TradeQuoteRequest
-	65,  // 90: blakeswap.v1.DaemonService.ConfirmTrade:input_type -> blakeswap.v1.ConfirmTradeRequest
-	52,  // 91: blakeswap.v1.DaemonService.QuoteFee:input_type -> blakeswap.v1.FeeQuoteRequest
-	55,  // 92: blakeswap.v1.DaemonService.BumpTransaction:input_type -> blakeswap.v1.BumpRequest
-	16,  // 93: blakeswap.v1.DaemonService.SendCoins:input_type -> blakeswap.v1.SendCoinsRequest
-	20,  // 94: blakeswap.v1.DaemonService.ExportPortableBackup:input_type -> blakeswap.v1.ExportPortableBackupRequest
-	22,  // 95: blakeswap.v1.DaemonService.InspectBackup:input_type -> blakeswap.v1.InspectBackupRequest
-	25,  // 96: blakeswap.v1.DaemonService.ImportBackup:input_type -> blakeswap.v1.ImportBackupRequest
-	95,  // 97: blakeswap.v1.DaemonService.BackupWallet:input_type -> google.protobuf.Empty
-	42,  // 98: blakeswap.v1.DaemonService.CreateWallet:input_type -> blakeswap.v1.CreateWalletRequest
-	43,  // 99: blakeswap.v1.DaemonService.PrepareFirstWallet:input_type -> blakeswap.v1.PrepareFirstWalletRequest
-	95,  // 100: blakeswap.v1.DaemonService.GetFirstWallet:input_type -> google.protobuf.Empty
-	45,  // 101: blakeswap.v1.DaemonService.ConfirmFirstWallet:input_type -> blakeswap.v1.ConfirmFirstWalletRequest
-	46,  // 102: blakeswap.v1.DaemonService.ExportFirstWallet:input_type -> blakeswap.v1.ExportFirstWalletRequest
-	47,  // 103: blakeswap.v1.DaemonService.FinishOnboarding:input_type -> blakeswap.v1.Settings
-	95,  // 104: blakeswap.v1.DaemonService.GetSettings:input_type -> google.protobuf.Empty
-	47,  // 105: blakeswap.v1.DaemonService.UpdateSettings:input_type -> blakeswap.v1.Settings
-	48,  // 106: blakeswap.v1.DaemonService.CheckNode:input_type -> blakeswap.v1.CheckNodeRequest
-	80,  // 107: blakeswap.v1.DaemonService.ListAutomations:output_type -> blakeswap.v1.AutomationList
-	82,  // 108: blakeswap.v1.DaemonService.ReviewAutomation:output_type -> blakeswap.v1.AutomationReview
-	78,  // 109: blakeswap.v1.DaemonService.SaveAutomation:output_type -> blakeswap.v1.AutomationView
-	78,  // 110: blakeswap.v1.DaemonService.DisableAutomation:output_type -> blakeswap.v1.AutomationView
-	64,  // 111: blakeswap.v1.DaemonService.ListMarket:output_type -> blakeswap.v1.MarketPage
-	73,  // 112: blakeswap.v1.DaemonService.ListActivity:output_type -> blakeswap.v1.ActivityPage
-	74,  // 113: blakeswap.v1.DaemonService.ExportActivity:output_type -> blakeswap.v1.ActivityExport
-	35,  // 114: blakeswap.v1.DaemonService.GetStatus:output_type -> blakeswap.v1.Status
-	35,  // 115: blakeswap.v1.DaemonService.RefreshStatus:output_type -> blakeswap.v1.Status
-	95,  // 116: blakeswap.v1.DaemonService.ResolveWatchtower:output_type -> google.protobuf.Empty
-	35,  // 117: blakeswap.v1.DaemonService.SetPaused:output_type -> blakeswap.v1.Status
-	30,  // 118: blakeswap.v1.DaemonService.CreateOffer:output_type -> blakeswap.v1.Offer
-	30,  // 119: blakeswap.v1.DaemonService.CancelOffer:output_type -> blakeswap.v1.Offer
-	6,   // 120: blakeswap.v1.DaemonService.TakeOffer:output_type -> blakeswap.v1.TakeOfferResponse
-	95,  // 121: blakeswap.v1.DaemonService.Mine:output_type -> google.protobuf.Empty
-	9,   // 122: blakeswap.v1.DaemonService.Faucet:output_type -> blakeswap.v1.FaucetResponse
-	18,  // 123: blakeswap.v1.DaemonService.GetRecovery:output_type -> blakeswap.v1.Recovery
-	15,  // 124: blakeswap.v1.DaemonService.PreflightFunds:output_type -> blakeswap.v1.FundsPreflight
-	61,  // 125: blakeswap.v1.DaemonService.QuoteTrade:output_type -> blakeswap.v1.TradeQuote
-	66,  // 126: blakeswap.v1.DaemonService.ConfirmTrade:output_type -> blakeswap.v1.ConfirmTradeResult
-	53,  // 127: blakeswap.v1.DaemonService.QuoteFee:output_type -> blakeswap.v1.FeeQuote
-	56,  // 128: blakeswap.v1.DaemonService.BumpTransaction:output_type -> blakeswap.v1.BumpResult
-	17,  // 129: blakeswap.v1.DaemonService.SendCoins:output_type -> blakeswap.v1.WalletSend
-	21,  // 130: blakeswap.v1.DaemonService.ExportPortableBackup:output_type -> blakeswap.v1.PortableBackupResult
-	24,  // 131: blakeswap.v1.DaemonService.InspectBackup:output_type -> blakeswap.v1.BackupContents
-	26,  // 132: blakeswap.v1.DaemonService.ImportBackup:output_type -> blakeswap.v1.ImportBackupResult
-	19,  // 133: blakeswap.v1.DaemonService.BackupWallet:output_type -> blakeswap.v1.Backup
-	47,  // 134: blakeswap.v1.DaemonService.CreateWallet:output_type -> blakeswap.v1.Settings
-	44,  // 135: blakeswap.v1.DaemonService.PrepareFirstWallet:output_type -> blakeswap.v1.FirstWallet
-	44,  // 136: blakeswap.v1.DaemonService.GetFirstWallet:output_type -> blakeswap.v1.FirstWallet
-	47,  // 137: blakeswap.v1.DaemonService.ConfirmFirstWallet:output_type -> blakeswap.v1.Settings
-	19,  // 138: blakeswap.v1.DaemonService.ExportFirstWallet:output_type -> blakeswap.v1.Backup
-	47,  // 139: blakeswap.v1.DaemonService.FinishOnboarding:output_type -> blakeswap.v1.Settings
-	47,  // 140: blakeswap.v1.DaemonService.GetSettings:output_type -> blakeswap.v1.Settings
-	47,  // 141: blakeswap.v1.DaemonService.UpdateSettings:output_type -> blakeswap.v1.Settings
-	49,  // 142: blakeswap.v1.DaemonService.CheckNode:output_type -> blakeswap.v1.CheckNodeResponse
-	107, // [107:143] is the sub-list for method output_type
-	71,  // [71:107] is the sub-list for method input_type
-	71,  // [71:71] is the sub-list for extension type_name
-	71,  // [71:71] is the sub-list for extension extendee
-	0,   // [0:71] is the sub-list for field type_name
+	89,  // 11: blakeswap.v1.Swap.tower_payments:type_name -> blakeswap.v1.Swap.TowerPaymentsEntry
+	90,  // 12: blakeswap.v1.Tower.scripts:type_name -> blakeswap.v1.Tower.ScriptsEntry
+	86,  // 13: blakeswap.v1.Status.actions:type_name -> blakeswap.v1.WalletActions
+	27,  // 14: blakeswap.v1.Status.backup:type_name -> blakeswap.v1.BackupFreshness
+	29,  // 15: blakeswap.v1.Status.recovery:type_name -> blakeswap.v1.RecoveryProgress
+	91,  // 16: blakeswap.v1.Status.fee_limits:type_name -> blakeswap.v1.Status.FeeLimitsEntry
+	92,  // 17: blakeswap.v1.Status.addresses:type_name -> blakeswap.v1.Status.AddressesEntry
+	93,  // 18: blakeswap.v1.Status.balances:type_name -> blakeswap.v1.Status.BalancesEntry
+	94,  // 19: blakeswap.v1.Status.heights:type_name -> blakeswap.v1.Status.HeightsEntry
+	30,  // 20: blakeswap.v1.Status.orders:type_name -> blakeswap.v1.Offer
+	32,  // 21: blakeswap.v1.Status.swaps:type_name -> blakeswap.v1.Swap
+	34,  // 22: blakeswap.v1.Status.tower_jobs:type_name -> blakeswap.v1.TowerJob
+	33,  // 23: blakeswap.v1.Status.tower:type_name -> blakeswap.v1.Tower
+	95,  // 24: blakeswap.v1.Status.funds:type_name -> blakeswap.v1.Status.FundsEntry
+	96,  // 25: blakeswap.v1.Status.connections:type_name -> blakeswap.v1.Status.ConnectionsEntry
+	11,  // 26: blakeswap.v1.Status.coins:type_name -> blakeswap.v1.WalletCoin
+	17,  // 27: blakeswap.v1.Status.sends:type_name -> blakeswap.v1.WalletSend
+	33,  // 28: blakeswap.v1.Status.own_watchtower:type_name -> blakeswap.v1.Tower
+	33,  // 29: blakeswap.v1.Status.watchtowers:type_name -> blakeswap.v1.Tower
+	36,  // 30: blakeswap.v1.EndpointStatus.endpoints:type_name -> blakeswap.v1.EndpointHealth
+	37,  // 31: blakeswap.v1.ChainConnection.sources:type_name -> blakeswap.v1.EndpointStatus
+	39,  // 32: blakeswap.v1.Node.fallbacks:type_name -> blakeswap.v1.Node
+	97,  // 33: blakeswap.v1.Environment.explorers:type_name -> blakeswap.v1.Environment.ExplorersEntry
+	98,  // 34: blakeswap.v1.Environment.nodes:type_name -> blakeswap.v1.Environment.NodesEntry
+	33,  // 35: blakeswap.v1.Environment.tower:type_name -> blakeswap.v1.Tower
+	47,  // 36: blakeswap.v1.FirstWallet.settings:type_name -> blakeswap.v1.Settings
+	18,  // 37: blakeswap.v1.FirstWallet.recovery:type_name -> blakeswap.v1.Recovery
+	41,  // 38: blakeswap.v1.Settings.wallets:type_name -> blakeswap.v1.WalletProfile
+	40,  // 39: blakeswap.v1.Settings.environments:type_name -> blakeswap.v1.Environment
+	39,  // 40: blakeswap.v1.CheckNodeRequest.node:type_name -> blakeswap.v1.Node
+	10,  // 41: blakeswap.v1.FeeQuoteRequest.inputs:type_name -> blakeswap.v1.Outpoint
+	50,  // 42: blakeswap.v1.FeeQuote.estimate:type_name -> blakeswap.v1.FeeEstimate
+	51,  // 43: blakeswap.v1.FeeQuote.limits:type_name -> blakeswap.v1.FeeLimits
+	10,  // 44: blakeswap.v1.FeeQuote.inputs:type_name -> blakeswap.v1.Outpoint
+	58,  // 45: blakeswap.v1.TradeQuote.fees:type_name -> blakeswap.v1.TradeFeePolicy
+	33,  // 46: blakeswap.v1.TradeQuote.provider:type_name -> blakeswap.v1.Tower
+	59,  // 47: blakeswap.v1.TradeQuote.timing:type_name -> blakeswap.v1.TradeTiming
+	60,  // 48: blakeswap.v1.TradeQuote.outcomes:type_name -> blakeswap.v1.TradeOutcome
+	15,  // 49: blakeswap.v1.TradeQuote.funds:type_name -> blakeswap.v1.FundsPreflight
+	30,  // 50: blakeswap.v1.MarketOrder.offer:type_name -> blakeswap.v1.Offer
+	63,  // 51: blakeswap.v1.MarketPage.records:type_name -> blakeswap.v1.MarketOrder
+	10,  // 52: blakeswap.v1.ActivityRecord.outpoints:type_name -> blakeswap.v1.Outpoint
+	67,  // 53: blakeswap.v1.ActivityRecord.variant_amounts:type_name -> blakeswap.v1.ActivityVariant
+	69,  // 54: blakeswap.v1.ActivityRecord.observations:type_name -> blakeswap.v1.ActivityObservation
+	70,  // 55: blakeswap.v1.ActivityRecord.history:type_name -> blakeswap.v1.ActivityOutcome
+	68,  // 56: blakeswap.v1.ActivityPage.records:type_name -> blakeswap.v1.ActivityRecord
+	99,  // 57: blakeswap.v1.ActivityPage.index:type_name -> blakeswap.v1.ActivityPage.IndexEntry
+	75,  // 58: blakeswap.v1.AutomationConfig.rate:type_name -> blakeswap.v1.AutomationRate
+	75,  // 59: blakeswap.v1.AutomationConfig.min_rate:type_name -> blakeswap.v1.AutomationRate
+	75,  // 60: blakeswap.v1.AutomationConfig.max_rate:type_name -> blakeswap.v1.AutomationRate
+	76,  // 61: blakeswap.v1.AutomationView.config:type_name -> blakeswap.v1.AutomationConfig
+	77,  // 62: blakeswap.v1.AutomationView.usage:type_name -> blakeswap.v1.AutomationUsage
+	78,  // 63: blakeswap.v1.AutomationList.policies:type_name -> blakeswap.v1.AutomationView
+	76,  // 64: blakeswap.v1.AutomationEdit.config:type_name -> blakeswap.v1.AutomationConfig
+	76,  // 65: blakeswap.v1.AutomationReview.config:type_name -> blakeswap.v1.AutomationConfig
+	77,  // 66: blakeswap.v1.AutomationReview.usage:type_name -> blakeswap.v1.AutomationUsage
+	86,  // 67: blakeswap.v1.ActionSummary.wallets:type_name -> blakeswap.v1.WalletActions
+	87,  // 68: blakeswap.v1.WalletActions.actions:type_name -> blakeswap.v1.WalletAction
+	88,  // 69: blakeswap.v1.WalletAction.deadlines:type_name -> blakeswap.v1.ActionDeadline
+	51,  // 70: blakeswap.v1.Status.FeeLimitsEntry.value:type_name -> blakeswap.v1.FeeLimits
+	13,  // 71: blakeswap.v1.Status.FundsEntry.value:type_name -> blakeswap.v1.ChainBalance
+	38,  // 72: blakeswap.v1.Status.ConnectionsEntry.value:type_name -> blakeswap.v1.ChainConnection
+	39,  // 73: blakeswap.v1.Environment.NodesEntry.value:type_name -> blakeswap.v1.Node
+	71,  // 74: blakeswap.v1.ActivityPage.IndexEntry.value:type_name -> blakeswap.v1.ActivityIndex
+	79,  // 75: blakeswap.v1.DaemonService.ListAutomations:input_type -> blakeswap.v1.AutomationQuery
+	81,  // 76: blakeswap.v1.DaemonService.ReviewAutomation:input_type -> blakeswap.v1.AutomationEdit
+	81,  // 77: blakeswap.v1.DaemonService.SaveAutomation:input_type -> blakeswap.v1.AutomationEdit
+	83,  // 78: blakeswap.v1.DaemonService.DisableAutomation:input_type -> blakeswap.v1.DisableAutomationRequest
+	62,  // 79: blakeswap.v1.DaemonService.ListMarket:input_type -> blakeswap.v1.MarketQuery
+	72,  // 80: blakeswap.v1.DaemonService.ListActivity:input_type -> blakeswap.v1.ActivityQuery
+	72,  // 81: blakeswap.v1.DaemonService.ExportActivity:input_type -> blakeswap.v1.ActivityQuery
+	84,  // 82: blakeswap.v1.DaemonService.GetActionSummary:input_type -> blakeswap.v1.ActionSummaryRequest
+	100, // 83: blakeswap.v1.DaemonService.GetStatus:input_type -> google.protobuf.Empty
+	0,   // 84: blakeswap.v1.DaemonService.RefreshStatus:input_type -> blakeswap.v1.RefreshStatusRequest
+	1,   // 85: blakeswap.v1.DaemonService.ResolveWatchtower:input_type -> blakeswap.v1.ResolveWatchtowerRequest
+	2,   // 86: blakeswap.v1.DaemonService.SetPaused:input_type -> blakeswap.v1.SetPausedRequest
+	3,   // 87: blakeswap.v1.DaemonService.CreateOffer:input_type -> blakeswap.v1.CreateOfferRequest
+	4,   // 88: blakeswap.v1.DaemonService.CancelOffer:input_type -> blakeswap.v1.CancelOfferRequest
+	5,   // 89: blakeswap.v1.DaemonService.TakeOffer:input_type -> blakeswap.v1.TakeOfferRequest
+	7,   // 90: blakeswap.v1.DaemonService.Mine:input_type -> blakeswap.v1.MineRequest
+	8,   // 91: blakeswap.v1.DaemonService.Faucet:input_type -> blakeswap.v1.FaucetRequest
+	100, // 92: blakeswap.v1.DaemonService.GetRecovery:input_type -> google.protobuf.Empty
+	14,  // 93: blakeswap.v1.DaemonService.PreflightFunds:input_type -> blakeswap.v1.FundsPreflightRequest
+	57,  // 94: blakeswap.v1.DaemonService.QuoteTrade:input_type -> blakeswap.v1.TradeQuoteRequest
+	65,  // 95: blakeswap.v1.DaemonService.ConfirmTrade:input_type -> blakeswap.v1.ConfirmTradeRequest
+	52,  // 96: blakeswap.v1.DaemonService.QuoteFee:input_type -> blakeswap.v1.FeeQuoteRequest
+	55,  // 97: blakeswap.v1.DaemonService.BumpTransaction:input_type -> blakeswap.v1.BumpRequest
+	16,  // 98: blakeswap.v1.DaemonService.SendCoins:input_type -> blakeswap.v1.SendCoinsRequest
+	20,  // 99: blakeswap.v1.DaemonService.ExportPortableBackup:input_type -> blakeswap.v1.ExportPortableBackupRequest
+	22,  // 100: blakeswap.v1.DaemonService.InspectBackup:input_type -> blakeswap.v1.InspectBackupRequest
+	25,  // 101: blakeswap.v1.DaemonService.ImportBackup:input_type -> blakeswap.v1.ImportBackupRequest
+	100, // 102: blakeswap.v1.DaemonService.BackupWallet:input_type -> google.protobuf.Empty
+	42,  // 103: blakeswap.v1.DaemonService.CreateWallet:input_type -> blakeswap.v1.CreateWalletRequest
+	43,  // 104: blakeswap.v1.DaemonService.PrepareFirstWallet:input_type -> blakeswap.v1.PrepareFirstWalletRequest
+	100, // 105: blakeswap.v1.DaemonService.GetFirstWallet:input_type -> google.protobuf.Empty
+	45,  // 106: blakeswap.v1.DaemonService.ConfirmFirstWallet:input_type -> blakeswap.v1.ConfirmFirstWalletRequest
+	46,  // 107: blakeswap.v1.DaemonService.ExportFirstWallet:input_type -> blakeswap.v1.ExportFirstWalletRequest
+	47,  // 108: blakeswap.v1.DaemonService.FinishOnboarding:input_type -> blakeswap.v1.Settings
+	100, // 109: blakeswap.v1.DaemonService.GetSettings:input_type -> google.protobuf.Empty
+	47,  // 110: blakeswap.v1.DaemonService.UpdateSettings:input_type -> blakeswap.v1.Settings
+	48,  // 111: blakeswap.v1.DaemonService.CheckNode:input_type -> blakeswap.v1.CheckNodeRequest
+	80,  // 112: blakeswap.v1.DaemonService.ListAutomations:output_type -> blakeswap.v1.AutomationList
+	82,  // 113: blakeswap.v1.DaemonService.ReviewAutomation:output_type -> blakeswap.v1.AutomationReview
+	78,  // 114: blakeswap.v1.DaemonService.SaveAutomation:output_type -> blakeswap.v1.AutomationView
+	78,  // 115: blakeswap.v1.DaemonService.DisableAutomation:output_type -> blakeswap.v1.AutomationView
+	64,  // 116: blakeswap.v1.DaemonService.ListMarket:output_type -> blakeswap.v1.MarketPage
+	73,  // 117: blakeswap.v1.DaemonService.ListActivity:output_type -> blakeswap.v1.ActivityPage
+	74,  // 118: blakeswap.v1.DaemonService.ExportActivity:output_type -> blakeswap.v1.ActivityExport
+	85,  // 119: blakeswap.v1.DaemonService.GetActionSummary:output_type -> blakeswap.v1.ActionSummary
+	35,  // 120: blakeswap.v1.DaemonService.GetStatus:output_type -> blakeswap.v1.Status
+	35,  // 121: blakeswap.v1.DaemonService.RefreshStatus:output_type -> blakeswap.v1.Status
+	100, // 122: blakeswap.v1.DaemonService.ResolveWatchtower:output_type -> google.protobuf.Empty
+	35,  // 123: blakeswap.v1.DaemonService.SetPaused:output_type -> blakeswap.v1.Status
+	30,  // 124: blakeswap.v1.DaemonService.CreateOffer:output_type -> blakeswap.v1.Offer
+	30,  // 125: blakeswap.v1.DaemonService.CancelOffer:output_type -> blakeswap.v1.Offer
+	6,   // 126: blakeswap.v1.DaemonService.TakeOffer:output_type -> blakeswap.v1.TakeOfferResponse
+	100, // 127: blakeswap.v1.DaemonService.Mine:output_type -> google.protobuf.Empty
+	9,   // 128: blakeswap.v1.DaemonService.Faucet:output_type -> blakeswap.v1.FaucetResponse
+	18,  // 129: blakeswap.v1.DaemonService.GetRecovery:output_type -> blakeswap.v1.Recovery
+	15,  // 130: blakeswap.v1.DaemonService.PreflightFunds:output_type -> blakeswap.v1.FundsPreflight
+	61,  // 131: blakeswap.v1.DaemonService.QuoteTrade:output_type -> blakeswap.v1.TradeQuote
+	66,  // 132: blakeswap.v1.DaemonService.ConfirmTrade:output_type -> blakeswap.v1.ConfirmTradeResult
+	53,  // 133: blakeswap.v1.DaemonService.QuoteFee:output_type -> blakeswap.v1.FeeQuote
+	56,  // 134: blakeswap.v1.DaemonService.BumpTransaction:output_type -> blakeswap.v1.BumpResult
+	17,  // 135: blakeswap.v1.DaemonService.SendCoins:output_type -> blakeswap.v1.WalletSend
+	21,  // 136: blakeswap.v1.DaemonService.ExportPortableBackup:output_type -> blakeswap.v1.PortableBackupResult
+	24,  // 137: blakeswap.v1.DaemonService.InspectBackup:output_type -> blakeswap.v1.BackupContents
+	26,  // 138: blakeswap.v1.DaemonService.ImportBackup:output_type -> blakeswap.v1.ImportBackupResult
+	19,  // 139: blakeswap.v1.DaemonService.BackupWallet:output_type -> blakeswap.v1.Backup
+	47,  // 140: blakeswap.v1.DaemonService.CreateWallet:output_type -> blakeswap.v1.Settings
+	44,  // 141: blakeswap.v1.DaemonService.PrepareFirstWallet:output_type -> blakeswap.v1.FirstWallet
+	44,  // 142: blakeswap.v1.DaemonService.GetFirstWallet:output_type -> blakeswap.v1.FirstWallet
+	47,  // 143: blakeswap.v1.DaemonService.ConfirmFirstWallet:output_type -> blakeswap.v1.Settings
+	19,  // 144: blakeswap.v1.DaemonService.ExportFirstWallet:output_type -> blakeswap.v1.Backup
+	47,  // 145: blakeswap.v1.DaemonService.FinishOnboarding:output_type -> blakeswap.v1.Settings
+	47,  // 146: blakeswap.v1.DaemonService.GetSettings:output_type -> blakeswap.v1.Settings
+	47,  // 147: blakeswap.v1.DaemonService.UpdateSettings:output_type -> blakeswap.v1.Settings
+	49,  // 148: blakeswap.v1.DaemonService.CheckNode:output_type -> blakeswap.v1.CheckNodeResponse
+	112, // [112:149] is the sub-list for method output_type
+	75,  // [75:112] is the sub-list for method input_type
+	75,  // [75:75] is the sub-list for extension type_name
+	75,  // [75:75] is the sub-list for extension extendee
+	0,   // [0:75] is the sub-list for field type_name
 }
 
 func init() { file_blakeswap_v1_daemon_proto_init() }
@@ -9089,7 +9589,7 @@ func file_blakeswap_v1_daemon_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_blakeswap_v1_daemon_proto_rawDesc), len(file_blakeswap_v1_daemon_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   95,
+			NumMessages:   100,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

@@ -22,10 +22,13 @@ final class AppModel: ObservableObject {
     @Published var recovery: String?
     @Published var setupWallet: Blakeswap_V1_FirstWallet?
     private let daemon: DaemonProcess
-    let root: String
+    let monitoring: MonitoringModel
+ let root: String
     init(daemon: DaemonProcess? = nil) {
         self.daemon = daemon ?? .shared
         root = self.daemon.root
+ monitoring = MonitoringModel(root:self.daemon.root)
+ monitoring.navigate = { [weak self] route in self?.openMonitoring(route) }
     }
     private var refreshing = false
     @Published private(set) var swapRefreshGeneration: UInt64?
@@ -60,9 +63,29 @@ final class AppModel: ObservableObject {
             let settingsRaw = try await DaemonRPC.call(root: root, profile: selected, method: "settings.get")
             let nextSettings = try AppSettings(serializedBytes: settingsRaw)
             if acceptSnapshot(next, settings: nextSettings, profile: selected, generation: expected) { connectionError = nil }
+ await refreshMonitoring()
         } catch is CancellationError {
             // Closing the app while its helper starts is not a connection failure.
         } catch { if selected == profile && expected == generation { connectionError = error.localizedDescription } }
+    }
+    func openMonitoring(_ route: AlertDestination) {
+        guard route.network == network, settings?.wallets.contains(where: { $0.id == route.wallet }) == true else { notice = "This notification belongs to another saved network. Select that network in Settings to inspect it."; return }
+        selectProfile(route.wallet)
+        if route.kind == "swap" { activityDestination = .swap(route.object) }
+        else if route.kind == "send" { activityDestination = .send(route.object) }
+        else if route.kind == "order" { activityDestination = .order(route.object) }
+        page = activityDestination?.page ?? "Activity"
+        NSApp.activate(ignoringOtherApps: true)
+    }
+    func actionSummary(refresh: Bool = false) async throws -> ActionSummary {
+        let raw = try await DaemonRPC.call(root: root, profile: profile, method: "actions.summary", params: ["refresh": refresh])
+        return try ActionSummary(serializedBytes: raw)
+    }
+    func refreshMonitoring(refresh: Bool = false) async {
+        do { let next = try await actionSummary(refresh: refresh)
+            guard settings?.activeNetwork == next.network, settings?.revision == next.settingsRevision else { return }
+            await monitoring.reconcile(next)
+        } catch { monitoring.unavailable() }
     }
     func beginSwapRefresh() -> Bool {
         guard !checkingSwaps else { return false }

@@ -922,6 +922,15 @@ nonisolated struct Blakeswap_V1_Status: @unchecked Sendable {
   // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
   // methods supported on all messages.
 
+  var actions: Blakeswap_V1_WalletActions {
+    get {_storage._actions ?? Blakeswap_V1_WalletActions()}
+    set {_uniqueStorage()._actions = newValue}
+  }
+  /// Returns true if `actions` has been explicitly set.
+  var hasActions: Bool {_storage._actions != nil}
+  /// Clears the value of `actions`. Subsequent reads from it will return its default value.
+  mutating func clearActions() {_uniqueStorage()._actions = nil}
+
   var backup: Blakeswap_V1_BackupFreshness {
     get {_storage._backup ?? Blakeswap_V1_BackupFreshness()}
     set {_uniqueStorage()._backup = newValue}
@@ -2942,6 +2951,121 @@ nonisolated struct Blakeswap_V1_DisableAutomationRequest: Sendable {
   var expectedRevision: UInt64 = 0
 
   var cancelOpen: Bool = false
+
+  var unknownFields = SwiftProtobuf.UnknownStorage()
+
+  init() {}
+}
+
+/// Refresh queues bounded all-wallet worker reconciliation; this read never waits on nodes.
+nonisolated struct Blakeswap_V1_ActionSummaryRequest: Sendable {
+  // SwiftProtobuf.Message conformance is added in an extension below. See the
+  // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
+  // methods supported on all messages.
+
+  var refresh: Bool = false
+
+  var unknownFields = SwiftProtobuf.UnknownStorage()
+
+  init() {}
+}
+
+nonisolated struct Blakeswap_V1_ActionSummary: Sendable {
+  // SwiftProtobuf.Message conformance is added in an extension below. See the
+  // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
+  // methods supported on all messages.
+
+  var network: String = String()
+
+  var settingsRevision: UInt64 = 0
+
+  var observedAt: Int64 = 0
+
+  var wallets: [Blakeswap_V1_WalletActions] = []
+
+  var complete: Bool = false
+
+  var requiresMonitoring: Bool = false
+
+  var unknownFields = SwiftProtobuf.UnknownStorage()
+
+  init() {}
+}
+
+nonisolated struct Blakeswap_V1_WalletActions: Sendable {
+  // SwiftProtobuf.Message conformance is added in an extension below. See the
+  // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
+  // methods supported on all messages.
+
+  var source: String = String()
+
+  var walletID: String = String()
+
+  var network: String = String()
+
+  var known: Bool = false
+
+  var observedAt: Int64 = 0
+
+  var actions: [Blakeswap_V1_WalletAction] = []
+
+  var unknownFields = SwiftProtobuf.UnknownStorage()
+
+  init() {}
+}
+
+nonisolated struct Blakeswap_V1_WalletAction: Sendable {
+  // SwiftProtobuf.Message conformance is added in an extension below. See the
+  // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
+  // methods supported on all messages.
+
+  var id: String = String()
+
+  var kind: String = String()
+
+  var objectID: String = String()
+
+  var state: String = String()
+
+  var requiresMonitoring: Bool = false
+
+  var uncertain: Bool = false
+
+  var firstReveal: Bool = false
+
+  var towerReady: Bool = false
+
+  var deadlines: [Blakeswap_V1_ActionDeadline] = []
+
+  var unknownFields = SwiftProtobuf.UnknownStorage()
+
+  init() {}
+}
+
+nonisolated struct Blakeswap_V1_ActionDeadline: Sendable {
+  // SwiftProtobuf.Message conformance is added in an extension below. See the
+  // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
+  // methods supported on all messages.
+
+  var kind: String = String()
+
+  var chain: String = String()
+
+  var unit: String = String()
+
+  var target: UInt32 = 0
+
+  var observed: UInt32 = 0
+
+  var observedAt: Int64 = 0
+
+  var remaining: Int64 = 0
+
+  var certain: Bool = false
+
+  var band: String = String()
+
+  var reason: String = String()
 
   var unknownFields = SwiftProtobuf.UnknownStorage()
 
@@ -4976,9 +5100,10 @@ nonisolated extension Blakeswap_V1_TowerJob: SwiftProtobuf.Message, SwiftProtobu
 
 nonisolated extension Blakeswap_V1_Status: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   static let protoMessageName: String = _protobuf_package + ".Status"
-  static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}name\0\u{1}mode\0\u{1}pubkey\0\u{1}addresses\0\u{1}balances\0\u{1}heights\0\u{1}paused\0\u{1}orders\0\u{1}swaps\0\u{3}tower_jobs\0\u{3}pending_messages\0\u{3}last_error\0\u{1}tower\0\u{1}network\0\u{3}own_watchtower\0\u{1}watchtowers\0\u{3}funding_fee\0\u{1}coins\0\u{1}sends\0\u{1}funds\0\u{3}fee_limits\0\u{1}connections\0\u{1}backup\0\u{1}recovery\0")
+  static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}name\0\u{1}mode\0\u{1}pubkey\0\u{1}addresses\0\u{1}balances\0\u{1}heights\0\u{1}paused\0\u{1}orders\0\u{1}swaps\0\u{3}tower_jobs\0\u{3}pending_messages\0\u{3}last_error\0\u{1}tower\0\u{1}network\0\u{3}own_watchtower\0\u{1}watchtowers\0\u{3}funding_fee\0\u{1}coins\0\u{1}sends\0\u{1}funds\0\u{3}fee_limits\0\u{1}connections\0\u{1}backup\0\u{1}recovery\0\u{2}\u{2}actions\0")
 
   fileprivate class _StorageClass {
+    var _actions: Blakeswap_V1_WalletActions? = nil
     var _backup: Blakeswap_V1_BackupFreshness? = nil
     var _recovery: Blakeswap_V1_RecoveryProgress? = nil
     var _feeLimits: Dictionary<String,Blakeswap_V1_FeeLimits> = [:]
@@ -5013,6 +5138,7 @@ nonisolated extension Blakeswap_V1_Status: SwiftProtobuf.Message, SwiftProtobuf.
     private init() {}
 
     init(copying source: _StorageClass) {
+      _actions = source._actions
       _backup = source._backup
       _recovery = source._recovery
       _feeLimits = source._feeLimits
@@ -5079,6 +5205,7 @@ nonisolated extension Blakeswap_V1_Status: SwiftProtobuf.Message, SwiftProtobuf.
         case 22: try { try decoder.decodeMapField(fieldType: SwiftProtobuf._ProtobufMessageMap<SwiftProtobuf.ProtobufString,Blakeswap_V1_ChainConnection>.self, value: &_storage._connections) }()
         case 23: try { try decoder.decodeSingularMessageField(value: &_storage._backup) }()
         case 24: try { try decoder.decodeSingularMessageField(value: &_storage._recovery) }()
+        case 26: try { try decoder.decodeSingularMessageField(value: &_storage._actions) }()
         default: break
         }
       }
@@ -5163,6 +5290,9 @@ nonisolated extension Blakeswap_V1_Status: SwiftProtobuf.Message, SwiftProtobuf.
       try { if let v = _storage._recovery {
         try visitor.visitSingularMessageField(value: v, fieldNumber: 24)
       } }()
+      try { if let v = _storage._actions {
+        try visitor.visitSingularMessageField(value: v, fieldNumber: 26)
+      } }()
     }
     try unknownFields.traverse(visitor: &visitor)
   }
@@ -5172,6 +5302,7 @@ nonisolated extension Blakeswap_V1_Status: SwiftProtobuf.Message, SwiftProtobuf.
       let storagesAreEqual: Bool = withExtendedLifetime((lhs._storage, rhs._storage)) { (_args: (_StorageClass, _StorageClass)) in
         let _storage = _args.0
         let rhs_storage = _args.1
+        if _storage._actions != rhs_storage._actions {return false}
         if _storage._backup != rhs_storage._backup {return false}
         if _storage._recovery != rhs_storage._recovery {return false}
         if _storage._feeLimits != rhs_storage._feeLimits {return false}
@@ -8921,6 +9052,291 @@ nonisolated extension Blakeswap_V1_DisableAutomationRequest: SwiftProtobuf.Messa
     if lhs.expectedNetwork != rhs.expectedNetwork {return false}
     if lhs.expectedRevision != rhs.expectedRevision {return false}
     if lhs.cancelOpen != rhs.cancelOpen {return false}
+    if lhs.unknownFields != rhs.unknownFields {return false}
+    return true
+  }
+}
+
+nonisolated extension Blakeswap_V1_ActionSummaryRequest: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+  static let protoMessageName: String = _protobuf_package + ".ActionSummaryRequest"
+  static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}refresh\0")
+
+  mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
+    while let fieldNumber = try decoder.nextFieldNumber() {
+      // The use of inline closures is to circumvent an issue where the compiler
+      // allocates stack space for every case branch when no optimizations are
+      // enabled. https://github.com/apple/swift-protobuf/issues/1034
+      switch fieldNumber {
+      case 1: try { try decoder.decodeSingularBoolField(value: &self.refresh) }()
+      default: break
+      }
+    }
+  }
+
+  func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+    if self.refresh != false {
+      try visitor.visitSingularBoolField(value: self.refresh, fieldNumber: 1)
+    }
+    try unknownFields.traverse(visitor: &visitor)
+  }
+
+  static func ==(lhs: Blakeswap_V1_ActionSummaryRequest, rhs: Blakeswap_V1_ActionSummaryRequest) -> Bool {
+    if lhs.refresh != rhs.refresh {return false}
+    if lhs.unknownFields != rhs.unknownFields {return false}
+    return true
+  }
+}
+
+nonisolated extension Blakeswap_V1_ActionSummary: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+  static let protoMessageName: String = _protobuf_package + ".ActionSummary"
+  static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}network\0\u{3}settings_revision\0\u{3}observed_at\0\u{1}wallets\0\u{1}complete\0\u{3}requires_monitoring\0")
+
+  mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
+    while let fieldNumber = try decoder.nextFieldNumber() {
+      // The use of inline closures is to circumvent an issue where the compiler
+      // allocates stack space for every case branch when no optimizations are
+      // enabled. https://github.com/apple/swift-protobuf/issues/1034
+      switch fieldNumber {
+      case 1: try { try decoder.decodeSingularStringField(value: &self.network) }()
+      case 2: try { try decoder.decodeSingularUInt64Field(value: &self.settingsRevision) }()
+      case 3: try { try decoder.decodeSingularInt64Field(value: &self.observedAt) }()
+      case 4: try { try decoder.decodeRepeatedMessageField(value: &self.wallets) }()
+      case 5: try { try decoder.decodeSingularBoolField(value: &self.complete) }()
+      case 6: try { try decoder.decodeSingularBoolField(value: &self.requiresMonitoring) }()
+      default: break
+      }
+    }
+  }
+
+  func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+    if !self.network.isEmpty {
+      try visitor.visitSingularStringField(value: self.network, fieldNumber: 1)
+    }
+    if self.settingsRevision != 0 {
+      try visitor.visitSingularUInt64Field(value: self.settingsRevision, fieldNumber: 2)
+    }
+    if self.observedAt != 0 {
+      try visitor.visitSingularInt64Field(value: self.observedAt, fieldNumber: 3)
+    }
+    if !self.wallets.isEmpty {
+      try visitor.visitRepeatedMessageField(value: self.wallets, fieldNumber: 4)
+    }
+    if self.complete != false {
+      try visitor.visitSingularBoolField(value: self.complete, fieldNumber: 5)
+    }
+    if self.requiresMonitoring != false {
+      try visitor.visitSingularBoolField(value: self.requiresMonitoring, fieldNumber: 6)
+    }
+    try unknownFields.traverse(visitor: &visitor)
+  }
+
+  static func ==(lhs: Blakeswap_V1_ActionSummary, rhs: Blakeswap_V1_ActionSummary) -> Bool {
+    if lhs.network != rhs.network {return false}
+    if lhs.settingsRevision != rhs.settingsRevision {return false}
+    if lhs.observedAt != rhs.observedAt {return false}
+    if lhs.wallets != rhs.wallets {return false}
+    if lhs.complete != rhs.complete {return false}
+    if lhs.requiresMonitoring != rhs.requiresMonitoring {return false}
+    if lhs.unknownFields != rhs.unknownFields {return false}
+    return true
+  }
+}
+
+nonisolated extension Blakeswap_V1_WalletActions: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+  static let protoMessageName: String = _protobuf_package + ".WalletActions"
+  static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}wallet_id\0\u{1}network\0\u{1}known\0\u{3}observed_at\0\u{1}actions\0\u{1}source\0")
+
+  mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
+    while let fieldNumber = try decoder.nextFieldNumber() {
+      // The use of inline closures is to circumvent an issue where the compiler
+      // allocates stack space for every case branch when no optimizations are
+      // enabled. https://github.com/apple/swift-protobuf/issues/1034
+      switch fieldNumber {
+      case 1: try { try decoder.decodeSingularStringField(value: &self.walletID) }()
+      case 2: try { try decoder.decodeSingularStringField(value: &self.network) }()
+      case 3: try { try decoder.decodeSingularBoolField(value: &self.known) }()
+      case 4: try { try decoder.decodeSingularInt64Field(value: &self.observedAt) }()
+      case 5: try { try decoder.decodeRepeatedMessageField(value: &self.actions) }()
+      case 6: try { try decoder.decodeSingularStringField(value: &self.source) }()
+      default: break
+      }
+    }
+  }
+
+  func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+    if !self.walletID.isEmpty {
+      try visitor.visitSingularStringField(value: self.walletID, fieldNumber: 1)
+    }
+    if !self.network.isEmpty {
+      try visitor.visitSingularStringField(value: self.network, fieldNumber: 2)
+    }
+    if self.known != false {
+      try visitor.visitSingularBoolField(value: self.known, fieldNumber: 3)
+    }
+    if self.observedAt != 0 {
+      try visitor.visitSingularInt64Field(value: self.observedAt, fieldNumber: 4)
+    }
+    if !self.actions.isEmpty {
+      try visitor.visitRepeatedMessageField(value: self.actions, fieldNumber: 5)
+    }
+    if !self.source.isEmpty {
+      try visitor.visitSingularStringField(value: self.source, fieldNumber: 6)
+    }
+    try unknownFields.traverse(visitor: &visitor)
+  }
+
+  static func ==(lhs: Blakeswap_V1_WalletActions, rhs: Blakeswap_V1_WalletActions) -> Bool {
+    if lhs.source != rhs.source {return false}
+    if lhs.walletID != rhs.walletID {return false}
+    if lhs.network != rhs.network {return false}
+    if lhs.known != rhs.known {return false}
+    if lhs.observedAt != rhs.observedAt {return false}
+    if lhs.actions != rhs.actions {return false}
+    if lhs.unknownFields != rhs.unknownFields {return false}
+    return true
+  }
+}
+
+nonisolated extension Blakeswap_V1_WalletAction: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+  static let protoMessageName: String = _protobuf_package + ".WalletAction"
+  static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}id\0\u{1}kind\0\u{3}object_id\0\u{1}state\0\u{3}requires_monitoring\0\u{1}uncertain\0\u{3}first_reveal\0\u{3}tower_ready\0\u{1}deadlines\0")
+
+  mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
+    while let fieldNumber = try decoder.nextFieldNumber() {
+      // The use of inline closures is to circumvent an issue where the compiler
+      // allocates stack space for every case branch when no optimizations are
+      // enabled. https://github.com/apple/swift-protobuf/issues/1034
+      switch fieldNumber {
+      case 1: try { try decoder.decodeSingularStringField(value: &self.id) }()
+      case 2: try { try decoder.decodeSingularStringField(value: &self.kind) }()
+      case 3: try { try decoder.decodeSingularStringField(value: &self.objectID) }()
+      case 4: try { try decoder.decodeSingularStringField(value: &self.state) }()
+      case 5: try { try decoder.decodeSingularBoolField(value: &self.requiresMonitoring) }()
+      case 6: try { try decoder.decodeSingularBoolField(value: &self.uncertain) }()
+      case 7: try { try decoder.decodeSingularBoolField(value: &self.firstReveal) }()
+      case 8: try { try decoder.decodeSingularBoolField(value: &self.towerReady) }()
+      case 9: try { try decoder.decodeRepeatedMessageField(value: &self.deadlines) }()
+      default: break
+      }
+    }
+  }
+
+  func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+    if !self.id.isEmpty {
+      try visitor.visitSingularStringField(value: self.id, fieldNumber: 1)
+    }
+    if !self.kind.isEmpty {
+      try visitor.visitSingularStringField(value: self.kind, fieldNumber: 2)
+    }
+    if !self.objectID.isEmpty {
+      try visitor.visitSingularStringField(value: self.objectID, fieldNumber: 3)
+    }
+    if !self.state.isEmpty {
+      try visitor.visitSingularStringField(value: self.state, fieldNumber: 4)
+    }
+    if self.requiresMonitoring != false {
+      try visitor.visitSingularBoolField(value: self.requiresMonitoring, fieldNumber: 5)
+    }
+    if self.uncertain != false {
+      try visitor.visitSingularBoolField(value: self.uncertain, fieldNumber: 6)
+    }
+    if self.firstReveal != false {
+      try visitor.visitSingularBoolField(value: self.firstReveal, fieldNumber: 7)
+    }
+    if self.towerReady != false {
+      try visitor.visitSingularBoolField(value: self.towerReady, fieldNumber: 8)
+    }
+    if !self.deadlines.isEmpty {
+      try visitor.visitRepeatedMessageField(value: self.deadlines, fieldNumber: 9)
+    }
+    try unknownFields.traverse(visitor: &visitor)
+  }
+
+  static func ==(lhs: Blakeswap_V1_WalletAction, rhs: Blakeswap_V1_WalletAction) -> Bool {
+    if lhs.id != rhs.id {return false}
+    if lhs.kind != rhs.kind {return false}
+    if lhs.objectID != rhs.objectID {return false}
+    if lhs.state != rhs.state {return false}
+    if lhs.requiresMonitoring != rhs.requiresMonitoring {return false}
+    if lhs.uncertain != rhs.uncertain {return false}
+    if lhs.firstReveal != rhs.firstReveal {return false}
+    if lhs.towerReady != rhs.towerReady {return false}
+    if lhs.deadlines != rhs.deadlines {return false}
+    if lhs.unknownFields != rhs.unknownFields {return false}
+    return true
+  }
+}
+
+nonisolated extension Blakeswap_V1_ActionDeadline: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+  static let protoMessageName: String = _protobuf_package + ".ActionDeadline"
+  static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}kind\0\u{1}chain\0\u{1}unit\0\u{1}target\0\u{1}observed\0\u{3}observed_at\0\u{1}remaining\0\u{1}certain\0\u{1}band\0\u{1}reason\0")
+
+  mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
+    while let fieldNumber = try decoder.nextFieldNumber() {
+      // The use of inline closures is to circumvent an issue where the compiler
+      // allocates stack space for every case branch when no optimizations are
+      // enabled. https://github.com/apple/swift-protobuf/issues/1034
+      switch fieldNumber {
+      case 1: try { try decoder.decodeSingularStringField(value: &self.kind) }()
+      case 2: try { try decoder.decodeSingularStringField(value: &self.chain) }()
+      case 3: try { try decoder.decodeSingularStringField(value: &self.unit) }()
+      case 4: try { try decoder.decodeSingularUInt32Field(value: &self.target) }()
+      case 5: try { try decoder.decodeSingularUInt32Field(value: &self.observed) }()
+      case 6: try { try decoder.decodeSingularInt64Field(value: &self.observedAt) }()
+      case 7: try { try decoder.decodeSingularInt64Field(value: &self.remaining) }()
+      case 8: try { try decoder.decodeSingularBoolField(value: &self.certain) }()
+      case 9: try { try decoder.decodeSingularStringField(value: &self.band) }()
+      case 10: try { try decoder.decodeSingularStringField(value: &self.reason) }()
+      default: break
+      }
+    }
+  }
+
+  func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+    if !self.kind.isEmpty {
+      try visitor.visitSingularStringField(value: self.kind, fieldNumber: 1)
+    }
+    if !self.chain.isEmpty {
+      try visitor.visitSingularStringField(value: self.chain, fieldNumber: 2)
+    }
+    if !self.unit.isEmpty {
+      try visitor.visitSingularStringField(value: self.unit, fieldNumber: 3)
+    }
+    if self.target != 0 {
+      try visitor.visitSingularUInt32Field(value: self.target, fieldNumber: 4)
+    }
+    if self.observed != 0 {
+      try visitor.visitSingularUInt32Field(value: self.observed, fieldNumber: 5)
+    }
+    if self.observedAt != 0 {
+      try visitor.visitSingularInt64Field(value: self.observedAt, fieldNumber: 6)
+    }
+    if self.remaining != 0 {
+      try visitor.visitSingularInt64Field(value: self.remaining, fieldNumber: 7)
+    }
+    if self.certain != false {
+      try visitor.visitSingularBoolField(value: self.certain, fieldNumber: 8)
+    }
+    if !self.band.isEmpty {
+      try visitor.visitSingularStringField(value: self.band, fieldNumber: 9)
+    }
+    if !self.reason.isEmpty {
+      try visitor.visitSingularStringField(value: self.reason, fieldNumber: 10)
+    }
+    try unknownFields.traverse(visitor: &visitor)
+  }
+
+  static func ==(lhs: Blakeswap_V1_ActionDeadline, rhs: Blakeswap_V1_ActionDeadline) -> Bool {
+    if lhs.kind != rhs.kind {return false}
+    if lhs.chain != rhs.chain {return false}
+    if lhs.unit != rhs.unit {return false}
+    if lhs.target != rhs.target {return false}
+    if lhs.observed != rhs.observed {return false}
+    if lhs.observedAt != rhs.observedAt {return false}
+    if lhs.remaining != rhs.remaining {return false}
+    if lhs.certain != rhs.certain {return false}
+    if lhs.band != rhs.band {return false}
+    if lhs.reason != rhs.reason {return false}
     if lhs.unknownFields != rhs.unknownFields {return false}
     return true
   }
