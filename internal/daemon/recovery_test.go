@@ -289,8 +289,8 @@ func TestRestoredSendReadinessRejectsSkippedCachedConfirmations(t *testing.T) {
 		}
 		return "reorg-c"
 	}
-	if err := e.refreshRecoveryCheckpoint(context.Background(), send.Chain); err != nil {
-		t.Fatal(err)
+	if err := e.refreshRecoveryCheckpoint(context.Background(), send.Chain); err == nil {
+		t.Fatal("mixed checkpoint reads were accepted")
 	}
 	e.reconcileRecovery(all, nil)
 	if e.recoveryTradingReady() == nil {
@@ -298,6 +298,9 @@ func TestRestoredSendReadinessRejectsSkippedCachedConfirmations(t *testing.T) {
 	}
 	b.onHash = nil
 	b.hash = "reorg-c"
+	if err := e.refreshRecoveryCheckpoint(context.Background(), send.Chain); err != nil {
+		t.Fatal(err)
+	}
 	e.advanceSends(context.Background())
 	e.reconcileRecovery(all, nil)
 	if err := e.recoveryTradingReady(); err != nil {
@@ -512,5 +515,106 @@ func TestRestoredExpiredMakerWithPeerRefund(t *testing.T) {
 	e.reconcileRecovery(all, nil)
 	if e.recoveryTradingReady() == nil {
 		t.Fatal("unknown own publication resolved from peer refund")
+	}
+}
+
+type recoveryExtensionRaceBackend struct {
+	*sendBackend
+	oldHeight      uint32
+	trigger, reorg bool
+}
+
+func (b *recoveryExtensionRaceBackend) BlockHash(_ context.Context, height uint32) (string, error) {
+	if b.trigger && height > b.oldHeight {
+		b.reorg = true
+	}
+	if b.reorg {
+		return "competing-history", nil
+	}
+	return "prior-history", nil
+}
+func TestRestoredExtensionReorgCannotCarrySkippedPaymentProof(t *testing.T) {
+	e, rawBackend, request := sendFixture(t)
+	rawBackend.broadcast = func(raw string) (string, error) { tx, _ := contract.Parse(raw); return tx.TxHash().String(), nil }
+	raw, _ := json.Marshal(request)
+	if _, err := e.sendCoins(context.Background(), raw); err != nil {
+		t.Fatal(err)
+	}
+	send := e.s.Sends[request.ID]
+	markRestored(t, e)
+	b := &recoveryExtensionRaceBackend{sendBackend: rawBackend, oldHeight: e.heights[send.Chain]}
+	e.nodes[send.Chain] = b
+	if err := e.refreshRecoveryCheckpoint(context.Background(), send.Chain); err != nil {
+		t.Fatal(err)
+	}
+	rawBackend.transaction = func(_ context.Context, id string) (chain.Transaction, error) {
+		return chain.Transaction{TxID: id, Hex: send.Raw, Height: 190, Confirmations: 11}, nil
+	}
+	e.advanceSends(context.Background())
+	all := map[chain.ID]map[string]chain.Observation{chain.BTC: {}, chain.Blake: {}}
+	e.reconcileRecovery(all, nil)
+	if err := e.recoveryTradingReady(); err != nil {
+		t.Fatal(err)
+	}
+	b.trigger = true
+	e.heights[send.Chain]++
+	if err := e.refreshRecoveryCheckpoint(context.Background(), send.Chain); err != nil {
+		t.Fatal(err)
+	}
+	// Bounded send work skips this record. A current tip from a different fork
+	// must not inherit its old proof merely because the ancestry read ran first.
+	e.reconcileRecovery(all, nil)
+	if e.recoverySends[send.ID] || e.recoveryTradingReady() == nil {
+		t.Fatal("extension tip adopted old payment proof across a reorg")
+	}
+}
+
+func TestRestoredInverseReorgRejectsMixedTipAndAncestry(t *testing.T) {
+	e, backend, request := sendFixture(t)
+	backend.broadcast = func(raw string) (string, error) { tx, _ := contract.Parse(raw); return tx.TxHash().String(), nil }
+	raw, _ := json.Marshal(request)
+	if _, err := e.sendCoins(context.Background(), raw); err != nil {
+		t.Fatal(err)
+	}
+	send := e.s.Sends[request.ID]
+	markRestored(t, e)
+	b := &checkpointSendBackend{sendBackend: backend, hash: "original-history"}
+	e.nodes[send.Chain] = b
+	if err := e.refreshRecoveryCheckpoint(context.Background(), send.Chain); err != nil {
+		t.Fatal(err)
+	}
+	backend.transaction = func(_ context.Context, id string) (chain.Transaction, error) {
+		return chain.Transaction{TxID: id, Hex: send.Raw, Height: 190, Confirmations: 11}, nil
+	}
+	e.advanceSends(context.Background())
+	all := map[chain.ID]map[string]chain.Observation{chain.BTC: {}, chain.Blake: {}}
+	e.reconcileRecovery(all, nil)
+	if err := e.recoveryTradingReady(); err != nil {
+		t.Fatal(err)
+	}
+	e.heights[send.Chain]++
+	calls := 0
+	b.onHash = func() string {
+		calls++
+		if calls == 1 {
+			return "temporary-competing-tip"
+		}
+		return "original-history"
+	}
+	if err := e.refreshRecoveryCheckpoint(context.Background(), send.Chain); err == nil {
+		t.Fatal("temporary fork tip was assigned to old-history proofs")
+	}
+	e.reconcileRecovery(all, nil)
+	if e.recoverySends[send.ID] || e.recoveryTradingReady() == nil || e.recoveryCheckpoints[send.Chain].Hash != "" {
+		t.Fatal("mixed checkpoint retained recovery authority")
+	}
+	b.onHash = nil
+	if err := e.refreshRecoveryCheckpoint(context.Background(), send.Chain); err != nil {
+		t.Fatal(err)
+	}
+	e.advanceSends(context.Background())
+	e.reconcileRecovery(all, nil)
+	if err := e.recoveryTradingReady(); err != nil {
+		t.Fatal("stable current chain failed to recover", err)
 	}
 }

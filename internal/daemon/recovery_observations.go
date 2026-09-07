@@ -49,6 +49,13 @@ func (e *Engine) refreshRecoveryCheckpoint(ctx context.Context, id chain.ID) err
 	}
 	height := e.heights[id]
 	fail := func(err error) error { e.clearRecoveryPayments(id); delete(e.recoveryCheckpoints, id); return err }
+	// Observe the new tip before checking the old checkpoint's ancestry. A
+	// reorg between those calls must invalidate accumulated payment proofs,
+	// rather than attach old proofs to a newly returned competing tip.
+	hash, err := source.BlockHash(ctx, height)
+	if err != nil {
+		return fail(err)
+	}
 	if previous.Hash != "" {
 		if previous.Generation != generation || height < previous.Height {
 			e.clearRecoveryPayments(id)
@@ -62,9 +69,17 @@ func (e *Engine) refreshRecoveryCheckpoint(ctx context.Context, id chain.ID) err
 			}
 		}
 	}
-	hash, err := source.BlockHash(ctx, height)
-	if err != nil {
-		return fail(err)
+	// The inverse transition matters too: the candidate tip may have been
+	// read on a fork that disappeared before the old-height lookup. Reject
+	// that mixed snapshot instead of assigning its hash to retained proofs.
+	if previous.Hash != "" {
+		current, err := source.BlockHash(ctx, height)
+		if err != nil {
+			return fail(err)
+		}
+		if current != hash {
+			return fail(errors.New("recovery tip changed during checkpoint validation"))
+		}
 	}
 	if height == previous.Height && previous.Hash != "" && hash != previous.Hash {
 		e.clearRecoveryPayments(id)
