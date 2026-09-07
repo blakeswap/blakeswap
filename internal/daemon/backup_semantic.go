@@ -116,3 +116,27 @@ func BackupSemanticToken(state State) string {
 	}
 	return state.Capacity.SemanticToken
 }
+
+// PrepareStoredBackupToken checks an inactive vault's active checkpoint before
+// export. Existing archive bodies are immutable between atomic archive moves;
+// their transaction already recorded semantic changes. This never derives an
+// integrity hash from the token or scans cold records during freshness polling.
+func PrepareStoredBackupToken(state *State) (bool, error) {
+	if state.Capacity == nil || state.Capacity.Archived.Count == 0 {
+		return false, nil
+	}
+	parts, err := stateSemanticParts(*state)
+	if err != nil {
+		return false, err
+	}
+	if state.Capacity.SemanticToken != "" && state.Capacity.ActiveFingerprint == parts.Active {
+		return false, nil
+	}
+	raw := make([]byte, 32)
+	if _, err := rand.Read(raw); err != nil {
+		return false, err
+	}
+	state.Capacity.SemanticToken = hex.EncodeToString(raw)
+	state.Capacity.ActiveFingerprint = parts.Active
+	return true, nil
+}

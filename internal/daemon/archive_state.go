@@ -48,6 +48,11 @@ func (s State) ValidateArchiveCheckpoint(stats storage.ArchiveStats) error {
 			return errors.New("archive category checkpoint disagrees")
 		}
 	}
+	for kind, count := range s.Capacity.Archived.Kinds {
+		if stats.Kinds[kind] != count {
+			return errors.New("archive category checkpoint disagrees")
+		}
+	}
 	return nil
 }
 
@@ -201,7 +206,7 @@ func (s State) VaultSnapshot() (any, []storage.ArchiveRecord, error) {
 // the final encoding limit; this read never drops records to make it fit.
 func LoadCompleteState(vault *storage.Vault) (State, error) {
 	var state State
-	records, stats, err := vault.LoadComplete(&state, 256<<20)
+	records, stats, err := vault.LoadComplete(&state, 0)
 	if err != nil {
 		return State{}, err
 	}
@@ -233,4 +238,22 @@ func (e *Engine) archivedValue(kind, id string, out any) (bool, error) {
 		return false, err
 	}
 	return true, nil
+}
+
+// ValidateArchiveRecordAgainstState decodes one cold record and rejects active
+// ownership overlap without assembling lifetime history. The returned partial
+// state carries the wallet/network context for desktop structural validators.
+func ValidateArchiveRecordAgainstState(active State, record storage.ArchiveRecord) (State, error) {
+	group, err := archiveMap(&active, record.Kind, false)
+	if err != nil {
+		return State{}, err
+	}
+	if group.IsValid() && group.MapIndex(reflect.ValueOf(record.ID)).IsValid() {
+		return State{}, errors.New("recovery record appears in both active state and archive")
+	}
+	partial := State{Version: active.Version, Network: active.Network, Mnemonic: active.Mnemonic}
+	if err := mergeArchiveRecord(&partial, record); err != nil {
+		return State{}, err
+	}
+	return partial, nil
 }

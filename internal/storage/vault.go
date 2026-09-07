@@ -75,8 +75,7 @@ func Open(path string, password []byte) (*Vault, error) {
 		return fail(e)
 	}
 	v := &Vault{db: db, aead: aead, archiveKey: archiveKey}
-	var probe any
-	exists, e := v.Load(&probe)
+	exists, e := v.authenticate()
 	if e != nil {
 		return fail(errors.New("vault password incorrect or state corrupted"))
 	}
@@ -123,4 +122,27 @@ func (v *Vault) Save(state any) error {
 func (v *Vault) Close() error { return v.db.Close() }
 func (v *Vault) Backup(path string) error {
 	return v.db.View(func(tx *bolt.Tx) error { return tx.CopyFile(path, 0600) })
+}
+
+// Authenticate without allocating a second generic object graph of the entire
+// active state. The typed caller still performs semantic validation on Load.
+func (v *Vault) authenticate() (bool, error) {
+	exists := false
+	err := v.db.View(func(tx *bolt.Tx) error {
+		sealed := tx.Bucket(bucket).Get([]byte("state"))
+		if sealed == nil {
+			return nil
+		}
+		raw, err := v.unseal(sealed, []byte("blakeswap/state/v1"))
+		if err != nil {
+			return err
+		}
+		defer clear(raw)
+		if !json.Valid(raw) {
+			return errors.New("invalid encrypted state JSON")
+		}
+		exists = true
+		return nil
+	})
+	return exists, err
 }

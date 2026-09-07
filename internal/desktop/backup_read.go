@@ -22,8 +22,8 @@ func readBackupManifest(ctx context.Context, root, source, password string) (bac
 		return manifest, false, errors.New("choose an absolute backup file path")
 	}
 	info, err := os.Stat(source)
-	if err != nil || !info.Mode().IsRegular() || info.Size() > storage.PortableLimit+1024 {
-		return manifest, false, errors.New("choose a regular backup file up to 256 MiB")
+	if err != nil || !info.Mode().IsRegular() {
+		return manifest, false, errors.New("choose a regular backup file within the portable size limit")
 	}
 	file, err := os.Open(source)
 	if err != nil {
@@ -36,6 +36,20 @@ func readBackupManifest(ctx context.Context, root, source, password string) (bac
 		return manifest, false, errors.New("cannot read backup file")
 	}
 	if string(prefix[:]) == "BLAKESWAP-BACKUP\x00" {
+		version, versionErr := os.Open(source)
+		if versionErr != nil {
+			return manifest, false, versionErr
+		}
+		var marker [1]byte
+		_, versionErr = version.ReadAt(marker[:], int64(len(prefix)))
+		version.Close()
+		if versionErr != nil {
+			return manifest, false, versionErr
+		}
+		if marker[0] == 2 {
+			manifest, err = readStreamManifest(ctx, root, source, []byte(password))
+			return manifest, false, err
+		}
 		if err := storage.ReadPortable(ctx, source, []byte(password), &manifest); err != nil {
 			return manifest, false, err
 		}

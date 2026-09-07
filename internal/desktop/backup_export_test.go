@@ -2,7 +2,6 @@ package desktop
 
 import (
 	"context"
-	"github.com/blakeswap/blakeswap/internal/storage"
 	"os"
 	"path/filepath"
 	"testing"
@@ -17,10 +16,11 @@ func TestPortableExportFromExistingProfile(t *testing.T) {
 	if err != nil || result.Path != path || result.Wallets != 1 || result.Networks != 3 || result.ReminderWarning != "" {
 		t.Fatal(result, err)
 	}
-	var restored backupManifest
-	if err := storage.ReadPortable(context.Background(), path, []byte(password), &restored); err != nil {
+	restored, _, err := readBackupManifest(context.Background(), m.root, path, password)
+	if err != nil {
 		t.Fatal(err)
 	}
+	defer restored.close()
 	if restored.Wallets[0].Mnemonic != prepared.Recovery.Mnemonic || len(restored.Wallets[0].Networks) != 3 {
 		t.Fatal("portable export lost wallet or network state")
 	}

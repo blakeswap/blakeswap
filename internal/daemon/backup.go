@@ -3,7 +3,27 @@ package daemon
 import (
 	"encoding/json"
 	"errors"
+	"sync"
+
+	"github.com/blakeswap/blakeswap/internal/storage"
 )
+
+// FreezeBackup pins a committed view without copying lifetime archive bodies.
+// The caller must release it; Close joins this reader before closing the vault.
+func (e *Engine) FreezeBackup() (*storage.ReadSnapshot, func(), error) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	if err := e.save(); err != nil {
+		return nil, nil, err
+	}
+	view, err := e.vault.Freeze()
+	if err != nil {
+		return nil, nil, err
+	}
+	e.activityReaders.Add(1)
+	var once sync.Once
+	return view, func() { once.Do(func() { _ = view.Close(); e.activityReaders.Done() }) }, nil
+}
 
 // BackupSnapshot owns a deep copy of the complete durable state. Desktop stops
 // its workers and joins advisory reads first to capture all selected wallets at

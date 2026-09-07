@@ -48,10 +48,12 @@ func TestPortableSnapshotSelectedOrAllProfiles(t *testing.T) {
 	}
 	m.settings.Wallets = append(m.settings.Wallets, &pb.WalletProfile{Id: "wallet-second", Name: "Second"})
 	selected, err := m.backupSnapshotLocked(context.Background(), "alice", false)
+	defer selected.close()
 	if err != nil || len(selected.Wallets) != 1 || len(selected.Wallets[0].Networks) != 3 || selected.Wallets[0].Mnemonic != first.Recovery.Mnemonic {
 		t.Fatal("selected profile snapshot is incomplete", err)
 	}
 	all, err := m.backupSnapshotLocked(context.Background(), "alice", true)
+	defer all.close()
 	if err != nil || len(all.Wallets) != 2 || all.Wallets[1].Mnemonic != otherSeed || len(all.Wallets[1].Networks) != 3 {
 		t.Fatal("all profiles snapshot is incomplete", err)
 	}

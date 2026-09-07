@@ -120,24 +120,25 @@ func TestInterruptedPortableImportPreservesLargeActivityHistory(t *testing.T) {
 }
 
 func TestPortableInstalledStateReaderRejectsOversizeWithoutCopy(t *testing.T) {
+	const testValidationLimit = 1 << 20
 	root := t.TempDir()
 	source := filepath.Join(root, "oversize.db")
 	f, err := os.OpenFile(source, os.O_CREATE|os.O_WRONLY, 0600)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := f.Truncate(portableVaultLimit + 1); err != nil {
+	if err := f.Truncate(testValidationLimit + 1); err != nil {
 		f.Close()
 		t.Fatal(err)
 	}
 	if err := f.Close(); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := readStateBackupBounded(root, source, "isolated fixture password", portableVaultLimit); err == nil {
+	if _, err := readStateBackupBounded(root, source, "isolated fixture password", testValidationLimit); err == nil {
 		t.Fatal("oversize installed vault accepted")
 	}
 	info, err := os.Stat(source)
-	if err != nil || info.Size() != portableVaultLimit+1 {
+	if err != nil || info.Size() != testValidationLimit+1 {
 		t.Fatal("source changed", err)
 	}
 	copies, err := filepath.Glob(filepath.Join(root, ".restore-*"))

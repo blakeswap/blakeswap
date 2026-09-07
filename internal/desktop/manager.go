@@ -147,6 +147,9 @@ func Run(ctx context.Context, root string, parent int) error {
 		return errors.New("this Blakeswap data directory is already open")
 	}
 	defer syscall.Flock(int(lock.Fd()), syscall.LOCK_UN)
+	if err := cleanupPortableStaging(root); err != nil {
+		return err
+	}
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	if parent > 0 {
