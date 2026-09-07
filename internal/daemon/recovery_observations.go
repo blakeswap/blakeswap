@@ -66,6 +66,9 @@ func (e *Engine) refreshRecoveryCheckpoint(ctx context.Context, id chain.ID) err
 	if err != nil {
 		return fail(err)
 	}
+	if height == previous.Height && previous.Hash != "" && hash != previous.Hash {
+		e.clearRecoveryPayments(id)
+	}
 	if hash == "" {
 		return fail(errors.New("empty recovery chain checkpoint"))
 	}

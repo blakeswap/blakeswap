@@ -9,6 +9,7 @@ import (
 
 	"github.com/blakeswap/blakeswap/internal/chain"
 	"github.com/blakeswap/blakeswap/internal/contract"
+	"github.com/blakeswap/blakeswap/internal/protocol"
 )
 
 func markRestored(t *testing.T, e *Engine) {
@@ -200,9 +201,13 @@ type checkpointSendBackend struct {
 	*sendBackend
 	hash       string
 	generation uint64
+	onHash     func() string
 }
 
 func (b *checkpointSendBackend) BlockHash(context.Context, uint32) (string, error) {
+	if b.onHash != nil {
+		return b.onHash(), nil
+	}
 	return b.hash, nil
 }
 
@@ -269,6 +274,30 @@ func TestRestoredSendReadinessRejectsSkippedCachedConfirmations(t *testing.T) {
 	if e.recoveryTradingReady() == nil {
 		t.Fatal("reorg reused cached positive send proof")
 	}
+	e.advanceSends(context.Background())
+	e.reconcileRecovery(all, nil)
+	if err := e.recoveryTradingReady(); err != nil {
+		t.Fatal(err)
+	}
+	// A same-height reorg between the ancestry read and tip read must also
+	// invalidate proofs before the new checkpoint is accepted.
+	count := 0
+	b.onHash = func() string {
+		count++
+		if count == 1 {
+			return "reorg-b"
+		}
+		return "reorg-c"
+	}
+	if err := e.refreshRecoveryCheckpoint(context.Background(), send.Chain); err != nil {
+		t.Fatal(err)
+	}
+	e.reconcileRecovery(all, nil)
+	if e.recoveryTradingReady() == nil {
+		t.Fatal("reorg between checkpoint reads preserved payment proof")
+	}
+	b.onHash = nil
+	b.hash = "reorg-c"
 	e.advanceSends(context.Background())
 	e.reconcileRecovery(all, nil)
 	if err := e.recoveryTradingReady(); err != nil {
@@ -381,5 +410,39 @@ func TestRestoredFinalUnfundedDecisionsRemainInactive(t *testing.T) {
 				t.Fatal("active unknown request treated as terminal")
 			}
 		})
+	}
+}
+
+func TestRestoredPendingRequestCannotAcquireTerminalExpiryEvidence(t *testing.T) {
+	e, _, _ := sendFixture(t)
+	s := &Swap{ID: "stale-pending", Role: "taker", Stage: "request queued"}
+	offer := protocol.Offer{Expires: time.Now().Add(-time.Hour).Unix(), Sell: chain.BTC, BuyAmount: 100000}
+	content, _ := json.Marshal(offer)
+	s.Request.OfferEvent.Content = string(content)
+	e.s.Swaps[s.ID] = s
+	markRestored(t, e)
+	if e.expirePendingRequest(s, time.Now().Unix()) {
+		t.Fatal("elapsed time invented post-restore expiry evidence")
+	}
+	e.reconcileReservations()
+	if s.Stage != "request queued" {
+		t.Fatal("wallet refresh fabricated a terminal decision", s.Stage)
+	}
+	all := map[chain.ID]map[string]chain.Observation{chain.BTC: {}, chain.Blake: {}}
+	if err := e.advanceSwap(context.Background(), s, all); err == nil {
+		t.Fatal("pre-acceptance snapshot was considered resolved")
+	}
+	e.reconcileRecovery(all, nil)
+	if e.recoveryTradingReady() == nil || e.s.Recovery.Status.State == "ready" {
+		t.Fatal("old unknown obligation became ready after expiration")
+	}
+	if err := e.save(); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := e.vault.Load(&e.s); err != nil {
+		t.Fatal(err)
+	}
+	if e.expirePendingRequest(e.s.Swaps[s.ID], time.Now().Unix()) {
+		t.Fatal("restart bypassed restored-expiry hold")
 	}
 }
