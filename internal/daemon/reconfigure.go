@@ -19,6 +19,9 @@ func (e *Engine) CanChangeNetwork() error {
 	return canChangeNetwork(e.s)
 }
 func canChangeNetwork(s State) error {
+	if s.Recovery != nil && len(s.Recovery.InvalidatedSettlements) != 0 {
+		return errors.New("a chain reorganization invalidated restored settlement evidence; keep monitoring until affected obligations are positively confirmed again")
+	}
 	for _, send := range s.Sends {
 		if send.Confirmations < 6 {
 			return errors.New("wait for outgoing sends to confirm before changing networks")

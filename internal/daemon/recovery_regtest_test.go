@@ -633,8 +633,22 @@ func TestRealPortableTowerRefundObservesConfirmedOutcome(t *testing.T) {
 				}
 			}()
 			_ = tick(context.Background())
-			if state.Confirmed != 0 || state.LastAttempt != 0 || state.Attempt != 0 || tower.CanChangeNetwork() == nil || tower.Status().Recovery.State == "ready" {
-				t.Fatal("tower refund reorg failed to reopen held obligation", state.Error, tower.Status().Recovery)
+			// A bounded scan may still display the prior confirmed outcome. The
+			// known checkpoint contradiction must nevertheless hold monitoring
+			// immediately, before target catch-up can reconcile that display.
+			if state.LastAttempt != 0 || state.Attempt != 0 || tower.CanChangeNetwork() == nil || tower.Status().Recovery.State == "ready" {
+				t.Fatal("tower refund reorg failed to immediately hold monitoring", state.Error, tower.Status().Recovery)
+			}
+			reorgCtx, reorgCancel := context.WithTimeout(context.Background(), 30*time.Second)
+			defer reorgCancel()
+			for cycle := 0; state.Confirmed != 0 && cycle < 12 && reorgCtx.Err() == nil; cycle++ {
+				_ = tick(reorgCtx)
+				if state.LastAttempt != 0 || state.Attempt != 0 || tower.CanChangeNetwork() == nil || tower.Status().Recovery.State == "ready" {
+					t.Fatal("tower refund lost its hold during reorg catch-up", state.Error, tower.Status().Recovery)
+				}
+			}
+			if state.Confirmed != 0 {
+				t.Fatal("tower refund display did not reconcile the reorg within bounded work", state.Error, tower.Status().Recovery)
 			}
 			t.Logf("restored %s tower refund %s observed without publication; bounty retained and reorg reopened recovery", target.Chain, state.Broadcast)
 		})

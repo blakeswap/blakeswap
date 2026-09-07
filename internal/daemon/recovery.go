@@ -16,7 +16,7 @@ func (e *Engine) recoveryTradingReady() error {
 	if e.s.Recovery == nil {
 		return nil
 	}
-	if e.s.Recovery.Status.State != "ready" || !e.fresh(chain.BTC) || !e.fresh(chain.Blake) || !e.recoveryContextCurrent() {
+	if len(e.s.Recovery.InvalidatedSettlements) != 0 || e.s.Recovery.Status.State != "ready" || !e.fresh(chain.BTC) || !e.fresh(chain.Blake) || !e.recoveryContextCurrent() {
 		return errors.New("wallet recovery is in progress; inspect its unresolved obligations before creating a new trade or payment")
 	}
 	return nil
@@ -188,13 +188,17 @@ func (e *Engine) reconcileRecovery(all, towers map[chain.ID]map[string]chain.Obs
 		status.Issues = append(status.Issues, RecoveryIssue{Kind: "chains", Reason: "Complete current wallet and contract observations from both chains are required."})
 	}
 	for id := range r.Swaps {
-		if !e.recoverySwapResolved(e.s.Swaps[id], all) {
+		if e.recoverySwapResolved(e.s.Swaps[id], all) {
+			delete(r.InvalidatedSettlements, "swap/"+id)
+		} else {
 			status.Issues = append(status.Issues, RecoveryIssue{Kind: "swap", ID: id, Reason: "Known contract outcomes are not both positively confirmed; funding and first revelation remain held."})
 		}
 	}
 	for id := range r.Sends {
 		send := e.s.Sends[id]
-		if send == nil || !e.fresh(send.Chain) || !e.recoverySends[id] {
+		if send != nil && e.fresh(send.Chain) && e.recoverySends[id] {
+			delete(r.InvalidatedSettlements, "send/"+id)
+		} else {
 			status.Issues = append(status.Issues, RecoveryIssue{Kind: "send", ID: id, Reason: "Waiting for a recorded signed payment variant to confirm; exact signed retries remain available."})
 		}
 	}
@@ -205,7 +209,9 @@ func (e *Engine) reconcileRecovery(all, towers map[chain.ID]map[string]chain.Obs
 			obs, ok := observation(towers, state.Job.Target)
 			resolved = ok && obs.Tx != nil && obs.Confirmations >= e.Config.Network.Confirmations()
 		}
-		if !resolved {
+		if resolved {
+			delete(r.InvalidatedSettlements, "tower/"+id)
+		} else {
 			status.Issues = append(status.Issues, RecoveryIssue{Kind: "tower", ID: id, Reason: "Waiting for a confirmed target spend; witnessed claims may proceed, while a stale standalone refund lacks peer safety evidence."})
 		}
 	}

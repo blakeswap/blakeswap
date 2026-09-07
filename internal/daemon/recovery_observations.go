@@ -29,6 +29,55 @@ func (e *Engine) clearRecoveryPayments(id chain.ID) {
 	}
 }
 
+// A positively contradicted checkpoint withdraws authority to stop monitoring
+// affected restored obligations. Keep their last displayed outcomes for audit;
+// ordinary outages and unrelated chain failures do not create these holds.
+func (e *Engine) invalidateRecoverySettlements(id chain.ID) error {
+	e.clearRecoveryPayments(id)
+	r := e.s.Recovery
+	if r == nil {
+		return nil
+	}
+	changed := false
+	mark := func(kind, key string) {
+		if r.InvalidatedSettlements == nil {
+			r.InvalidatedSettlements = map[string]bool{}
+		}
+		key = kind + "/" + key
+		if !r.InvalidatedSettlements[key] {
+			r.InvalidatedSettlements[key] = true
+			changed = true
+		}
+	}
+	for key := range r.Swaps {
+		s := e.s.Swaps[key]
+		if s == nil || recoverySwapInactive(s) {
+			continue
+		}
+		for _, c := range []contract.HTLC{s.Long, s.Short} {
+			if c.Chain == id && c.TxID != "" {
+				mark("swap", key)
+			}
+		}
+	}
+	for key := range r.Sends {
+		if send := e.s.Sends[key]; send != nil && send.Chain == id {
+			mark("send", key)
+		}
+	}
+	for key := range r.TowerJobs {
+		if job := e.s.TowerJobs[key]; job != nil && job.Job.Target.Chain == id && !job.Expired {
+			mark("tower", key)
+		}
+	}
+	if changed {
+		// Persist before a later bounded read or unrelated Tick phase can fail.
+		// The offline Settings guard must see the same withdrawn authority.
+		return e.save()
+	}
+	return nil
+}
+
 func (e *Engine) refreshRecoveryCheckpoint(ctx context.Context, id chain.ID) error {
 	if e.s.Recovery == nil {
 		return nil
@@ -56,16 +105,28 @@ func (e *Engine) refreshRecoveryCheckpoint(ctx context.Context, id chain.ID) err
 	if err != nil {
 		return fail(err)
 	}
+	if hash == "" {
+		return fail(errors.New("empty recovery chain checkpoint"))
+	}
 	if previous.Hash != "" {
-		if previous.Generation != generation || height < previous.Height {
+		if height < previous.Height {
+			if err := e.invalidateRecoverySettlements(id); err != nil {
+				return fail(err)
+			}
+		} else if previous.Generation != generation {
 			e.clearRecoveryPayments(id)
 		} else {
 			hash, err := source.BlockHash(ctx, previous.Height)
 			if err != nil {
 				return fail(err)
 			}
+			if hash == "" {
+				return fail(errors.New("empty recovery ancestor checkpoint"))
+			}
 			if hash != previous.Hash {
-				e.clearRecoveryPayments(id)
+				if err := e.invalidateRecoverySettlements(id); err != nil {
+					return fail(err)
+				}
 			}
 		}
 	}
@@ -77,15 +138,20 @@ func (e *Engine) refreshRecoveryCheckpoint(ctx context.Context, id chain.ID) err
 		if err != nil {
 			return fail(err)
 		}
+		if current == "" {
+			return fail(errors.New("empty recovery chain checkpoint"))
+		}
 		if current != hash {
+			if err := e.invalidateRecoverySettlements(id); err != nil {
+				return fail(err)
+			}
 			return fail(errors.New("recovery tip changed during checkpoint validation"))
 		}
 	}
 	if height == previous.Height && previous.Hash != "" && hash != previous.Hash {
-		e.clearRecoveryPayments(id)
-	}
-	if hash == "" {
-		return fail(errors.New("empty recovery chain checkpoint"))
+		if err := e.invalidateRecoverySettlements(id); err != nil {
+			return fail(err)
+		}
 	}
 	if pool, ok := e.nodes[id].(*chain.Failover); ok && pool.Generation() != generation {
 		return fail(errors.New("recovery source changed during checkpoint validation"))

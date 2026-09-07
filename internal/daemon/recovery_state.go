@@ -12,15 +12,19 @@ import (
 // forget a stale snapshot's unresolved contracts. Quarantined messages and offers
 // retain their signed bytes for inspection but never re-enter live publication.
 type RecoveryRecord struct {
-	ImportedAt int64                  `json:"imported_at"`
-	SnapshotAt int64                  `json:"snapshot_at"`
-	Legacy     bool                   `json:"legacy"`
-	Swaps      map[string]bool        `json:"swaps"`
-	Sends      map[string]bool        `json:"sends"`
-	TowerJobs  map[string]bool        `json:"tower_jobs"`
-	Offers     map[string]nostr.Event `json:"quarantined_offers"`
-	Outbox     map[string]*Delivery   `json:"quarantined_outbox"`
-	Status     RecoveryStatus         `json:"status"`
+	// These holds survive a known canonical contradiction until fresh positive
+	// settlement evidence resolves the affected original obligation. Display
+	// history alone must not authorize stopping its monitoring after a restart.
+	InvalidatedSettlements map[string]bool        `json:"invalidated_settlements,omitempty"`
+	ImportedAt             int64                  `json:"imported_at"`
+	SnapshotAt             int64                  `json:"snapshot_at"`
+	Legacy                 bool                   `json:"legacy"`
+	Swaps                  map[string]bool        `json:"swaps"`
+	Sends                  map[string]bool        `json:"sends"`
+	TowerJobs              map[string]bool        `json:"tower_jobs"`
+	Offers                 map[string]nostr.Event `json:"quarantined_offers"`
+	Outbox                 map[string]*Delivery   `json:"quarantined_outbox"`
+	Status                 RecoveryStatus         `json:"status"`
 }
 
 type RecoveryIssue struct {

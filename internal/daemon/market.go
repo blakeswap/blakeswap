@@ -36,11 +36,27 @@ func historicalOffer(event nostr.Event) (protocol.Offer, error) {
 	return protocol.DecodeOffer(event, o.Expires-1)
 }
 
+// recordedOrderEvents includes quarantined signed history for audit projection.
+// It never restores old offers to live acceptance or publication authority.
+func (e *Engine) recordedOrderEvents() map[string]nostr.Event {
+	if e.s.Recovery == nil {
+		return e.s.Offers
+	}
+	events := make(map[string]nostr.Event, len(e.s.Recovery.Offers)+len(e.s.Offers))
+	for id, event := range e.s.Recovery.Offers {
+		events[id] = event
+	}
+	for id, event := range e.s.Offers {
+		events[id] = event
+	}
+	return events
+}
+
 func (e *Engine) syncOrderRecords() {
 	if e.s.OrderRecords == nil {
 		e.s.OrderRecords = map[string]OrderRecord{}
 	}
-	for id, event := range e.s.Offers {
+	for id, event := range e.recordedOrderEvents() {
 		o, err := historicalOffer(event)
 		if err != nil || o.ID != id || o.Maker != e.identity.Public().Hex() || o.Network.Normalized() != e.Config.Network {
 			continue
@@ -149,7 +165,8 @@ func (e *Engine) marketOrder(o protocol.Offer, eventID string, record OrderRecor
 		row.ActivityID = activityID("order", o.ID)
 		row.CanCancel = o.Status == "open" && !active && e.s.Offers[o.ID].ID.Hex() == eventID
 		row.CanReplace = row.CanCancel && row.Status == "open"
-		row.CanRecreate = !active && (row.Status == "expired" || row.Status == "cancelled" || row.Status == "filled" || row.Status == "refunded")
+		_, sourceErr := e.orderSource(OrderActionFields{OrderAction: "recreate", SourceOfferID: o.ID, SourceEventID: eventID}, now)
+		row.CanRecreate = sourceErr == nil && e.recoveryTradingReady() == nil
 		if row.Status == "open" && record.Publication != "relay_acknowledged" {
 			row.Availability = "publication_pending"
 		}

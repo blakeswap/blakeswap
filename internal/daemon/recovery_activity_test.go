@@ -8,9 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"fiatjaf.com/nostr"
 	"github.com/blakeswap/blakeswap/internal/chain"
-	"github.com/blakeswap/blakeswap/internal/protocol"
 )
 
 func TestRestoredActivityRetainsAuditAndUsesCurrentExportContext(t *testing.T) {
@@ -78,14 +76,19 @@ func TestRestoredActivityRetainsAuditAndUsesCurrentExportContext(t *testing.T) {
 func TestRestoredLegacyOrdersRemainAuditableWithoutRepublication(t *testing.T) {
 	for _, status := range []string{"cancelled", "open"} {
 		t.Run(status, func(t *testing.T) {
-			offer := protocol.Offer{ID: "legacy-order", Sell: chain.BTC, SellAmount: 100000, BuyAmount: 200000, Status: status, Expires: 1}
-			raw, _ := json.Marshal(offer)
-			event := nostr.Event{Content: string(raw)}
-			state := State{Version: 1, Network: chain.Regtest, Offers: map[string]nostr.Event{offer.ID: event}}
-			if err := PrepareRecovery(&state, time.Now().Unix(), true); err != nil {
+			e, p, _ := managedSource(t)
+			offer := e.s.OrderRecords[p.SourceOfferID].Offer
+			offer.Status = status
+			offer.Expires = time.Now().Unix() - 1
+			if err := e.publishOffer(offer); err != nil {
 				t.Fatal(err)
 			}
-			e := &Engine{Config: Config{Name: "imported", Network: chain.Regtest}, s: state}
+			event := e.s.Offers[offer.ID]
+			e.s.OrderRecords, e.s.Activities = nil, nil
+			if err := PrepareRecovery(&e.s, time.Now().Unix(), true); err != nil {
+				t.Fatal(err)
+			}
+			e.syncOrderRecords()
 			e.syncActivity()
 			got, ok := e.s.Activities[activityID("order", offer.ID)]
 			expected := status

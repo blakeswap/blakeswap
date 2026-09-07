@@ -391,7 +391,13 @@ func (e *Engine) confirmTrade(ctx context.Context, raw json.RawMessage) (Confirm
 		if !ok || s.Quote.Revision != p.Revision || s.Quote.Wallet != p.ExpectedWallet || string(s.Quote.Network) != p.ExpectedNetwork {
 			invalid = errors.New("quote is unavailable or changed; review it again")
 		}
-		if _, used := e.s.Offers[p.RequestID]; used || e.s.Swaps[p.RequestID] != nil {
+		_, usedOffer := e.s.Offers[p.RequestID]
+		_, usedHistory := e.s.OrderRecords[p.RequestID]
+		usedRecovery := false
+		if e.s.Recovery != nil {
+			_, usedRecovery = e.s.Recovery.Offers[p.RequestID]
+		}
+		if usedOffer || usedHistory || usedRecovery || e.s.Swaps[p.RequestID] != nil {
 			invalid = errors.New("request ID is already in use")
 		}
 		if invalid == nil {
