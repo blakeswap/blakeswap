@@ -278,3 +278,27 @@ func TestStrategyExecutorChargesActualSizeAndDoesNotDuplicate(t *testing.T) {
 		t.Fatal("stop changed historical receipt")
 	}
 }
+
+func TestStrategyMonitoringRetainsParentAuthorityDuringChildPause(t *testing.T) {
+	e, p := strategyFixture(t)
+	for _, child := range e.s.Automations {
+		child.Enabled = false
+	}
+	e.chainFresh[chain.BTC] = false
+	e.chainFresh[chain.Blake] = false
+	found := false
+	for _, a := range e.walletActions(time.Now().Unix()).Actions {
+		if a.Kind == "strategy" && a.ObjectID == p.Config.ID && a.RequiresMonitoring {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatal("enabled parent disappeared while child policies paused")
+	}
+	p.Enabled = false
+	for _, a := range e.walletActions(time.Now().Unix()).Actions {
+		if a.Kind == "strategy" && a.RequiresMonitoring {
+			t.Fatal("disabled empty parent still requires monitoring")
+		}
+	}
+}
