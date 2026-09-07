@@ -276,8 +276,20 @@ type Transaction struct {
 }
 
 func (r *RPC) Transaction(ctx context.Context, id string) (Transaction, error) {
+	return r.transaction(ctx, id, nil)
+}
+
+// The raw-response hook lets spend scans durably retain public preimages before
+// the header metadata lookup can time out, fail, or cross a process restart.
+// A hook failure stops immediately; canonical callers still require all IO.
+func (r *RPC) transaction(ctx context.Context, id string, rawResponse func(Transaction) error) (Transaction, error) {
 	var t Transaction
 	e := r.Call(ctx, "getrawtransaction", &t, id, true)
+	if e == nil && rawResponse != nil {
+		if err := rawResponse(t); err != nil {
+			return t, err
+		}
+	}
 	if e == nil && t.BlockHash != "" {
 		var h struct{ Height uint32 }
 		if err := r.Call(ctx, "getblockheader", &h, t.BlockHash); err != nil {

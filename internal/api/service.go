@@ -157,7 +157,7 @@ func (s *Service) CheckNode(ctx context.Context, in *pb.CheckNodeRequest) (*pb.C
 		b, err = chain.NewElectrum(n, id, in.Node.Url, in.Node.CertificateSha256)
 		trust = "Indexer operator is trusted for canonical chain, completeness and chain work. Transactions and merkle inclusion are checked locally."
 	case "rpc":
-		b, err = chain.NewFor(n, id, in.Node.Url, in.Node.Cookie)
+		b, err = chain.NewEndpoint(n, id, chain.Endpoint{Kind: in.Node.Kind, URL: in.Node.Url, Cookie: in.Node.Cookie, CertificateSHA256: in.Node.CertificateSha256})
 	default:
 		return nil, status.Error(codes.InvalidArgument, "unknown backend")
 	}

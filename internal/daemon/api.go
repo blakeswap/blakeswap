@@ -15,6 +15,14 @@ import (
 func (e *Engine) Status() Status { e.mu.Lock(); defer e.mu.Unlock(); return e.status() }
 func (e *Engine) status() Status {
 	s := Status{Network: e.Config.Network, Name: e.Config.Name, Mode: e.Config.Mode, PubKey: e.identity.Public().Hex(), Addresses: map[chain.ID]string{}, Balances: map[chain.ID]int64{}, Heights: map[chain.ID]uint32{}, Paused: e.s.Paused, Orders: []protocol.Offer{}, Swaps: []PublicSwap{}, TowerJobs: []map[string]any{}, LastError: e.lastError, Tower: e.Config.Tower}
+	s.Connections = map[chain.ID]ChainConnection{}
+	for _, id := range []chain.ID{chain.BTC, chain.Blake} {
+		c := ChainConnection{Ready: e.fresh(id), LastObservation: e.chainObserved[id], Error: e.chainErrors[id]}
+		if p, ok := e.nodes[id].(*chain.Failover); ok {
+			c.Sources = p.Status()
+		}
+		s.Connections[id] = c
+	}
 	s.OwnWatchtower = e.ownTower()
 	s.FundingFee = protocol.FundingFee
 	s.FeeLimits = map[chain.ID]FeeLimits{chain.BTC: feeLimits(chain.BTC), chain.Blake: feeLimits(chain.Blake)}
@@ -91,6 +99,12 @@ func (e *Engine) status() Status {
 	}
 	s.Coins = e.publicCoins()
 	s.Funds = e.chainBalances(s.Coins)
+	for id, b := range s.Funds {
+		if !e.fresh(id) {
+			b.HTLCAvailable = false
+			s.Funds[id] = b
+		}
+	}
 	s.Sends = []PublicSend{}
 	for _, send := range e.s.Sends {
 		s.Sends = append(s.Sends, send.public())
@@ -216,14 +230,15 @@ func (e *Engine) Command(ctx context.Context, req Request) (any, error) {
 			ids = []chain.ID{p.Chain}
 		}
 		for _, id := range ids {
-			if _, ok := e.nodes[id].(*chain.RPC); !ok {
-				return nil, errors.New("mining requires full-node RPC")
-			}
-			var addr string
-			if err := e.nodes[id].(*chain.RPC).WithWallet("faucet").Call(ctx, "getnewaddress", &addr); err != nil {
+			rpc, err := e.regtestRPC(ctx, id)
+			if err != nil {
 				return nil, err
 			}
-			if err := e.nodes[id].(*chain.RPC).Call(ctx, "generatetoaddress", nil, p.Blocks, addr); err != nil {
+			var addr string
+			if err := rpc.WithWallet("faucet").Call(ctx, "getnewaddress", &addr); err != nil {
+				return nil, err
+			}
+			if err := rpc.Call(ctx, "generatetoaddress", nil, p.Blocks, addr); err != nil {
 				return nil, err
 			}
 		}
@@ -242,11 +257,12 @@ func (e *Engine) Command(ctx context.Context, req Request) (any, error) {
 		if !p.Chain.Valid() || p.Amount < 100000 || p.Amount > 1000000000 {
 			return nil, errors.New("invalid faucet amount")
 		}
-		if _, ok := e.nodes[p.Chain].(*chain.RPC); !ok {
-			return nil, errors.New("faucet requires full-node RPC")
+		rpc, err := e.regtestRPC(ctx, p.Chain)
+		if err != nil {
+			return nil, err
 		}
 		var txid string
-		if err := e.nodes[p.Chain].(*chain.RPC).WithWallet("faucet").Call(ctx, "sendtoaddress", &txid, e.addresses[p.Chain], chain.Coins(p.Amount)); err != nil {
+		if err := rpc.WithWallet("faucet").Call(ctx, "sendtoaddress", &txid, e.addresses[p.Chain], chain.Coins(p.Amount)); err != nil {
 			return nil, err
 		}
 		return map[string]string{"txid": txid}, nil
@@ -264,4 +280,17 @@ func (e *Engine) Command(ctx context.Context, req Request) (any, error) {
 	default:
 		return nil, fmt.Errorf("unknown method %q", req.Method)
 	}
+}
+
+func (e *Engine) regtestRPC(ctx context.Context, id chain.ID) (*chain.RPC, error) {
+	if e.Config.Network != chain.Regtest {
+		return nil, errors.New("regtest RPC only")
+	}
+	if p, ok := e.nodes[id].(*chain.Failover); ok {
+		return p.RPCForTesting(ctx)
+	}
+	if r, ok := e.nodes[id].(*chain.RPC); ok {
+		return r, nil
+	}
+	return nil, errors.New("regtest tools require full-node RPC")
 }

@@ -144,11 +144,23 @@ message Status {
  repeated Offer orders = 8; repeated Swap swaps = 9; repeated TowerJob tower_jobs = 10;
  int32 pending_messages = 11; string last_error = 12; Tower tower = 13;
  map<string,ChainBalance> funds = 20;
+ map<string,ChainConnection> connections = 22; // Last observations remain visible when ready is false.
  repeated WalletCoin coins = 18; repeated WalletSend sends = 19;
  string network = 14;
  Tower own_watchtower = 15; repeated Tower watchtowers = 16; int64 funding_fee = 17;
 }
+message EndpointHealth {
+ string url = 1; string kind = 2; bool active = 3;
+ int64 last_success = 4; int64 retry_after = 5; string error = 6;
+}
+message EndpointStatus {
+ repeated EndpointHealth endpoints = 1; uint64 generation = 2; uint64 failovers = 3; int64 last_failover = 4;
+}
+message ChainConnection {
+ bool ready = 1; int64 last_observation = 2; string error = 3; EndpointStatus sources = 4;
+}
 message Node {
+ repeated Node fallbacks = 5; // Ordered after this primary; at most three, without nested fallbacks.
  string kind = 1; // electrum or rpc; all chain backends are external.
  string url = 2; // ssl://host:port or tcp://loopback:port for Electrum; HTTPS/loopback HTTP for RPC.
  string cookie = 3; // Absolute path to an RPC cookie file. The API never returns its contents.

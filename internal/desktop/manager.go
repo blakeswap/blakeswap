@@ -440,7 +440,11 @@ func (m *Manager) config(profile string, env *pb.Environment) (daemon.Config, er
 		if n == nil || n.Url == "" {
 			return c, fmt.Errorf("configure a %s %s endpoint in Settings", env.Network, id)
 		}
-		c.Nodes[id] = daemon.NodeConfig{Kind: n.Kind, URL: n.Url, Cookie: n.Cookie, CertificateSHA256: n.CertificateSha256}
+		cfg := daemon.NodeConfig{Kind: n.Kind, URL: n.Url, Cookie: n.Cookie, CertificateSHA256: n.CertificateSha256}
+		for _, fallback := range n.Fallbacks {
+			cfg.Fallbacks = append(cfg.Fallbacks, daemon.NodeConfig{Kind: fallback.Kind, URL: fallback.Url, Cookie: fallback.Cookie, CertificateSHA256: fallback.CertificateSha256})
+		}
+		c.Nodes[id] = cfg
 	}
 	return c, nil
 }

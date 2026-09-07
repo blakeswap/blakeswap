@@ -26,7 +26,7 @@ func discoveryEngine(t *testing.T) *Engine {
 	t.Cleanup(func() { vault.Close() })
 	btc, _ := hex.DecodeString("0014" + strings.Repeat("11", 20))
 	blake, _ := hex.DecodeString("0014" + strings.Repeat("22", 20))
-	return &Engine{Config: Config{Name: "Test", Mode: "trader", Network: chain.Regtest}, identity: nostr.Generate(), vault: vault, scripts: map[chain.ID][]byte{chain.BTC: btc, chain.Blake: blake}, s: State{Towers: map[string]nostr.Event{}, Outbox: map[string]*Delivery{}, Seen: map[string]string{}}}
+	return &Engine{chainFresh: map[chain.ID]bool{chain.BTC: true, chain.Blake: true}, chainErrors: map[chain.ID]string{}, chainObserved: map[chain.ID]int64{}, chainGeneration: map[chain.ID]uint64{}, Config: Config{Name: "Test", Mode: "trader", Network: chain.Regtest}, identity: nostr.Generate(), vault: vault, scripts: map[chain.ID][]byte{chain.BTC: btc, chain.Blake: blake}, s: State{Towers: map[string]nostr.Event{}, Outbox: map[string]*Delivery{}, Seen: map[string]string{}}}
 }
 
 func TestRescueFeeRefreshesSignedQuotesImmediately(t *testing.T) {
@@ -88,7 +88,7 @@ func TestAcceptedRescueJobsKeepTheirRateAfterRestart(t *testing.T) {
 	if _, err := provider.scanTower(context.Background()); err != nil || len(scanner.points) != 1 {
 		t.Fatal("accepted job no longer scanned", err)
 	}
-	if err := provider.advanceTower(context.Background(), nil); err != nil || provider.s.TowerJobs[job.ID].Error != "" {
+	if err := provider.advanceTower(context.Background(), map[chain.ID]map[string]chain.Observation{job.Target.Chain: {}}); err != nil || provider.s.TowerJobs[job.ID].Error != "" {
 		t.Fatal("accepted job no longer serviced", err)
 	}
 	deliver := func(j protocol.Job) error {

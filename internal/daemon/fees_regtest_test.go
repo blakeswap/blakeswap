@@ -206,6 +206,32 @@ func TestRealManualRefundAccelerationRefusesNewClaims(t *testing.T) {
 						t.Fatal("unsafe replacement reached node", err)
 					}
 				}
+				if claimKind == "incoming" {
+					if !e.s.Swaps[id].IncomingClaimSeen {
+						t.Fatal("manual refund rejection did not preserve incoming witness")
+					}
+					confirmed, err := h.nodes[target.Chain].Transaction(h.ctx, claim.TxHash().String())
+					if err != nil || confirmed.BlockHash == "" {
+						t.Fatal("missing confirmed claim block", err)
+					}
+					if err := h.nodes[target.Chain].Call(h.ctx, "invalidateblock", nil, confirmed.BlockHash); err != nil {
+						t.Fatal(err)
+					}
+					defer func() {
+						if err := h.nodes[target.Chain].Call(h.ctx, "reconsiderblock", nil, confirmed.BlockHash); err != nil {
+							t.Error(err)
+						}
+					}()
+					h.offline("maker")
+					h.online("maker")
+					e = h.engines["maker"]
+					if !e.s.Swaps[id].IncomingClaimSeen {
+						t.Fatal("incoming claim guard lost across reorg/restart")
+					}
+					if _, err := e.bumpTransaction(h.ctx, params); err == nil || !strings.Contains(err.Error(), "previously claimed") {
+						t.Fatal("reorg enabled refund after witnessed incoming claim", err)
+					}
+				}
 			})
 		}
 	}

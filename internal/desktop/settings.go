@@ -67,33 +67,52 @@ func validate(s *pb.Settings) error {
 		if len(env.Nodes) != 2 || env.Nodes["btc"] == nil || env.Nodes["blake"] == nil {
 			return errors.New("both node settings are required")
 		}
-		for id, cfg := range env.Nodes {
-			// An empty endpoint is an explicit unconfigured environment. It cannot trade.
-			if cfg.Url == "" {
-				if cfg.Kind != "electrum" && cfg.Kind != "rpc" {
-					return errors.New("unknown node backend")
+		for id, primary := range env.Nodes {
+			if primary.Url == "" && len(primary.Fallbacks) > 0 {
+				return errors.New("configure the primary before adding fallbacks")
+			}
+			if len(primary.Fallbacks) > 3 {
+				return errors.New("at most three fallback endpoints per chain")
+			}
+			seenEndpoints := map[string]bool{}
+			for position, cfg := range append([]*pb.Node{primary}, primary.Fallbacks...) {
+				if cfg == nil || (position > 0 && (len(cfg.Fallbacks) > 0 || cfg.Url == "")) {
+					return errors.New("fallbacks must be configured and cannot be nested")
 				}
-				continue
-			}
-			var b chain.Backend
-			var err error
-			switch cfg.Kind {
-			case "electrum":
-				b, err = chain.NewElectrum(chain.Network(env.Network), chain.ID(id), cfg.Url, cfg.CertificateSha256)
-			case "rpc":
-				u, _ := url.Parse(cfg.Url)
-				auto := env.Network == "regtest" && cfg.Cookie == "" && u != nil && (u.Hostname() == "127.0.0.1" || u.Hostname() == "::1")
-				if !auto && !filepath.IsAbs(cfg.Cookie) {
-					return errors.New("RPC cookie path must be absolute")
+				if seenEndpoints[cfg.Url] {
+					return errors.New("duplicate chain endpoint")
 				}
-				b, err = chain.NewFor(chain.Network(env.Network), chain.ID(id), cfg.Url, cfg.Cookie)
-			default:
-				err = errors.New("unknown node backend")
+				seenEndpoints[cfg.Url] = true
+				// An empty endpoint is an explicit unconfigured environment. It cannot trade.
+				if cfg.Url == "" {
+					if cfg.Kind != "electrum" && cfg.Kind != "rpc" {
+						return errors.New("unknown node backend")
+					}
+					continue
+				}
+				var b chain.Backend
+				var err error
+				switch cfg.Kind {
+				case "electrum":
+					b, err = chain.NewElectrum(chain.Network(env.Network), chain.ID(id), cfg.Url, cfg.CertificateSha256)
+				case "rpc":
+					if cfg.CertificateSha256 != "" {
+						return errors.New("RPC certificate pins are unsupported; use CA-validated HTTPS")
+					}
+					u, _ := url.Parse(cfg.Url)
+					auto := env.Network == "regtest" && cfg.Cookie == "" && u != nil && (u.Hostname() == "127.0.0.1" || u.Hostname() == "::1")
+					if !auto && !filepath.IsAbs(cfg.Cookie) {
+						return errors.New("RPC cookie path must be absolute")
+					}
+					b, err = chain.NewFor(chain.Network(env.Network), chain.ID(id), cfg.Url, cfg.Cookie)
+				default:
+					err = errors.New("unknown node backend")
+				}
+				if err != nil {
+					return fmt.Errorf("%s %s: %w", env.Network, id, err)
+				}
+				b.Close()
 			}
-			if err != nil {
-				return fmt.Errorf("%s %s: %w", env.Network, id, err)
-			}
-			b.Close()
 		}
 		if len(env.Relays) < 1 || len(env.Relays) > 3 {
 			return errors.New("configure one to three relays per environment")

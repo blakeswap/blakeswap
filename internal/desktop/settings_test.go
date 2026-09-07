@@ -424,3 +424,42 @@ func TestRegtestDefaultsAndLegacyCookieMigration(t *testing.T) {
 		t.Fatal("overrode a working path")
 	}
 }
+
+func TestOrderedEndpointFallbacksPreserveLegacySettingsAndValidateEveryCandidate(t *testing.T) {
+	root := t.TempDir()
+	settings := Defaults()
+	legacy := proto.Clone(settings.Environments[0].Nodes["btc"]).(*pb.Node)
+	primary := settings.Environments[0].Nodes["btc"]
+	primary.Fallbacks = []*pb.Node{{Kind: "rpc", Url: "http://127.0.0.1:39443"}, {Kind: "electrum", Url: "ssl://btc.example:50002"}}
+	if err := validate(settings); err != nil {
+		t.Fatal(err)
+	}
+	if err := saveSettings(root, settings); err != nil {
+		t.Fatal(err)
+	}
+	restored, err := loadSettings(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	node := restored.Environments[0].Nodes["btc"]
+	if node.Url != legacy.Url || node.Cookie != legacy.Cookie || len(node.Fallbacks) != 2 || node.Fallbacks[0].Url != "http://127.0.0.1:39443" {
+		t.Fatal("legacy primary or fallback ordering lost", node)
+	}
+	for name, mutate := range map[string]func(*pb.Node){
+		"empty primary": func(n *pb.Node) { n.Url = "" },
+		"plaintext":     func(n *pb.Node) { n.Fallbacks[1].Url = "tcp://public.example:50001" },
+		"bad pin":       func(n *pb.Node) { n.Fallbacks[1].CertificateSha256 = "bad" },
+		"duplicate":     func(n *pb.Node) { n.Fallbacks[1].Url = n.Url; n.Fallbacks[1].Kind = n.Kind },
+		"nested":        func(n *pb.Node) { n.Fallbacks[0].Fallbacks = []*pb.Node{{Kind: "rpc", Url: "http://127.0.0.1:2"}} },
+		"nil":           func(n *pb.Node) { n.Fallbacks[0] = nil },
+		"too many":      func(n *pb.Node) { n.Fallbacks = append(n.Fallbacks, &pb.Node{}, &pb.Node{}) },
+	} {
+		t.Run(name, func(t *testing.T) {
+			bad := proto.Clone(restored).(*pb.Settings)
+			mutate(bad.Environments[0].Nodes["btc"])
+			if validate(bad) == nil {
+				t.Fatal("invalid fallback accepted")
+			}
+		})
+	}
+}

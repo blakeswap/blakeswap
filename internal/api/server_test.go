@@ -35,7 +35,7 @@ func TestGRPCAndGatewayAuthenticationAndExactIntegers(t *testing.T) {
 		calls.Add(1)
 		switch r.Method {
 		case "status":
-			return daemon.Status{Name: "alice", Network: chain.Regtest, Balances: map[chain.ID]int64{chain.BTC: 9007199254740993}, Funds: map[chain.ID]daemon.ChainBalance{chain.BTC: {TotalConfirmed: 9007199254740993, UnlockedConfirmed: 9007199254740990, ReservedConfirmed: 3, Unconfirmed: 7, HTLCLocked: 100000, HTLCAvailable: true}}, Coins: []daemon.PublicCoin{{Chain: chain.BTC, TxID: "coin", Amount: 3, Reserved: true, Holds: []daemon.CoinHold{{Kind: "offer", ID: "order", Reason: "Open order", Cancellable: true}}}}, Swaps: []daemon.PublicSwap{{ID: "test", Long: contract.HTLC{Chain: chain.BTC, Amount: 2000000, RefundHeight: 1800000000, TxID: "funding", Vout: 2}}}}, nil
+			return daemon.Status{Connections: map[chain.ID]daemon.ChainConnection{chain.BTC: {Ready: false, LastObservation: 123, Error: "stale source", Sources: chain.EndpointStatus{Generation: 2, Failovers: 1, Endpoints: []chain.EndpointHealth{{URL: "https://secondary.example", Kind: "rpc", Active: true, LastSuccess: 122}}}}}, Name: "alice", Network: chain.Regtest, Balances: map[chain.ID]int64{chain.BTC: 9007199254740993}, Funds: map[chain.ID]daemon.ChainBalance{chain.BTC: {TotalConfirmed: 9007199254740993, UnlockedConfirmed: 9007199254740990, ReservedConfirmed: 3, Unconfirmed: 7, HTLCLocked: 100000, HTLCAvailable: true}}, Coins: []daemon.PublicCoin{{Chain: chain.BTC, TxID: "coin", Amount: 3, Reserved: true, Holds: []daemon.CoinHold{{Kind: "offer", ID: "order", Reason: "Open order", Cancellable: true}}}}, Swaps: []daemon.PublicSwap{{ID: "test", Long: contract.HTLC{Chain: chain.BTC, Amount: 2000000, RefundHeight: 1800000000, TxID: "funding", Vout: 2}}}}, nil
 		case "wallet.preflight":
 			var p daemon.FundsPreflightRequest
 			if err := json.Unmarshal(r.Params, &p); err != nil {
@@ -80,6 +80,9 @@ func TestGRPCAndGatewayAuthenticationAndExactIntegers(t *testing.T) {
 	}
 	ctx := metadata.AppendToOutgoingContext(context.Background(), "authorization", "Bearer "+server.Endpoint.Token)
 	result, err := client.GetStatus(ctx, &emptypb.Empty{})
+	if err == nil && (result.Connections["btc"] == nil || result.Connections["btc"].Ready || result.Connections["btc"].LastObservation != 123 || !result.Connections["btc"].Sources.Endpoints[0].Active) {
+		t.Fatal("endpoint provenance lost", result.Connections)
+	}
 	if err != nil || result.Balances["btc"] != 9007199254740993 {
 		t.Fatal(result, err)
 	}
