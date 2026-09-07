@@ -389,15 +389,24 @@ func (e *Electrum) inclusion(ctx context.Context, t Transaction, height uint32) 
 		return t, errors.New("tip changed during merkle verification")
 	}
 	t.Height = height
+	t.BlockTime = int64(binary.LittleEndian.Uint32(header[68:72]))
 	t.Confirmations = int(tip - height + 1)
 	hash, _ := HeaderHash(header)
 	t.BlockHash = hash.String()
 	return t, nil
 }
 func (e *Electrum) Transaction(ctx context.Context, id string) (Transaction, error) {
+	return e.transaction(ctx, id, nil)
+}
+func (e *Electrum) transaction(ctx context.Context, id string, rawResponse func(Transaction) error) (Transaction, error) {
 	t, err := e.raw(ctx, id)
 	if err != nil {
 		return t, err
+	}
+	if rawResponse != nil {
+		if err := rawResponse(t); err != nil {
+			return t, err
+		}
 	}
 	tx, _ := parseRaw(t.Hex)
 	if len(tx.TxOut) == 0 {

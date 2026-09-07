@@ -25,40 +25,51 @@ import (
 	"time"
 )
 
+var errEngineClosed = errors.New("engine closed")
+
 type Engine struct {
-	mu              sync.Mutex
-	tradeQuotes     map[string]TradeQuoteSnapshot
-	tradeConfirming map[string]bool
-	tradeQuoteBusy  atomic.Bool
-	chainFresh      map[chain.ID]bool
-	chainObserved   map[chain.ID]int64
-	chainErrors     map[chain.ID]string
-	chainGeneration map[chain.ID]uint64
-	feeQuoteBusy    atomic.Bool
-	preflightBusy   atomic.Bool
-	htlcBalances    map[chain.ID]int64
-	htlcAvailable   map[chain.ID]bool
-	Config          Config
-	s               State
-	vault           *storage.Vault
-	keys            *wallet.Keys
-	identity        nostr.SecretKey
-	nodes           map[chain.ID]chain.Backend
-	watch           map[chain.ID]chain.Backend
-	scanners        map[chain.ID]chain.SpendScanner
-	towerScanners   map[chain.ID]chain.SpendScanner
-	receiveBook     map[chain.ID][]receiveAddress
-	receiveReady    map[chain.ID]bool
-	walletCoins     map[chain.ID]map[string][]chain.UTXO
-	walletCursor    map[chain.ID]int
-	sendCursor      string
-	addresses       map[chain.ID]string
-	scripts         map[chain.ID][]byte
-	heights         map[chain.ID]uint32
-	clocks          map[chain.ID]uint32
-	balances        map[chain.ID]int64
-	lastError       string
-	fatal           error
+	activityBusy             atomic.Bool
+	activityCancel           context.CancelFunc
+	activityReaders          sync.WaitGroup
+	activityClosed           bool
+	activityDrained          bool
+	activitySnapshots        map[string]activitySnapshot
+	activitySnapshotSequence uint64
+	activityCursors          map[chain.ID]string
+	activityVariants         map[chain.ID]int
+	mu                       sync.Mutex
+	tradeQuotes              map[string]TradeQuoteSnapshot
+	tradeConfirming          map[string]bool
+	tradeQuoteBusy           atomic.Bool
+	feeQuoteBusy             atomic.Bool
+	preflightBusy            atomic.Bool
+	htlcBalances             map[chain.ID]int64
+	htlcAvailable            map[chain.ID]bool
+	Config                   Config
+	s                        State
+	vault                    *storage.Vault
+	keys                     *wallet.Keys
+	identity                 nostr.SecretKey
+	nodes                    map[chain.ID]chain.Backend
+	watch                    map[chain.ID]chain.Backend
+	scanners                 map[chain.ID]chain.SpendScanner
+	towerScanners            map[chain.ID]chain.SpendScanner
+	receiveBook              map[chain.ID][]receiveAddress
+	receiveReady             map[chain.ID]bool
+	walletCoins              map[chain.ID]map[string][]chain.UTXO
+	walletCursor             map[chain.ID]int
+	sendCursor               string
+	addresses                map[chain.ID]string
+	scripts                  map[chain.ID][]byte
+	heights                  map[chain.ID]uint32
+	clocks                   map[chain.ID]uint32
+	balances                 map[chain.ID]int64
+	lastError                string
+	fatal                    error
+	chainFresh               map[chain.ID]bool
+	chainObserved            map[chain.ID]int64
+	chainErrors              map[chain.ID]string
+	chainGeneration          map[chain.ID]uint64
 }
 
 func Open(ctx context.Context, c Config) (*Engine, error) {
@@ -114,6 +125,7 @@ func Open(ctx context.Context, c Config) (*Engine, error) {
 	if en.s.Network.Normalized() != c.Network {
 		return fail(errors.New("state belongs to a different network; use its own data directory"))
 	}
+	en.invalidateActivitySession()
 	// An old pause flag must never suppress trading or rescue work after reopen.
 	en.s.Paused = false
 	en.keys, e = wallet.FromMnemonic(en.s.Mnemonic)
@@ -179,6 +191,23 @@ func Open(ctx context.Context, c Config) (*Engine, error) {
 	return en, nil
 }
 func (e *Engine) Close() error {
+	e.mu.Lock()
+	if e.activityClosed {
+		e.mu.Unlock()
+		return nil
+	}
+	e.activityClosed = true
+	if e.activityCancel != nil {
+		e.activityCancel()
+	}
+	if e.fatal == nil {
+		e.fatal = errEngineClosed
+	}
+	e.mu.Unlock()
+	e.activityReaders.Wait()
+	e.mu.Lock()
+	e.activityDrained = true
+	e.mu.Unlock()
 	for _, r := range e.nodes {
 		_ = r.Close()
 	}
@@ -188,6 +217,13 @@ func (e *Engine) save() error {
 	if e.fatal != nil {
 		return e.fatal
 	}
+	return e.persistState()
+}
+
+// persistState is also used by already registered immutable-witness readers
+// while Close joins them. Protocol execution remains blocked by errEngineClosed.
+func (e *Engine) persistState() error {
+	e.syncActivity()
 	if err := e.vault.Save(e.s); err != nil {
 		e.fatal = fmt.Errorf("durability failure; execution stopped: %w", err)
 		return e.fatal
@@ -314,6 +350,13 @@ func (e *Engine) Run(ctx context.Context) error {
 }
 func (e *Engine) Tick(ctx context.Context) error {
 	ctx = chain.WithWorkBudgets(ctx, 8*time.Second)
+	err := e.tickProtocol(ctx)
+	// Advisory history runs after settlement/delivery, outside the engine lock.
+	// Its bounded failures must never suppress recovery or become spend evidence.
+	e.refreshActivity(ctx)
+	return err
+}
+func (e *Engine) tickProtocol(ctx context.Context) error {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 	if e.fatal != nil {

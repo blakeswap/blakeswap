@@ -109,6 +109,7 @@ struct ContentView: View {
             VStack(spacing: 0) {
                 header
                 Divider().opacity(0.5)
+                ScrollViewReader { scroll in
                 ScrollView {
                     VStack(alignment: .leading, spacing: 24) {
                         if let error = model.connectionError {
@@ -121,6 +122,7 @@ struct ContentView: View {
                         else if let status = model.status {
                             if model.page == "Market" { market(status) }
                             else if model.page == "Swaps" { swaps(status) }
+                            else if model.page == "Activity" { ActivityView(context: model.tradeContext, root: model.root).id(model.profile + "|" + model.network + "|" + String(model.generation)) }
                             else { wallet(status) }
                         }
                         if let error = model.status?.lastError, !error.isEmpty { Text(error).font(.callout).foregroundStyle(.orange).textSelection(.enabled) }
@@ -129,6 +131,11 @@ struct ContentView: View {
                         }
                     }.padding(30)
                 }
+                .task(id: model.page + "|" + (model.activityDestination?.anchor ?? "")) {
+                    await Task.yield()
+                    if let target = model.activityDestination, target.page == model.page { scroll.scrollTo(target.anchor, anchor: .top) }
+                }
+                }
                 footer
             }.background(Color(red: 0.065, green: 0.078, blue: 0.10))
         }
@@ -136,6 +143,7 @@ struct ContentView: View {
         .sheet(item: $creatingOffer, onDismiss: refreshPendingTrade) { context in TradeComposer(context: context, root: model.root).environmentObject(model) }
         .sheet(item: $resumingTrade, onDismiss: refreshPendingTrade) { context in TradeComposer(context: context, root: model.root).environmentObject(model) }
         .task(id: model.profile + "|" + model.network + "|" + String(model.generation)) { refreshPendingTrade() }
+        .onChange(of: model.activityDestination) { _, target in if target?.page == "Market" { orderFilter = .all } }
         .sheet(item: $takingOrder, onDismiss: refreshPendingTrade) { context in TradeComposer(context: context.wallet, root: model.root, order: context.order).environmentObject(model) }
         .sheet(isPresented: Binding(get: { model.recovery != nil }, set: { if !$0 { model.recovery = nil } })) {
             VStack(alignment: .leading, spacing: 20) {
@@ -165,6 +173,7 @@ struct ContentView: View {
                 nav("Market", "chart.xyaxis.line")
                 nav("Swaps", "arrow.triangle.2.circlepath")
                 nav("Wallet", "wallet.bifold")
+                nav("Activity", "clock.arrow.circlepath")
                 nav("Settings", "gearshape")
             }
             Spacer()
@@ -271,7 +280,7 @@ struct ContentView: View {
                                     else { Button("Take offer") { takingOrder = TakeOfferContext(order: order, wallet: model.tradeContext) }.tint(mint).accessibilityIdentifier("take-offer-\(order.id)") }
                                 } else { Text(order.status.capitalized).foregroundStyle(order.status == "filled" ? mint : .secondary).font(.caption) }
                             }.frame(width: 124, alignment: .leading).disabled(model.busy)
-                        }.padding(18)
+                        }.padding(18).id("order/" + order.id)
                     }
                 }.background(panel.opacity(0.6), in: RoundedRectangle(cornerRadius: 14))
             }
@@ -320,7 +329,7 @@ struct ContentView: View {
                         metric("TOWER FEE PAID", swap.feeLabel)
                     }
                     if !swap.error.isEmpty { Text(swap.error).font(.caption).foregroundStyle(.orange).textSelection(.enabled) }
-                }.padding(24).background(panel, in: RoundedRectangle(cornerRadius: 16))
+                }.padding(24).background(panel, in: RoundedRectangle(cornerRadius: 16)).id("swap/" + swap.id)
             }
         }
     }
@@ -366,7 +375,7 @@ struct ContentView: View {
                             Text(send.txid).font(.caption.monospaced()).textSelection(.enabled)
                             AccelerateSendControl(send: send)
                             if !send.error.isEmpty { Text(send.error).font(.caption).foregroundStyle(.orange) }
-                        }
+                        }.id("send/" + send.id)
                     }
                 }.padding(24).background(panel, in: RoundedRectangle(cornerRadius: 14))
             }

@@ -66,6 +66,12 @@ once authorizes the automatic swap sequence within the reviewed limits. Cancelli
 the review commits nothing. If the response is lost, use the saved-confirmation
 resume action to retry the same request after restart. See [reviewed swaps](docs/API.md#reviewed-swaps).
 
+Activity provides linked deposit, send, order, swap, refund, and tower history,
+including spent deposits at old receive addresses. Filter a snapshot, inspect
+related orders/swaps, or export exact asset-specific amounts and fee provenance
+to CSV. Reorgs can reverse current outcomes while previous outcomes remain visible.
+See [history coverage and export](docs/ACTIVITY.md).
+
 ## Local regtest nodes
 
 Run `make regtest-nodes` for both chains, or `make regtest-btc` / `make regtest-blake`

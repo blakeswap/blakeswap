@@ -21,6 +21,7 @@ run or security review. Later feature work must update the corresponding limits.
 | Offer/trade reservations and safe unsigned-request expiry | [Reservations](../internal/daemon/reservations.go), [expiry regressions](../internal/daemon/send_test.go) |
 | Private independent protection and stable provider payouts | [Local protection](../internal/daemon/privacy.go), [provider discovery](../internal/daemon/discovery.go), [protocol](PROTOCOL.md) |
 | Bound maker/taker economics review and durable confirmation retries | [Daemon quotes](../internal/daemon/trade_quote.go), [native review](../macos/Blakeswap/TradeReviewView.swift), [typed real-chain acceptance](../internal/api/trade_regtest_test.go) |
+| Durable linked history, spent deposits, reorg lineage, frozen pages and exact CSV | [Activity semantics/limits](ACTIVITY.md), [indexer](../internal/daemon/activity_index.go), [native view](../macos/Blakeswap/ActivityView.swift), [typed acceptance](../internal/api/activity_regtest_test.go) |
 | API names and request fields | [Protobuf service](../api/proto/blakeswap/v1/daemon.proto), [API reference](API.md) |
 | Both Mac architectures, native release tests, ad-hoc signing | [Workflow](../.github/workflows/release.yml), [build/signing script](../scripts/build-dmg.sh), [packaging limits](PACKAGING.md) |
 | Bounded fee allowances, unsupported funding acceleration, bounded history, replay/observer trust, password files, stale recovery, whole-offer v1 swaps, no independent audit | [Risks](RISKS.md), [economics](ECONOMICS.md), [recovery](OPERATIONS.md#backups) |
