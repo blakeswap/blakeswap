@@ -75,14 +75,20 @@ func mergeActivityIDs(a, b []string) []string {
 	sort.Strings(result)
 	return result
 }
-func (e *Engine) putActivity(next Activity, backfill bool) {
+func (e *Engine) putActivity(next Activity, backfill bool) bool {
 	if e.s.Activities == nil {
 		e.s.Activities = map[string]Activity{}
+	}
+	if _, ok := e.s.Activities[next.ID]; !ok {
+		if _, err := e.activateArchived("activities", next.ID); err != nil {
+			e.fatal = err
+			return false
+		}
 	}
 	previous, exists := e.s.Activities[next.ID]
 	if !exists && len(e.s.Activities) >= maxActivityRecords {
 		e.s.ActivityError = "Activity history capacity reached; retained history is preserved and indexing is paused."
-		return
+		return false
 	}
 	now := time.Now().Unix()
 	next.Version = 1
@@ -130,10 +136,15 @@ func (e *Engine) putActivity(next Activity, backfill bool) {
 		if exists {
 			next.History = append(append([]ActivityOutcome{}, previous.History...), activityOutcome(previous))
 		}
+		if !e.allowActivityGrowth(previous, next) {
+			return false
+		}
 		next.UpdatedAt = now
 		e.s.ActivityRevision++
 	}
+	e.indexActivityIdentity(next)
 	e.s.Activities[next.ID] = next
+	return true
 }
 func (e *Engine) knownReceiveAddress(address string, id chain.ID) bool {
 	for _, entry := range e.receiveBook[id] {

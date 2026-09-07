@@ -50,7 +50,11 @@ enum DaemonRPC {
  let request = try Blakeswap_V1_ActionSummaryRequest(jsonUTF8Data: payload)
  let response = try await service.getActionSummary(request, metadata: metadata, options: options)
  return try response.serializedData()
- case "status":
+            case "record.get":
+                let request = try Blakeswap_V1_RecordQuery(jsonUTF8Data: payload)
+                let response = try await service.getRecord(request, metadata: metadata, options: options)
+                return try response.serializedData()
+            case "status":
                 let request = try Google_Protobuf_Empty(jsonUTF8Data: payload)
                 let response = try await service.getStatus(request, metadata: metadata, options: options)
                 return try response.serializedData()

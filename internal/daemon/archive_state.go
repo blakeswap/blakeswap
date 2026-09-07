@@ -61,6 +61,7 @@ var archiveFields = map[string][]string{
 	"outbox": {"Outbox"}, "trade_receipts": {"TradeReceipts"}, "trade_tokens": {"TradeTokens"},
 	"funding_fees": {"FundingFees"}, "offer_towers": {"OfferTowers"},
 	"activities": {"Activities"}, "activity_receipts": {"ActivityReceipts"},
+	"activity_transactions": {"ActivityTransactions"}, "activity_owned": {"ActivityOwned"},
 	"recovery_swaps": {"Recovery", "Swaps"}, "recovery_sends": {"Recovery", "Sends"},
 	"recovery_tower_jobs": {"Recovery", "TowerJobs"},
 	"quarantined_offers":  {"Recovery", "Offers"}, "quarantined_outbox": {"Recovery", "Outbox"},

@@ -274,6 +274,9 @@ func (e *Engine) compactArchive(ctx context.Context, swaps, towers map[chain.ID]
 			}
 		}
 	}
+	if err := e.compactActivity(&remaining, valid); err != nil {
+		return err
+	}
 	for _, id := range sortedArchiveIDs(e.s.Seen) {
 		if remaining == 0 {
 			break

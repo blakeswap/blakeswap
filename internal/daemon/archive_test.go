@@ -136,3 +136,49 @@ func TestArchiveImportRejectsOverlapAndRetainsCompleteRecovery(t *testing.T) {
 		t.Fatal("malformed archived replay record accepted")
 	}
 }
+
+func TestArchiveFailedSaveCannotPublishANewerFreshnessToken(t *testing.T) {
+	e, _ := receiveEngine(t)
+	_ = e.vault.Close()
+	path := filepath.Join(t.TempDir(), "state.db")
+	password := []byte("isolated failure/reopen password")
+	vault, err := storage.Open(path, password)
+	if err != nil {
+		t.Fatal(err)
+	}
+	e.vault = vault
+	e.s.Seen = map[string]string{"sender:original": "original digest"}
+	if err = e.save(); err != nil {
+		t.Fatal(err)
+	}
+	token := BackupSemanticToken(e.s)
+	if err = vault.Close(); err != nil {
+		t.Fatal(err)
+	}
+	e.s.Seen["sender:original"] = "changed meaningful evidence"
+	if err = e.stageArchive("seen", "sender:original"); err == nil {
+		t.Fatal("closed vault unexpectedly allowed archive read")
+	}
+	if err = e.save(); err == nil || e.fatal == nil {
+		t.Fatal("failed save did not stop execution")
+	}
+	reopened, err := storage.Open(path, password)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer reopened.Close()
+	var saved State
+	if _, err = reopened.Load(&saved); err != nil {
+		t.Fatal(err)
+	}
+	if saved.Seen["sender:original"] != "original digest" || BackupSemanticToken(saved) != token {
+		t.Fatal("failed save changed durable evidence or freshness")
+	}
+	e.vault, e.s, e.fatal, e.semanticParts = reopened, saved, nil, nil
+	if err = e.save(); err != nil {
+		t.Fatal(err)
+	}
+	if BackupSemanticToken(e.s) != token {
+		t.Fatal("reopen lost the successful semantic checkpoint")
+	}
+}

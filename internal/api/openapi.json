@@ -343,6 +343,38 @@
         ]
       }
     },
+    "/v1/history/record": {
+      "post": {
+        "operationId": "DaemonService_GetRecord",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1RecordDetail"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/googleRpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/v1RecordQuery"
+            }
+          }
+        ],
+        "tags": [
+          "DaemonService"
+        ]
+      }
+    },
     "/v1/market/query": {
       "post": {
         "operationId": "DaemonService_ListMarket",
@@ -1376,6 +1408,9 @@
         "actions": {
           "$ref": "#/definitions/v1WalletActions"
         },
+        "capacity": {
+          "$ref": "#/definitions/v1CapacityHealth"
+        },
         "backup": {
           "$ref": "#/definitions/v1BackupFreshness"
         },
@@ -2377,6 +2412,57 @@
         }
       }
     },
+    "v1CapacityHealth": {
+      "type": "object",
+      "properties": {
+        "state": {
+          "type": "string"
+        },
+        "active": {
+          "type": "string",
+          "format": "uint64"
+        },
+        "archived": {
+          "type": "string",
+          "format": "uint64"
+        },
+        "stored_bytes": {
+          "type": "string",
+          "format": "uint64"
+        },
+        "reserved_bytes": {
+          "type": "string",
+          "format": "uint64"
+        },
+        "budget_bytes": {
+          "type": "string",
+          "format": "uint64"
+        },
+        "admission_available": {
+          "type": "boolean"
+        },
+        "reactivating": {
+          "type": "boolean"
+        },
+        "monitoring_holds": {
+          "type": "string",
+          "format": "uint64"
+        },
+        "message": {
+          "type": "string"
+        },
+        "public_limited": {
+          "type": "boolean"
+        },
+        "relays": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/v1RelaySync"
+          }
+        }
+      }
+    },
     "v1ChainBalance": {
       "type": "object",
       "properties": {
@@ -3362,6 +3448,52 @@
         }
       }
     },
+    "v1RecordDetail": {
+      "type": "object",
+      "properties": {
+        "kind": {
+          "type": "string"
+        },
+        "id": {
+          "type": "string"
+        },
+        "archived": {
+          "type": "boolean"
+        },
+        "monitoring_required": {
+          "type": "boolean"
+        },
+        "message": {
+          "type": "string"
+        },
+        "swap": {
+          "$ref": "#/definitions/v1Swap"
+        },
+        "send": {
+          "$ref": "#/definitions/v1WalletSend"
+        },
+        "tower_job": {
+          "$ref": "#/definitions/v1TowerJob"
+        }
+      }
+    },
+    "v1RecordQuery": {
+      "type": "object",
+      "properties": {
+        "kind": {
+          "type": "string"
+        },
+        "id": {
+          "type": "string"
+        },
+        "expected_wallet": {
+          "type": "string"
+        },
+        "expected_network": {
+          "type": "string"
+        }
+      }
+    },
     "v1Recovery": {
       "type": "object",
       "properties": {
@@ -3432,6 +3564,53 @@
       "type": "object",
       "properties": {
         "expected_network": {
+          "type": "string"
+        }
+      }
+    },
+    "v1RelayCursor": {
+      "type": "object",
+      "properties": {
+        "until": {
+          "type": "string",
+          "format": "int64"
+        },
+        "limit": {
+          "type": "integer",
+          "format": "int32"
+        },
+        "sweeps": {
+          "type": "string",
+          "format": "uint64"
+        },
+        "blocked": {
+          "type": "boolean"
+        },
+        "incomplete": {
+          "type": "string"
+        }
+      }
+    },
+    "v1RelaySync": {
+      "type": "object",
+      "properties": {
+        "relay": {
+          "type": "string"
+        },
+        "filter": {
+          "type": "string"
+        },
+        "cursor": {
+          "$ref": "#/definitions/v1RelayCursor"
+        },
+        "observed_at": {
+          "type": "string",
+          "format": "int64"
+        },
+        "live": {
+          "type": "boolean"
+        },
+        "error": {
           "type": "string"
         }
       }

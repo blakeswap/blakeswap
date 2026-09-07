@@ -91,6 +91,10 @@ type TowerJob struct {
 }
 type State struct {
 	MakerStrategies             map[string]*MakerStrategy    `json:"maker_strategies,omitempty"`
+	PublicVersions              map[string]PublicVersion     `json:"public_versions,omitempty"`
+	PublicLimited               bool                         `json:"public_limited,omitempty"`
+	ActivityTransactions        map[string]string            `json:"activity_transactions,omitempty"`
+	ActivityOwned               map[string]int64             `json:"activity_owned,omitempty"`
 	RelaySync                   map[string]RelaySyncRecord   `json:"relay_sync,omitempty"`
 	Automations                 map[string]*AutomationPolicy `json:"automations,omitempty"`
 	SeenSemantics               map[string]bool              `json:"seen_semantics,omitempty"`
@@ -163,6 +167,7 @@ type ChainConnection struct {
 }
 type Status struct {
 	Actions         WalletActions                `json:"actions"`
+	Capacity        CapacityHealth               `json:"capacity"`
 	Backup          BackupFreshness              `json:"backup"`
 	Recovery        *RecoveryStatus              `json:"recovery,omitempty"`
 	FeeLimits       map[chain.ID]FeeLimits       `json:"fee_limits"`

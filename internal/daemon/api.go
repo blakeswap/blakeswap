@@ -36,6 +36,7 @@ func (e *Engine) status() Status {
 		}
 		s.Recovery = &r
 	}
+	s.Capacity = e.capacityHealth()
 	s.Connections = map[chain.ID]ChainConnection{}
 	for _, id := range []chain.ID{chain.BTC, chain.Blake} {
 		c := ChainConnection{Ready: e.fresh(id), LastObservation: e.chainObserved[id], Error: e.chainErrors[id]}
@@ -84,33 +85,28 @@ func (e *Engine) status() Status {
 		}
 	}
 	sort.Slice(s.Orders, func(i, j int) bool { return s.Orders[i].ID < s.Orders[j].ID })
-	for _, swap := range e.s.Swaps {
-		p := PublicSwap{ID: swap.ID, Role: swap.Role, Stage: swap.Stage, Error: swap.Error, Long: swap.Long, Short: swap.Short, LongSpend: swap.LongSpend, ShortSpend: swap.ShortSpend, LongConfirmations: swap.LongConfirmations, ShortConfirmations: swap.ShortConfirmations, TowerPaid: swap.TowerPaid, TowerReady: towerReady(swap), SecretRevealed: swap.SecretExposed}
-		p.OwnerFeeCap = swap.OwnerFeeCap
-		p.FundingFee = e.fundingFee("swap/" + swap.ID)
-		if swap.Role == "maker" && swap.Terms != nil {
-			p.FundingFee = e.fundingFee("offer/" + swap.Terms.Offer().ID)
+	terminalSwaps := 0
+	for _, id := range sortedArchiveIDs(e.s.Swaps) {
+		swap := e.s.Swaps[id]
+		if terminalSwap(swap) && !e.archivedObligationHeld("swap/"+id) {
+			if terminalSwaps >= 100 {
+				continue
+			}
+			terminalSwaps++
 		}
-		p.ClaimVariants = transactionIDs(swap.SelfClaims)
-		p.ClaimTxID, p.ClaimFee = settlementVariant(swap.SelfClaims, swap.ClaimVariant, swap.Long, swap.Short, swap.Role == "maker")
-		p.RefundTxID, p.RefundFee = settlementVariant(swap.SelfRefunds, swap.RefundVariant, swap.Long, swap.Short, swap.Role != "maker")
-		p.RefundVariants = transactionIDs(swap.SelfRefunds)
-		p.TowerPayments = map[chain.ID]int64{}
-		for id, amount := range swap.TowerPayments {
-			p.TowerPayments[id] = amount
-		}
-		if swap.Terms != nil {
-			p.TowerEnabled = swap.protection().BPS > 0
-			p.TowerReady = p.TowerEnabled && len(swap.Jobs) > 0 && towerReady(swap)
-			p.Takeover = swap.Terms.Takeover
-			p.RevealBefore = swap.Terms.RevealBefore
-		} else {
-			p.TowerReady = false
-		}
+		p := e.publicSwap(swap)
 		s.Swaps = append(s.Swaps, p)
 	}
 	sort.Slice(s.Swaps, func(i, j int) bool { return s.Swaps[i].ID < s.Swaps[j].ID })
-	for _, state := range e.s.TowerJobs {
+	terminalJobs := 0
+	for _, id := range sortedArchiveIDs(e.s.TowerJobs) {
+		state := e.s.TowerJobs[id]
+		if state.Confirmed >= e.Config.Network.Confirmations() && !e.archivedObligationHeld("tower/"+id) {
+			if terminalJobs >= 100 {
+				continue
+			}
+			terminalJobs++
+		}
 		s.TowerJobs = append(s.TowerJobs, map[string]any{"id": state.Job.ID, "swap_id": state.Job.SwapID, "kind": state.Job.Kind, "chain": state.Job.Target.Chain, "eligible_height": state.Job.Lock, "broadcast": state.Broadcast, "confirmations": state.Confirmed, "secret_observed": state.Secret != "", "error": state.Error, "variants": state.Variants})
 	}
 	for _, d := range e.s.Outbox {
@@ -127,12 +123,46 @@ func (e *Engine) status() Status {
 		}
 	}
 	s.Sends = []PublicSend{}
-	for _, send := range e.s.Sends {
+	terminalSends := 0
+	for _, id := range sortedArchiveIDs(e.s.Sends) {
+		send := e.s.Sends[id]
+		if send.Confirmations >= e.Config.Network.Confirmations() && !e.archivedObligationHeld("send/"+id) {
+			if terminalSends >= 100 {
+				continue
+			}
+			terminalSends++
+		}
 		s.Sends = append(s.Sends, send.public())
 	}
 	sort.Slice(s.Sends, func(i, j int) bool { return s.Sends[i].ID < s.Sends[j].ID })
 	return s
 }
+func (e *Engine) publicSwap(swap *Swap) PublicSwap {
+	p := PublicSwap{ID: swap.ID, Role: swap.Role, Stage: swap.Stage, Error: swap.Error, Long: swap.Long, Short: swap.Short, LongSpend: swap.LongSpend, ShortSpend: swap.ShortSpend, LongConfirmations: swap.LongConfirmations, ShortConfirmations: swap.ShortConfirmations, TowerPaid: swap.TowerPaid, TowerReady: towerReady(swap), SecretRevealed: swap.SecretExposed}
+	p.OwnerFeeCap = swap.OwnerFeeCap
+	p.FundingFee = e.fundingFee("swap/" + swap.ID)
+	if swap.Role == "maker" && swap.Terms != nil {
+		p.FundingFee = e.fundingFee("offer/" + swap.Terms.Offer().ID)
+	}
+	p.ClaimVariants = transactionIDs(swap.SelfClaims)
+	p.ClaimTxID, p.ClaimFee = settlementVariant(swap.SelfClaims, swap.ClaimVariant, swap.Long, swap.Short, swap.Role == "maker")
+	p.RefundTxID, p.RefundFee = settlementVariant(swap.SelfRefunds, swap.RefundVariant, swap.Long, swap.Short, swap.Role != "maker")
+	p.RefundVariants = transactionIDs(swap.SelfRefunds)
+	p.TowerPayments = map[chain.ID]int64{}
+	for id, amount := range swap.TowerPayments {
+		p.TowerPayments[id] = amount
+	}
+	if swap.Terms != nil {
+		p.TowerEnabled = swap.protection().BPS > 0
+		p.TowerReady = p.TowerEnabled && len(swap.Jobs) > 0 && towerReady(swap)
+		p.Takeover = swap.Terms.Takeover
+		p.RevealBefore = swap.Terms.RevealBefore
+	} else {
+		p.TowerReady = false
+	}
+	return p
+}
+
 func (e *Engine) Command(ctx context.Context, req Request) (any, error) {
 	if req.Method == "strategy.report" {
 		return e.strategyReport(ctx, req.Params)
@@ -181,6 +211,8 @@ func (e *Engine) Command(ctx context.Context, req Request) (any, error) {
 		return e.saveStrategy(req.Params)
 	case "strategy.stop":
 		return e.stopStrategy(req.Params)
+	case "record.get":
+		return e.recordDetail(req.Params)
 	case "automation.list":
 		return e.listAutomations(req.Params)
 	case "automation.review":

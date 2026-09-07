@@ -30,6 +30,7 @@ var errEngineClosed = errors.New("engine closed")
 type Engine struct {
 	strategyVerifiedSwaps    map[string]bool
 	strategyReporting        atomic.Bool
+	activityGrowth           uint64
 	publicationQueue         chan publicationAttempt
 	publicationResults       chan publicationResult
 	publicationBusy          map[string]bool
@@ -298,6 +299,7 @@ func (e *Engine) persistState() error {
 	e.archivePuts, e.archiveDeletes, e.archiveOrigins = nil, nil, nil
 	e.semanticParts = &parts
 	e.backupFingerprint, e.stateBytes = parts.Complete, stateBytes
+	e.activityGrowth = 0
 	return nil
 }
 
@@ -457,6 +459,7 @@ func (e *Engine) tickProtocol(ctx context.Context) error {
 		return err
 	}
 	e.pruneDiscovery()
+	e.prunePublicOffers()
 	e.lastError = ""
 	if err := e.refreshFavoriteTowers(); err != nil {
 		e.lastError = "watchtower discovery: " + err.Error()
@@ -515,11 +518,7 @@ func (e *Engine) ingestOffer(event nostr.Event) {
 	if err != nil || o.Network.Normalized() != e.Config.Network {
 		return
 	}
-	key := o.Maker + ":" + o.ID
-	old, exists := e.s.Book[key]
-	if !exists || event.CreatedAt > old.CreatedAt || (event.CreatedAt == old.CreatedAt && event.ID.Hex() < old.ID.Hex()) {
-		e.s.Book[key] = event
-	}
+	e.retainPublicOffer(event, o)
 }
 func (e *Engine) queue(to, typ, swapID string, body any) error {
 	raw, err := json.Marshal(body)

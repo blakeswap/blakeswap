@@ -27,7 +27,7 @@ func normalizedBackupValue(state State) (map[string]any, error) {
 	if err := decoder.Decode(&value); err != nil {
 		return nil, err
 	}
-	for _, key := range []string{"backup", "capacity", "archive", "relay_sync", "version", "book", "towers", "discovery_seen", "event_time", "activity_revision", "activity_observation_sequence", "activity_indexes", "activity_error"} {
+	for _, key := range []string{"backup", "capacity", "archive", "relay_sync", "public_versions", "public_limited", "version", "book", "towers", "discovery_seen", "event_time", "activity_revision", "activity_observation_sequence", "activity_indexes", "activity_error"} {
 		delete(value, key)
 	}
 	if state.Capacity != nil && len(state.Capacity.Invalidated) != 0 {

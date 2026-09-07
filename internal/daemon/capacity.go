@@ -16,16 +16,18 @@ const archivedEvidenceReserve = 4 << 10
 const admissionByteCeiling = WalletRecoveryBudget - 16<<20
 
 type CapacityHealth struct {
-	State              string `json:"state"`
-	Active             uint64 `json:"active"`
-	Archived           uint64 `json:"archived"`
-	StoredBytes        uint64 `json:"stored_bytes"`
-	ReservedBytes      uint64 `json:"reserved_bytes"`
-	BudgetBytes        uint64 `json:"budget_bytes"`
-	AdmissionAvailable bool   `json:"admission_available"`
-	Reactivating       bool   `json:"reactivating"`
-	MonitoringHolds    uint64 `json:"monitoring_holds"`
-	Message            string `json:"message"`
+	PublicLimited      bool              `json:"public_limited"`
+	Relays             []RelaySyncRecord `json:"relays"`
+	State              string            `json:"state"`
+	Active             uint64            `json:"active"`
+	Archived           uint64            `json:"archived"`
+	StoredBytes        uint64            `json:"stored_bytes"`
+	ReservedBytes      uint64            `json:"reserved_bytes"`
+	BudgetBytes        uint64            `json:"budget_bytes"`
+	AdmissionAvailable bool              `json:"admission_available"`
+	Reactivating       bool              `json:"reactivating"`
+	MonitoringHolds    uint64            `json:"monitoring_holds"`
+	Message            string            `json:"message"`
 }
 
 func (e *Engine) activeWork(kind string) int {
@@ -71,7 +73,7 @@ func (e *Engine) activeWork(kind string) int {
 }
 
 func (e *Engine) capacityHealth() CapacityHealth {
-	health := CapacityHealth{State: "healthy", Active: uint64(e.activeWork("")), StoredBytes: e.stateBytes, BudgetBytes: WalletRecoveryBudget, Message: "Encrypted archives retain signed recovery evidence. Canonical checkpoints continue to monitor archived settlements."}
+	health := CapacityHealth{State: "healthy", PublicLimited: e.s.PublicLimited, Relays: e.relayHealth(), Active: uint64(e.activeWork("")), StoredBytes: e.stateBytes, BudgetBytes: WalletRecoveryBudget, Message: "Encrypted archives retain signed recovery evidence. Canonical checkpoints continue to monitor archived settlements."}
 	if e.s.Capacity != nil {
 		c := e.s.Capacity
 		health.Archived = c.Archived.Count
@@ -98,4 +100,24 @@ func (e *Engine) admitWork(kind string) error {
 		return fmt.Errorf("new %s exceeds available recovery capacity or awaits archived checkpoint verification", kind)
 	}
 	return nil
+}
+
+// ArchiveMonitoring is a small durable projection for all-wallet shutdown and
+// network-switch summaries. Ordinary unavailable anchors do not manufacture a
+// new obligation; positively contradicted settlements remain explicit holds.
+type ArchiveMonitoringState struct {
+	Reactivating bool
+	Invalidated  []string
+}
+
+func ArchiveMonitoring(state State) ArchiveMonitoringState {
+	result := ArchiveMonitoringState{}
+	if state.Capacity != nil {
+		result.Reactivating = state.Capacity.Reactivating
+		result.Invalidated = sortedArchiveIDs(state.Capacity.Invalidated)
+	}
+	return result
+}
+func (e *Engine) archivedObligationHeld(id string) bool {
+	return e.s.Capacity != nil && (e.s.Capacity.Reactivating || e.s.Capacity.Invalidated[id]) || e.s.Recovery != nil && e.s.Recovery.InvalidatedSettlements[id]
 }
