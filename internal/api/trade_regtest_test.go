@@ -9,6 +9,7 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	pb "github.com/blakeswap/blakeswap/api/gen/blakeswap/v1"
 	"github.com/blakeswap/blakeswap/internal/chain"
@@ -130,9 +131,45 @@ func newReviewedTradeFixture(t *testing.T) *reviewedTradeFixture {
 			h.configs[name] = cfg
 			h.restart(name)
 		}
+		for _, name := range []string{"maker", "taker"} {
+			h.waitReady(name)
+		}
 	}
 	return h
 }
+
+// A fresh local indexer can still be rebuilding history when partial Open
+// returns. Require the same positive startup observation as the wallet UI before
+// comparing a read-only quote against an already stable wallet snapshot.
+func (h *reviewedTradeFixture) waitReady(name string) {
+	h.t.Helper()
+	ctx, cancel := context.WithTimeout(h.ctx, 20*time.Second)
+	defer cancel()
+	var last error
+	for ctx.Err() == nil {
+		last = h.engines[name].Tick(ctx)
+		state := h.engines[name].Status()
+		if last == nil && state.Connections[chain.BTC].Ready && state.Connections[chain.Blake].Ready {
+			return
+		}
+		h.t.Logf("%s typed API fixture awaiting both-chain readiness: %v", name, last)
+		time.Sleep(100 * time.Millisecond)
+	}
+	h.t.Fatalf("typed API fixture never became ready: %v", last)
+}
+
+// Successful advisory reads refresh endpoint health timestamps. Every wallet,
+// readiness and source-selection field must otherwise remain exactly equal.
+func quoteComparableStatus(state *pb.Status) *pb.Status {
+	copy := proto.Clone(state).(*pb.Status)
+	for _, connection := range copy.Connections {
+		for _, endpoint := range connection.GetSources().GetEndpoints() {
+			endpoint.LastSuccess = 0
+		}
+	}
+	return copy
+}
+
 func (h *reviewedTradeFixture) restart(name string) {
 	h.t.Helper()
 	if err := h.engines[name].Close(); err != nil {
@@ -214,7 +251,7 @@ func TestRealReviewedSwapThroughTypedAPI(t *testing.T) {
 		t.Run(string(sell), func(t *testing.T) {
 			before := h.status("maker")
 			mq := h.quote("maker", &pb.TradeQuoteRequest{Kind: "maker", Sell: string(sell), SellAmount: 1000000, BuyAmount: 2000000, FundingFee: 6500, OwnerFeeCap: 20000})
-			if !proto.Equal(before, h.status("maker")) {
+			if !proto.Equal(quoteComparableStatus(before), quoteComparableStatus(h.status("maker"))) {
 				t.Fatal("quote/cancel mutated public wallet state")
 			}
 			if mq.PaidChain != string(sell) || mq.ReceivedChain != string(sell.Other()) || mq.PaidTotal != 1006500 || mq.Timing.FirstRevealer != "taker" {
@@ -304,6 +341,31 @@ func TestRealReviewedSwapThroughTypedAPI(t *testing.T) {
 					t.Fatal("changed confirmation reused request identity")
 				}
 				t.Logf("%s %s request=%s swap=%s net=%d %s sats within [%d,%d]", sell, name, req.RequestId, swapID, tx.TxOut[0].Value, incoming.Chain, outcome.NetMin, outcome.NetMax)
+			}
+		})
+	}
+}
+
+func TestTradeQuoteComparisonRetainsWalletAndReadinessChanges(t *testing.T) {
+	baseline := &pb.Status{Balances: map[string]int64{"btc": 100}, Connections: map[string]*pb.ChainConnection{"btc": {Ready: true, LastObservation: 123, Sources: &pb.EndpointStatus{Generation: 4, Endpoints: []*pb.EndpointHealth{{Active: true, LastSuccess: 100}}}}}}
+	for name, mutate := range map[string]func(*pb.Status){
+		"read time":        func(s *pb.Status) { s.Connections["btc"].Sources.Endpoints[0].LastSuccess++ },
+		"balance":          func(s *pb.Status) { s.Balances["btc"]++ },
+		"readiness":        func(s *pb.Status) { s.Connections["btc"].Ready = false },
+		"generation":       func(s *pb.Status) { s.Connections["btc"].Sources.Generation++ },
+		"observation":      func(s *pb.Status) { s.Connections["btc"].LastObservation++ },
+		"endpoint failure": func(s *pb.Status) { s.Connections["btc"].Sources.Endpoints[0].Error = "offline" },
+		"reservation":      func(s *pb.Status) { s.Coins = []*pb.WalletCoin{{Reserved: true}} },
+	} {
+		t.Run(name, func(t *testing.T) {
+			changed := proto.Clone(baseline).(*pb.Status)
+			mutate(changed)
+			equal := proto.Equal(quoteComparableStatus(baseline), quoteComparableStatus(changed))
+			if equal != (name == "read time") {
+				t.Fatal("quote comparison hid wallet/readiness change or treated a successful read timestamp as a payment")
+			}
+			if baseline.Connections["btc"].Sources.Endpoints[0].LastSuccess != 100 {
+				t.Fatal("comparison mutated source status")
 			}
 		})
 	}

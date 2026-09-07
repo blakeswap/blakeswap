@@ -397,3 +397,9 @@ of both chains after switching to a new local indexer. A cold bridge can exceed
 an initial request budget while building history; setup logs that cause and
 requires readiness within 20 seconds before creating an offer. Trade, refund and
 settlement assertions and production timeouts remain unchanged.
+
+The typed trade API fixture uses the same bounded both-chain startup condition
+after installing new Electrum endpoints. Quote/cancel comparisons retain every
+wallet, balance, reservation, readiness and source-generation field; only endpoint
+`last_success` is normalized because successful advisory reads update that clock.
+A focused comparison test verifies that other state changes remain failures.
