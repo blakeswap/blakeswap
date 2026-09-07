@@ -584,20 +584,37 @@ func TestRealPortableTowerRefundObservesConfirmedOutcome(t *testing.T) {
 			restoreRecoveryArchive(t, h, "tower", archive)
 			tower = h.engines["tower"]
 			state := tower.s.TowerJobs[jobID]
+			// Both endpoints are healthy. A normal tick can complete immediately,
+			// or retain bounded tower catch-up in LastError/Recovery without a
+			// protocol error. Require the positive outcome instead of an outage.
+			tick := func(parent context.Context) error {
+				started := time.Now()
+				ctx, cancel := context.WithTimeout(parent, 12*time.Second)
+				defer cancel()
+				err := tower.Tick(ctx)
+				if time.Since(started) > 11*time.Second {
+					t.Fatal("tower reconciliation monopolized recovery cycle")
+				}
+				if err != nil {
+					t.Logf("bounded tower reconciliation: %v", err)
+				}
+				return err
+			}
 			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 			defer cancel()
+			var tickErr error
 			for cycle := 0; cycle < 12 && ctx.Err() == nil; cycle++ {
-				tickDegradedContext(t, tower, ctx)
+				tickErr = tick(ctx)
 				if state.LastAttempt != 0 || state.Attempt != 0 {
 					t.Fatal("restored refund was published during reconciliation")
 				}
-				if state.Confirmed >= 6 && tower.Status().Recovery.State == "ready" {
+				if tickErr == nil && state.Confirmed >= 6 && tower.Status().Recovery.State == "ready" {
 					break
 				}
 				time.Sleep(100 * time.Millisecond)
 			}
-			if state.Confirmed < 6 || state.Broadcast != tx.TxHash().String() || tower.Status().Recovery.State != "ready" || tower.CanChangeNetwork() != nil {
-				t.Fatal("confirmed restored tower job remained active", state.Error, tower.Status().Recovery, tower.CanChangeNetwork())
+			if tickErr != nil || state.Confirmed < 6 || state.Broadcast != tx.TxHash().String() || tower.Status().Recovery.State != "ready" || tower.CanChangeNetwork() != nil {
+				t.Fatal("confirmed restored tower job remained active", tickErr, state.Error, tower.Status().Recovery, tower.CanChangeNetwork())
 			}
 			activity, found := tower.s.Activities[activityID("tower", jobID)]
 			if !found || activity.TxID != state.Broadcast || activity.LocalStatus != "confirmed" || activity.Amount != protocol.Bounty(target.Amount, job.BPS) {
@@ -615,7 +632,7 @@ func TestRealPortableTowerRefundObservesConfirmedOutcome(t *testing.T) {
 					t.Error(err)
 				}
 			}()
-			tickDegraded(t, tower)
+			_ = tick(context.Background())
 			if state.Confirmed != 0 || state.LastAttempt != 0 || state.Attempt != 0 || tower.CanChangeNetwork() == nil || tower.Status().Recovery.State == "ready" {
 				t.Fatal("tower refund reorg failed to reopen held obligation", state.Error, tower.Status().Recovery)
 			}
