@@ -98,17 +98,27 @@ func (b *ElectrumBridge) sync(ctx context.Context) error {
 		return err
 	}
 	if len(b.blocks) > 0 {
-		last := uint32(len(b.blocks) - 1)
-		var hash string
-		if height < last {
-			b.blocks = nil
-			b.txs = map[string]indexedTx{}
-		} else if err = b.rpc.Call(ctx, "getblockhash", &hash, last); err != nil {
-			return err
-		} else if b.blocks[last].hash != hash {
-			b.blocks = nil
-			b.txs = map[string]indexedTx{}
+		// Keep the canonical prefix. Rebuilding thousands of unchanged blocks
+		// after a shallow reorg can outlast the client's normal RPC budget.
+		keep := min(len(b.blocks), int(height)+1)
+		for keep > 0 {
+			var hash string
+			if err = b.rpc.Call(ctx, "getblockhash", &hash, keep-1); err != nil {
+				return err
+			}
+			if b.blocks[keep-1].hash == hash {
+				break
+			}
+			keep--
 		}
+		for h := len(b.blocks) - 1; h >= keep; h-- {
+			for _, id := range b.blocks[h].ids {
+				if tx, ok := b.txs[id]; ok && tx.height == uint32(h) {
+					delete(b.txs, id)
+				}
+			}
+		}
+		b.blocks = b.blocks[:keep]
 	}
 	for h := uint32(len(b.blocks)); h <= height; h++ {
 		var hash string
