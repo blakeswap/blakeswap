@@ -89,6 +89,7 @@ type TowerJob struct {
 }
 type State struct {
 	OrderRecords                map[string]OrderRecord     `json:"order_records,omitempty"`
+	Recovery                    *RecoveryRecord            `json:"recovery,omitempty"`
 	Backup                      *BackupRecord              `json:"backup,omitempty"`
 	ActivityReceipts            map[string]ReceiptEvidence `json:"activity_receipts"`
 	ActivityObservationSequence uint64                     `json:"activity_observation_sequence"`

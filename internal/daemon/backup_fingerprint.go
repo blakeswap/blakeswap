@@ -44,6 +44,11 @@ func BackupFingerprint(state State) (string, error) {
 			}
 		}
 	}
+	// Recovery readiness is recomputed from live chain evidence. Its polling
+	// timestamp and explanatory issues do not change the archived obligations.
+	if recovery, ok := value["recovery"].(map[string]any); ok {
+		stripFields(recovery["status"], "checked_at", "issues")
+	}
 	records("swaps", func(record map[string]any) {
 		stripFields(record, "error", "claim_last_attempt", "refund_last_attempt", "claim_attempt", "refund_attempt", "long_confirmations", "short_confirmations")
 	})

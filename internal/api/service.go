@@ -17,11 +17,14 @@ import (
 )
 
 type Service struct {
-	PrepareWallet func(context.Context, *pb.PrepareFirstWalletRequest) (*pb.FirstWallet, error)
-	FirstWallet   func(context.Context) (*pb.FirstWallet, error)
-	ConfirmWallet func(context.Context, *pb.ConfirmFirstWalletRequest) (*pb.Settings, error)
-	ExportWallet  func(context.Context, *pb.ExportFirstWalletRequest) (*pb.Backup, error)
-	FinishSetup   func(context.Context, *pb.Settings) (*pb.Settings, error)
+	PortableExport func(context.Context, *pb.ExportPortableBackupRequest) (*pb.PortableBackupResult, error)
+	BackupInspect  func(context.Context, *pb.InspectBackupRequest) (*pb.BackupContents, error)
+	BackupImport   func(context.Context, *pb.ImportBackupRequest) (*pb.ImportBackupResult, error)
+	PrepareWallet  func(context.Context, *pb.PrepareFirstWalletRequest) (*pb.FirstWallet, error)
+	FirstWallet    func(context.Context) (*pb.FirstWallet, error)
+	ConfirmWallet  func(context.Context, *pb.ConfirmFirstWalletRequest) (*pb.Settings, error)
+	ExportWallet   func(context.Context, *pb.ExportFirstWalletRequest) (*pb.Backup, error)
+	FinishSetup    func(context.Context, *pb.Settings) (*pb.Settings, error)
 	pb.UnimplementedDaemonServiceServer
 	Command       func(context.Context, daemon.Request) (any, error)
 	ReadSettings  func(context.Context) (*pb.Settings, error)
