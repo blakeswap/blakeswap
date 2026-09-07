@@ -138,7 +138,7 @@ func (e *Engine) handle(from string, m transport.Message) error {
 		// Maker-authoritative check-and-reserve under Engine.mu, analogous to
 		// Bisq's AVAILABLE -> RESERVED transition. A stale relay copy is never
 		// sufficient authorization for another trade.
-		if !ok || currentErr != nil || current.Status != "open" || owned.ID != request.OfferEvent.ID {
+		if !ok || currentErr != nil || current.Status != "open" || owned.ID != request.OfferEvent.ID || e.automationOfferHeld(o.ID) {
 			return e.queue(from, "rejected", request.ID, map[string]string{"reason": "order is unavailable or changed"})
 		}
 		if e.balances[o.Sell] < o.SellAmount+e.fundingFee("offer/"+o.ID) {

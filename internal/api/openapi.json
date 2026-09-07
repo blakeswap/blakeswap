@@ -84,6 +84,136 @@
         ]
       }
     },
+    "/v1/automations": {
+      "put": {
+        "operationId": "DaemonService_SaveAutomation",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1AutomationView"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/googleRpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "body",
+            "description": "Two-stage exact authorization. Saving validates the complete review digest and\nrevision; it never edits existing signed orders or subtracts committed spending.",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/v1AutomationEdit"
+            }
+          }
+        ],
+        "tags": [
+          "DaemonService"
+        ]
+      }
+    },
+    "/v1/automations/disable": {
+      "post": {
+        "operationId": "DaemonService_DisableAutomation",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1AutomationView"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/googleRpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/v1DisableAutomationRequest"
+            }
+          }
+        ],
+        "tags": [
+          "DaemonService"
+        ]
+      }
+    },
+    "/v1/automations/query": {
+      "post": {
+        "operationId": "DaemonService_ListAutomations",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1AutomationList"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/googleRpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/v1AutomationQuery"
+            }
+          }
+        ],
+        "tags": [
+          "DaemonService"
+        ]
+      }
+    },
+    "/v1/automations/review": {
+      "post": {
+        "operationId": "DaemonService_ReviewAutomation",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1AutomationReview"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/googleRpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "body",
+            "description": "Two-stage exact authorization. Saving validates the complete review digest and\nrevision; it never edits existing signed orders or subtracts committed spending.",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/v1AutomationEdit"
+            }
+          }
+        ],
+        "tags": [
+          "DaemonService"
+        ]
+      }
+    },
     "/v1/backups/import": {
       "post": {
         "operationId": "DaemonService_ImportBackup",
@@ -1607,6 +1737,262 @@
         }
       }
     },
+    "v1AutomationConfig": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "wallet": {
+          "type": "string"
+        },
+        "network": {
+          "type": "string"
+        },
+        "sell": {
+          "type": "string"
+        },
+        "sell_amount": {
+          "type": "string",
+          "format": "int64"
+        },
+        "volume_limit": {
+          "type": "string",
+          "format": "int64"
+        },
+        "rate": {
+          "$ref": "#/definitions/v1AutomationRate"
+        },
+        "min_rate": {
+          "$ref": "#/definitions/v1AutomationRate"
+        },
+        "max_rate": {
+          "$ref": "#/definitions/v1AutomationRate"
+        },
+        "lifetime": {
+          "type": "string",
+          "format": "int64"
+        },
+        "cadence": {
+          "type": "string",
+          "format": "int64"
+        },
+        "max_open": {
+          "type": "integer",
+          "format": "int64"
+        },
+        "funding_fee": {
+          "type": "string",
+          "format": "int64"
+        },
+        "max_funding_fee": {
+          "type": "string",
+          "format": "int64"
+        },
+        "btc_fee_budget": {
+          "type": "string",
+          "format": "int64"
+        },
+        "blake_fee_budget": {
+          "type": "string",
+          "format": "int64"
+        },
+        "tower_bps": {
+          "type": "string",
+          "format": "int64"
+        },
+        "tower_pubkey": {
+          "type": "string"
+        },
+        "reference": {
+          "type": "string"
+        },
+        "reference_makers": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "reference_freshness": {
+          "type": "string",
+          "format": "int64"
+        },
+        "reference_spread_bps": {
+          "type": "string",
+          "format": "int64"
+        }
+      }
+    },
+    "v1AutomationEdit": {
+      "type": "object",
+      "properties": {
+        "config": {
+          "$ref": "#/definitions/v1AutomationConfig"
+        },
+        "expected_revision": {
+          "type": "string",
+          "format": "uint64"
+        },
+        "enabled": {
+          "type": "boolean"
+        },
+        "review_digest": {
+          "type": "string"
+        },
+        "acknowledge_restored_budget": {
+          "type": "boolean"
+        }
+      },
+      "description": "Two-stage exact authorization. Saving validates the complete review digest and\nrevision; it never edits existing signed orders or subtracts committed spending."
+    },
+    "v1AutomationList": {
+      "type": "object",
+      "properties": {
+        "wallet": {
+          "type": "string"
+        },
+        "network": {
+          "type": "string"
+        },
+        "policies": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/v1AutomationView"
+          }
+        }
+      }
+    },
+    "v1AutomationQuery": {
+      "type": "object",
+      "properties": {
+        "expected_wallet": {
+          "type": "string"
+        },
+        "expected_network": {
+          "type": "string"
+        }
+      }
+    },
+    "v1AutomationRate": {
+      "type": "object",
+      "properties": {
+        "numerator": {
+          "type": "string",
+          "format": "int64"
+        },
+        "denominator": {
+          "type": "string",
+          "format": "int64"
+        }
+      },
+      "description": "Exact BLAKE satoshis per BTC satoshi; positive bounded integer ratio."
+    },
+    "v1AutomationReview": {
+      "type": "object",
+      "properties": {
+        "config": {
+          "$ref": "#/definitions/v1AutomationConfig"
+        },
+        "expected_revision": {
+          "type": "string",
+          "format": "uint64"
+        },
+        "enabled": {
+          "type": "boolean"
+        },
+        "review_digest": {
+          "type": "string"
+        },
+        "usage": {
+          "$ref": "#/definitions/v1AutomationUsage"
+        },
+        "warning": {
+          "type": "string"
+        }
+      }
+    },
+    "v1AutomationUsage": {
+      "type": "object",
+      "properties": {
+        "reserved_volume": {
+          "type": "string",
+          "format": "int64"
+        },
+        "committed_volume": {
+          "type": "string",
+          "format": "int64"
+        },
+        "reserved_btc_fees": {
+          "type": "string",
+          "format": "int64"
+        },
+        "committed_btc_fees": {
+          "type": "string",
+          "format": "int64"
+        },
+        "reserved_blake_fees": {
+          "type": "string",
+          "format": "int64"
+        },
+        "committed_blake_fees": {
+          "type": "string",
+          "format": "int64"
+        },
+        "open_offers": {
+          "type": "integer",
+          "format": "int64"
+        }
+      }
+    },
+    "v1AutomationView": {
+      "type": "object",
+      "properties": {
+        "config": {
+          "$ref": "#/definitions/v1AutomationConfig"
+        },
+        "revision": {
+          "type": "string",
+          "format": "uint64"
+        },
+        "enabled": {
+          "type": "boolean"
+        },
+        "restore_hold": {
+          "type": "boolean"
+        },
+        "next_action": {
+          "type": "string",
+          "format": "int64"
+        },
+        "last_action": {
+          "type": "string",
+          "format": "int64"
+        },
+        "decision": {
+          "type": "string"
+        },
+        "current_offer_id": {
+          "type": "string"
+        },
+        "publication": {
+          "type": "string"
+        },
+        "usage": {
+          "$ref": "#/definitions/v1AutomationUsage"
+        },
+        "reference_events": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "reference_observed": {
+          "type": "string",
+          "format": "int64"
+        }
+      }
+    },
     "v1Backup": {
       "type": "object",
       "properties": {
@@ -1917,6 +2303,27 @@
         "revision": {
           "type": "string",
           "format": "uint64"
+        }
+      }
+    },
+    "v1DisableAutomationRequest": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "expected_wallet": {
+          "type": "string"
+        },
+        "expected_network": {
+          "type": "string"
+        },
+        "expected_revision": {
+          "type": "string",
+          "format": "uint64"
+        },
+        "cancel_open": {
+          "type": "boolean"
         }
       }
     },

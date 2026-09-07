@@ -403,5 +403,24 @@ fresh economics review and transfers the old offer's reservation atomically to a
 new ID. Cancelled rows report local commitment separately from relay storage ACK.
 A stale relay copy cannot revive the cancelled maker offer. Retry saved
 confirmation after a lost response; it resolves the same authorized identity.
-Recreate makes a deliberate new offer after fresh checks and never renews one
-automatically. Accepted/funded swaps continue their settlement or refund protocol.
+Manual Recreate makes a deliberate new offer after fresh checks. Automatic
+renewal requires its own reviewed [policy authorization](AUTOMATION.md). Accepted/funded swaps continue their settlement or refund protocol.
+
+
+## Automatic offers
+
+Use Market → Automatic offers to review a complete wallet/network policy before
+turning it on. Inspect next eligible check, last decision, current order,
+publication acknowledgement and separate reserved/committed volume and fee
+allowances. A paused decision does not erase authorization; fix fresh funds,
+provider availability, fee cap, reference evidence or capacity, or disable the
+policy. Fixed-rate policies need no price service. Reference mode requires every
+explicitly selected maker to supply fresh consistent signed quotes.
+
+Disabling can keep existing open offers or cancel unreserved ones. It first
+persists the disable even if cancellation subsequently fails. Funded obligations
+continue. Keep the app/daemon running for timely settlement and remember that
+neither machine sleep nor going offline pauses chain deadlines. Missed policy
+checks do not create a catch-up burst. Imported automation state remains held
+until explicit authorization acknowledges potentially omitted later spending.
+See [exact policy and budget rules](AUTOMATION.md).

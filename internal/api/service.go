@@ -276,3 +276,23 @@ func (s *Service) ExportActivity(ctx context.Context, in *pb.ActivityQuery) (*pb
 	out := &pb.ActivityExport{}
 	return out, s.command(ctx, "activity.export", in, out)
 }
+
+func (s *Service) ListAutomations(ctx context.Context, in *pb.AutomationQuery) (*pb.AutomationList, error) {
+	out := &pb.AutomationList{}
+	return out, s.command(ctx, "automation.list", in, out)
+}
+
+func (s *Service) ReviewAutomation(ctx context.Context, in *pb.AutomationEdit) (*pb.AutomationReview, error) {
+	out := &pb.AutomationReview{}
+	return out, s.command(ctx, "automation.review", in, out)
+}
+
+func (s *Service) SaveAutomation(ctx context.Context, in *pb.AutomationEdit) (*pb.AutomationView, error) {
+	out := &pb.AutomationView{}
+	return out, s.command(ctx, "automation.save", in, out)
+}
+
+func (s *Service) DisableAutomation(ctx context.Context, in *pb.DisableAutomationRequest) (*pb.AutomationView, error) {
+	out := &pb.AutomationView{}
+	return out, s.command(ctx, "automation.disable", in, out)
+}

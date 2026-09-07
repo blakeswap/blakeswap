@@ -28,6 +28,8 @@ import (
 var errEngineClosed = errors.New("engine closed")
 
 type Engine struct {
+	automationBusy           atomic.Bool
+	automationCancel         context.CancelFunc
 	marketObservedAt         int64
 	marketAllRelays          bool
 	recoveryRefunds          map[string]bool
@@ -207,6 +209,9 @@ func (e *Engine) Close() error {
 		return nil
 	}
 	e.activityClosed = true
+	if e.automationCancel != nil {
+		e.automationCancel()
+	}
 	if e.activityCancel != nil {
 		e.activityCancel()
 	}
@@ -233,6 +238,7 @@ func (e *Engine) save() error {
 // persistState is also used by already registered immutable-witness readers
 // while Close joins them. Protocol execution remains blocked by errEngineClosed.
 func (e *Engine) persistState() error {
+	e.reconcileAutomations()
 	e.syncOrderRecords()
 	e.syncActivity()
 	if err := e.vault.Save(e.s); err != nil {
@@ -364,6 +370,7 @@ func (e *Engine) Tick(ctx context.Context) error {
 	err := e.tickProtocol(ctx)
 	// Advisory history runs after settlement/delivery, outside the engine lock.
 	// Its bounded failures must never suppress recovery or become spend evidence.
+	e.runAutomations(ctx)
 	e.refreshActivity(ctx)
 	return err
 }

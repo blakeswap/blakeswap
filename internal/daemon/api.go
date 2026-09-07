@@ -160,6 +160,14 @@ func (e *Engine) Command(ctx context.Context, req Request) (any, error) {
 		return nil, e.fatal
 	}
 	switch req.Method {
+	case "automation.list":
+		return e.listAutomations(req.Params)
+	case "automation.review":
+		return e.reviewAutomation(req.Params)
+	case "automation.save":
+		return e.saveAutomation(req.Params)
+	case "automation.disable":
+		return e.disableAutomation(req.Params)
 	case "market.list":
 		return e.marketPage(req.Params)
 	case "activity.list":

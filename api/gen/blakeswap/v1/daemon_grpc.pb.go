@@ -20,6 +20,10 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
+	DaemonService_ListAutomations_FullMethodName      = "/blakeswap.v1.DaemonService/ListAutomations"
+	DaemonService_ReviewAutomation_FullMethodName     = "/blakeswap.v1.DaemonService/ReviewAutomation"
+	DaemonService_SaveAutomation_FullMethodName       = "/blakeswap.v1.DaemonService/SaveAutomation"
+	DaemonService_DisableAutomation_FullMethodName    = "/blakeswap.v1.DaemonService/DisableAutomation"
 	DaemonService_ListMarket_FullMethodName           = "/blakeswap.v1.DaemonService/ListMarket"
 	DaemonService_ListActivity_FullMethodName         = "/blakeswap.v1.DaemonService/ListActivity"
 	DaemonService_ExportActivity_FullMethodName       = "/blakeswap.v1.DaemonService/ExportActivity"
@@ -58,6 +62,10 @@ const (
 //
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
 type DaemonServiceClient interface {
+	ListAutomations(ctx context.Context, in *AutomationQuery, opts ...grpc.CallOption) (*AutomationList, error)
+	ReviewAutomation(ctx context.Context, in *AutomationEdit, opts ...grpc.CallOption) (*AutomationReview, error)
+	SaveAutomation(ctx context.Context, in *AutomationEdit, opts ...grpc.CallOption) (*AutomationView, error)
+	DisableAutomation(ctx context.Context, in *DisableAutomationRequest, opts ...grpc.CallOption) (*AutomationView, error)
 	ListMarket(ctx context.Context, in *MarketQuery, opts ...grpc.CallOption) (*MarketPage, error)
 	ListActivity(ctx context.Context, in *ActivityQuery, opts ...grpc.CallOption) (*ActivityPage, error)
 	ExportActivity(ctx context.Context, in *ActivityQuery, opts ...grpc.CallOption) (*ActivityExport, error)
@@ -98,6 +106,46 @@ type daemonServiceClient struct {
 
 func NewDaemonServiceClient(cc grpc.ClientConnInterface) DaemonServiceClient {
 	return &daemonServiceClient{cc}
+}
+
+func (c *daemonServiceClient) ListAutomations(ctx context.Context, in *AutomationQuery, opts ...grpc.CallOption) (*AutomationList, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(AutomationList)
+	err := c.cc.Invoke(ctx, DaemonService_ListAutomations_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *daemonServiceClient) ReviewAutomation(ctx context.Context, in *AutomationEdit, opts ...grpc.CallOption) (*AutomationReview, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(AutomationReview)
+	err := c.cc.Invoke(ctx, DaemonService_ReviewAutomation_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *daemonServiceClient) SaveAutomation(ctx context.Context, in *AutomationEdit, opts ...grpc.CallOption) (*AutomationView, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(AutomationView)
+	err := c.cc.Invoke(ctx, DaemonService_SaveAutomation_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *daemonServiceClient) DisableAutomation(ctx context.Context, in *DisableAutomationRequest, opts ...grpc.CallOption) (*AutomationView, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(AutomationView)
+	err := c.cc.Invoke(ctx, DaemonService_DisableAutomation_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
 }
 
 func (c *daemonServiceClient) ListMarket(ctx context.Context, in *MarketQuery, opts ...grpc.CallOption) (*MarketPage, error) {
@@ -424,6 +472,10 @@ func (c *daemonServiceClient) CheckNode(ctx context.Context, in *CheckNodeReques
 // All implementations must embed UnimplementedDaemonServiceServer
 // for forward compatibility.
 type DaemonServiceServer interface {
+	ListAutomations(context.Context, *AutomationQuery) (*AutomationList, error)
+	ReviewAutomation(context.Context, *AutomationEdit) (*AutomationReview, error)
+	SaveAutomation(context.Context, *AutomationEdit) (*AutomationView, error)
+	DisableAutomation(context.Context, *DisableAutomationRequest) (*AutomationView, error)
 	ListMarket(context.Context, *MarketQuery) (*MarketPage, error)
 	ListActivity(context.Context, *ActivityQuery) (*ActivityPage, error)
 	ExportActivity(context.Context, *ActivityQuery) (*ActivityExport, error)
@@ -466,6 +518,18 @@ type DaemonServiceServer interface {
 // pointer dereference when methods are called.
 type UnimplementedDaemonServiceServer struct{}
 
+func (UnimplementedDaemonServiceServer) ListAutomations(context.Context, *AutomationQuery) (*AutomationList, error) {
+	return nil, status.Error(codes.Unimplemented, "method ListAutomations not implemented")
+}
+func (UnimplementedDaemonServiceServer) ReviewAutomation(context.Context, *AutomationEdit) (*AutomationReview, error) {
+	return nil, status.Error(codes.Unimplemented, "method ReviewAutomation not implemented")
+}
+func (UnimplementedDaemonServiceServer) SaveAutomation(context.Context, *AutomationEdit) (*AutomationView, error) {
+	return nil, status.Error(codes.Unimplemented, "method SaveAutomation not implemented")
+}
+func (UnimplementedDaemonServiceServer) DisableAutomation(context.Context, *DisableAutomationRequest) (*AutomationView, error) {
+	return nil, status.Error(codes.Unimplemented, "method DisableAutomation not implemented")
+}
 func (UnimplementedDaemonServiceServer) ListMarket(context.Context, *MarketQuery) (*MarketPage, error) {
 	return nil, status.Error(codes.Unimplemented, "method ListMarket not implemented")
 }
@@ -581,6 +645,78 @@ func RegisterDaemonServiceServer(s grpc.ServiceRegistrar, srv DaemonServiceServe
 		t.testEmbeddedByValue()
 	}
 	s.RegisterService(&DaemonService_ServiceDesc, srv)
+}
+
+func _DaemonService_ListAutomations_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(AutomationQuery)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DaemonServiceServer).ListAutomations(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: DaemonService_ListAutomations_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DaemonServiceServer).ListAutomations(ctx, req.(*AutomationQuery))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _DaemonService_ReviewAutomation_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(AutomationEdit)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DaemonServiceServer).ReviewAutomation(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: DaemonService_ReviewAutomation_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DaemonServiceServer).ReviewAutomation(ctx, req.(*AutomationEdit))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _DaemonService_SaveAutomation_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(AutomationEdit)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DaemonServiceServer).SaveAutomation(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: DaemonService_SaveAutomation_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DaemonServiceServer).SaveAutomation(ctx, req.(*AutomationEdit))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _DaemonService_DisableAutomation_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(DisableAutomationRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DaemonServiceServer).DisableAutomation(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: DaemonService_DisableAutomation_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DaemonServiceServer).DisableAutomation(ctx, req.(*DisableAutomationRequest))
+	}
+	return interceptor(ctx, in, info, handler)
 }
 
 func _DaemonService_ListMarket_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
@@ -1166,6 +1302,22 @@ var DaemonService_ServiceDesc = grpc.ServiceDesc{
 	ServiceName: "blakeswap.v1.DaemonService",
 	HandlerType: (*DaemonServiceServer)(nil),
 	Methods: []grpc.MethodDesc{
+		{
+			MethodName: "ListAutomations",
+			Handler:    _DaemonService_ListAutomations_Handler,
+		},
+		{
+			MethodName: "ReviewAutomation",
+			Handler:    _DaemonService_ReviewAutomation_Handler,
+		},
+		{
+			MethodName: "SaveAutomation",
+			Handler:    _DaemonService_SaveAutomation_Handler,
+		},
+		{
+			MethodName: "DisableAutomation",
+			Handler:    _DaemonService_DisableAutomation_Handler,
+		},
 		{
 			MethodName: "ListMarket",
 			Handler:    _DaemonService_ListMarket_Handler,

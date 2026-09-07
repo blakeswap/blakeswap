@@ -158,3 +158,9 @@ location and prints the archive path. The next launch starts onboarding.
 Use `make reset-local-data APP_DATA_DIR="/absolute/test/data"` for an isolated
 installation. The archive contains the previous wallets and pending swap state;
 keep it if you need to resume them. See [setup and recovery](docs/PACKAGING.md#first-launch-and-reset).
+
+
+Automatic whole-offer renewal and bounded repricing are opt-in under **Market →
+Automatic offers**. Review exact price, gross volume, per-chain fee/rescue and
+schedule limits before enabling; accepted swaps retain their original terms.
+Policies run only in the running wallet daemon. See [automatic offers](docs/AUTOMATION.md).

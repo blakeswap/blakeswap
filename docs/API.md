@@ -382,3 +382,36 @@ Inspection accepts `path` and `password`, returning source wallet IDs, names, ne
 Status includes `backup` freshness (`last_export_at`, `state_changed`, `reminder`) and, for restored wallets, `recovery` (`recovering` or `ready`, issues, snapshot provenance, quarantine counts and coverage). Imported swaps cannot publish new funding or first reveal a private preimage. A previously witnessed public secret permits a claim with current target evidence. Restored owner refunds require a positively confirmed incoming refund, fresh own contract/maturity evidence and no durable incoming-claim observation. Saved signed variants, caps and destinations remain authoritative. Standalone restored tower refunds lack sufficient peer evidence and stay held; witnessed tower claims continue.
 
 Known funded obligations become ready only after positive confirmed resolution (including the confirmed refund of a sole recorded leg); a preexisting final nonfunding decision is retained, while elapsed time cannot create one from imported uncertainty. Readiness also requires complete observations from both chains; a wallet with no recorded obligations becomes ready after complete wallet/chain synchronization. Reorgs or missing current evidence restore the holds. Original obligation IDs remain recorded even after a display stage changes. Quarantined old offers and queued publications are retained for audit and never automatically republished. A stale snapshot can omit later obligations, funding references or random secrets: readiness describes recorded state, not proof that an arbitrary historical snapshot contained every later action. Keep the original installation/newer backups. Two restored peers can remain blocked waiting for positive evidence; there is no ignore/force-resume bypass.
+
+## Automatic offer policies
+
+`ListAutomations` (`automation.list`, `POST /v1/automations/query`) requires
+`expected_wallet` and `expected_network` and returns typed configs, revision,
+enabled/imported-hold state, next/last action, decision, current offer/publication,
+reference event provenance, and separate reserved/committed usage totals.
+
+`ReviewAutomation` (`automation.review`, `POST /v1/automations/review`) accepts
+`AutomationEdit`: full `config`, `expected_revision` (zero for a new random 32-byte
+policy ID), desired `enabled` state, and `acknowledge_restored_budget`. Config
+contains `wallet`, `network`, immutable `sell`, `sell_amount`, `volume_limit`,
+`rate`/`min_rate`/`max_rate` integer `{numerator,denominator}` BLAKE-per-BTC ratios,
+`lifetime`, `cadence`, `max_open`, `funding_fee` (zero = fresh estimate),
+`max_funding_fee`, `btc_fee_budget`, `blake_fee_budget`, `tower_bps`, `tower_pubkey`,
+and `reference` (`fixed` or `orderbook`). Orderbook mode additionally requires
+`reference_makers`, `reference_freshness` and `reference_spread_bps`.
+
+The review is read-only and returns the exact authorization and `review_digest`.
+`SaveAutomation` (`automation.save`, `PUT /v1/automations`) accepts that same edit
+with its digest. Revision changes, changed economics, wrong wallet/network, or
+limits below existing reservations/commitments are rejected. Resuming imported
+state requires affirmative review of potentially missing post-backup spending.
+New enabled policies may check immediately; edits schedule future checks at least
+one cadence later and never alter existing signed/accepted terms.
+
+`DisableAutomation` (`automation.disable`, `POST /v1/automations/disable`) takes
+`id`, `expected_wallet`, `expected_network`, `expected_revision`, and `cancel_open`.
+Disable is committed before optional cancellation. A pending publication is not
+an acknowledgement, and a funded swap is never made cancellable. On an uncertain
+save response, query the same policy ID and compare its revision/config; do not
+create a different policy ID to retry. These typed boundaries are the sensitive
+policy authorization surface. See [accounting and reference rules](AUTOMATION.md).
