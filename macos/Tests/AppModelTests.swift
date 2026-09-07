@@ -186,3 +186,23 @@ extension AppModelTests {
         }
     }
 }
+
+extension AppModelTests {
+    @MainActor
+    func testMonitoringNavigationBindsWalletAndKeepsNetworkExplicit() {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let model = AppModel(daemon: DaemonProcess(root: directory.path))
+        var settings = AppSettings(); settings.activeNetwork = "regtest"; settings.revision = 1
+        var alice = Blakeswap_V1_WalletProfile(); alice.id = "alice"
+        var bob = alice; bob.id = "bob"; settings.wallets = [alice, bob]
+        model.acceptSnapshot(nil, settings: settings, profile: "alice", generation: model.generation)
+        model.openMonitoring(AlertDestination(network: "regtest", wallet: "bob", kind: "swap", object: "swap"))
+        XCTAssertEqual(model.profile, "bob"); XCTAssertEqual(model.activityDestination, .swap("swap")); XCTAssertEqual(model.page, "Swaps")
+        let tower = AlertDestination(network: "regtest", wallet: "bob", kind: "tower", object: "accepted")
+        model.openMonitoring(tower)
+        XCTAssertEqual(model.monitoringDestination, tower); XCTAssertEqual(model.page, "Activity")
+        model.openMonitoring(AlertDestination(network: "mainnet", wallet: "alice", kind: "send", object: "send"))
+        XCTAssertEqual(model.profile, "bob"); XCTAssertEqual(model.network, "regtest"); XCTAssertNotNil(model.notice)
+    }
+}

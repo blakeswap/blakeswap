@@ -20,6 +20,39 @@
     "application/json"
   ],
   "paths": {
+    "/v1/actions/summary": {
+      "post": {
+        "operationId": "DaemonService_GetActionSummary",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1ActionSummary"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/googleRpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "body",
+            "description": "Refresh queues bounded all-wallet worker reconciliation; this read never waits on nodes.",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/v1ActionSummaryRequest"
+            }
+          }
+        ],
+        "tags": [
+          "DaemonService"
+        ]
+      }
+    },
     "/v1/activity/export": {
       "post": {
         "operationId": "DaemonService_ExportActivity",
@@ -1180,6 +1213,9 @@
     "blakeswapV1Status": {
       "type": "object",
       "properties": {
+        "actions": {
+          "$ref": "#/definitions/v1WalletActions"
+        },
         "backup": {
           "$ref": "#/definitions/v1BackupFreshness"
         },
@@ -1328,6 +1364,86 @@
         }
       },
       "additionalProperties": {}
+    },
+    "v1ActionDeadline": {
+      "type": "object",
+      "properties": {
+        "kind": {
+          "type": "string"
+        },
+        "chain": {
+          "type": "string"
+        },
+        "unit": {
+          "type": "string"
+        },
+        "target": {
+          "type": "integer",
+          "format": "int64"
+        },
+        "observed": {
+          "type": "integer",
+          "format": "int64"
+        },
+        "observed_at": {
+          "type": "string",
+          "format": "int64"
+        },
+        "remaining": {
+          "type": "string",
+          "format": "int64"
+        },
+        "certain": {
+          "type": "boolean"
+        },
+        "band": {
+          "type": "string"
+        },
+        "reason": {
+          "type": "string"
+        }
+      }
+    },
+    "v1ActionSummary": {
+      "type": "object",
+      "properties": {
+        "network": {
+          "type": "string"
+        },
+        "settings_revision": {
+          "type": "string",
+          "format": "uint64"
+        },
+        "observed_at": {
+          "type": "string",
+          "format": "int64"
+        },
+        "wallets": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/v1WalletActions"
+          }
+        },
+        "complete": {
+          "type": "boolean"
+        },
+        "requires_monitoring": {
+          "type": "boolean"
+        },
+        "installation_pending": {
+          "type": "boolean"
+        }
+      }
+    },
+    "v1ActionSummaryRequest": {
+      "type": "object",
+      "properties": {
+        "refresh": {
+          "type": "boolean"
+        }
+      },
+      "description": "Refresh queues bounded all-wallet worker reconciliation; this read never waits on nodes."
     },
     "v1ActivityExport": {
       "type": "object",
@@ -3774,6 +3890,70 @@
         },
         "submitted": {
           "type": "boolean"
+        }
+      }
+    },
+    "v1WalletAction": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "kind": {
+          "type": "string"
+        },
+        "object_id": {
+          "type": "string"
+        },
+        "state": {
+          "type": "string"
+        },
+        "requires_monitoring": {
+          "type": "boolean"
+        },
+        "uncertain": {
+          "type": "boolean"
+        },
+        "first_reveal": {
+          "type": "boolean"
+        },
+        "tower_ready": {
+          "type": "boolean"
+        },
+        "deadlines": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/v1ActionDeadline"
+          }
+        }
+      }
+    },
+    "v1WalletActions": {
+      "type": "object",
+      "properties": {
+        "source": {
+          "type": "string"
+        },
+        "wallet_id": {
+          "type": "string"
+        },
+        "network": {
+          "type": "string"
+        },
+        "known": {
+          "type": "boolean"
+        },
+        "observed_at": {
+          "type": "string",
+          "format": "int64"
+        },
+        "actions": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/v1WalletAction"
+          }
         }
       }
     },

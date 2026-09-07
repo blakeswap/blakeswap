@@ -24,6 +24,7 @@ service DaemonService {
  rpc ListMarket(MarketQuery) returns (MarketPage) { option (google.api.http) = { post: "/v1/market/query" body: "*" }; }
  rpc ListActivity(ActivityQuery) returns (ActivityPage) { option (google.api.http) = { post: "/v1/activity/query" body: "*" }; }
  rpc ExportActivity(ActivityQuery) returns (ActivityExport) { option (google.api.http) = { post: "/v1/activity/export" body: "*" }; }
+ rpc GetActionSummary(ActionSummaryRequest) returns (ActionSummary) { option (google.api.http) = { post: "/v1/actions/summary" body: "*" }; }
  rpc GetStatus(google.protobuf.Empty) returns (Status) { option (google.api.http) = { get: "/v1/status" }; }
  rpc RefreshStatus(RefreshStatusRequest) returns (Status) { option (google.api.http) = { post: "/v1/status/refresh" body: "*" }; }
  rpc ResolveWatchtower(ResolveWatchtowerRequest) returns (google.protobuf.Empty) { option (google.api.http) = { post: "/v1/watchtowers/resolve" body: "*" }; }
@@ -158,6 +159,7 @@ message TowerJob {
  bool secret_observed = 8; string error = 9;
 }
 message Status {
+ WalletActions actions = 26;
  BackupFreshness backup = 23;
  RecoveryProgress recovery = 24;
  map<string,FeeLimits> fee_limits = 21;
@@ -466,3 +468,9 @@ message DisableAutomationRequest {
  string id = 1; string expected_wallet = 2; string expected_network = 3;
  uint64 expected_revision = 4; bool cancel_open = 5;
 }
+// Refresh queues bounded all-wallet worker reconciliation; this read never waits on nodes.
+message ActionSummaryRequest { bool refresh = 1; }
+message ActionSummary { string network = 1; uint64 settings_revision = 2; int64 observed_at = 3; repeated WalletActions wallets = 4; bool complete = 5; bool requires_monitoring = 6; bool installation_pending = 7; }
+message WalletActions { string source = 6; string wallet_id = 1; string network = 2; bool known = 3; int64 observed_at = 4; repeated WalletAction actions = 5; }
+message WalletAction { string id = 1; string kind = 2; string object_id = 3; string state = 4; bool requires_monitoring = 5; bool uncertain = 6; bool first_reveal = 7; bool tower_ready = 8; repeated ActionDeadline deadlines = 9; }
+message ActionDeadline { string kind = 1; string chain = 2; string unit = 3; uint32 target = 4; uint32 observed = 5; int64 observed_at = 6; int64 remaining = 7; bool certain = 8; string band = 9; string reason = 10; }

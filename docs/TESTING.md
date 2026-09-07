@@ -533,3 +533,29 @@ checks authenticated legacy/portable import rejects those records before profile
 publication and preserves existing settings, wallets and source files. Backup
 fingerprint tests retain all archive fields while distinguishing no-op cadence
 checks from configuration, holds, receipts, charges and real actions.
+
+## Deadline alerts and shutdown protection
+
+`TestAction*` covers deterministic height/MTP cutoffs and strict timestamp
+finality, peer-clock skew/outage, stale observations, asymmetric reveal safety
+margins, armed-tower first-revelation distinction, restored reorg holds, signed
+sends, enabled automation, known-empty offline state and missing local knowledge.
+Desktop cases query all saved wallets independently of the selected page and
+exercise in-flight command/tick boundaries plus the bounded nonblocking refresh
+queue. The typed API test authenticates the all-wallet response and preserves
+exact timestamps/revisions and uncertainty through gRPC.
+
+`MonitoringTests` injects clocks and notification delivery for durable private
+journal permissions, restart/dedup, preferences/denial, initial terminal history,
+reorg reopening and wake reconciliation across healthy/unavailable wallets.
+Suspended-provider cases verify interruption, newer summaries, changed
+preferences and expired observations stop obsolete batches. The default
+notification provider is also exercised outside a native app bundle.
+`DaemonProcessTests` uses `BLAKESWAP_TEST_HELPER` from the fresh signed build to
+exercise Stay open then explicit Quit through the last-window handler, normal
+empty shutdown, unknown-state explicit shutdown and private runtime cleanup. A
+separate owned-child fixture refuses SIGTERM to verify the bounded fallback.
+Two actual helpers sharing one isolated root verify a rejected second owner
+cannot accept or remove the first runtime. A suspended actual child verifies
+forced cleanup using its PID and launch nonce.
+These tests never create an always-on service or use public wallets.

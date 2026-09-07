@@ -154,6 +154,7 @@ type ChainConnection struct {
 	Sources         chain.EndpointStatus `json:"sources"`
 }
 type Status struct {
+	Actions         WalletActions                `json:"actions"`
 	Backup          BackupFreshness              `json:"backup"`
 	Recovery        *RecoveryStatus              `json:"recovery,omitempty"`
 	FeeLimits       map[chain.ID]FeeLimits       `json:"fee_limits"`

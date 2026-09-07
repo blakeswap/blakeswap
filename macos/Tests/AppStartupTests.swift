@@ -116,5 +116,6 @@ final class AppStartupTests: XCTestCase {
         await model.refresh()
         XCTAssertNotNil(expected)
         XCTAssertEqual(model.connectionError, expected)
+        XCTAssertTrue(model.monitoring.interrupted, "A current startup failure must invalidate monitoring even before status/settings are read")
     }
 }

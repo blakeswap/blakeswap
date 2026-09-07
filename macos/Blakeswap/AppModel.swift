@@ -8,6 +8,7 @@ final class AppModel: ObservableObject {
     @Published var profile = "alice"
     @Published var page = "Market"
     @Published var activityDestination: ActivityDestination?
+ @Published var monitoringDestination: AlertDestination?
     struct Snapshot {
         var status: DaemonStatus?
         var settings: AppSettings?
@@ -22,17 +23,20 @@ final class AppModel: ObservableObject {
     @Published var recovery: String?
     @Published var setupWallet: Blakeswap_V1_FirstWallet?
     private let daemon: DaemonProcess
-    let root: String
+    let monitoring: MonitoringModel
+ let root: String
     init(daemon: DaemonProcess? = nil) {
         self.daemon = daemon ?? .shared
         root = self.daemon.root
+ monitoring = MonitoringModel(root:self.daemon.root)
+ monitoring.navigate = { [weak self] route in self?.openMonitoring(route) }
     }
     private var refreshing = false
     @Published private(set) var swapRefreshGeneration: UInt64?
     var checkingSwaps: Bool { swapRefreshGeneration == generation }
     var network: String { settings?.activeNetwork ?? status?.network ?? "mainnet" }
     var isRegtest: Bool { network == "regtest" }
-    func invalidateSnapshot() { generation &+= 1; snapshot.status = nil; recovery = nil; activityDestination = nil }
+    func invalidateSnapshot() { generation &+= 1; snapshot.status = nil; recovery = nil; activityDestination = nil; monitoringDestination = nil }
     func selectProfile(_ name: String) { invalidateSnapshot(); profile = name; notice = nil }
 
     @discardableResult
@@ -60,9 +64,35 @@ final class AppModel: ObservableObject {
             let settingsRaw = try await DaemonRPC.call(root: root, profile: selected, method: "settings.get")
             let nextSettings = try AppSettings(serializedBytes: settingsRaw)
             if acceptSnapshot(next, settings: nextSettings, profile: selected, generation: expected) { connectionError = nil }
+ await refreshMonitoring()
         } catch is CancellationError {
             // Closing the app while its helper starts is not a connection failure.
-        } catch { if selected == profile && expected == generation { connectionError = error.localizedDescription } }
+        } catch {
+            if selected == profile && expected == generation {
+                connectionError = error.localizedDescription
+                monitoring.unavailable()
+            }
+        }
+    }
+    func openMonitoring(_ route: AlertDestination) {
+        guard route.network == network, settings?.wallets.contains(where: { $0.id == route.wallet }) == true else { notice = "This notification belongs to another saved network. Select that network in Settings to inspect it."; return }
+        selectProfile(route.wallet)
+        if route.kind == "swap" { activityDestination = .swap(route.object) }
+        else if route.kind == "send" { activityDestination = .send(route.object) }
+        else if route.kind == "order" { activityDestination = .order(route.object) }
+        page = activityDestination?.page ?? (route.kind == "automation" ? "Market" : "Activity")
+ if !["swap", "send", "order"].contains(route.kind) { monitoringDestination = route }
+        NSApp?.activate(ignoringOtherApps: true)
+    }
+    func actionSummary(refresh: Bool = false) async throws -> ActionSummary {
+        let raw = try await DaemonRPC.call(root: root, profile: profile, method: "actions.summary", params: ["refresh": refresh])
+        return try ActionSummary(serializedBytes: raw)
+    }
+    func refreshMonitoring(refresh: Bool = false) async {
+        do { let next = try await actionSummary(refresh: refresh)
+            guard settings?.activeNetwork == next.network, settings?.revision == next.settingsRevision else { return }
+            await monitoring.reconcile(next)
+        } catch { monitoring.unavailable() }
     }
     func beginSwapRefresh() -> Bool {
         guard !checkingSwaps else { return false }

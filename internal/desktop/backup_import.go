@@ -47,6 +47,7 @@ type preparedImport struct {
 }
 
 func (m *Manager) importPortable(ctx context.Context, request portableImportRequest) (portableImportResult, error) {
+	defer m.beginInstallation()()
 	result := portableImportResult{}
 	manifest, legacy, err := readBackupManifest(ctx, m.root, request.Path, request.Password)
 	if err != nil {
@@ -128,6 +129,7 @@ func (m *Manager) importPortable(ctx context.Context, request portableImportRequ
 	if err = os.Rename(staging, target); err != nil {
 		return result, err
 	}
+	m.unpublishedInstalls.Add(1)
 	if err = syncDirectory(walletRoot); err != nil {
 		return result, err
 	}
@@ -156,6 +158,7 @@ func (m *Manager) importPortable(ctx context.Context, request portableImportRequ
 	}
 	m.settings = next
 	m.publishView()
+	m.unpublishedInstalls.Add(-1)
 	return portableImportResult{ProfileID: id, Settings: proto.Clone(next).(*pb.Settings), Legacy: legacy}, nil
 }
 

@@ -15,6 +15,7 @@ import (
 func (e *Engine) Status() Status { e.mu.Lock(); defer e.mu.Unlock(); return e.status() }
 func (e *Engine) status() Status {
 	s := Status{Network: e.Config.Network, Name: e.Config.Name, Mode: e.Config.Mode, PubKey: e.identity.Public().Hex(), Addresses: map[chain.ID]string{}, Balances: map[chain.ID]int64{}, Heights: map[chain.ID]uint32{}, Paused: e.s.Paused, Orders: []protocol.Offer{}, Swaps: []PublicSwap{}, TowerJobs: []map[string]any{}, LastError: e.lastError, Tower: e.Config.Tower}
+	s.Actions = e.walletActions(time.Now().Unix())
 	var backupErr error
 	s.Backup, backupErr = StateBackupFreshness(e.s)
 	if backupErr != nil {
@@ -174,6 +175,8 @@ func (e *Engine) Command(ctx context.Context, req Request) (any, error) {
 		return e.activityPage(req.Params)
 	case "activity.export":
 		return e.exportActivity(req.Params)
+	case "actions.summary":
+		return e.actionSummary(), nil
 	case "status":
 		return e.status(), nil
 	case "transaction.bump":

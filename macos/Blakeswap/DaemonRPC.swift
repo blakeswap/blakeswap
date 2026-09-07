@@ -7,6 +7,13 @@ struct DaemonEndpoint: Decodable {
     let socket: String
     let http: String
     let token: String
+    let ownerPID: Int32?
+    let ownerSession: String?
+    enum CodingKeys: String, CodingKey {
+        case socket, http, token
+        case ownerPID = "owner_pid"
+        case ownerSession = "owner_session"
+    }
 }
 
 enum DaemonRPC {
@@ -35,11 +42,15 @@ enum DaemonRPC {
             let service = Blakeswap_V1_DaemonService.Client(wrapping: client)
             let metadata: Metadata = ["authorization": "Bearer \(endpoint.token)"]
             var options = CallOptions.defaults
-            options.timeout = .seconds(method == "status.refresh" ? 70 : 45)
+            options.timeout = .seconds(method == "actions.summary" ? 3 : method == "status.refresh" ? 70 : 45)
             options.maxRequestMessageBytes = 131_072
             options.maxResponseMessageBytes = 8_388_608
             switch method {
-            case "status":
+            case "actions.summary":
+ let request = try Blakeswap_V1_ActionSummaryRequest(jsonUTF8Data: payload)
+ let response = try await service.getActionSummary(request, metadata: metadata, options: options)
+ return try response.serializedData()
+ case "status":
                 let request = try Google_Protobuf_Empty(jsonUTF8Data: payload)
                 let response = try await service.getStatus(request, metadata: metadata, options: options)
                 return try response.serializedData()

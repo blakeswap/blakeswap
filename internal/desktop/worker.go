@@ -22,19 +22,22 @@ type refreshResult struct {
 	err error
 }
 type walletWorker struct {
-	ctx      context.Context
-	advisory sync.WaitGroup
-	command  func(context.Context, daemon.Request) (any, error)
-	statusMu sync.Mutex
-	cancel   context.CancelFunc
-	done     chan struct{}
-	refresh  chan chan refreshResult
-	snapshot atomic.Pointer[json.RawMessage]
+	actionVersion atomic.Uint64
+	busy          atomic.Int64
+	engine        walletRuntime
+	ctx           context.Context
+	advisory      sync.WaitGroup
+	command       func(context.Context, daemon.Request) (any, error)
+	statusMu      sync.Mutex
+	cancel        context.CancelFunc
+	done          chan struct{}
+	refresh       chan chan refreshResult
+	snapshot      atomic.Pointer[json.RawMessage]
 }
 
 func startWalletWorker(ctx context.Context, engine walletRuntime) *walletWorker {
 	ctx, cancel := context.WithCancel(ctx)
-	w := &walletWorker{ctx: ctx, cancel: cancel, done: make(chan struct{}), refresh: make(chan chan refreshResult, 64)}
+	w := &walletWorker{engine: engine, ctx: ctx, cancel: cancel, done: make(chan struct{}), refresh: make(chan chan refreshResult, 64)}
 	if runtime, ok := engine.(interface {
 		Command(context.Context, daemon.Request) (any, error)
 	}); ok {
@@ -109,9 +112,13 @@ func (w *walletWorker) run(ctx context.Context, engine walletRuntime) {
 			return
 		}
 		cycle, cancel := context.WithTimeout(ctx, 30*time.Second)
+		w.busy.Add(1)
+		w.actionVersion.Add(1)
 		err := engine.Tick(cycle)
 		cancel()
 		raw := w.capture(engine, err)
+		w.actionVersion.Add(1)
+		w.busy.Add(-1)
 		for _, reply := range replies {
 			reply <- refreshResult{raw, err}
 		}
@@ -174,8 +181,15 @@ func (m *Manager) preflightFunds(ctx context.Context, profile string, req daemon
 		return nil, status.Error(codes.Unavailable, "wallet is connecting; check Settings and connection status")
 	}
 	worker.advisory.Add(1)
+	worker.busy.Add(1)
 	m.mu.Unlock()
 	defer worker.advisory.Done()
+	defer worker.busy.Add(-1)
+	defer func() {
+		if worker.engine != nil {
+			worker.capture(worker.engine, nil)
+		}
+	}()
 	call, cancel := context.WithCancel(ctx)
 	defer cancel()
 	stop := context.AfterFunc(worker.ctx, cancel)

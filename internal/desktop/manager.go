@@ -28,24 +28,35 @@ import (
 )
 
 type Manager struct {
-	mu         sync.Mutex
-	view       atomic.Pointer[desktopView]
-	root       string
-	settings   *pb.Settings
-	engines    map[string]*daemon.Engine
-	workers    map[string]*walletWorker
-	configs    map[string]daemon.Config
-	lastError  string
-	restart    bool
-	stopped    bool
-	openings   map[string]*networkOpening
-	runtimeCtx context.Context
-	runtimeDir string
-	servers    map[string]*api.Server
-	chainReady func(chain.ID, uint32)
+	actionCommands atomic.Int64
+	actionVersion  atomic.Uint64
+	installations  atomic.Int64
+	// A successful directory rename can outlive a failed settings publication.
+	// Startup authenticates/reconciles the durable markers before this manager
+	// is constructed; a running manager retains the hold until publication.
+	unpublishedInstalls atomic.Int64
+	mu                  sync.Mutex
+	view                atomic.Pointer[desktopView]
+	root                string
+	settings            *pb.Settings
+	engines             map[string]*daemon.Engine
+	workers             map[string]*walletWorker
+	configs             map[string]daemon.Config
+	lastError           string
+	restart             bool
+	stopped             bool
+	openings            map[string]*networkOpening
+	runtimeCtx          context.Context
+	runtimeDir          string
+	runtimeSession      string
+	servers             map[string]*api.Server
+	actionReady         func(daemon.WalletActions)
+	storedActions       map[string]daemon.WalletActions
+	chainReady          func(chain.ID, uint32)
 }
 
 type networkOpening struct {
+	actions atomic.Pointer[daemon.WalletActions]
 	cancel  context.CancelFunc
 	done    chan networkResult
 	mu      sync.Mutex
@@ -89,7 +100,13 @@ func (m *Manager) publishView() {
 	for _, wallet := range m.settings.Wallets {
 		profile := wallet.Id
 		s := daemon.Status{Name: profile, Mode: "trader", Network: chain.Network(m.settings.ActiveNetwork), LastError: m.lastError}
+		if a := m.storedActions[profile]; !m.restart && a.Network == s.Network {
+			s.Actions = a
+		}
 		if job := m.openings[profile]; job != nil && !m.restart {
+			if a := job.actions.Load(); a != nil {
+				s.Actions = *a
+			}
 			s.Heights = job.readyHeights()
 		}
 		if e := m.engines[profile]; e != nil && !m.restart {
@@ -153,7 +170,7 @@ func Run(ctx context.Context, root string, parent int) error {
 	if err != nil {
 		return err
 	}
-	m := &Manager{root: root, settings: settings, engines: map[string]*daemon.Engine{}, configs: map[string]daemon.Config{}, restart: true}
+	m := &Manager{root: root, settings: settings, engines: map[string]*daemon.Engine{}, configs: map[string]daemon.Config{}, restart: true, runtimeSession: os.Getenv("BLAKESWAP_DESKTOP_SESSION")}
 	if settings.OnboardingStage == "" {
 		m.lastError = "Connecting"
 	}
@@ -194,6 +211,7 @@ func (m *Manager) readSettings(ctx context.Context) (*pb.Settings, error) {
 	return proto.Clone(m.settings).(*pb.Settings), nil
 }
 func (m *Manager) writeSettings(ctx context.Context, next *pb.Settings) (*pb.Settings, error) {
+	defer m.beginAction()()
 	if err := validate(next); err != nil {
 		return nil, status.Error(codes.InvalidArgument, err.Error())
 	}
@@ -260,7 +278,16 @@ func (m *Manager) writeSettings(ctx context.Context, next *pb.Settings) (*pb.Set
 	return proto.Clone(saved).(*pb.Settings), nil
 }
 func (m *Manager) command(ctx context.Context, profile string, req daemon.Request) (any, error) {
+
+	if req.Method == "actions.summary" {
+		return m.actionSummary(ctx, req)
+	}
+	if req.Method != "status" {
+		defer m.beginAction()()
+	}
+
 	if req.Method == "automation.list" || req.Method == "automation.review" || req.Method == "automation.save" || req.Method == "automation.disable" || req.Method == "wallet.preflight" || req.Method == "fee.quote" || req.Method == "trade.quote" || req.Method == "trade.confirm" || req.Method == "activity.list" || req.Method == "activity.export" || req.Method == "market.list" {
+
 		return m.preflightFunds(ctx, profile, req)
 	}
 	if req.Method == "status.refresh" {
@@ -301,6 +328,11 @@ func (m *Manager) command(ctx context.Context, profile string, req daemon.Reques
 			s.LastError = m.lastError
 		}
 		return s, nil
+	}
+	worker := m.workers[profile]
+	if worker != nil {
+		worker.busy.Add(1)
+		defer worker.busy.Add(-1)
 	}
 	result, err := e.Command(ctx, req)
 	if worker := m.workers[profile]; worker != nil {
@@ -344,6 +376,12 @@ func (m *Manager) connect(ctx context.Context) {
 			case result := <-job.done:
 				job.cancel()
 				delete(m.openings, profile.Id)
+				if a := job.actions.Load(); a != nil {
+					if m.storedActions == nil {
+						m.storedActions = map[string]daemon.WalletActions{}
+					}
+					m.storedActions[profile.Id] = *a
+				}
 				if result.err != nil {
 					result.manager.closeNetwork()
 					m.lastError = result.err.Error()
@@ -361,6 +399,7 @@ func (m *Manager) connect(ctx context.Context) {
 		openingCtx, cancel := context.WithCancel(ctx)
 		job := &networkOpening{cancel: cancel, done: make(chan networkResult, 1)}
 		worker.chainReady = job.chainReady
+		worker.actionReady = func(a daemon.WalletActions) { job.actions.Store(&a) }
 		m.openings[profile.Id] = job
 		m.lastError = "Connecting; RPC wallet history may still be synchronizing"
 		go func() { err := worker.openNetwork(openingCtx); job.done <- networkResult{worker, err} }()
@@ -417,6 +456,11 @@ func (m *Manager) openNetwork(ctx context.Context) error {
 		m.configs[profile] = cfg
 		if m.engines[profile] != nil {
 			continue
+		}
+		if m.actionReady != nil {
+			if a, err := daemon.LoadStoredActions(cfg); err == nil {
+				m.actionReady(a)
+			}
 		}
 		e, err := daemon.Open(ctx, cfg)
 		if err != nil {

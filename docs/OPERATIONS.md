@@ -424,3 +424,15 @@ neither machine sleep nor going offline pauses chain deadlines. Missed policy
 checks do not create a catch-up burst. Imported automation state remains held
 until explicit authorization acknowledges potentially omitted later spending.
 See [exact policy and budget rules](AUTOMATION.md).
+
+### Deadline alerts and closing the app
+
+The monitoring panel and Quit prompt inspect all saved wallets on the active
+network, including accepted local tower jobs and enabled automatic offers.
+**Stay open** retains the last window and app-owned helper; explicit **Quit**
+stops monitoring and releases the runtime. An armed tower cannot perform the
+taker's first secret revelation. Notification permission/preferences do not
+disable quit protection. Public deadline displays use observed chain MTP,
+regtest uses blocks, and unavailable clocks stay uncertain. See
+[Deadline alerts and shutdown protection](MONITORING.md) for privacy, restart,
+sleep/wake and terminal/reorg behavior.

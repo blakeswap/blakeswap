@@ -159,6 +159,7 @@ struct SettingsView: View {
     }
     var body: some View {
         VStack(alignment: .leading, spacing: 22) {
+ NotificationPreferencesView(model: model.monitoring)
             GroupBox("Wallets") {
                 VStack(alignment: .leading, spacing: 12) {
                     ImportBackupButton()
