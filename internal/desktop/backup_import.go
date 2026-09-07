@@ -14,8 +14,15 @@ import (
 	pb "github.com/blakeswap/blakeswap/api/gen/blakeswap/v1"
 	"github.com/blakeswap/blakeswap/internal/chain"
 	"github.com/blakeswap/blakeswap/internal/daemon"
+	"github.com/blakeswap/blakeswap/internal/storage"
 	"google.golang.org/protobuf/proto"
 )
+
+// A portable snapshot may occupy the full archive budget on one network.
+// Recovery adds an index of existing obligation IDs; allow another archive's
+// worth of material plus bbolt allocation/page overhead. Check the actual file
+// before publishing so every installed profile fits the restart reader's bound.
+const portableVaultLimit = 2*storage.PortableLimit + (32 << 20)
 
 type portableImportRequest struct {
 	Path         string
@@ -182,8 +189,16 @@ func prepareImportedProfile(ctx context.Context, staging string, entry backupWal
 		if err := daemon.PrepareRecovery(state, snapshotAt, legacy); err != nil {
 			return metadata, err
 		}
-		if err := saveVault(filepath.Join(staging, string(network), "state.db"), password, state); err != nil {
+		path := filepath.Join(staging, string(network), "state.db")
+		if err := saveVault(path, password, state); err != nil {
 			return metadata, err
+		}
+		info, err := os.Stat(path)
+		if err != nil {
+			return metadata, err
+		}
+		if info.Size() > portableVaultLimit {
+			return metadata, errors.New("prepared imported state exceeds its safe validation limit")
 		}
 		metadata.Networks = append(metadata.Networks, network)
 	}
@@ -292,9 +307,9 @@ func validateInstalledRecovery(root, seed string, networks []chain.Network) erro
 		if err != nil {
 			return err
 		}
-		// readStateBackup uses an authenticated private copy, never opens the
-		// destination for mutation while checking the commit marker.
-		state, err := readStateBackup(root, filepath.Join(root, string(network), "state.db"), string(password))
+		// Authenticate a private copy with the same bound enforced before atomic
+		// installation. The legacy source's 64 MiB policy does not apply here.
+		state, err := readStateBackupBounded(root, filepath.Join(root, string(network), "state.db"), string(password), portableVaultLimit)
 		clear(password)
 		if err != nil {
 			return err

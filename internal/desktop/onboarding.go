@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"os"
 	"path/filepath"
@@ -228,6 +229,12 @@ func syncDirectory(path string) error {
 }
 
 func readStateBackup(root, source, password string) (*daemon.State, error) {
+	return readStateBackupBounded(root, source, password, 64<<20)
+}
+
+// The legacy source policy and the portable installer have distinct file bounds.
+// Both authenticate only a private copy, so a failed read never edits its source.
+func readStateBackupBounded(root, source, password string, maxBytes int64) (*daemon.State, error) {
 	if !filepath.IsAbs(source) {
 		return nil, errors.New("choose an absolute backup file path")
 	}
@@ -240,8 +247,8 @@ func readStateBackup(root, source, password string) (*daemon.State, error) {
 	if err != nil {
 		return nil, err
 	}
-	if !info.Mode().IsRegular() || info.Size() == 0 || info.Size() > 64<<20 {
-		return nil, errors.New("choose a wallet backup file up to 64 MiB")
+	if !info.Mode().IsRegular() || info.Size() == 0 || info.Size() > maxBytes {
+		return nil, fmt.Errorf("choose a wallet backup file up to %d MiB", maxBytes>>20)
 	}
 	// Open only a private copy: authentication failures never modify the source.
 	copy, err := os.CreateTemp(root, ".restore-*.db")
@@ -249,7 +256,7 @@ func readStateBackup(root, source, password string) (*daemon.State, error) {
 		return nil, err
 	}
 	defer os.Remove(copy.Name())
-	n, err := io.Copy(copy, io.LimitReader(input, (64<<20)+1))
+	n, err := io.Copy(copy, io.LimitReader(input, maxBytes+1))
 	closeErr := copy.Close()
 	if err != nil {
 		return nil, err
@@ -257,8 +264,8 @@ func readStateBackup(root, source, password string) (*daemon.State, error) {
 	if closeErr != nil {
 		return nil, closeErr
 	}
-	if n > 64<<20 {
-		return nil, errors.New("backup exceeds 64 MiB")
+	if n > maxBytes {
+		return nil, fmt.Errorf("backup exceeds %d MiB", maxBytes>>20)
 	}
 	vault, err := storage.Open(copy.Name(), []byte(password))
 	if err != nil {
