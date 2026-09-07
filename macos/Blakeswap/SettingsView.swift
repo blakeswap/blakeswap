@@ -161,6 +161,7 @@ struct SettingsView: View {
         VStack(alignment: .leading, spacing: 22) {
             GroupBox("Wallets") {
                 VStack(alignment: .leading, spacing: 12) {
+                    ImportBackupButton()
                     Text("Each wallet has its own keys and balances on every network. All wallets keep running while the app is open.").font(.caption).foregroundStyle(.secondary)
                     ForEach(draft.wallets.indices, id: \.self) { i in
                         HStack {

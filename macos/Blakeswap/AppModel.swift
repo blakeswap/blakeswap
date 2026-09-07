@@ -151,6 +151,53 @@ final class AppModel: ObservableObject {
             return "Connected at block \(result.height)"
         } catch { return error.localizedDescription }
     }
+    var recoveryInProgress: Bool { status?.hasRecovery == true && status?.recovery.state != "ready" }
+    func inspectBackup(path: String, password: String) async -> Blakeswap_V1_BackupContents? {
+        guard !busy else { return nil }
+        busy = true; notice = nil
+        defer { busy = false }
+        do {
+            var request = Blakeswap_V1_InspectBackupRequest(); request.path = path; request.password = password
+            let raw = try await DaemonRPC.call(root: root, profile: profile, method: "backup.inspect", payload: request.jsonUTF8Data())
+            return try Blakeswap_V1_BackupContents(serializedBytes: raw)
+        } catch { notice = error.localizedDescription; return nil }
+    }
+    func exportBackup(path: String, password: String, allWallets: Bool) async -> Bool {
+        guard !busy else { return false }
+        let selected = profile, expected = generation
+        busy = true; notice = nil
+        defer { busy = false }
+        do {
+            var request = Blakeswap_V1_ExportPortableBackupRequest()
+            request.path = path; request.password = password; request.allWallets = allWallets
+            let raw = try await DaemonRPC.call(root: root, profile: selected, method: "backup.export", payload: request.jsonUTF8Data())
+            let result = try Blakeswap_V1_PortableBackupResult(serializedBytes: raw)
+            if selected == profile && expected == generation {
+                notice = result.reminderWarning.isEmpty ? "Portable backup saved. Keep its chosen password separately." : result.reminderWarning
+                NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: result.path)])
+            }
+            await refresh(); return true
+        } catch { notice = error.localizedDescription; return false }
+    }
+    func importBackup(path: String, password: String, sourceWallet: String, name: String) async -> Bool {
+        guard !busy, let current = settings else { return false }
+        let selected = profile, expected = generation
+        busy = true; notice = nil
+        defer { busy = false }
+        do {
+            var request = Blakeswap_V1_ImportBackupRequest()
+            request.path = path; request.password = password; request.sourceWalletID = sourceWallet
+            request.name = name.trimmingCharacters(in: .whitespacesAndNewlines); request.revision = current.revision
+            let raw = try await DaemonRPC.call(root: root, profile: selected, method: "backup.import", payload: request.jsonUTF8Data())
+            let result = try Blakeswap_V1_ImportBackupResult(serializedBytes: raw)
+            if selected == profile && expected == generation {
+                acceptSnapshot(nil, settings: result.settings, profile: selected, generation: expected)
+                selectProfile(result.profileID); page = "Wallet"
+                notice = "Wallet imported into a new profile. Recovery will check its recorded obligations before trading resumes."
+            }
+            await refresh(); return true
+        } catch { notice = error.localizedDescription; return false }
+    }
     func command(_ method: String, _ params: [String: Any] = [:]) async -> Bool {
         guard !busy else { return false }; busy = true; notice = nil
         let selected = profile

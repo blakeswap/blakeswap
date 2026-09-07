@@ -47,6 +47,11 @@ func activityOutcome(a Activity) ActivityOutcome {
 	return outcome
 }
 func activityMaterial(a Activity) string {
+	// Loading an old order with no variants may normalize nil to an empty
+	// slice. That representation change is not another historical outcome.
+	if len(a.Variants) == 0 {
+		a.Variants = nil
+	}
 	a.ObservedAt = 0 // Routine polling is not another economic outcome.
 	a.UpdatedAt = 0
 	return protocol.Digest(struct {
@@ -84,6 +89,11 @@ func (e *Engine) putActivity(next Activity, backfill bool) {
 	next.Wallet = e.Config.Name
 	next.Network = e.Config.Network
 	if exists {
+		// Retain the recorded origin after a portable import assigns a new local
+		// profile. API/CSV copies bind their wallet field to the current view.
+		if previous.Wallet != "" {
+			next.Wallet = previous.Wallet
+		}
 		next.CreatedAt, next.CreatedSource, next.RecordedAt = previous.CreatedAt, previous.CreatedSource, previous.RecordedAt
 		next.Variants = mergeActivityIDs(previous.Variants, next.Variants)
 		next.History = previous.History
@@ -161,16 +171,32 @@ func rawActivity(raws []string, id string) (int64, int64, int64, bool) {
 // Chain history enrichment has its own bounded pass after settlement work.
 func (e *Engine) syncActivity() {
 	backfill := e.s.ActivityVersion == 0
-	for id, event := range e.s.Offers {
+	for id, event := range e.recordedOrderEvents() {
 		var o protocol.Offer
-		if json.Unmarshal([]byte(event.Content), &o) != nil {
-			continue
+		record := e.s.OrderRecords[id]
+		_, live := e.s.Offers[id]
+		if live {
+			if json.Unmarshal([]byte(event.Content), &o) != nil {
+				continue
+			}
+		} else {
+			// Only project previously validated signed history. Quarantine cannot
+			// introduce forged amounts or invent a missing creation timestamp.
+			if record.EventID != event.ID.Hex() || record.Offer.Expires <= 0 {
+				continue
+			}
+			o = record.Offer
 		}
 		key := activityID("order", id)
-		if o.Status == "open" && o.Expires <= time.Now().Unix() {
-			o.Status = "expired"
+		if o.Status == "open" {
+			if !live {
+				// Elapsed time makes a source eligible for a fresh manual review;
+				// it does not publish a terminal decision for the imported order.
+				o.Status = "quarantined"
+			} else if o.Expires <= time.Now().Unix() {
+				o.Status = "expired"
+			}
 		}
-		record := e.s.OrderRecords[id]
 		related := []string{}
 		for _, linked := range []string{record.Replaces, record.ReplacedBy, record.RecreatedFrom} {
 			if linked != "" {
@@ -180,7 +206,11 @@ func (e *Engine) syncActivity() {
 		if o.Reservation != "" {
 			related = append(related, activityID("swap", o.Reservation))
 		}
-		e.putActivity(Activity{ID: key, GroupID: key, Kind: "order", Chain: o.Sell, Direction: "info", Principal: o.SellAmount, CounterChain: o.Sell.Other(), CounterAmount: o.BuyAmount, OrderID: id, SwapID: o.Reservation, LocalStatus: o.Status, Status: o.Status, Label: "Order " + o.Status, CreatedAt: record.CreatedAt, RelatedIDs: related}, backfill)
+		label := "Order "
+		if !live {
+			label = "Restored order "
+		}
+		e.putActivity(Activity{ID: key, GroupID: key, Kind: "order", Chain: o.Sell, Direction: "info", Principal: o.SellAmount, CounterChain: o.Sell.Other(), CounterAmount: o.BuyAmount, OrderID: id, SwapID: o.Reservation, LocalStatus: o.Status, Status: o.Status, Label: label + o.Status, CreatedAt: record.CreatedAt, RelatedIDs: related}, backfill || (!live && record.CreatedAt == 0))
 	}
 	for id, send := range e.s.Sends {
 		key := activityID("send", id)

@@ -20,35 +20,38 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	DaemonService_ListMarket_FullMethodName         = "/blakeswap.v1.DaemonService/ListMarket"
-	DaemonService_ListActivity_FullMethodName       = "/blakeswap.v1.DaemonService/ListActivity"
-	DaemonService_ExportActivity_FullMethodName     = "/blakeswap.v1.DaemonService/ExportActivity"
-	DaemonService_GetStatus_FullMethodName          = "/blakeswap.v1.DaemonService/GetStatus"
-	DaemonService_RefreshStatus_FullMethodName      = "/blakeswap.v1.DaemonService/RefreshStatus"
-	DaemonService_ResolveWatchtower_FullMethodName  = "/blakeswap.v1.DaemonService/ResolveWatchtower"
-	DaemonService_SetPaused_FullMethodName          = "/blakeswap.v1.DaemonService/SetPaused"
-	DaemonService_CreateOffer_FullMethodName        = "/blakeswap.v1.DaemonService/CreateOffer"
-	DaemonService_CancelOffer_FullMethodName        = "/blakeswap.v1.DaemonService/CancelOffer"
-	DaemonService_TakeOffer_FullMethodName          = "/blakeswap.v1.DaemonService/TakeOffer"
-	DaemonService_Mine_FullMethodName               = "/blakeswap.v1.DaemonService/Mine"
-	DaemonService_Faucet_FullMethodName             = "/blakeswap.v1.DaemonService/Faucet"
-	DaemonService_GetRecovery_FullMethodName        = "/blakeswap.v1.DaemonService/GetRecovery"
-	DaemonService_PreflightFunds_FullMethodName     = "/blakeswap.v1.DaemonService/PreflightFunds"
-	DaemonService_QuoteTrade_FullMethodName         = "/blakeswap.v1.DaemonService/QuoteTrade"
-	DaemonService_ConfirmTrade_FullMethodName       = "/blakeswap.v1.DaemonService/ConfirmTrade"
-	DaemonService_QuoteFee_FullMethodName           = "/blakeswap.v1.DaemonService/QuoteFee"
-	DaemonService_BumpTransaction_FullMethodName    = "/blakeswap.v1.DaemonService/BumpTransaction"
-	DaemonService_SendCoins_FullMethodName          = "/blakeswap.v1.DaemonService/SendCoins"
-	DaemonService_BackupWallet_FullMethodName       = "/blakeswap.v1.DaemonService/BackupWallet"
-	DaemonService_CreateWallet_FullMethodName       = "/blakeswap.v1.DaemonService/CreateWallet"
-	DaemonService_PrepareFirstWallet_FullMethodName = "/blakeswap.v1.DaemonService/PrepareFirstWallet"
-	DaemonService_GetFirstWallet_FullMethodName     = "/blakeswap.v1.DaemonService/GetFirstWallet"
-	DaemonService_ConfirmFirstWallet_FullMethodName = "/blakeswap.v1.DaemonService/ConfirmFirstWallet"
-	DaemonService_ExportFirstWallet_FullMethodName  = "/blakeswap.v1.DaemonService/ExportFirstWallet"
-	DaemonService_FinishOnboarding_FullMethodName   = "/blakeswap.v1.DaemonService/FinishOnboarding"
-	DaemonService_GetSettings_FullMethodName        = "/blakeswap.v1.DaemonService/GetSettings"
-	DaemonService_UpdateSettings_FullMethodName     = "/blakeswap.v1.DaemonService/UpdateSettings"
-	DaemonService_CheckNode_FullMethodName          = "/blakeswap.v1.DaemonService/CheckNode"
+	DaemonService_ListMarket_FullMethodName           = "/blakeswap.v1.DaemonService/ListMarket"
+	DaemonService_ListActivity_FullMethodName         = "/blakeswap.v1.DaemonService/ListActivity"
+	DaemonService_ExportActivity_FullMethodName       = "/blakeswap.v1.DaemonService/ExportActivity"
+	DaemonService_GetStatus_FullMethodName            = "/blakeswap.v1.DaemonService/GetStatus"
+	DaemonService_RefreshStatus_FullMethodName        = "/blakeswap.v1.DaemonService/RefreshStatus"
+	DaemonService_ResolveWatchtower_FullMethodName    = "/blakeswap.v1.DaemonService/ResolveWatchtower"
+	DaemonService_SetPaused_FullMethodName            = "/blakeswap.v1.DaemonService/SetPaused"
+	DaemonService_CreateOffer_FullMethodName          = "/blakeswap.v1.DaemonService/CreateOffer"
+	DaemonService_CancelOffer_FullMethodName          = "/blakeswap.v1.DaemonService/CancelOffer"
+	DaemonService_TakeOffer_FullMethodName            = "/blakeswap.v1.DaemonService/TakeOffer"
+	DaemonService_Mine_FullMethodName                 = "/blakeswap.v1.DaemonService/Mine"
+	DaemonService_Faucet_FullMethodName               = "/blakeswap.v1.DaemonService/Faucet"
+	DaemonService_GetRecovery_FullMethodName          = "/blakeswap.v1.DaemonService/GetRecovery"
+	DaemonService_PreflightFunds_FullMethodName       = "/blakeswap.v1.DaemonService/PreflightFunds"
+	DaemonService_QuoteTrade_FullMethodName           = "/blakeswap.v1.DaemonService/QuoteTrade"
+	DaemonService_ConfirmTrade_FullMethodName         = "/blakeswap.v1.DaemonService/ConfirmTrade"
+	DaemonService_QuoteFee_FullMethodName             = "/blakeswap.v1.DaemonService/QuoteFee"
+	DaemonService_BumpTransaction_FullMethodName      = "/blakeswap.v1.DaemonService/BumpTransaction"
+	DaemonService_SendCoins_FullMethodName            = "/blakeswap.v1.DaemonService/SendCoins"
+	DaemonService_ExportPortableBackup_FullMethodName = "/blakeswap.v1.DaemonService/ExportPortableBackup"
+	DaemonService_InspectBackup_FullMethodName        = "/blakeswap.v1.DaemonService/InspectBackup"
+	DaemonService_ImportBackup_FullMethodName         = "/blakeswap.v1.DaemonService/ImportBackup"
+	DaemonService_BackupWallet_FullMethodName         = "/blakeswap.v1.DaemonService/BackupWallet"
+	DaemonService_CreateWallet_FullMethodName         = "/blakeswap.v1.DaemonService/CreateWallet"
+	DaemonService_PrepareFirstWallet_FullMethodName   = "/blakeswap.v1.DaemonService/PrepareFirstWallet"
+	DaemonService_GetFirstWallet_FullMethodName       = "/blakeswap.v1.DaemonService/GetFirstWallet"
+	DaemonService_ConfirmFirstWallet_FullMethodName   = "/blakeswap.v1.DaemonService/ConfirmFirstWallet"
+	DaemonService_ExportFirstWallet_FullMethodName    = "/blakeswap.v1.DaemonService/ExportFirstWallet"
+	DaemonService_FinishOnboarding_FullMethodName     = "/blakeswap.v1.DaemonService/FinishOnboarding"
+	DaemonService_GetSettings_FullMethodName          = "/blakeswap.v1.DaemonService/GetSettings"
+	DaemonService_UpdateSettings_FullMethodName       = "/blakeswap.v1.DaemonService/UpdateSettings"
+	DaemonService_CheckNode_FullMethodName            = "/blakeswap.v1.DaemonService/CheckNode"
 )
 
 // DaemonServiceClient is the client API for DaemonService service.
@@ -74,6 +77,9 @@ type DaemonServiceClient interface {
 	QuoteFee(ctx context.Context, in *FeeQuoteRequest, opts ...grpc.CallOption) (*FeeQuote, error)
 	BumpTransaction(ctx context.Context, in *BumpRequest, opts ...grpc.CallOption) (*BumpResult, error)
 	SendCoins(ctx context.Context, in *SendCoinsRequest, opts ...grpc.CallOption) (*WalletSend, error)
+	ExportPortableBackup(ctx context.Context, in *ExportPortableBackupRequest, opts ...grpc.CallOption) (*PortableBackupResult, error)
+	InspectBackup(ctx context.Context, in *InspectBackupRequest, opts ...grpc.CallOption) (*BackupContents, error)
+	ImportBackup(ctx context.Context, in *ImportBackupRequest, opts ...grpc.CallOption) (*ImportBackupResult, error)
 	BackupWallet(ctx context.Context, in *emptypb.Empty, opts ...grpc.CallOption) (*Backup, error)
 	CreateWallet(ctx context.Context, in *CreateWalletRequest, opts ...grpc.CallOption) (*Settings, error)
 	PrepareFirstWallet(ctx context.Context, in *PrepareFirstWalletRequest, opts ...grpc.CallOption) (*FirstWallet, error)
@@ -284,6 +290,36 @@ func (c *daemonServiceClient) SendCoins(ctx context.Context, in *SendCoinsReques
 	return out, nil
 }
 
+func (c *daemonServiceClient) ExportPortableBackup(ctx context.Context, in *ExportPortableBackupRequest, opts ...grpc.CallOption) (*PortableBackupResult, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(PortableBackupResult)
+	err := c.cc.Invoke(ctx, DaemonService_ExportPortableBackup_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *daemonServiceClient) InspectBackup(ctx context.Context, in *InspectBackupRequest, opts ...grpc.CallOption) (*BackupContents, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(BackupContents)
+	err := c.cc.Invoke(ctx, DaemonService_InspectBackup_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *daemonServiceClient) ImportBackup(ctx context.Context, in *ImportBackupRequest, opts ...grpc.CallOption) (*ImportBackupResult, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ImportBackupResult)
+	err := c.cc.Invoke(ctx, DaemonService_ImportBackup_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *daemonServiceClient) BackupWallet(ctx context.Context, in *emptypb.Empty, opts ...grpc.CallOption) (*Backup, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(Backup)
@@ -407,6 +443,9 @@ type DaemonServiceServer interface {
 	QuoteFee(context.Context, *FeeQuoteRequest) (*FeeQuote, error)
 	BumpTransaction(context.Context, *BumpRequest) (*BumpResult, error)
 	SendCoins(context.Context, *SendCoinsRequest) (*WalletSend, error)
+	ExportPortableBackup(context.Context, *ExportPortableBackupRequest) (*PortableBackupResult, error)
+	InspectBackup(context.Context, *InspectBackupRequest) (*BackupContents, error)
+	ImportBackup(context.Context, *ImportBackupRequest) (*ImportBackupResult, error)
 	BackupWallet(context.Context, *emptypb.Empty) (*Backup, error)
 	CreateWallet(context.Context, *CreateWalletRequest) (*Settings, error)
 	PrepareFirstWallet(context.Context, *PrepareFirstWalletRequest) (*FirstWallet, error)
@@ -483,6 +522,15 @@ func (UnimplementedDaemonServiceServer) BumpTransaction(context.Context, *BumpRe
 }
 func (UnimplementedDaemonServiceServer) SendCoins(context.Context, *SendCoinsRequest) (*WalletSend, error) {
 	return nil, status.Error(codes.Unimplemented, "method SendCoins not implemented")
+}
+func (UnimplementedDaemonServiceServer) ExportPortableBackup(context.Context, *ExportPortableBackupRequest) (*PortableBackupResult, error) {
+	return nil, status.Error(codes.Unimplemented, "method ExportPortableBackup not implemented")
+}
+func (UnimplementedDaemonServiceServer) InspectBackup(context.Context, *InspectBackupRequest) (*BackupContents, error) {
+	return nil, status.Error(codes.Unimplemented, "method InspectBackup not implemented")
+}
+func (UnimplementedDaemonServiceServer) ImportBackup(context.Context, *ImportBackupRequest) (*ImportBackupResult, error) {
+	return nil, status.Error(codes.Unimplemented, "method ImportBackup not implemented")
 }
 func (UnimplementedDaemonServiceServer) BackupWallet(context.Context, *emptypb.Empty) (*Backup, error) {
 	return nil, status.Error(codes.Unimplemented, "method BackupWallet not implemented")
@@ -877,6 +925,60 @@ func _DaemonService_SendCoins_Handler(srv interface{}, ctx context.Context, dec 
 	return interceptor(ctx, in, info, handler)
 }
 
+func _DaemonService_ExportPortableBackup_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ExportPortableBackupRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DaemonServiceServer).ExportPortableBackup(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: DaemonService_ExportPortableBackup_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DaemonServiceServer).ExportPortableBackup(ctx, req.(*ExportPortableBackupRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _DaemonService_InspectBackup_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(InspectBackupRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DaemonServiceServer).InspectBackup(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: DaemonService_InspectBackup_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DaemonServiceServer).InspectBackup(ctx, req.(*InspectBackupRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _DaemonService_ImportBackup_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ImportBackupRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DaemonServiceServer).ImportBackup(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: DaemonService_ImportBackup_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DaemonServiceServer).ImportBackup(ctx, req.(*ImportBackupRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _DaemonService_BackupWallet_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(emptypb.Empty)
 	if err := dec(in); err != nil {
@@ -1139,6 +1241,18 @@ var DaemonService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "SendCoins",
 			Handler:    _DaemonService_SendCoins_Handler,
+		},
+		{
+			MethodName: "ExportPortableBackup",
+			Handler:    _DaemonService_ExportPortableBackup_Handler,
+		},
+		{
+			MethodName: "InspectBackup",
+			Handler:    _DaemonService_InspectBackup_Handler,
+		},
+		{
+			MethodName: "ImportBackup",
+			Handler:    _DaemonService_ImportBackup_Handler,
 		},
 		{
 			MethodName: "BackupWallet",

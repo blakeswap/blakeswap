@@ -20,7 +20,9 @@ import (
 // Called with the manager lock held (or before the run loop starts). Socket
 // names stay short enough for macOS regardless of the stable wallet ID.
 func (m *Manager) startAPI(profile string) error {
-	service := &api.Service{Command: func(ctx context.Context, r daemon.Request) (any, error) { return m.command(ctx, profile, r) }, ReadSettings: m.readSettings, WriteSettings: m.writeSettings, NewWallet: m.createWallet, PrepareWallet: m.prepareFirstWallet, FirstWallet: m.firstWallet, ConfirmWallet: m.confirmFirstWallet, ExportWallet: m.exportFirstWallet, FinishSetup: m.finishOnboarding}
+	service := &api.Service{PortableExport: func(ctx context.Context, r *pb.ExportPortableBackupRequest) (*pb.PortableBackupResult, error) {
+		return m.exportPortableAPI(ctx, profile, r)
+	}, BackupInspect: m.inspectPortable, BackupImport: m.importPortableAPI, Command: func(ctx context.Context, r daemon.Request) (any, error) { return m.command(ctx, profile, r) }, ReadSettings: m.readSettings, WriteSettings: m.writeSettings, NewWallet: m.createWallet, PrepareWallet: m.prepareFirstWallet, FirstWallet: m.firstWallet, ConfirmWallet: m.confirmFirstWallet, ExportWallet: m.exportFirstWallet, FinishSetup: m.finishOnboarding}
 	server, err := api.Listen(m.runtimeCtx, filepath.Join(m.runtimeDir, fmt.Sprintf("%d.sock", len(m.servers))), service)
 	if err != nil {
 		return err

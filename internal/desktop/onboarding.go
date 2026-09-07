@@ -7,10 +7,12 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"fiatjaf.com/nostr"
 	pb "github.com/blakeswap/blakeswap/api/gen/blakeswap/v1"
@@ -84,16 +86,32 @@ func (m *Manager) prepareFirstWallet(ctx context.Context, request *pb.PrepareFir
 	if err := m.setupGuard(ctx, request.Revision, "wallet"); err != nil {
 		return nil, err
 	}
-	var restored *daemon.State
+	var restored *backupWallet
+	var legacy bool
+	snapshotAt := time.Now().Unix()
 	mnemonic := strings.Join(strings.Fields(strings.ToLower(request.Mnemonic)), " ")
 	stage, network := "backup", m.settings.ActiveNetwork
 	if request.BackupPath != "" {
-		var err error
-		restored, err = readStateBackup(m.root, request.BackupPath, request.BackupPassword)
+		manifest, oldFormat, err := readBackupManifest(ctx, m.root, request.BackupPath, request.BackupPassword)
 		if err != nil {
 			return nil, err
 		}
-		mnemonic, network, stage = restored.Mnemonic, string(restored.Network.Normalized()), "connect"
+		for i := range manifest.Wallets {
+			if manifest.Wallets[i].ID == request.SourceWalletId || request.SourceWalletId == "" && len(manifest.Wallets) == 1 {
+				restored = &manifest.Wallets[i]
+				break
+			}
+		}
+		if restored == nil {
+			return nil, errors.New("select the wallet to restore from this backup")
+		}
+		legacy, snapshotAt = oldFormat, manifest.CreatedAt
+		mnemonic, stage = restored.Mnemonic, "connect"
+		if len(restored.Networks) == 1 {
+			for n := range restored.Networks {
+				network = string(n)
+			}
+		}
 	} else if request.BackupPassword != "" {
 		return nil, errors.New("select the backup file")
 	}
@@ -110,6 +128,15 @@ func (m *Manager) prepareFirstWallet(ctx context.Context, request *pb.PrepareFir
 	if _, err := wallet.FromMnemonic(mnemonic); err != nil {
 		return nil, errors.New("enter a valid BIP39 recovery phrase")
 	}
+	if restored != nil || request.Mnemonic != "" {
+		identity, err := backupIdentity(mnemonic)
+		if err != nil {
+			return nil, err
+		}
+		if err = m.checkBackupIdentitiesLocked(backupManifest{Wallets: []backupWallet{{Identity: identity}}}); err != nil {
+			return nil, err
+		}
+	}
 	walletRoot := filepath.Join(m.root, "wallets")
 	if err := os.MkdirAll(walletRoot, 0700); err != nil {
 		return nil, err
@@ -123,23 +150,32 @@ func (m *Manager) prepareFirstWallet(ctx context.Context, request *pb.PrepareFir
 		return nil, err
 	}
 	defer os.RemoveAll(staging)
-	var random [32]byte
-	if _, err := rand.Read(random[:]); err != nil {
-		return nil, err
-	}
-	password := []byte(hex.EncodeToString(random[:]))
-	clear(random[:])
-	defer clear(password)
-	if err := writePrivate(filepath.Join(staging, "vault.password"), password); err != nil {
-		return nil, err
-	}
-	if err := saveVault(filepath.Join(staging, "master.db"), password, struct {
-		Mnemonic string `json:"mnemonic"`
-	}{mnemonic}); err != nil {
-		return nil, err
-	}
-	if restored != nil {
-		if err := saveVault(filepath.Join(staging, network, "state.db"), password, restored); err != nil {
+	if restored != nil || request.Mnemonic != "" {
+		entry := backupWallet{Mnemonic: mnemonic, Networks: map[chain.Network]*daemon.State{}}
+		entry.Identity, err = backupIdentity(mnemonic)
+		if err != nil {
+			return nil, err
+		}
+		if restored != nil {
+			entry = *restored
+		}
+		if _, err = prepareImportedProfile(ctx, staging, entry, request.Name, snapshotAt, legacy); err != nil {
+			return nil, err
+		}
+	} else {
+		var random [32]byte
+		if _, err := rand.Read(random[:]); err != nil {
+			return nil, err
+		}
+		password := []byte(hex.EncodeToString(random[:]))
+		clear(random[:])
+		defer clear(password)
+		if err := writePrivate(filepath.Join(staging, "vault.password"), password); err != nil {
+			return nil, err
+		}
+		if err := saveVault(filepath.Join(staging, "master.db"), password, struct {
+			Mnemonic string `json:"mnemonic"`
+		}{mnemonic}); err != nil {
 			return nil, err
 		}
 	}
@@ -193,6 +229,12 @@ func syncDirectory(path string) error {
 }
 
 func readStateBackup(root, source, password string) (*daemon.State, error) {
+	return readStateBackupBounded(root, source, password, 64<<20)
+}
+
+// The legacy source policy and the portable installer have distinct file bounds.
+// Both authenticate only a private copy, so a failed read never edits its source.
+func readStateBackupBounded(root, source, password string, maxBytes int64) (*daemon.State, error) {
 	if !filepath.IsAbs(source) {
 		return nil, errors.New("choose an absolute backup file path")
 	}
@@ -205,8 +247,8 @@ func readStateBackup(root, source, password string) (*daemon.State, error) {
 	if err != nil {
 		return nil, err
 	}
-	if !info.Mode().IsRegular() || info.Size() == 0 || info.Size() > 64<<20 {
-		return nil, errors.New("choose a wallet backup file up to 64 MiB")
+	if !info.Mode().IsRegular() || info.Size() == 0 || info.Size() > maxBytes {
+		return nil, fmt.Errorf("choose a wallet backup file up to %d MiB", maxBytes>>20)
 	}
 	// Open only a private copy: authentication failures never modify the source.
 	copy, err := os.CreateTemp(root, ".restore-*.db")
@@ -214,7 +256,7 @@ func readStateBackup(root, source, password string) (*daemon.State, error) {
 		return nil, err
 	}
 	defer os.Remove(copy.Name())
-	n, err := io.Copy(copy, io.LimitReader(input, (64<<20)+1))
+	n, err := io.Copy(copy, io.LimitReader(input, maxBytes+1))
 	closeErr := copy.Close()
 	if err != nil {
 		return nil, err
@@ -222,8 +264,8 @@ func readStateBackup(root, source, password string) (*daemon.State, error) {
 	if closeErr != nil {
 		return nil, closeErr
 	}
-	if n > 64<<20 {
-		return nil, errors.New("backup exceeds 64 MiB")
+	if n > maxBytes {
+		return nil, fmt.Errorf("backup exceeds %d MiB", maxBytes>>20)
 	}
 	vault, err := storage.Open(copy.Name(), []byte(password))
 	if err != nil {
@@ -354,47 +396,16 @@ func (m *Manager) confirmFirstWallet(ctx context.Context, request *pb.ConfirmFir
 }
 func (m *Manager) exportFirstWallet(ctx context.Context, request *pb.ExportFirstWalletRequest) (*pb.Backup, error) {
 	m.mu.Lock()
-	defer m.mu.Unlock()
-	if err := m.setupGuard(ctx, request.Revision, "backup", "connect"); err != nil {
-		return nil, err
-	}
-	if !filepath.IsAbs(request.Path) || len(request.Password) < 16 {
-		return nil, errors.New("choose a backup location and a password of at least 16 characters")
-	}
-	seed, password, err := readMaster(filepath.Join(m.root, "wallets", "alice"))
+	err := m.setupGuard(ctx, request.Revision, "backup", "connect")
+	m.mu.Unlock()
 	if err != nil {
 		return nil, err
 	}
-	defer clear(password)
-	state := daemon.State{Version: 1, Network: chain.Network(m.settings.ActiveNetwork), Mnemonic: seed}
-	normalizeState(&state)
-	// A restored state backup must preserve its pending swaps when exported again.
-	current := filepath.Join(m.root, "wallets", "alice", m.settings.ActiveNetwork, "state.db")
-	if _, err := os.Stat(current); err == nil {
-		vault, err := storage.Open(current, bytes.TrimSpace(password))
-		if err != nil {
-			return nil, err
-		}
-		_, err = vault.Load(&state)
-		vault.Close()
-		if err != nil {
-			return nil, err
-		}
-	} else if !errors.Is(err, os.ErrNotExist) {
-		return nil, err
-	}
-	output, err := os.OpenFile(request.Path, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0600)
+	result, err := m.exportPortable(ctx, "alice", request.Path, request.Password, false)
 	if err != nil {
-		return nil, errors.New("choose a new backup filename; existing files are never replaced")
-	}
-	if err := output.Close(); err != nil {
 		return nil, err
 	}
-	if err := saveVault(request.Path, []byte(request.Password), state); err != nil {
-		_ = os.Remove(request.Path)
-		return nil, err
-	}
-	return &pb.Backup{Path: request.Path}, nil
+	return &pb.Backup{Path: result.Path}, nil
 }
 func (m *Manager) finishOnboarding(ctx context.Context, next *pb.Settings) (*pb.Settings, error) {
 	if err := validate(next); err != nil {

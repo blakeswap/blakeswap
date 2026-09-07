@@ -84,6 +84,9 @@ func observation(all map[chain.ID]map[string]chain.Observation, c contract.HTLC)
 	return o, ok
 }
 func (e *Engine) advanceSwap(ctx context.Context, s *Swap, all map[chain.ID]map[string]chain.Observation) error {
+	if e.restoredSwap(s.ID) {
+		return e.advanceRestoredSwap(ctx, s, all)
+	}
 	var revealError error
 	if s.Terms == nil {
 		e.expirePendingRequest(s, time.Now().Unix())
@@ -423,7 +426,7 @@ func (e *Engine) advanceTower(ctx context.Context, all map[chain.ID]map[string]c
 			continue
 		}
 		state.Error = ""
-		if !e.fresh(job.Target.Chain) || (job.Kind == "refund" && (!e.fresh(chain.BTC) || !e.fresh(chain.Blake))) {
+		if !e.fresh(job.Target.Chain) {
 			state.Error = "chain observations unavailable; recovery held"
 			continue
 		}
@@ -431,12 +434,8 @@ func (e *Engine) advanceTower(ctx context.Context, all map[chain.ID]map[string]c
 			state.Error = err.Error()
 			continue
 		}
-		if _, ok := all[job.Target.Chain]; !ok {
+		if all[job.Target.Chain] == nil {
 			state.Error = "target-chain scan unavailable"
-			continue
-		}
-		if job.Kind == "refund" && (all[chain.BTC] == nil || all[chain.Blake] == nil) {
-			state.Error = "peer-chain scan unavailable; refund held"
 			continue
 		}
 		obs, spent := observation(all, job.Target)
@@ -444,6 +443,14 @@ func (e *Engine) advanceTower(ctx context.Context, all map[chain.ID]map[string]c
 		if spent && obs.Confirmations > 0 {
 			state.Confirmed = obs.Confirmations
 			state.Broadcast = obs.TxID
+			continue
+		}
+		if e.s.Recovery != nil && e.s.Recovery.TowerJobs[job.ID] && job.Kind == "refund" {
+			state.Error = "restored tower refund lacks positive peer settlement evidence"
+			continue
+		}
+		if job.Kind == "refund" && (!e.fresh(chain.BTC) || !e.fresh(chain.Blake) || all[chain.BTC] == nil || all[chain.Blake] == nil) {
+			state.Error = "peer-chain scan unavailable; refund held"
 			continue
 		}
 		if !e.eligible(job.Target.Chain, job.Lock) || (job.Kind == "claim" && state.Secret == "") {

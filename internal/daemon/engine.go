@@ -30,6 +30,10 @@ var errEngineClosed = errors.New("engine closed")
 type Engine struct {
 	marketObservedAt         int64
 	marketAllRelays          bool
+	recoveryRefunds          map[string]bool
+	recoverySends            map[string]bool
+	recoveryCheckpoints      map[chain.ID]recoveryCheckpoint
+	recoveryReconciled       map[chain.ID]recoveryCheckpoint
 	activityBusy             atomic.Bool
 	activityCancel           context.CancelFunc
 	activityReaders          sync.WaitGroup
@@ -128,6 +132,10 @@ func Open(ctx context.Context, c Config) (*Engine, error) {
 		return fail(errors.New("state belongs to a different network; use its own data directory"))
 	}
 	en.invalidateActivitySession()
+	if en.s.Recovery != nil {
+		en.s.Recovery.Status.State = "recovering"
+		en.s.Recovery.Status.CheckedAt = 0
+	}
 	// An old pause flag must never suppress trading or rescue work after reopen.
 	en.s.Paused = false
 	en.keys, e = wallet.FromMnemonic(en.s.Mnemonic)
@@ -329,7 +337,7 @@ func (e *Engine) refreshChain(ctx context.Context, id chain.ID) error {
 	}
 	e.balances[id] = balance
 	e.refreshHTLCBalance(ctx, id)
-	return nil
+	return e.refreshRecoveryCheckpoint(ctx, id)
 }
 func (e *Engine) Run(ctx context.Context) error {
 	ticker := time.NewTicker(time.Second)
@@ -365,8 +373,21 @@ func (e *Engine) tickProtocol(ctx context.Context) error {
 	if e.fatal != nil {
 		return e.fatal
 	}
+	e.recoveryRefunds = map[string]bool{}
 	refreshErr := e.refresh(ctx)
 	e.advanceSends(ctx)
+	// Payment lookups must not extend evidence beyond a checkpoint that reorged
+	// during this bounded phase.
+	if e.s.Recovery != nil {
+		for _, id := range []chain.ID{chain.BTC, chain.Blake} {
+			if e.fresh(id) {
+				if err := e.refreshRecoveryCheckpoint(ctx, id); err != nil {
+					e.chainFresh[id] = false
+					e.chainErrors[id] = err.Error()
+				}
+			}
+		}
+	}
 	if err := e.advertiseTower(); err != nil {
 		return err
 	}
@@ -436,6 +457,7 @@ func (e *Engine) tickProtocol(ctx context.Context) error {
 	if towerErr != nil {
 		e.lastError = "watchtower: " + towerErr.Error()
 	}
+	e.reconcileRecovery(observations, towerObservations)
 	if err = e.save(); err != nil {
 		return err
 	}
@@ -719,7 +741,7 @@ func (e *Engine) publicationReady(id chain.ID, both bool) error {
 	return nil
 }
 
-func (e *Engine) broadcast(ctx context.Context, id chain.ID, raw string, both bool) error {
+func (e *Engine) broadcast(ctx context.Context, id chain.ID, raw string, both bool, checks ...func() error) error {
 	tx, err := contract.Parse(raw)
 	if err != nil {
 		return err
@@ -729,7 +751,15 @@ func (e *Engine) broadcast(ctx context.Context, id chain.ID, raw string, both bo
 		if err := ctx.Err(); err != nil {
 			return err
 		}
-		return e.publicationReady(id, both)
+		if err := e.publicationReady(id, both); err != nil {
+			return err
+		}
+		for _, check := range checks {
+			if err := check(); err != nil {
+				return err
+			}
+		}
+		return nil
 	}
 	if err := guard(); err != nil {
 		return err

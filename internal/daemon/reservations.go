@@ -156,6 +156,11 @@ func (e *Engine) reconcileReservations() {
 // Before accepting terms the taker has signed no funding transaction. Expiring
 // the request is safe only in that state, and late acceptance cannot revive it.
 func (e *Engine) expirePendingRequest(s *Swap, now int64) bool {
+	// Time elapsed after an imported snapshot is not evidence that its other
+	// installation never accepted terms or published funding in the meantime.
+	if e.restoredSwap(s.ID) {
+		return false
+	}
 	if s.Role != "taker" || s.Terms != nil || s.LongFunding != "" || s.ShortFunding != "" || terminalSwap(s) {
 		return false
 	}

@@ -55,7 +55,10 @@ account that can read those files.
 | PreflightFunds | POST `/v1/wallet/preflight` | Fresh fee-inclusive candidate funds and BTC replay readiness; advisory only |
 | SendCoins | POST `/v1/wallet/send` | Explicit coin selection, recipient, amount, total fee, and idempotent request ID |
 | GetRecovery | POST `/v1/wallet/recovery` | Explicit sensitive recovery phrase request |
-| BackupWallet | POST `/v1/wallet/backup` | Consistent encrypted state backup |
+| ExportPortableBackup | POST `/v1/wallet/portable-backup` | Chosen-password export of the selected profile on all networks; optional all profiles |
+| InspectBackup | POST `/v1/backups/inspect` | Authenticate a portable or legacy file and list its wallet/network scope without importing |
+| ImportBackup | POST `/v1/backups/import` | Install one selected archive wallet as a new isolated profile with a durable recovery gate |
+| BackupWallet | POST `/v1/wallet/backup` | Legacy single-network vault-password database copy; use portable export for normal backups |
 | Mine | POST `/v1/regtest/mine` | Test-node mining, regtest RPC only |
 | Faucet | POST `/v1/regtest/faucet` | Test faucet to caller's deposit address, regtest RPC only |
 | CreateWallet | POST `/v1/wallets` | Create an independent wallet using a name and Settings revision |
@@ -152,11 +155,11 @@ outstanding obligations in every saved wallet.
 
 New desktop Settings starts with `onboarding_stage: "wallet"`. Preparation
 accepts a name and either no recovery input (generate), `mnemonic` (BIP39), or
-`backup_path` with `backup_password` (encrypted state restore). Generated and
+`backup_path` with `backup_password` (portable or legacy encrypted state restore). For an archive containing multiple wallets, inspect it first and supply `source_wallet_id`. Generated and
 phrase-restored wallets advance to `backup`; the response contains the recovery
 phrase and three one-based `backup_word_positions`. Confirmation accepts the
 three words in that order and advances to `connect`. Restoring an existing
-encrypted backup goes directly to `connect`, retaining its network and swap state.
+encrypted backup goes directly to `connect`, retaining all included network state. Legacy files retain their recorded network; portable files include every network and use the selected connection settings. Phrase and file restores install a durable recovery gate before engines start.
 Only explicit setup recovery calls return the phrase; status and Settings never do.
 
 Finishing accepts Settings still at `connect`, validates both active endpoints,
@@ -369,3 +372,13 @@ receipt makes reservation transfer and ambiguous retries durable. `QuoteFee`
 accepts the same source IDs for an explicitly wallet-bound replacement funding
 review; ordinary preflight cannot borrow that reservation. Custom `expires`
 remains an exact Unix timestamp bounded by the daemon to seven days.
+
+### Portable backups and recovery
+
+Desktop-managed profiles support CLI methods `backup.export`, `backup.inspect`, and `backup.import`, with the same authenticated protobuf/HTTP/gRPC contract as other wallet operations. Export accepts an unused absolute `path`, a chosen `password` of at least 16 bytes, and optional `all_wallets`. Its scope includes the selected profile on all three networks, or every local profile on all networks. Installation credentials and endpoint configuration are excluded. The encrypted, authenticated version-1 manifest contains creation time, profile/network identifiers and complete durable state; no seed or preimage is plaintext metadata.
+
+Inspection accepts `path` and `password`, returning source wallet IDs, names, networks, creation time and legacy provenance. Import accepts those fields plus the chosen `source_wallet_id`, a new profile `name`, and current Settings `revision`. Import one profile at a time from multi-profile archives. Profile IDs and paths are generated locally. Duplicate derived identities, including interrupted installed profiles, are refused. The source file and existing wallets are untouched on authentication/validation failure. A complete gated profile is installed atomically before Settings advances; startup authenticates and finishes an interrupted Settings publication.
+
+Status includes `backup` freshness (`last_export_at`, `state_changed`, `reminder`) and, for restored wallets, `recovery` (`recovering` or `ready`, issues, snapshot provenance, quarantine counts and coverage). Imported swaps cannot publish new funding or first reveal a private preimage. A previously witnessed public secret permits a claim with current target evidence. Restored owner refunds require a positively confirmed incoming refund, fresh own contract/maturity evidence and no durable incoming-claim observation. Saved signed variants, caps and destinations remain authoritative. Standalone restored tower refunds lack sufficient peer evidence and stay held; witnessed tower claims continue.
+
+Known funded obligations become ready only after positive confirmed resolution (including the confirmed refund of a sole recorded leg); a preexisting final nonfunding decision is retained, while elapsed time cannot create one from imported uncertainty. Readiness also requires complete observations from both chains; a wallet with no recorded obligations becomes ready after complete wallet/chain synchronization. Reorgs or missing current evidence restore the holds. Original obligation IDs remain recorded even after a display stage changes. Quarantined old offers and queued publications are retained for audit and never automatically republished. A stale snapshot can omit later obligations, funding references or random secrets: readiness describes recorded state, not proof that an arbitrary historical snapshot contained every later action. Keep the original installation/newer backups. Two restored peers can remain blocked waiting for positive evidence; there is no ignore/force-resume bypass.

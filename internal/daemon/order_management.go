@@ -60,6 +60,12 @@ func (e *Engine) orderSource(p OrderActionFields, now int64) (protocol.Offer, er
 		return empty, errors.New("review the exact source order before managing it")
 	}
 	event, ok := e.s.Offers[p.SourceOfferID]
+	if !ok && p.OrderAction == "recreate" && e.s.Recovery != nil {
+		if err := e.recoveryTradingReady(); err != nil {
+			return empty, err
+		}
+		event, ok = e.s.Recovery.Offers[p.SourceOfferID]
+	}
 	if !ok || event.ID.Hex() != p.SourceEventID {
 		return empty, errors.New("source order changed; refresh and review it again")
 	}

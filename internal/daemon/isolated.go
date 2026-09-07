@@ -87,24 +87,15 @@ func (e *Engine) rememberTowerWitnessesWithSave(all map[chain.ID]map[string]chai
 	return nil
 }
 
-// During a peer outage, absence is never evidence. Only a witnessed preimage
-// permits an isolated claim. A locally generated secret or a signed SelfClaim
-// saved before its first broadcast is insufficient. Refunds and funding wait for
-// fresh observations of BOTH chains, including the incoming-spend scan.
-func (e *Engine) advanceIsolatedSwap(ctx context.Context, s *Swap, all map[chain.ID]map[string]chain.Observation) error {
-	if err := e.rememberSwapWitnesses(s, all); err != nil {
-		return err
-	}
-	incoming := s.Short
-	if s.Role == "maker" {
-		incoming = s.Long
-	}
+// observeSwapSpends compares the prior terminal outcome before applying a
+// complete current scan. Missing/stale maps cannot contradict settled history.
+func (e *Engine) observeSwapSpends(s *Swap, all map[chain.ID]map[string]chain.Observation) bool {
 	terminalStable := terminalSwapStage(s.Stage)
 	for _, c := range []contract.HTLC{s.Long, s.Short} {
 		if !e.fresh(c.Chain) {
 			continue
 		}
-		if _, scanned := all[c.Chain]; !scanned {
+		if all[c.Chain] == nil {
 			continue
 		}
 		o, ok := observation(all, c)
@@ -131,6 +122,22 @@ func (e *Engine) advanceIsolatedSwap(ctx context.Context, s *Swap, all map[chain
 			}
 		}
 	}
+	return terminalStable
+}
+
+// During a peer outage, absence is never evidence. Only a witnessed preimage
+// permits an isolated claim. A locally generated secret or a signed SelfClaim
+// saved before its first broadcast is insufficient. Refunds and funding wait for
+// fresh observations of BOTH chains, including the incoming-spend scan.
+func (e *Engine) advanceIsolatedSwap(ctx context.Context, s *Swap, all map[chain.ID]map[string]chain.Observation) error {
+	if err := e.rememberSwapWitnesses(s, all); err != nil {
+		return err
+	}
+	incoming := s.Short
+	if s.Role == "maker" {
+		incoming = s.Long
+	}
+	terminalStable := e.observeSwapSpends(s, all)
 	if terminalStable {
 		// An unrelated outage is not a reorg. Keep completed history terminal;
 		// readiness separately identifies the peer observation as stale.
@@ -140,7 +147,7 @@ func (e *Engine) advanceIsolatedSwap(ctx context.Context, s *Swap, all map[chain
 	if !s.SecretObserved || !e.fresh(incoming.Chain) {
 		return errors.New(s.Stage)
 	}
-	if _, ok := all[incoming.Chain]; !ok {
+	if all[incoming.Chain] == nil {
 		return errors.New("target-chain spend scan unavailable")
 	}
 	targetObs, targetSpent := observation(all, incoming)

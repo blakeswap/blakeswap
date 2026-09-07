@@ -323,7 +323,7 @@ struct ContentView: View {
                         .id("\(status.name)/\(status.network)/\(chain)")
                     HStack {
                         Button("Send \(symbol(chain))…") { sendContext = SendContext(profile: model.profile, network: status.network, chain: chain) }
-                            .disabled(model.busy)
+                            .disabled(model.busy || model.recoveryInProgress)
                         if model.isRegtest { Button("Add 1 test coin") { Task { await model.command("regtest.faucet", ["chain": chain, "amount": 100_000_000]) } }.disabled(model.busy)
                         Text("Mine 2 blocks to confirm deposits.").font(.caption).foregroundStyle(.secondary) }
                     }
@@ -344,7 +344,7 @@ struct ContentView: View {
             }
             VStack(alignment: .leading, spacing: 14) {
                 Text("Recovery & protection").font(.headline)
-                HStack { Button("Reveal recovery phrase") { Task { await model.command("wallet.recovery") } }; Button("Save encrypted state backup") { Task { await model.command("wallet.backup") } } }.disabled(model.busy)
+                WalletBackupControls(status: status)
                 Text("Choose a favorite watchtower when creating an offer. Its rescue fee is paid only when used; mining fees are separate.").font(.caption).foregroundStyle(.secondary)
             }.padding(24).background(panel, in: RoundedRectangle(cornerRadius: 14))
         }

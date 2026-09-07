@@ -268,6 +268,45 @@ internal enum Blakeswap_V1_DaemonService: Sendable {
                 type: .unary
             )
         }
+        /// Namespace for "ExportPortableBackup" metadata.
+        internal enum ExportPortableBackup: Sendable {
+            /// Request type for "ExportPortableBackup".
+            internal typealias Input = Blakeswap_V1_ExportPortableBackupRequest
+            /// Response type for "ExportPortableBackup".
+            internal typealias Output = Blakeswap_V1_PortableBackupResult
+            /// Descriptor for "ExportPortableBackup".
+            internal static let descriptor = GRPCCore.MethodDescriptor(
+                service: GRPCCore.ServiceDescriptor(fullyQualifiedService: "blakeswap.v1.DaemonService"),
+                method: "ExportPortableBackup",
+                type: .unary
+            )
+        }
+        /// Namespace for "InspectBackup" metadata.
+        internal enum InspectBackup: Sendable {
+            /// Request type for "InspectBackup".
+            internal typealias Input = Blakeswap_V1_InspectBackupRequest
+            /// Response type for "InspectBackup".
+            internal typealias Output = Blakeswap_V1_BackupContents
+            /// Descriptor for "InspectBackup".
+            internal static let descriptor = GRPCCore.MethodDescriptor(
+                service: GRPCCore.ServiceDescriptor(fullyQualifiedService: "blakeswap.v1.DaemonService"),
+                method: "InspectBackup",
+                type: .unary
+            )
+        }
+        /// Namespace for "ImportBackup" metadata.
+        internal enum ImportBackup: Sendable {
+            /// Request type for "ImportBackup".
+            internal typealias Input = Blakeswap_V1_ImportBackupRequest
+            /// Response type for "ImportBackup".
+            internal typealias Output = Blakeswap_V1_ImportBackupResult
+            /// Descriptor for "ImportBackup".
+            internal static let descriptor = GRPCCore.MethodDescriptor(
+                service: GRPCCore.ServiceDescriptor(fullyQualifiedService: "blakeswap.v1.DaemonService"),
+                method: "ImportBackup",
+                type: .unary
+            )
+        }
         /// Namespace for "BackupWallet" metadata.
         internal enum BackupWallet: Sendable {
             /// Request type for "BackupWallet".
@@ -419,6 +458,9 @@ internal enum Blakeswap_V1_DaemonService: Sendable {
             QuoteFee.descriptor,
             BumpTransaction.descriptor,
             SendCoins.descriptor,
+            ExportPortableBackup.descriptor,
+            InspectBackup.descriptor,
+            ImportBackup.descriptor,
             BackupWallet.descriptor,
             CreateWallet.descriptor,
             PrepareFirstWallet.descriptor,
@@ -807,6 +849,63 @@ extension Blakeswap_V1_DaemonService {
             deserializer: some GRPCCore.MessageDeserializer<Blakeswap_V1_WalletSend>,
             options: GRPCCore.CallOptions,
             onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Blakeswap_V1_WalletSend>) async throws -> Result
+        ) async throws -> Result where Result: Sendable
+
+        /// Call the "ExportPortableBackup" method.
+        ///
+        /// - Parameters:
+        ///   - request: A request containing a single `Blakeswap_V1_ExportPortableBackupRequest` message.
+        ///   - serializer: A serializer for `Blakeswap_V1_ExportPortableBackupRequest` messages.
+        ///   - deserializer: A deserializer for `Blakeswap_V1_PortableBackupResult` messages.
+        ///   - options: Options to apply to this RPC.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
+        /// - Returns: The result of `handleResponse`.
+        func exportPortableBackup<Result>(
+            request: GRPCCore.ClientRequest<Blakeswap_V1_ExportPortableBackupRequest>,
+            serializer: some GRPCCore.MessageSerializer<Blakeswap_V1_ExportPortableBackupRequest>,
+            deserializer: some GRPCCore.MessageDeserializer<Blakeswap_V1_PortableBackupResult>,
+            options: GRPCCore.CallOptions,
+            onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Blakeswap_V1_PortableBackupResult>) async throws -> Result
+        ) async throws -> Result where Result: Sendable
+
+        /// Call the "InspectBackup" method.
+        ///
+        /// - Parameters:
+        ///   - request: A request containing a single `Blakeswap_V1_InspectBackupRequest` message.
+        ///   - serializer: A serializer for `Blakeswap_V1_InspectBackupRequest` messages.
+        ///   - deserializer: A deserializer for `Blakeswap_V1_BackupContents` messages.
+        ///   - options: Options to apply to this RPC.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
+        /// - Returns: The result of `handleResponse`.
+        func inspectBackup<Result>(
+            request: GRPCCore.ClientRequest<Blakeswap_V1_InspectBackupRequest>,
+            serializer: some GRPCCore.MessageSerializer<Blakeswap_V1_InspectBackupRequest>,
+            deserializer: some GRPCCore.MessageDeserializer<Blakeswap_V1_BackupContents>,
+            options: GRPCCore.CallOptions,
+            onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Blakeswap_V1_BackupContents>) async throws -> Result
+        ) async throws -> Result where Result: Sendable
+
+        /// Call the "ImportBackup" method.
+        ///
+        /// - Parameters:
+        ///   - request: A request containing a single `Blakeswap_V1_ImportBackupRequest` message.
+        ///   - serializer: A serializer for `Blakeswap_V1_ImportBackupRequest` messages.
+        ///   - deserializer: A deserializer for `Blakeswap_V1_ImportBackupResult` messages.
+        ///   - options: Options to apply to this RPC.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
+        /// - Returns: The result of `handleResponse`.
+        func importBackup<Result>(
+            request: GRPCCore.ClientRequest<Blakeswap_V1_ImportBackupRequest>,
+            serializer: some GRPCCore.MessageSerializer<Blakeswap_V1_ImportBackupRequest>,
+            deserializer: some GRPCCore.MessageDeserializer<Blakeswap_V1_ImportBackupResult>,
+            options: GRPCCore.CallOptions,
+            onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Blakeswap_V1_ImportBackupResult>) async throws -> Result
         ) async throws -> Result where Result: Sendable
 
         /// Call the "BackupWallet" method.
@@ -1579,6 +1678,96 @@ extension Blakeswap_V1_DaemonService {
             try await self.client.unary(
                 request: request,
                 descriptor: Blakeswap_V1_DaemonService.Method.SendCoins.descriptor,
+                serializer: serializer,
+                deserializer: deserializer,
+                options: options,
+                onResponse: handleResponse
+            )
+        }
+
+        /// Call the "ExportPortableBackup" method.
+        ///
+        /// - Parameters:
+        ///   - request: A request containing a single `Blakeswap_V1_ExportPortableBackupRequest` message.
+        ///   - serializer: A serializer for `Blakeswap_V1_ExportPortableBackupRequest` messages.
+        ///   - deserializer: A deserializer for `Blakeswap_V1_PortableBackupResult` messages.
+        ///   - options: Options to apply to this RPC.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
+        /// - Returns: The result of `handleResponse`.
+        internal func exportPortableBackup<Result>(
+            request: GRPCCore.ClientRequest<Blakeswap_V1_ExportPortableBackupRequest>,
+            serializer: some GRPCCore.MessageSerializer<Blakeswap_V1_ExportPortableBackupRequest>,
+            deserializer: some GRPCCore.MessageDeserializer<Blakeswap_V1_PortableBackupResult>,
+            options: GRPCCore.CallOptions = .defaults,
+            onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Blakeswap_V1_PortableBackupResult>) async throws -> Result = { response in
+                try response.message
+            }
+        ) async throws -> Result where Result: Sendable {
+            try await self.client.unary(
+                request: request,
+                descriptor: Blakeswap_V1_DaemonService.Method.ExportPortableBackup.descriptor,
+                serializer: serializer,
+                deserializer: deserializer,
+                options: options,
+                onResponse: handleResponse
+            )
+        }
+
+        /// Call the "InspectBackup" method.
+        ///
+        /// - Parameters:
+        ///   - request: A request containing a single `Blakeswap_V1_InspectBackupRequest` message.
+        ///   - serializer: A serializer for `Blakeswap_V1_InspectBackupRequest` messages.
+        ///   - deserializer: A deserializer for `Blakeswap_V1_BackupContents` messages.
+        ///   - options: Options to apply to this RPC.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
+        /// - Returns: The result of `handleResponse`.
+        internal func inspectBackup<Result>(
+            request: GRPCCore.ClientRequest<Blakeswap_V1_InspectBackupRequest>,
+            serializer: some GRPCCore.MessageSerializer<Blakeswap_V1_InspectBackupRequest>,
+            deserializer: some GRPCCore.MessageDeserializer<Blakeswap_V1_BackupContents>,
+            options: GRPCCore.CallOptions = .defaults,
+            onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Blakeswap_V1_BackupContents>) async throws -> Result = { response in
+                try response.message
+            }
+        ) async throws -> Result where Result: Sendable {
+            try await self.client.unary(
+                request: request,
+                descriptor: Blakeswap_V1_DaemonService.Method.InspectBackup.descriptor,
+                serializer: serializer,
+                deserializer: deserializer,
+                options: options,
+                onResponse: handleResponse
+            )
+        }
+
+        /// Call the "ImportBackup" method.
+        ///
+        /// - Parameters:
+        ///   - request: A request containing a single `Blakeswap_V1_ImportBackupRequest` message.
+        ///   - serializer: A serializer for `Blakeswap_V1_ImportBackupRequest` messages.
+        ///   - deserializer: A deserializer for `Blakeswap_V1_ImportBackupResult` messages.
+        ///   - options: Options to apply to this RPC.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
+        /// - Returns: The result of `handleResponse`.
+        internal func importBackup<Result>(
+            request: GRPCCore.ClientRequest<Blakeswap_V1_ImportBackupRequest>,
+            serializer: some GRPCCore.MessageSerializer<Blakeswap_V1_ImportBackupRequest>,
+            deserializer: some GRPCCore.MessageDeserializer<Blakeswap_V1_ImportBackupResult>,
+            options: GRPCCore.CallOptions = .defaults,
+            onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Blakeswap_V1_ImportBackupResult>) async throws -> Result = { response in
+                try response.message
+            }
+        ) async throws -> Result where Result: Sendable {
+            try await self.client.unary(
+                request: request,
+                descriptor: Blakeswap_V1_DaemonService.Method.ImportBackup.descriptor,
                 serializer: serializer,
                 deserializer: deserializer,
                 options: options,
@@ -2361,6 +2550,81 @@ extension Blakeswap_V1_DaemonService.ClientProtocol {
             request: request,
             serializer: GRPCProtobuf.ProtobufSerializer<Blakeswap_V1_SendCoinsRequest>(),
             deserializer: GRPCProtobuf.ProtobufDeserializer<Blakeswap_V1_WalletSend>(),
+            options: options,
+            onResponse: handleResponse
+        )
+    }
+
+    /// Call the "ExportPortableBackup" method.
+    ///
+    /// - Parameters:
+    ///   - request: A request containing a single `Blakeswap_V1_ExportPortableBackupRequest` message.
+    ///   - options: Options to apply to this RPC.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
+    /// - Returns: The result of `handleResponse`.
+    internal func exportPortableBackup<Result>(
+        request: GRPCCore.ClientRequest<Blakeswap_V1_ExportPortableBackupRequest>,
+        options: GRPCCore.CallOptions = .defaults,
+        onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Blakeswap_V1_PortableBackupResult>) async throws -> Result = { response in
+            try response.message
+        }
+    ) async throws -> Result where Result: Sendable {
+        try await self.exportPortableBackup(
+            request: request,
+            serializer: GRPCProtobuf.ProtobufSerializer<Blakeswap_V1_ExportPortableBackupRequest>(),
+            deserializer: GRPCProtobuf.ProtobufDeserializer<Blakeswap_V1_PortableBackupResult>(),
+            options: options,
+            onResponse: handleResponse
+        )
+    }
+
+    /// Call the "InspectBackup" method.
+    ///
+    /// - Parameters:
+    ///   - request: A request containing a single `Blakeswap_V1_InspectBackupRequest` message.
+    ///   - options: Options to apply to this RPC.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
+    /// - Returns: The result of `handleResponse`.
+    internal func inspectBackup<Result>(
+        request: GRPCCore.ClientRequest<Blakeswap_V1_InspectBackupRequest>,
+        options: GRPCCore.CallOptions = .defaults,
+        onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Blakeswap_V1_BackupContents>) async throws -> Result = { response in
+            try response.message
+        }
+    ) async throws -> Result where Result: Sendable {
+        try await self.inspectBackup(
+            request: request,
+            serializer: GRPCProtobuf.ProtobufSerializer<Blakeswap_V1_InspectBackupRequest>(),
+            deserializer: GRPCProtobuf.ProtobufDeserializer<Blakeswap_V1_BackupContents>(),
+            options: options,
+            onResponse: handleResponse
+        )
+    }
+
+    /// Call the "ImportBackup" method.
+    ///
+    /// - Parameters:
+    ///   - request: A request containing a single `Blakeswap_V1_ImportBackupRequest` message.
+    ///   - options: Options to apply to this RPC.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
+    /// - Returns: The result of `handleResponse`.
+    internal func importBackup<Result>(
+        request: GRPCCore.ClientRequest<Blakeswap_V1_ImportBackupRequest>,
+        options: GRPCCore.CallOptions = .defaults,
+        onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Blakeswap_V1_ImportBackupResult>) async throws -> Result = { response in
+            try response.message
+        }
+    ) async throws -> Result where Result: Sendable {
+        try await self.importBackup(
+            request: request,
+            serializer: GRPCProtobuf.ProtobufSerializer<Blakeswap_V1_ImportBackupRequest>(),
+            deserializer: GRPCProtobuf.ProtobufDeserializer<Blakeswap_V1_ImportBackupResult>(),
             options: options,
             onResponse: handleResponse
         )
@@ -3165,6 +3429,93 @@ extension Blakeswap_V1_DaemonService.ClientProtocol {
             metadata: metadata
         )
         return try await self.sendCoins(
+            request: request,
+            options: options,
+            onResponse: handleResponse
+        )
+    }
+
+    /// Call the "ExportPortableBackup" method.
+    ///
+    /// - Parameters:
+    ///   - message: request message to send.
+    ///   - metadata: Additional metadata to send, defaults to empty.
+    ///   - options: Options to apply to this RPC, defaults to `.defaults`.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
+    /// - Returns: The result of `handleResponse`.
+    internal func exportPortableBackup<Result>(
+        _ message: Blakeswap_V1_ExportPortableBackupRequest,
+        metadata: GRPCCore.Metadata = [:],
+        options: GRPCCore.CallOptions = .defaults,
+        onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Blakeswap_V1_PortableBackupResult>) async throws -> Result = { response in
+            try response.message
+        }
+    ) async throws -> Result where Result: Sendable {
+        let request = GRPCCore.ClientRequest<Blakeswap_V1_ExportPortableBackupRequest>(
+            message: message,
+            metadata: metadata
+        )
+        return try await self.exportPortableBackup(
+            request: request,
+            options: options,
+            onResponse: handleResponse
+        )
+    }
+
+    /// Call the "InspectBackup" method.
+    ///
+    /// - Parameters:
+    ///   - message: request message to send.
+    ///   - metadata: Additional metadata to send, defaults to empty.
+    ///   - options: Options to apply to this RPC, defaults to `.defaults`.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
+    /// - Returns: The result of `handleResponse`.
+    internal func inspectBackup<Result>(
+        _ message: Blakeswap_V1_InspectBackupRequest,
+        metadata: GRPCCore.Metadata = [:],
+        options: GRPCCore.CallOptions = .defaults,
+        onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Blakeswap_V1_BackupContents>) async throws -> Result = { response in
+            try response.message
+        }
+    ) async throws -> Result where Result: Sendable {
+        let request = GRPCCore.ClientRequest<Blakeswap_V1_InspectBackupRequest>(
+            message: message,
+            metadata: metadata
+        )
+        return try await self.inspectBackup(
+            request: request,
+            options: options,
+            onResponse: handleResponse
+        )
+    }
+
+    /// Call the "ImportBackup" method.
+    ///
+    /// - Parameters:
+    ///   - message: request message to send.
+    ///   - metadata: Additional metadata to send, defaults to empty.
+    ///   - options: Options to apply to this RPC, defaults to `.defaults`.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
+    /// - Returns: The result of `handleResponse`.
+    internal func importBackup<Result>(
+        _ message: Blakeswap_V1_ImportBackupRequest,
+        metadata: GRPCCore.Metadata = [:],
+        options: GRPCCore.CallOptions = .defaults,
+        onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Blakeswap_V1_ImportBackupResult>) async throws -> Result = { response in
+            try response.message
+        }
+    ) async throws -> Result where Result: Sendable {
+        let request = GRPCCore.ClientRequest<Blakeswap_V1_ImportBackupRequest>(
+            message: message,
+            metadata: metadata
+        )
+        return try await self.importBackup(
             request: request,
             options: options,
             onResponse: handleResponse

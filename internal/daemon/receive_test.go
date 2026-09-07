@@ -39,6 +39,9 @@ func (b *receiveBackend) Unspent(_ context.Context, addresses []string) ([]chain
 	b.queried = addresses
 	return b.coins, nil
 }
+func (b *receiveBackend) BlockHash(context.Context, uint32) (string, error) {
+	return "test-canonical-tip", nil
+}
 func (b *receiveBackend) Height(context.Context) (uint32, error) { return 200, nil }
 
 func receiveEngine(t *testing.T) (*Engine, map[chain.ID]*receiveBackend) {

@@ -35,6 +35,9 @@ service DaemonService {
  rpc QuoteFee(FeeQuoteRequest) returns (FeeQuote) { option (google.api.http) = { post: "/v1/fees/quote" body: "*" }; }
  rpc BumpTransaction(BumpRequest) returns (BumpResult) { option (google.api.http) = { post: "/v1/transactions/bump" body: "*" }; }
  rpc SendCoins(SendCoinsRequest) returns (WalletSend) { option (google.api.http) = { post: "/v1/wallet/send" body: "*" }; }
+ rpc ExportPortableBackup(ExportPortableBackupRequest) returns (PortableBackupResult) { option (google.api.http) = { post: "/v1/wallet/portable-backup" body: "*" }; }
+ rpc InspectBackup(InspectBackupRequest) returns (BackupContents) { option (google.api.http) = { post: "/v1/backups/inspect" body: "*" }; }
+ rpc ImportBackup(ImportBackupRequest) returns (ImportBackupResult) { option (google.api.http) = { post: "/v1/backups/import" body: "*" }; }
  rpc BackupWallet(google.protobuf.Empty) returns (Backup) { option (google.api.http) = { post: "/v1/wallet/backup" body: "*" }; }
  rpc CreateWallet(CreateWalletRequest) returns (Settings) { option (google.api.http) = { post: "/v1/wallets" body: "*" }; }
  rpc PrepareFirstWallet(PrepareFirstWalletRequest) returns (FirstWallet) { option (google.api.http) = { post: "/v1/onboarding/wallet" body: "*" }; }
@@ -106,6 +109,16 @@ message WalletSend {
 }
 message Recovery { string mnemonic = 1; string warning = 2; }
 message Backup { string path = 1; }
+message ExportPortableBackupRequest { string path = 1; string password = 2; bool all_wallets = 3; }
+message PortableBackupResult { string path = 1; int64 created_at = 2; int32 wallets = 3; int32 networks = 4; string reminder_warning = 5; }
+message InspectBackupRequest { string path = 1; string password = 2; }
+message BackupWalletEntry { string source_wallet_id = 1; string name = 2; repeated string networks = 3; }
+message BackupContents { int32 format_version = 1; int64 created_at = 2; bool legacy = 3; repeated BackupWalletEntry wallets = 4; string warning = 5; }
+message ImportBackupRequest { string path = 1; string password = 2; string source_wallet_id = 3; string name = 4; uint64 revision = 5; }
+message ImportBackupResult { string profile_id = 1; Settings settings = 2; bool legacy = 3; }
+message BackupFreshness { int64 last_export_at = 1; bool state_changed = 2; string reminder = 3; }
+message RecoveryIssue { string kind = 1; string id = 2; string reason = 3; }
+message RecoveryProgress { string state = 1; int64 imported_at = 2; int64 snapshot_at = 3; bool legacy = 4; int64 checked_at = 5; repeated RecoveryIssue issues = 6; int32 quarantined_offers = 7; int32 quarantined_messages = 8; string coverage = 9; }
 message Offer {
  string id = 1; string maker = 2; string sell = 3;
  int64 sell_amount = 4; int64 buy_amount = 5; int64 tower_bps = 6;
@@ -140,6 +153,8 @@ message TowerJob {
  bool secret_observed = 8; string error = 9;
 }
 message Status {
+ BackupFreshness backup = 23;
+ RecoveryProgress recovery = 24;
  map<string,FeeLimits> fee_limits = 21;
  string name = 1; string mode = 2; string pubkey = 3;
  map<string,string> addresses = 4; map<string,int64> balances = 5;
@@ -184,7 +199,7 @@ message WalletProfile { string id = 1; string name = 2; }
 message CreateWalletRequest { string name = 1; uint64 revision = 2; }
 message PrepareFirstWalletRequest {
  string name = 1; string mnemonic = 2;
- string backup_path = 3; string backup_password = 4; uint64 revision = 5;
+ string backup_path = 3; string backup_password = 4; uint64 revision = 5; string source_wallet_id = 6;
 }
 message FirstWallet { Settings settings = 1; Recovery recovery = 2; repeated uint32 backup_word_positions = 3; }
 message ConfirmFirstWalletRequest { uint64 revision = 1; repeated string words = 2; }

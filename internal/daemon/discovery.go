@@ -35,6 +35,9 @@ func (e *Engine) ownTower() protocol.Tower {
 }
 
 func (e *Engine) advertiseTower() error {
+	if e.s.Recovery != nil && e.recoveryTradingReady() != nil {
+		return nil
+	}
 	if e.s.Towers == nil {
 		e.s.Towers = map[string]nostr.Event{}
 	}

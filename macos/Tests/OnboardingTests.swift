@@ -97,5 +97,40 @@ final class OnboardingTests: XCTestCase {
         XCTAssertEqual(backup.settings.onboardingStage, "connect")
         XCTAssertFalse(backup.hasRecovery)
         XCTAssertTrue(FileManager.default.fileExists(atPath: backupRoot + "/wallets/alice/mainnet/state.db"))
+
+        // Post-onboarding portable export and import into an existing, unrelated
+        // installation use the native typed API with unreachable local nodes.
+        _ = try await start(root)
+        var portable = Blakeswap_V1_ExportPortableBackupRequest()
+        portable.path = directory.appendingPathComponent("portable-after-setup.blakeswap").path
+        portable.password = "chosen post-setup backup password"
+        let exported = try Blakeswap_V1_PortableBackupResult(serializedBytes: await call(root, "backup.export", portable))
+        XCTAssertEqual(exported.wallets, 1); XCTAssertEqual(exported.networks, 3)
+        let otherRoot = directory.appendingPathComponent("existing-other").path
+        let otherSettings = try await start(otherRoot)
+        var otherRequest = Blakeswap_V1_PrepareFirstWalletRequest(); otherRequest.name = "Existing wallet"; otherRequest.revision = otherSettings.revision
+        let otherFirst = try Blakeswap_V1_FirstWallet(serializedBytes: await call(otherRoot, "onboarding.prepare", otherRequest))
+        var otherConnect = try await confirm(otherRoot, otherFirst)
+        otherConnect.environments = connected.environments
+        let otherFinished = try AppSettings(serializedBytes: await call(otherRoot, "onboarding.finish", otherConnect))
+        var inspect = Blakeswap_V1_InspectBackupRequest(); inspect.path = portable.path; inspect.password = portable.password
+        let contents = try Blakeswap_V1_BackupContents(serializedBytes: await call(otherRoot, "backup.inspect", inspect))
+        XCTAssertEqual(contents.wallets.count, 1); XCTAssertEqual(contents.wallets[0].networks.count, 3)
+        var importing = Blakeswap_V1_ImportBackupRequest()
+        importing.path = portable.path; importing.password = portable.password; importing.sourceWalletID = contents.wallets[0].sourceWalletID
+        importing.name = "Imported first wallet"; importing.revision = otherFinished.revision
+        let imported = try Blakeswap_V1_ImportBackupResult(serializedBytes: await call(otherRoot, "backup.import", importing))
+        XCTAssertNotEqual(imported.profileID, "alice"); XCTAssertEqual(imported.settings.wallets.count, 2)
+        var importedStatus: DaemonStatus?
+        for _ in 0..<100 {
+            if let raw = try? await DaemonRPC.call(root: otherRoot, profile: imported.profileID, method: "status"),
+               let state = try? DaemonStatus(serializedBytes: raw), state.hasRecovery { importedStatus = state; break }
+            try await Task.sleep(nanoseconds: 100_000_000)
+        }
+        XCTAssertEqual(try XCTUnwrap(importedStatus).recovery.state, "recovering")
+        XCTAssertFalse(try XCTUnwrap(importedStatus).recovery.issues.isEmpty)
+        importing.revision = imported.settings.revision
+        do { _ = try await call(otherRoot, "backup.import", importing); XCTFail("Duplicate identity imported") } catch {}
+
     }
 }
