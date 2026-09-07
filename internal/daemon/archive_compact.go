@@ -233,6 +233,9 @@ func (e *Engine) compactArchive(ctx context.Context, swaps, towers map[chain.ID]
 			break
 		}
 		event := e.s.Offers[id]
+		if e.automationNeedsOffer(id) {
+			continue
+		}
 		offer, err := historicalOffer(event)
 		if err != nil || (offer.Status == "open" && offer.Expires > time.Now().Unix()) || offer.Status == "reserved" || e.s.Outbox[event.ID.Hex()] != nil {
 			continue
@@ -255,7 +258,7 @@ func (e *Engine) compactArchive(ctx context.Context, swaps, towers map[chain.ID]
 			break
 		}
 		receipt := e.s.TradeReceipts[id]
-		if receipt == nil || receipt.Result.State == "pending" || e.tradeConfirming[id] {
+		if receipt == nil || receipt.Result.State == "pending" || e.tradeConfirming[id] || e.automationNeedsReceipt(id) {
 			continue
 		}
 		if err := move("trade_receipts", id); err != nil {

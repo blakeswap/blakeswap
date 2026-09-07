@@ -30,6 +30,13 @@ var errEngineClosed = errors.New("engine closed")
 type Engine struct {
 	strategyVerifiedSwaps    map[string]bool
 	strategyReporting        atomic.Bool
+	publicationQueue         chan publicationAttempt
+	publicationResults       chan publicationResult
+	publicationBusy          map[string]bool
+	relayCancel              context.CancelFunc
+	relayReaders             sync.WaitGroup
+	relayWorkers             []*relayWorker
+	relayAcks                []chan struct{}
 	automationBusy           atomic.Bool
 	automationCancel         context.CancelFunc
 	historyMu                sync.Mutex
@@ -225,6 +232,9 @@ func (e *Engine) Close() error {
 		return nil
 	}
 	e.activityClosed = true
+	if e.relayCancel != nil {
+		e.relayCancel()
+	}
 	if e.automationCancel != nil {
 		e.automationCancel()
 	}
@@ -236,6 +246,7 @@ func (e *Engine) Close() error {
 	}
 	e.mu.Unlock()
 	e.activityReaders.Wait()
+	e.relayReaders.Wait()
 	e.mu.Lock()
 	e.activityDrained = true
 	e.mu.Unlock()
@@ -450,31 +461,7 @@ func (e *Engine) tickProtocol(ctx context.Context) error {
 	if err := e.refreshFavoriteTowers(); err != nil {
 		e.lastError = "watchtower discovery: " + err.Error()
 	}
-	filters := []nostr.Filter{{Kinds: []nostr.Kind{transport.TowerKind}, Tags: nostr.TagMap{"t": {e.Config.Network.Namespace()}}}, {Kinds: []nostr.Kind{transport.OfferKind}, Tags: nostr.TagMap{"t": {e.Config.Network.Namespace()}}}, {Kinds: []nostr.Kind{1059}, Tags: nostr.TagMap{"p": {e.identity.Public().Hex()}}}}
-	e.marketAllRelays = len(e.Config.Relays) > 0
-	for _, url := range e.Config.Relays {
-		events, err := transport.PullAs(ctx, url, e.identity, filters...)
-		if err != nil {
-			e.marketAllRelays = false
-			e.lastError = fmt.Sprintf("relay %s: %v", url, err)
-			continue
-		}
-		e.marketObservedAt = time.Now().Unix()
-		sort.Slice(events, func(i, j int) bool { return events[i].CreatedAt < events[j].CreatedAt })
-		for _, event := range events {
-			if event.Kind == transport.TowerKind {
-				e.ingestTower(event)
-				continue
-			}
-			if event.Kind == transport.OfferKind {
-				e.ingestOffer(event)
-				continue
-			}
-			if err = e.receive(event); err != nil {
-				e.lastError = "mailbox: " + err.Error()
-			}
-		}
-	}
+	e.drainRelaySync()
 	observations, scanErr := e.scan(ctx)
 	if e.fatal != nil {
 		return e.fatal
@@ -519,8 +506,9 @@ func (e *Engine) tickProtocol(ctx context.Context) error {
 	if err = e.save(); err != nil {
 		return err
 	}
-	flushErr := e.flush(ctx)
-	return errors.Join(refreshErr, scanErr, flushErr)
+	e.acknowledgeRelayPages()
+	publishErr := e.dispatchPublications()
+	return errors.Join(refreshErr, scanErr, publishErr)
 }
 func (e *Engine) ingestOffer(event nostr.Event) {
 	o, err := protocol.DecodeOffer(event, time.Now().Unix())

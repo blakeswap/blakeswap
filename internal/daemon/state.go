@@ -91,6 +91,7 @@ type TowerJob struct {
 }
 type State struct {
 	MakerStrategies             map[string]*MakerStrategy    `json:"maker_strategies,omitempty"`
+	RelaySync                   map[string]RelaySyncRecord   `json:"relay_sync,omitempty"`
 	Automations                 map[string]*AutomationPolicy `json:"automations,omitempty"`
 	SeenSemantics               map[string]bool              `json:"seen_semantics,omitempty"`
 	TradeTokens                 map[string]string            `json:"trade_tokens,omitempty"`

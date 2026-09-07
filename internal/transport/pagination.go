@@ -11,6 +11,7 @@ import (
 
 const RelayPageSize = 128
 const RelayTieLimit = 1024
+const RelayPageBytes = 2 << 20
 
 // RelayCursor belongs to one relay and one exact filter. Until is inclusive;
 // the oldest timestamp is reread before moving below it. NIP-01 has no ID-range
@@ -45,9 +46,14 @@ func ReadPageAs(ctx context.Context, url string, identity nostr.SecretKey, filte
 	filter.Until = cursor.Until
 	filter.Limit, filter.LimitZero = cursor.Limit, false
 	page := RelayPage{Next: cursor}
+	pageBytes := 0
 	// Signature verification and websocket reads happen outside wallet locks.
 	// Reject excess server output immediately rather than buffering 10,000 items.
 	err := subscription(ctx, url, &identity, []nostr.Filter{filter}, func(event nostr.Event) error {
+		pageBytes += len(event.String())
+		if pageBytes > RelayPageBytes {
+			return errors.New("relay page exceeds bounded history byte budget; coverage is incomplete at this boundary")
+		}
 		if len(page.Events) >= cursor.Limit {
 			return errors.New("relay ignored requested history page limit")
 		}
@@ -59,7 +65,7 @@ func ReadPageAs(ctx context.Context, url string, identity nostr.SecretKey, filte
 		}
 		page.Events = append(page.Events, event)
 		return nil
-	}, nil, func() { page.Events = nil }, false)
+	}, nil, func() { page.Events = nil; pageBytes = 0 }, false)
 	if err != nil {
 		// Partial data can still contain established-obligation messages. Deliver
 		// them but keep the previous durable position so retry never skips them.
