@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/blakeswap/blakeswap/internal/chain"
@@ -65,11 +66,11 @@ func (e *Engine) actionDeadline(kind string, id chain.ID, target uint32, now int
 	}
 	d.Remaining = int64(target) - int64(d.Observed)
 	// Timestamp finality is strictly after MTP=locktime; reveal cutoffs are exclusive.
-	if d.Unit == "median_time" && kind != "reveal" {
+	if d.Unit == "median_time" && !strings.HasPrefix(kind, "reveal") {
 		d.Remaining++
 	}
-	d.Certain = e.fresh(id) && d.ObservedAt > 0 && now-d.ObservedAt <= ActionSnapshotMaxAge && now >= d.ObservedAt
-	if kind == "reveal" {
+	d.Certain = target > 0 && d.Observed > 0 && e.fresh(id) && d.ObservedAt > 0 && now-d.ObservedAt <= ActionSnapshotMaxAge && now >= d.ObservedAt
+	if strings.HasPrefix(kind, "reveal") {
 		other := chain.BTC
 		if id == other {
 			other = chain.Blake
@@ -78,7 +79,7 @@ func (e *Engine) actionDeadline(kind string, id chain.ID, target uint32, now int
 	}
 	if d.Unit == "median_time" {
 		d.Certain = d.Certain && int64(d.Observed) >= now-6*3600 && int64(d.Observed) <= now+2*3600
-		if kind == "reveal" {
+		if strings.HasPrefix(kind, "reveal") {
 			other := chain.BTC
 			if id == other {
 				other = chain.Blake
@@ -124,6 +125,15 @@ func (e *Engine) walletActions(now int64) WalletActions {
 			w.Actions = append(w.Actions, WalletAction{ID: "order/" + id, Kind: "order", ObjectID: id, State: "offer_open", RequiresMonitoring: true, Uncertain: !fresh})
 		}
 	}
+	for id, p := range e.s.Automations {
+		if p == nil {
+			w.Known = false
+			continue
+		}
+		if p.Enabled && !p.RestoreHold || p.Pending != nil {
+			w.Actions = append(w.Actions, WalletAction{ID: "automation/" + id, Kind: "automation", ObjectID: id, State: "automation_enabled", RequiresMonitoring: true, Uncertain: !fresh})
+		}
+	}
 	for id, s := range e.s.Swaps {
 		if s == nil {
 			w.Known = false
@@ -157,8 +167,24 @@ func (e *Engine) walletActions(now int64) WalletActions {
 		}
 		if a.RequiresMonitoring && s.Terms != nil {
 			a.FirstReveal = s.Role == "taker" && !s.SecretExposed
+			if e.s.Recovery != nil && e.s.Recovery.Swaps[id] {
+				a.FirstReveal = false
+				if a.State != "reopened" {
+					a.State = "restored_monitoring"
+				}
+			}
 			if a.FirstReveal {
 				a.Deadlines = append(a.Deadlines, e.actionDeadline("reveal", s.Terms.Long.Chain, s.Terms.RevealBefore, now))
+				// The peer chain can exhaust its reveal safety margin independently of
+				// the signed long-chain cutoff. Show the first disallowed peer clock too.
+				margin := uint32(16)
+				if e.Config.Network != chain.Regtest {
+					margin = 12 * 3600
+				}
+				if s.Terms.Short.RefundHeight >= margin {
+					a.Deadlines = append(a.Deadlines, e.actionDeadline("reveal_safety", s.Terms.Short.Chain, s.Terms.Short.RefundHeight-margin+1, now))
+				}
+
 			}
 			for _, leg := range []struct {
 				chain chain.ID
@@ -281,6 +307,12 @@ func LoadStoredActions(c Config) (WalletActions, error) {
 		if _, err = vault.Load(&e.s); err != nil {
 			return WalletActions{}, err
 		}
+	}
+	if e.s.Version != 0 && (e.s.Version != 1 || e.s.Network.Normalized() != c.Network.Normalized()) {
+		return WalletActions{}, errors.New("stored obligation state has an unsupported version or network")
+	}
+	if err := ValidateAutomationState(&e.s); err != nil {
+		return WalletActions{}, err
 	}
 	w := e.walletActions(time.Now().Unix())
 	w.Source = "stored"

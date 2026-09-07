@@ -6,6 +6,7 @@ import (
 	pb "github.com/blakeswap/blakeswap/api/gen/blakeswap/v1"
 	"github.com/blakeswap/blakeswap/internal/chain"
 	"github.com/blakeswap/blakeswap/internal/daemon"
+	"sync"
 	"testing"
 	"time"
 )
@@ -70,5 +71,54 @@ func TestActionSummaryCommandBoundaryAndNonblockingRefresh(t *testing.T) {
 	}
 	if len(w.refresh) != 1 {
 		t.Fatal("refresh was not queued")
+	}
+}
+
+type actionRuntime struct {
+	mu      sync.Mutex
+	current daemon.Status
+}
+
+func (f *actionRuntime) Tick(context.Context) error { return nil }
+func (f *actionRuntime) Status() daemon.Status      { f.mu.Lock(); defer f.mu.Unlock(); return f.current }
+func TestActionTradeConfirmationPublishesBeforeCommandBoundaryRetires(t *testing.T) {
+	now := time.Now().Unix()
+	runtime := &actionRuntime{current: daemon.Status{Actions: daemon.WalletActions{WalletID: "a", Network: chain.Regtest, Source: "live", Known: true, ObservedAt: now}}}
+	started, release := make(chan struct{}), make(chan struct{})
+	worker := &walletWorker{ctx: context.Background(), engine: runtime, refresh: make(chan chan refreshResult, 1)}
+	worker.command = func(context.Context, daemon.Request) (any, error) {
+		close(started)
+		<-release
+		runtime.mu.Lock()
+		runtime.current.Actions.Actions = []daemon.WalletAction{{ID: "swap/accepted", Kind: "swap", RequiresMonitoring: true}}
+		runtime.mu.Unlock()
+		return true, nil
+	}
+	worker.capture(runtime, nil)
+	m := &Manager{settings: &pb.Settings{ActiveNetwork: "regtest", Wallets: []*pb.WalletProfile{{Id: "a"}}}, workers: map[string]*walletWorker{"a": worker}}
+	m.view.Store(&desktopView{settings: m.settings, workers: m.workers})
+	done := make(chan error, 1)
+	go func() {
+		_, err := m.command(context.Background(), "a", daemon.Request{Method: "trade.confirm", Params: json.RawMessage(`{"expected_network":"regtest"}`)})
+		done <- err
+	}()
+	<-started
+	during, err := m.actionSummary(context.Background(), daemon.Request{Params: json.RawMessage(`{}`)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if during.Complete || !during.RequiresMonitoring {
+		t.Fatal("accepted command disappeared behind old empty snapshot", during)
+	}
+	close(release)
+	if err := <-done; err != nil {
+		t.Fatal(err)
+	}
+	after, err := m.actionSummary(context.Background(), daemon.Request{Params: json.RawMessage(`{}`)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !after.Complete || !after.RequiresMonitoring || len(after.Wallets[0].Actions) != 1 {
+		t.Fatal("new authority was not published before idle", after)
 	}
 }

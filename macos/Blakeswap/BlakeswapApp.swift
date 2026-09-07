@@ -141,7 +141,8 @@ struct ContentView: View {
                 footer
             }.background(Color(red: 0.065, green: 0.078, blue: 0.10))
         }
-        .sheet(item: $sendContext) { context in SendCoinsView(context: context).environmentObject(model) }
+        .sheet(item: $model.monitoringDestination) { destination in MonitoringDetailsView(model: model.monitoring, destination: destination) }
+ .sheet(item: $sendContext) { context in SendCoinsView(context: context).environmentObject(model) }
         .sheet(item: $creatingOffer, onDismiss: refreshPendingTrade) { context in TradeComposer(context: context, root: model.root).environmentObject(model) }
         .sheet(item: $resumingTrade, onDismiss: refreshPendingTrade) { context in TradeComposer(context: context, root: model.root).environmentObject(model) }
         .task(id: model.profile + "|" + model.network + "|" + String(model.generation)) { refreshPendingTrade() }

@@ -79,6 +79,7 @@ final class MonitoringTests: XCTestCase {
         let model = MonitoringModel(root: root.path, delivery: delivery, now: { now })
         var value = summary(now: now, state: "completed"); value.wallets[0].source = "stored"
         await model.reconcile(value); XCTAssertTrue(delivery.delivered.isEmpty)
+        try AlertStore(root: root.path).save(AlertJournal())
         let file = root.appendingPathComponent("notifications/journal.json")
         try FileManager.default.setAttributes([.posixPermissions: 0o644], ofItemAtPath: file.path)
         let broken = MonitoringModel(root: root.path, delivery: delivery, now: { now })
@@ -111,5 +112,47 @@ extension MonitoringTests {
         await model.reconcile(reopened)
         XCTAssertEqual(delivery.delivered.count, 1, "A known durable reorg hold is actionable even before fresh settlement evidence returns")
         await model.reconcile(reopened); XCTAssertEqual(delivery.delivered.count, 1)
+    }
+}
+
+extension MonitoringTests {
+    @MainActor func testCertainTargetDeadlineAlertsDuringPeerClockOutage() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString); defer { try? FileManager.default.removeItem(at: root) }
+        let delivery = RecordingAlerts(); let now: Int64 = 1000
+        let model = MonitoringModel(root: root.path, delivery: delivery, now: { now })
+        var value = summary(now: now)
+        value.wallets[0].actions[0].uncertain = true
+        var target = Blakeswap_V1_ActionDeadline(); target.kind = "refund"; target.chain = "btc"; target.unit = "blocks"; target.observedAt = now; target.certain = true; target.band = "approaching"; target.remaining = 2; target.target = 120
+        var reveal = target; reveal.kind = "reveal"; reveal.certain = false; reveal.band = "unknown"
+        value.wallets[0].actions[0].deadlines = [target, reveal]
+        await model.reconcile(value)
+        XCTAssertEqual(delivery.delivered.count, 1, "Fresh own-chain deadline may alert while cross-chain revelation remains uncertain")
+        XCTAssertTrue(delivery.delivered.first?.1.contains("contract deadline") == true)
+        await model.reconcile(value); XCTAssertEqual(delivery.delivered.count, 1)
+    }
+}
+
+extension MonitoringTests {
+    func testJournalCapacityRetainsDedupAcrossRestartAndChecksBytesBeforeDecode() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString); defer { try? FileManager.default.removeItem(at: root) }
+        let small = AlertStore(root: root.path, maximumEntries: 2, maximumBytes: 4096)
+        var journal = AlertJournal(); journal.seen = ["first-success", "second-success"]
+        try small.save(journal)
+        var overflow = journal; overflow.seen.insert("third")
+        XCTAssertThrowsError(try small.save(overflow))
+        XCTAssertEqual(try small.load().seen, journal.seen, "Capacity cannot evict old success identities")
+        let file = root.appendingPathComponent("notifications/journal.json")
+        try Data(repeating: 0x78, count: 4097).write(to: file)
+        do { _ = try small.load(); XCTFail("Oversized data decoded") } catch { XCTAssertTrue(error.localizedDescription.contains("limit")) }
+        try FileManager.default.setAttributes([.posixPermissions: 0o644], ofItemAtPath: file.path)
+        XCTAssertThrowsError(try small.load())
+    }
+    func testJournalSupportsMoreThanThousandHistoricalEvents() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString); defer { try? FileManager.default.removeItem(at: root) }
+        let store = AlertStore(root: root.path)
+        var journal = AlertJournal()
+        for i in 0..<5000 { journal.seen.insert(String(format: "%064x", i)) }
+        try store.save(journal)
+        XCTAssertEqual(try store.load().seen, journal.seen)
     }
 }

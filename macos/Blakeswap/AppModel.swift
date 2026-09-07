@@ -8,6 +8,7 @@ final class AppModel: ObservableObject {
     @Published var profile = "alice"
     @Published var page = "Market"
     @Published var activityDestination: ActivityDestination?
+ @Published var monitoringDestination: AlertDestination?
     struct Snapshot {
         var status: DaemonStatus?
         var settings: AppSettings?
@@ -35,7 +36,7 @@ final class AppModel: ObservableObject {
     var checkingSwaps: Bool { swapRefreshGeneration == generation }
     var network: String { settings?.activeNetwork ?? status?.network ?? "mainnet" }
     var isRegtest: Bool { network == "regtest" }
-    func invalidateSnapshot() { generation &+= 1; snapshot.status = nil; recovery = nil; activityDestination = nil }
+    func invalidateSnapshot() { generation &+= 1; snapshot.status = nil; recovery = nil; activityDestination = nil; monitoringDestination = nil }
     func selectProfile(_ name: String) { invalidateSnapshot(); profile = name; notice = nil }
 
     @discardableResult
@@ -74,8 +75,9 @@ final class AppModel: ObservableObject {
         if route.kind == "swap" { activityDestination = .swap(route.object) }
         else if route.kind == "send" { activityDestination = .send(route.object) }
         else if route.kind == "order" { activityDestination = .order(route.object) }
-        page = activityDestination?.page ?? "Activity"
-        NSApp.activate(ignoringOtherApps: true)
+        page = activityDestination?.page ?? (route.kind == "automation" ? "Market" : "Activity")
+ if !["swap", "send", "order"].contains(route.kind) { monitoringDestination = route }
+        NSApp?.activate(ignoringOtherApps: true)
     }
     func actionSummary(refresh: Bool = false) async throws -> ActionSummary {
         let raw = try await DaemonRPC.call(root: root, profile: profile, method: "actions.summary", params: ["refresh": refresh])

@@ -124,3 +124,13 @@ accepting requests and settling swaps until the application exits; shutdown or
 network reconfiguration cancels and joins them before closing wallet databases.
 The Swaps refresh action requests a full cycle whose reads start after the request,
 then returns its snapshot. Routine status reads remain immediate and cached.
+
+The monitoring projection is separate from activity pagination. Wallet engines
+publish public typed action snapshots alongside status; the desktop aggregates
+all saved wallets through immutable worker views without remote IO. A local
+pre-bootstrap encrypted-state projection distinguishes known empty/settled
+wallets from unknown openings during an outage. In-flight publication boundaries
+prevent older empty snapshots from hiding newly authorized work. Native
+notifications and termination use this same all-wallet surface; they have no
+signing or settlement authority. The helper remains owned by the app, with a
+bounded shutdown and no separate background service.

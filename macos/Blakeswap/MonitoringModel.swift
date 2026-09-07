@@ -16,8 +16,10 @@ struct AlertPreferences: Codable, Equatable {
         switch category { case "deadline": return deadlines; case "attention": return attention; case "completed": return completed; default: return transitions }
     }
 }
-struct AlertDestination: Codable, Equatable { let network: String; let wallet: String; let kind: String; let object: String }
-struct AlertJournal: Codable {
+struct AlertDestination: Codable, Equatable, Identifiable { let network: String; let wallet: String; let kind: String; let object: String
+ var id: String { network + "|" + wallet + "|" + kind + "|" + object }
+}
+struct AlertJournal: Codable, Equatable {
     var preferences = AlertPreferences()
     var seen = Set<String>()
     var states: [String: String] = [:]
@@ -26,6 +28,13 @@ struct AlertJournal: Codable {
 }
 struct AlertStore {
     let root: String
+    var maximumEntries = 100_000
+    var maximumBytes = 16 * 1024 * 1024
+    private func checkCapacity(_ journal: AlertJournal) throws {
+        guard journal.seen.count <= maximumEntries, journal.states.count <= maximumEntries, journal.routes.count <= maximumEntries, journal.initialized.count <= maximumEntries else {
+            throw RPCError.message("Notification history reached its local limit. Notifications are paused; in-app monitoring and Quit protection remain active. Retain the journal to preserve deduplication.")
+        }
+    }
     private var directory: URL { URL(fileURLWithPath: root).appendingPathComponent("notifications", isDirectory: true) }
     private var path: URL { directory.appendingPathComponent("journal.json") }
     private func check(_ url: URL, directory: Bool = false) throws {
@@ -37,14 +46,23 @@ struct AlertStore {
         try check(directory, directory: true)
         if !FileManager.default.fileExists(atPath: path.path) { return AlertJournal() }
         try check(path)
-        return try JSONDecoder().decode(AlertJournal.self, from: Data(contentsOf: path))
+        let attrs = try FileManager.default.attributesOfItem(atPath: path.path)
+        guard let size = attrs[.size] as? NSNumber, size.int64Value <= Int64(maximumBytes) else { throw RPCError.message("Notification history exceeds its 16 MiB limit. Notifications are paused; in-app monitoring and Quit protection remain active.") }
+        let data = try Data(contentsOf: path)
+        guard data.count <= maximumBytes else { throw RPCError.message("Notification history grew beyond its local limit.") }
+        let journal = try JSONDecoder().decode(AlertJournal.self, from: data)
+        try checkCapacity(journal)
+        return journal
     }
     func save(_ journal: AlertJournal) throws {
+        try checkCapacity(journal)
+        let data = try JSONEncoder().encode(journal)
+        guard data.count <= maximumBytes else { throw RPCError.message("Notification history exceeds its 16 MiB limit. Notifications are paused; in-app monitoring and Quit protection remain active.") }
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
         try check(directory, directory: true)
         if FileManager.default.fileExists(atPath: path.path) { try check(path) }
         let temporary = directory.appendingPathComponent(UUID().uuidString)
-        guard FileManager.default.createFile(atPath: temporary.path, contents: try JSONEncoder().encode(journal), attributes: [.posixPermissions: 0o600]) else { throw RPCError.message("Cannot save notification history.") }
+        guard FileManager.default.createFile(atPath: temporary.path, contents: data, attributes: [.posixPermissions: 0o600]) else { throw RPCError.message("Cannot save notification history.") }
         defer { try? FileManager.default.removeItem(at: temporary) }
         guard rename(temporary.path, path.path) == 0 else { throw RPCError.message("Cannot save notification history.") }
     }
@@ -59,7 +77,8 @@ struct AlertStore {
     var navigate: ((String) -> Void)?
     private var center: UNUserNotificationCenter { .current() }
     func permission(request: Bool) async -> Bool {
-        center.delegate = self
+        guard Bundle.main.bundleURL.pathExtension == "app" else { return false }
+ center.delegate = self
         if request { _ = try? await center.requestAuthorization(options: [.alert, .sound]) }
         let status = await center.notificationSettings().authorizationStatus
         return status == .authorized || status == .provisional
@@ -92,6 +111,8 @@ extension WalletAction {
         case "tower_pending": return "Waiting for durable tower protection"
         case "tower_monitoring": return "Accepted local rescue job needs monitoring"
         case "offer_open": return "Open order can accept a trade"
+ case "automation_enabled": return "Automatic offers are enabled"
+ case "restored_monitoring": return "Restored trade needs settlement monitoring; first revelation is disabled"
         case "recovery_required": return "Restored obligations need reconciliation"
         default: return "Waiting for the peer"
         }
@@ -152,6 +173,7 @@ extension Blakeswap_V1_ActionDeadline {
         for wallet in next.wallets where wallet.known && wallet.source == "live" {
             let scope = next.network + "|" + wallet.walletID
             let initialized = journal.initialized.contains(scope)
+ let walletCurrent = wallet.observedAt <= current && current - wallet.observedAt <= 90 && (interruptionTime == 0 || wallet.observedAt > interruptionTime)
             for action in wallet.actions {
                 let key = hash(scope + "|" + action.id)
                 let previous = journal.states[key]
@@ -159,31 +181,32 @@ extension Blakeswap_V1_ActionDeadline {
                 if action.requiresMonitoring {
                     let state = action.state + "|" + String(action.towerReady) + "|" + String(action.firstReveal)
                     let reopened = previous == "completed" || previous == "refunded"
-                    if reopened { updated.seen.insert(hash(key + "|" + state)) }
-                    events.append((reopened ? "reopened" : state, reopened || action.state == "attention" ? "attention" : "transition", action.firstReveal ? "A swap needs this app for its first secret revelation. An external tower cannot perform it." : action.monitoringTitle + ". Open Blakeswap to review."))
-                    for deadline in action.deadlines where deadline.certain && ["approaching", "reached"].contains(deadline.band) {
-                        events.append((deadline.kind + "|" + deadline.chain + "|" + String(deadline.target) + "|" + deadline.band, "deadline", deadline.kind == "reveal" ? "A first-revelation cutoff is near or reached. Keep Blakeswap open and review the swap." : "A contract deadline needs monitoring. Open Blakeswap to review."))
+                    events.append((reopened ? "reopened" : state, reopened || ["attention", "reopened", "recovery_required"].contains(action.state) ? "attention" : "transition", action.firstReveal ? "A swap needs this app for its first secret revelation. An external tower cannot perform it." : action.monitoringTitle + ". Open Blakeswap to review."))
+                    for deadline in action.deadlines where deadline.certain && deadline.observedAt <= current && current - deadline.observedAt <= 90 && (interruptionTime == 0 || deadline.observedAt > interruptionTime) && ["approaching", "reached"].contains(deadline.band) {
+                        events.append((deadline.kind + "|" + deadline.chain + "|" + String(deadline.target) + "|" + deadline.band, "deadline", deadline.kind.hasPrefix("reveal") ? "A first-revelation cutoff is near or reached. Keep Blakeswap open and review the swap." : "A contract deadline needs monitoring. Open Blakeswap to review."))
                     }
                 } else if ["completed", "refunded"].contains(action.state) {
                     events.append((action.state, "completed", "A settlement was confirmed. Open Blakeswap to review."))
                 }
-                updated.states[key] = action.state
                 for (event, category, body) in events {
                     let id = hash(key + "|" + event)
                     currentEvents.insert(id)
                     updated.routes[id] = AlertDestination(network: next.network, wallet: wallet.walletID, kind: action.kind, object: action.objectID)
-                    if action.uncertain || interrupted { continue }
+                    guard walletCurrent && (["attention", "deadline"].contains(category) || !action.uncertain) else { continue }
+ updated.states[key] = action.state
+ if event == "reopened" { updated.seen.insert(hash(key + "|" + action.state + "|" + String(action.towerReady) + "|" + String(action.firstReveal))) }
  guard updated.seen.insert(id).inserted else { continue }
                     // Establish an initial terminal baseline without replaying old
                     // success. Suppressed/denied events are consumed, never burst later.
                     if category == "completed" && (!initialized || previous == nil) { continue }
-                    if !action.uncertain && !interrupted && preferences.permits(category) && permissionGranted { deliveries.append((id, body)) }
+                    if preferences.permits(category) && permissionGranted { deliveries.append((id, body)) }
                 }
             }
             updated.initialized.insert(scope)
         }
+        updated.routes = updated.routes.filter { currentEvents.contains($0.key) }
         do {
-            try store.save(updated) // Persist before submitting to avoid crash/restart duplicates.
+            if updated != journal { try store.save(updated) } // Persist before submission; unchanged polls do not rewrite the journal.
             let obsolete = journal.routes.keys.filter { !currentEvents.contains($0) }
             journal = updated
             delivery.remove(ids: obsolete)
@@ -237,5 +260,27 @@ struct NotificationPreferencesView: View {
                 if let error = model.error { Text(error).font(.caption).foregroundStyle(.orange) }
             }.padding(8)
         }
+    }
+}
+
+struct MonitoringDetailsView: View {
+    @ObservedObject var model: MonitoringModel
+    let destination: AlertDestination
+    @Environment(\.dismiss) private var dismiss
+    var body: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            Text("Monitoring detail").font(.title2.bold())
+            Text("\(destination.wallet) · \(destination.network)").font(.caption)
+            if let wallet = model.summary?.wallets.first(where: { $0.walletID == destination.wallet && $0.network == destination.network }),
+               let action = wallet.actions.first(where: { $0.kind == destination.kind && $0.objectID == destination.object }) {
+                Text(action.monitoringTitle).font(.headline)
+                if !wallet.known || action.uncertain { Text("Current eligibility is uncertain. Keep monitoring until observations return.").foregroundStyle(.orange) }
+                if action.firstReveal { Text("An external tower cannot perform this swap’s first revelation.").foregroundStyle(.orange) }
+                ForEach(Array(action.deadlines.enumerated()), id: \.offset) { _, deadline in Text(deadline.display).font(.caption) }
+                Text(action.requiresMonitoring ? "This item still needs app monitoring." : "No current monitoring obligation is recorded for this item.")
+            } else { Text("This item is no longer in the current monitoring snapshot. Inspect this wallet’s activity for its recorded outcome.") }
+            Text("Quitting stops the app-owned daemon and local rescue jobs.").font(.caption).foregroundStyle(.secondary)
+            Button("Done") { dismiss() }.keyboardShortcut(.defaultAction)
+        }.padding(28).frame(width: 560)
     }
 }

@@ -60,7 +60,8 @@ final class DaemonProcess {
         stopping = true
         guard let process = child else { return }
         let runtime = URL(fileURLWithPath: root).appendingPathComponent("runtime.json")
-        let endpoints = (try? Data(contentsOf: runtime)).flatMap { try? JSONDecoder().decode([String: DaemonEndpoint].self, from: $0) } ?? [:]
+        let runtimeData = try? Data(contentsOf: runtime)
+ let endpoints = runtimeData.flatMap { try? JSONDecoder().decode([String: DaemonEndpoint].self, from: $0) } ?? [:]
         if process.isRunning { process.terminate() }
         let deadline = ProcessInfo.processInfo.systemUptime + shutdownTimeout
         while process.isRunning && ProcessInfo.processInfo.systemUptime < deadline {
@@ -80,7 +81,7 @@ final class DaemonProcess {
                 try? FileManager.default.removeItem(at: directory)
             }
         }
-        try? FileManager.default.removeItem(at: runtime)
+        if let runtimeData, (try? Data(contentsOf: runtime)) == runtimeData { try? FileManager.default.removeItem(at: runtime) }
         try? log?.close(); log = nil; child = nil
     }
 }
@@ -128,8 +129,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if let summary {
             for wallet in summary.wallets {
                 if !wallet.known { lines.append("\(wallet.walletID): local obligation state could not be checked.") }
-                for action in wallet.actions where action.requiresMonitoring {
-                    lines.append("\(wallet.walletID): \(action.monitoringTitle)." + (action.firstReveal ? " This app must perform the first secret revelation; an external tower cannot do it." : ""))
+                let active = wallet.actions.filter(\.requiresMonitoring)
+                if !active.isEmpty {
+                    lines.append("\(wallet.walletID): \(active.count) item(s) need monitoring. " + active.prefix(3).map(\.monitoringTitle).joined(separator: "; ") + (active.contains(where: \.firstReveal) ? ". This app must perform a first secret revelation; an external tower cannot do it." : ""))
                 }
             }
         } else { lines.append("The helper could not provide an all-wallet check. Outstanding obligations may still need monitoring.") }

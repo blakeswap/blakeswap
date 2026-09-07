@@ -2,6 +2,8 @@ package daemon
 
 import (
 	"encoding/json"
+	"github.com/blakeswap/blakeswap/internal/storage"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -60,7 +62,7 @@ func TestActionSummaryPreservesLocalObligationsAndRecoveryHolds(t *testing.T) {
 	var reveal bool
 	for _, a := range w.Actions {
 		if a.Kind == "swap" {
-			reveal = a.FirstReveal && len(a.Deadlines) == 3
+			reveal = a.FirstReveal && len(a.Deadlines) == 4
 		}
 	}
 	if !reveal {
@@ -106,5 +108,82 @@ func TestActionStoredEmptyAndUnavailableAreDistinct(t *testing.T) {
 	w = actionEngine(now).walletActions(now)
 	if s := SummarizeActions(chain.Regtest, 1, []WalletActions{w}, now+91); s.Complete {
 		t.Fatal("stale live state accepted")
+	}
+}
+
+func TestActionArmedTowerDoesNotSuppressFirstRevealAndImportedCannotReveal(t *testing.T) {
+	now := time.Now().Unix()
+	e := actionEngine(now)
+	job := protocol.Job{ID: "j"}
+	s := &Swap{ID: "s", Role: "taker", Stage: "awaiting chain confirmations", Protection: &protocol.Tower{BPS: 50}, Jobs: []protocol.Job{job}, Receipts: map[string]protocol.Receipt{"j": {Digest: protocol.Digest(job)}}, Terms: &protocol.Terms{RevealBefore: 106, Long: contract.HTLC{Chain: chain.BTC, RefundHeight: 200}, Short: contract.HTLC{Chain: chain.Blake, RefundHeight: 316}}}
+	e.s.Swaps = map[string]*Swap{"s": s}
+	a := e.walletActions(now).Actions[0]
+	if !a.TowerReady || !a.FirstReveal {
+		t.Fatal("external tower must not suppress first reveal", a)
+	}
+	var peerMargin bool
+	for _, d := range a.Deadlines {
+		if d.Kind == "reveal_safety" {
+			peerMargin = d.Chain == chain.Blake && d.Remaining == 1 && d.Band == "approaching"
+		}
+	}
+	if !peerMargin {
+		t.Fatal("asymmetric peer-chain safety margin hidden", a)
+	}
+	e.s.Recovery = &RecoveryRecord{Status: RecoveryStatus{State: "recovering"}, Swaps: map[string]bool{"s": true}}
+	for _, a := range e.walletActions(now).Actions {
+		if a.Kind == "swap" && (a.FirstReveal || a.State != "restored_monitoring") {
+			t.Fatal("imported private first revelation was advertised", a)
+		}
+	}
+}
+func TestActionEnabledAutomationRemainsPotentialAuthority(t *testing.T) {
+	now := time.Now().Unix()
+	e := actionEngine(now)
+	e.s.Automations = map[string]*AutomationPolicy{"p": {Enabled: true}}
+	s := SummarizeActions(chain.Regtest, 1, []WalletActions{e.walletActions(now)}, now)
+	if !s.RequiresMonitoring || s.Wallets[0].Actions[0].Kind != "automation" {
+		t.Fatal(s)
+	}
+	e.s.Automations["p"].Enabled = false
+	e.s.Automations["p"].RestoreHold = true
+	if s = SummarizeActions(chain.Regtest, 1, []WalletActions{e.walletActions(now)}, now); s.RequiresMonitoring {
+		t.Fatal("disabled held policy alone is not a funded obligation", s)
+	}
+	e.s.Automations["p"].Pending = &ConfirmTradeRequest{}
+	if s = SummarizeActions(chain.Regtest, 1, []WalletActions{e.walletActions(now)}, now); !s.RequiresMonitoring {
+		t.Fatal("pending authorization hidden", s)
+	}
+}
+
+func TestActionEncryptedStoredObligationSurvivesEndpointFailure(t *testing.T) {
+	dir := t.TempDir()
+	password := filepath.Join(dir, "password")
+	if err := os.WriteFile(password, []byte("test-password-at-least-sixteen-bytes"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	v, err := storage.Open(filepath.Join(dir, "state.db"), []byte("test-password-at-least-sixteen-bytes"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	state := State{Version: 1, Network: chain.Regtest, Swaps: map[string]*Swap{"s": {ID: "s", Role: "maker", Stage: "claiming", LongFunding: "signed-and-persisted"}}}
+	if err := v.Save(state); err != nil {
+		t.Fatal(err)
+	}
+	cfg := Config{Name: "offline", Network: chain.Regtest, DataDir: dir, PasswordFile: password}
+	if _, err := LoadStoredActions(cfg); err == nil {
+		t.Fatal("locked live vault must remain unknown")
+	}
+	v.Close()
+	w, err := LoadStoredActions(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if w.Source != "stored" || !w.Known || len(w.Actions) != 1 || !w.Actions[0].RequiresMonitoring || !w.Actions[0].Uncertain {
+		t.Fatal(w)
+	}
+	cfg.Network = chain.Mainnet
+	if _, err := LoadStoredActions(cfg); err == nil {
+		t.Fatal("wrong-network file was trusted")
 	}
 }

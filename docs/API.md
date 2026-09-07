@@ -415,3 +415,28 @@ an acknowledgement, and a funded swap is never made cancellable. On an uncertain
 save response, query the same policy ID and compare its revision/config; do not
 create a different policy ID to retry. These typed boundaries are the sensitive
 policy authorization surface. See [accounting and reference rules](AUTOMATION.md).
+
+## All-wallet monitoring summary
+
+`GetActionSummary(ActionSummaryRequest)` / `POST /v1/actions/summary` returns
+`ActionSummary` for every saved wallet on the desktop's active network. A
+standalone daemon returns its own wallet. The desktop request's `refresh: true`
+queues bounded worker refreshes and returns immediately; it never waits for
+remote endpoints or a lifecycle lock. Responses bind `network`,
+`settings_revision`, `observed_at`, `complete` and `requires_monitoring`.
+
+Each `WalletActions` contains its wallet/network, local-knowledge `known` bit,
+`source` (`live` or encrypted `stored`), snapshot time and typed actions. Status
+field26 carries the same wallet projection. Missing or legacy projections are
+unknown, never silently empty. Commands and ticks publish their updated
+snapshot before retiring their in-flight boundary.
+
+Actions carry a local navigation ID/object kind, state, monitoring requirement,
+uncertainty, first-reveal and tower-readiness flags. Deadlines specify kind,
+chain, units (`blocks` or `median_time`), target, observed value and time,
+remaining units, certainty and band (`later`, `approaching`, `reached`,
+`unknown`). A deadline is advisory: its certainty cannot authorize signing or
+publication. Reveal timing includes the independently advancing peer safety
+margin and both-chain freshness; timestamp settlement finality is strictly
+after MTP=locktime. No keys, preimages, signed bytes, destinations or amounts are
+included. See [Monitoring](MONITORING.md) for notifications, privacy and shutdown.
