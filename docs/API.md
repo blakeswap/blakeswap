@@ -23,8 +23,8 @@ and the Host must equal the literal bound address. A future web UI needs an
 explicit same-origin serving and authorization design before relaxing this.
 
 Each daemon start generates a fresh 256-bit bearer token. The Unix socket and
-its `<socket>.json` endpoint file have mode 0600. Desktop discovery is the private
-`runtime.json` in the app data directory maps profile to `{socket,http,token,owner_pid,owner_session}`.
+its `<socket>.json` endpoint file have mode 0600. Desktop discovery uses the private
+`runtime.json` in the app data directory, mapping each profile to `{socket,http,token,owner_pid,owner_session}`.
 The optional launch session and owner PID bind native readiness and cleanup to
 the actual child. They do not replace the private API token or grant API access.
 The desktop creates short socket paths in a private OS temporary directory to
