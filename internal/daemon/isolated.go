@@ -30,6 +30,9 @@ func (e *Engine) witnessContext(ctx context.Context, id chain.ID) context.Contex
 // Persist it before any unrelated lookup or refund eligibility check can return;
 // a later reorg must not erase a fact that this process already witnessed.
 func (e *Engine) rememberSwapWitnesses(s *Swap, all map[chain.ID]map[string]chain.Observation) error {
+	return e.rememberSwapWitnessesWithSave(s, all, e.save)
+}
+func (e *Engine) rememberSwapWitnessesWithSave(s *Swap, all map[chain.ID]map[string]chain.Observation, persist func() error) error {
 	incoming := s.Short
 	if s.Role == "maker" {
 		incoming = s.Long
@@ -50,7 +53,7 @@ func (e *Engine) rememberSwapWitnesses(s *Swap, all map[chain.ID]map[string]chai
 		}
 	}
 	if changed {
-		return e.save()
+		return persist()
 	}
 	return nil
 }
@@ -59,6 +62,9 @@ func (e *Engine) rememberSwapWitnesses(s *Swap, all map[chain.ID]map[string]chai
 // make their canonicality stale, but cannot make an already public preimage
 // private again. Target readiness is checked separately before any broadcast.
 func (e *Engine) rememberTowerWitnesses(all map[chain.ID]map[string]chain.Observation) error {
+	return e.rememberTowerWitnessesWithSave(all, e.save)
+}
+func (e *Engine) rememberTowerWitnessesWithSave(all map[chain.ID]map[string]chain.Observation, persist func() error) error {
 	changed := false
 	for _, state := range e.s.TowerJobs {
 		if state.Job.Observe == nil {
@@ -76,7 +82,7 @@ func (e *Engine) rememberTowerWitnesses(all map[chain.ID]map[string]chain.Observ
 		}
 	}
 	if changed {
-		return e.save()
+		return persist()
 	}
 	return nil
 }

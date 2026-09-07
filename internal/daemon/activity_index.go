@@ -27,6 +27,7 @@ func (e *Engine) refreshActivity(ctx context.Context) {
 	ctx, cancel := context.WithCancel(ctx)
 	e.activityCancel = cancel
 	e.activityReaders.Add(1)
+	ctx = context.WithValue(ctx, activityReaderKey{}, e)
 	e.mu.Unlock()
 	defer e.activityReaders.Done()
 	defer cancel()
@@ -74,14 +75,24 @@ func (e *Engine) indexActivityChain(ctx context.Context, id chain.ID) {
 		e.mu.Unlock()
 		return
 	}
+	witnessCtx := e.activityWitnessContext(ctx, id)
 	e.mu.Unlock()
-	readCtx, cancel := context.WithTimeout(ctx, activityReadBudget)
+	readCtx, cancel := context.WithTimeout(witnessCtx, activityReadBudget)
 	page, err := backend.AddressHistory(readCtx, entry.address, index.After, 2)
 	cancel()
 	e.mu.Lock()
 	defer e.mu.Unlock()
 	if e.fatal != nil || ctx.Err() != nil || wallet != e.Config.Name || network != e.Config.Network {
 		return
+	}
+	if len(page.Transactions) > 2 {
+		return
+	}
+	for _, tx := range page.Transactions {
+		if witnessErr := e.rememberActivityTransaction(id, tx); witnessErr != nil {
+			err = witnessErr
+			break
+		}
 	}
 	if err != nil {
 		// Endpoint errors may contain private URLs. Expose only an actionable,
@@ -90,7 +101,7 @@ func (e *Engine) indexActivityChain(ctx context.Context, id chain.ID) {
 		e.s.ActivityIndexes[id] = index
 		return
 	}
-	if page.Source == "" || len(page.Transactions) > 2 {
+	if page.Source == "" {
 		return
 	}
 	if !e.activitySourceCurrent(id, page.Generation) {
@@ -254,10 +265,20 @@ func (e *Engine) observeActivityChain(ctx context.Context, id chain.ID) {
 			e.activityCursors[id] = ids[(at+1)%len(ids)]
 			e.activityVariants[id] = 0
 		}
+		witnessCtx := e.activityWitnessContext(readCtx, id)
 		e.mu.Unlock()
-		result, err := backend.HistoryTransaction(readCtx, txid, prior.Height, prior.BlockHash)
+		result, err := backend.HistoryTransaction(witnessCtx, txid, prior.Height, prior.BlockHash)
 		e.mu.Lock()
 		if e.fatal != nil || ctx.Err() != nil || wallet != e.Config.Name || network != e.Config.Network {
+			e.mu.Unlock()
+			return
+		}
+		if result.Transaction.TxID == txid {
+			if witnessErr := e.rememberActivityTransaction(id, result.Transaction); witnessErr != nil {
+				err = witnessErr
+			}
+		}
+		if e.fatal != nil {
 			e.mu.Unlock()
 			return
 		}

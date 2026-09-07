@@ -89,6 +89,21 @@ func receivedBy(tx Transaction, script []byte) (bool, error) {
 	}
 	return matches, nil
 }
+
+// Persist decoded public witnesses before a later metadata/page failure can
+// discard them. Canonical history still requires all subsequent verification.
+func historyWitness(ctx context.Context, id string, record Transaction) error {
+	tx, err := parseRaw(record.Hex)
+	if err != nil || record.TxID != id || tx.TxHash().String() != id {
+		return errors.New("history witness transaction ID mismatch")
+	}
+	for _, in := range tx.TxIn {
+		if err := emitSpendWitness(ctx, OutpointKey(in.PreviousOutPoint.Hash.String(), in.PreviousOutPoint.Index), tx); err != nil {
+			return err
+		}
+	}
+	return nil
+}
 func (r *RPC) AddressHistory(ctx context.Context, address, after string, limit int) (AddressHistoryPage, error) {
 	script, err := historyScript(r.Network, address)
 	if err != nil {
@@ -114,7 +129,7 @@ func (r *RPC) AddressHistory(ctx context.Context, address, after string, limit i
 	}
 	result := AddressHistoryPage{Source: historySource("rpc", r.URL), Next: next, Complete: next == ""}
 	for _, id := range page {
-		tx, err := r.Transaction(ctx, id)
+		tx, err := r.transaction(ctx, id, func(raw Transaction) error { return historyWitness(ctx, id, raw) })
 		if err != nil {
 			return AddressHistoryPage{}, err
 		}
@@ -160,6 +175,9 @@ func (e *Electrum) AddressHistory(ctx context.Context, address, after string, li
 		if err != nil {
 			return AddressHistoryPage{}, err
 		}
+		if err := historyWitness(ctx, id, tx); err != nil {
+			return AddressHistoryPage{}, err
+		}
 		if heights[id] > 0 {
 			tx, err = e.inclusion(ctx, tx, uint32(heights[id]))
 			if err != nil {
@@ -191,8 +209,12 @@ type HistoryTransaction struct {
 
 func (r *RPC) HistoryTransaction(ctx context.Context, id string, height uint32, block string) (HistoryTransaction, error) {
 	result := HistoryTransaction{Source: historySource("rpc", r.URL)}
-	tx, err := r.Transaction(ctx, id)
+	tx, err := r.transaction(ctx, id, func(raw Transaction) error { return historyWitness(ctx, id, raw) })
 	result.Transaction = tx
+	var sinkFailure *witnessSinkError
+	if errors.As(err, &sinkFailure) {
+		return result, err
+	}
 	if err != nil && height > 0 && block != "" && ctx.Err() == nil {
 		var current string
 		if r.Call(ctx, "getblockhash", &current, height) == nil && current != block {
@@ -203,8 +225,12 @@ func (r *RPC) HistoryTransaction(ctx context.Context, id string, height uint32, 
 }
 func (e *Electrum) HistoryTransaction(ctx context.Context, id string, height uint32, block string) (HistoryTransaction, error) {
 	result := HistoryTransaction{Source: historySource("electrum", e.endpoint.String())}
-	tx, err := e.Transaction(ctx, id)
+	tx, err := e.transaction(ctx, id, func(raw Transaction) error { return historyWitness(ctx, id, raw) })
 	result.Transaction = tx
+	var sinkFailure *witnessSinkError
+	if errors.As(err, &sinkFailure) {
+		return result, err
+	}
 	if err != nil && height > 0 && block != "" && ctx.Err() == nil {
 		if header, readErr := e.header(ctx, height); readErr == nil {
 			if current, hashErr := HeaderHash(header); hashErr == nil && current.String() != block {

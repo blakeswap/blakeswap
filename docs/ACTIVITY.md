@@ -83,6 +83,16 @@ leave settlement readiness and source generations unchanged. Results carry the
 selected endpoint fingerprint and generation; a later source change invalidates
 those results before they can update the ledger.
 
+A validated claim witness is an immutable fact even if later history metadata
+fails or its block is reorganized. Native history readers persist matching
+swap/tower preimages and incoming-claim refund guards before further proof I/O.
+The endpoint lease is released during this synchronous save and reacquired with
+cancellation and generation checks, preserving the protocol lock order. These
+facts never grant confirmations, funding readiness, or permission to refund.
+Closing joins already registered readers while the vault remains open so their
+immutable witnesses remain durable. New or drained readers and callbacks from
+another wallet/network cannot write; late canonical history stays discarded.
+
 Limits are 50,000 records, 10,000 history transaction IDs per address, and 2,048
 inputs/outputs per indexed transaction. Exceeding a limit leaves an explicit
 incomplete-history warning and preserves existing records. The cursor does not

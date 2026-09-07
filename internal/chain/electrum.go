@@ -396,9 +396,17 @@ func (e *Electrum) inclusion(ctx context.Context, t Transaction, height uint32) 
 	return t, nil
 }
 func (e *Electrum) Transaction(ctx context.Context, id string) (Transaction, error) {
+	return e.transaction(ctx, id, nil)
+}
+func (e *Electrum) transaction(ctx context.Context, id string, rawResponse func(Transaction) error) (Transaction, error) {
 	t, err := e.raw(ctx, id)
 	if err != nil {
 		return t, err
+	}
+	if rawResponse != nil {
+		if err := rawResponse(t); err != nil {
+			return t, err
+		}
 	}
 	tx, _ := parseRaw(t.Hex)
 	if len(tx.TxOut) == 0 {

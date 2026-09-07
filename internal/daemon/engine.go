@@ -25,11 +25,14 @@ import (
 	"time"
 )
 
+var errEngineClosed = errors.New("engine closed")
+
 type Engine struct {
 	activityBusy             atomic.Bool
 	activityCancel           context.CancelFunc
 	activityReaders          sync.WaitGroup
 	activityClosed           bool
+	activityDrained          bool
 	activitySnapshots        map[string]activitySnapshot
 	activitySnapshotSequence uint64
 	activityCursors          map[chain.ID]string
@@ -198,10 +201,13 @@ func (e *Engine) Close() error {
 		e.activityCancel()
 	}
 	if e.fatal == nil {
-		e.fatal = errors.New("engine closed")
+		e.fatal = errEngineClosed
 	}
 	e.mu.Unlock()
 	e.activityReaders.Wait()
+	e.mu.Lock()
+	e.activityDrained = true
+	e.mu.Unlock()
 	for _, r := range e.nodes {
 		_ = r.Close()
 	}
@@ -211,6 +217,12 @@ func (e *Engine) save() error {
 	if e.fatal != nil {
 		return e.fatal
 	}
+	return e.persistState()
+}
+
+// persistState is also used by already registered immutable-witness readers
+// while Close joins them. Protocol execution remains blocked by errEngineClosed.
+func (e *Engine) persistState() error {
 	e.syncActivity()
 	if err := e.vault.Save(e.s); err != nil {
 		e.fatal = fmt.Errorf("durability failure; execution stopped: %w", err)

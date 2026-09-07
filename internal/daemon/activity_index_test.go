@@ -328,3 +328,77 @@ func TestActivityRejectsChangedWalletNetworkAndSourceGeneration(t *testing.T) {
 		})
 	}
 }
+
+func TestActivityWitnessSurvivesRestart(t *testing.T) {
+	for _, role := range []string{"maker", "taker"} {
+		for _, route := range []string{"receipts", "observations"} {
+			t.Run(role+"/"+route, func(t *testing.T) {
+				e, s, b, secret := isolatedFixture(t, role)
+				incoming, own := s.Short, s.Long
+				if role == "maker" {
+					incoming, own = s.Long, s.Short
+				}
+				key, _ := e.swapKey(incoming.Chain, s.ID)
+				claim, err := contract.Spend(incoming, key, e.scripts[incoming.Chain], 2000, false, 0, nil, 0, secret)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if _, ok := contract.ExtractSecret(incoming, claim); !ok {
+					t.Fatal("fixture claim invalid")
+				}
+				s.SelfClaim = contract.Hex(claim)
+				s.SelfClaims = []string{s.SelfClaim}
+				if err := e.save(); err != nil {
+					t.Fatal(err)
+				}
+				record := chain.Transaction{TxID: claim.TxHash().String(), Hex: contract.Hex(claim), Confirmations: 0}
+				backend := activityBackend{
+					history: func(context.Context, string, string, int) (chain.AddressHistoryPage, error) {
+						return chain.AddressHistoryPage{Source: "admitted-source", Transactions: []chain.Transaction{record}, Complete: true}, nil
+					},
+					observe: func(_ context.Context, id string, _ uint32, _ string) (chain.HistoryTransaction, error) {
+						if id != record.TxID {
+							return chain.HistoryTransaction{Source: "admitted-source"}, errors.New("not found")
+						}
+						return chain.HistoryTransaction{Source: "admitted-source", Transaction: record}, nil
+					},
+				}
+				if route == "receipts" {
+					e.watch[incoming.Chain] = backend
+					e.indexActivityChain(context.Background(), incoming.Chain)
+				} else {
+					e.nodes[incoming.Chain] = backend
+					e.observeActivityChain(context.Background(), incoming.Chain)
+				}
+				saw := false
+				for _, a := range e.s.Activities {
+					for _, o := range a.Observations {
+						if o.TxID == record.TxID && o.Status == "mempool" {
+							saw = true
+						}
+					}
+				}
+				if !saw {
+					t.Fatal("fixture did not accept the claim into activity")
+				}
+				if err := e.save(); err != nil {
+					t.Fatal(err)
+				}
+				var saved State
+				if _, err := e.vault.Load(&saved); err != nil {
+					t.Fatal(err)
+				}
+				e.s = saved
+				s = e.s.Swaps[s.ID]
+				e.chainFresh[chain.BTC], e.chainFresh[chain.Blake] = true, true
+				e.nodes[chain.BTC] = &recoveryClockBackend{Backend: b}
+				e.nodes[chain.Blake] = &recoveryClockBackend{Backend: b}
+				e.scanners = map[chain.ID]chain.SpendScanner{chain.BTC: &recordingScanner{}, chain.Blake: &recordingScanner{}}
+				refundErr := e.checkRefundAcceleration(context.Background(), s, own)
+				if !s.SecretObserved || !s.IncomingClaimSeen || refundErr == nil {
+					t.Fatalf("activity accepted valid claim but lost immutable guard after save/reload: observed=%v incomingClaimSeen=%v refundGate=%v", s.SecretObserved, s.IncomingClaimSeen, refundErr)
+				}
+			})
+		}
+	}
+}
