@@ -32,6 +32,11 @@ are not invented.
 
 ## Time, confirmations, and reorgs
 
+Signed settlement bytes alone are `prepared`. A durable pre-broadcast attempt is
+`attempted`, which does not prove node acceptance. A matching protocol scanner
+spend is `observed`; fresh ledger mempool/confirmation evidence then overrides
+these local states. An interrupted attempt never invents a completed broadcast.
+
 Local creation time, first local recording time, block time, and observation time
 are separate fields. Retained records without creation timestamps keep
 `created_time_source=unknown` and an empty creation time in CSV. Backfilling an old

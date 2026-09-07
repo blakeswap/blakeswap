@@ -75,6 +75,38 @@ func TestActivityReopenDoesNotReusePersistedBackendGeneration(t *testing.T) {
 	}
 }
 
+func TestActivityPreparedClaimAttemptAndObservationAreDistinct(t *testing.T) {
+	tx := activityTransaction(t, "", []byte{0x51}, 100000, nil, 0)
+	s := &Swap{ID: "swap", Role: "maker", SelfClaim: tx.Hex, Stage: "accepted"}
+	s.Request.OfferEvent.Content = `{"id":"order","sell":"btc","sell_amount":200000,"buy_amount":102000}`
+	s.Long.Chain, s.Long.Amount = chain.Blake, 102000
+	s.Short.Chain, s.Short.Amount = chain.BTC, 200000
+	e := &Engine{Config: Config{Name: "alice", Network: chain.Regtest}, s: State{ActivityVersion: 1, Swaps: map[string]*Swap{s.ID: s}}}
+	key := "swap/" + s.ID + "/claim"
+	e.syncActivity()
+	if a := e.s.Activities[key]; a.Status != "prepared" || len(a.History) != 0 {
+		t.Fatal("unsubmitted signed bytes became a broadcast", a)
+	}
+	// The production path saves this timestamp before I/O. A crash here leaves
+	// an ambiguous attempt, not evidence that a node received the transaction.
+	s.ClaimLastAttempt = time.Now().Unix()
+	e.syncActivity()
+	if a := e.s.Activities[key]; a.Status != "attempted" || len(a.History) != 1 || a.History[0].Status != "prepared" {
+		t.Fatal("attempt lost its ambiguity or fabricated prior broadcast", a)
+	}
+	s.LongSpend = tx.TxID
+	e.syncActivity()
+	if a := e.s.Activities[key]; a.Status != "observed" {
+		t.Fatal("scanner observation not distinguished from submission attempt", a)
+	}
+	a := e.s.Activities[key]
+	a.Observations = []ActivityObservation{observationFor(tx, "source", 1, 1)}
+	e.putActivity(a, true)
+	if a := e.s.Activities[key]; a.Status != "confirmed" {
+		t.Fatal("canonical verification did not override local submission status", a)
+	}
+}
+
 type activityBackend struct {
 	chain.Backend
 	history func(context.Context, string, string, int) (chain.AddressHistoryPage, error)

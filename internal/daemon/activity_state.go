@@ -248,7 +248,9 @@ func (e *Engine) syncActivity() {
 			kind, id string
 			target   contract.HTLC
 			raws     []string
-		}{{"claim", claimID, incoming, claimRaw}, {"refund", refundID, own, refundRaw}} {
+			attempt  int64
+			observed string
+		}{{"claim", claimID, incoming, claimRaw, s.ClaimLastAttempt, incomingSpend}, {"refund", refundID, own, refundRaw, s.RefundLastAttempt, ownSpend}} {
 			net, total, bounty, ok := rawActivity(leg.raws, leg.id)
 			if !ok {
 				continue
@@ -257,7 +259,14 @@ func (e *Engine) syncActivity() {
 			if fee < 0 {
 				continue
 			}
-			e.putActivity(Activity{ID: group + "/" + leg.kind, GroupID: group, Kind: "swap_" + leg.kind, Chain: leg.target.Chain, Direction: "incoming", Movement: true, Amount: net, Principal: leg.target.Amount, Fee: fee, FeeKnown: true, FeePayer: "wallet", Bounty: bounty, OrderID: o.ID, SwapID: id, TxID: leg.id, Variants: rawActivityIDs(leg.raws), VariantAmounts: activityVariantAmounts(leg.raws, leg.target.Amount, false), Outpoints: []CoinOutpoint{{TxID: leg.target.TxID, Vout: leg.target.Vout}}, LocalStatus: s.Stage, Status: "broadcast", Label: "Swap " + leg.kind}, backfill)
+			status := "prepared"
+			if leg.attempt > 0 {
+				status = "attempted" // Saved before I/O; node acceptance may be unknown.
+			}
+			if leg.observed == leg.id {
+				status = "observed"
+			}
+			e.putActivity(Activity{ID: group + "/" + leg.kind, GroupID: group, Kind: "swap_" + leg.kind, Chain: leg.target.Chain, Direction: "incoming", Movement: true, Amount: net, Principal: leg.target.Amount, Fee: fee, FeeKnown: true, FeePayer: "wallet", Bounty: bounty, OrderID: o.ID, SwapID: id, TxID: leg.id, Variants: rawActivityIDs(leg.raws), VariantAmounts: activityVariantAmounts(leg.raws, leg.target.Amount, false), Outpoints: []CoinOutpoint{{TxID: leg.target.TxID, Vout: leg.target.Vout}}, LocalStatus: s.Stage, Status: status, Label: "Swap " + leg.kind}, backfill)
 		}
 	}
 	for id, state := range e.s.TowerJobs {

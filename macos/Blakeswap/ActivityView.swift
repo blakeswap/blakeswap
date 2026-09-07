@@ -27,7 +27,7 @@ struct ActivityView: View {
                 }
                 Picker("Status", selection: $model.filters.status) {
                     Text("All statuses").tag("")
-                    ForEach(["prepared", "broadcast", "mempool", "confirming", "confirmed", "unknown", "unverified", "orphaned", "conflicted", "open", "cancelled", "expired", "filled", "completed", "refunded", "rejected"], id: \.self) { Text($0.capitalized).tag($0) }
+                    ForEach(["prepared", "attempted", "observed", "broadcast", "mempool", "confirming", "confirmed", "unknown", "unverified", "orphaned", "conflicted", "open", "cancelled", "expired", "filled", "completed", "refunded", "rejected"], id: \.self) { Text($0.capitalized).tag($0) }
                 }
                 Picker("Asset", selection: $model.filters.chain) { Text("All assets").tag(""); Text("BTC").tag("btc"); Text("BLAKE").tag("blake") }
             }.disabled(model.exporting)
