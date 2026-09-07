@@ -107,6 +107,9 @@ func (e *Engine) sendCoins(ctx context.Context, raw json.RawMessage) (PublicSend
 		}
 		return previous.public(), nil
 	}
+	if err := e.recoveryTradingReady(); err != nil {
+		return PublicSend{}, err
+	}
 	if len(e.s.Sends) >= 1000 {
 		return PublicSend{}, errors.New("send history capacity reached")
 	}
@@ -174,6 +177,9 @@ func (e *Engine) sendCoins(ctx context.Context, raw json.RawMessage) (PublicSend
 	if maxFee == 0 {
 		maxFee = p.Fee
 	}
+	if err := e.recoveryTradingReady(); err != nil {
+		return PublicSend{}, err
+	}
 	send := &WalletSend{Created: time.Now().Unix(), Coins: coins, PublicSend: PublicSend{MaxFee: maxFee, State: "saved", ID: p.ID, Chain: p.Chain, TxID: tx.TxHash().String(), Destination: p.Destination, Amount: p.Amount, Fee: p.Fee, Change: total - p.Amount - p.Fee}, Raw: contract.Hex(tx), Digest: digest}
 	if e.s.Sends == nil {
 		e.s.Sends = map[string]*WalletSend{}
@@ -200,6 +206,8 @@ func (send *WalletSend) public() PublicSend {
 	return p
 }
 func (e *Engine) advanceSend(ctx context.Context, send *WalletSend) {
+	delete(e.recoverySends, send.ID)
+	verifiedRecovery := false
 	if len(send.History) == 0 {
 		send.History = []SignedVariant{{PublicVariant: PublicVariant{TxID: send.TxID, Fee: send.Fee, Submitted: send.Submitted}, Raw: send.Raw}}
 	}
@@ -220,6 +228,9 @@ func (e *Engine) advanceSend(ctx context.Context, send *WalletSend) {
 		v.Confirmations = 0
 		if err == nil {
 			v.Confirmations = t.Confirmations
+			if e.recoveryPaymentConfirmed(send, v.TxID, t) {
+				verifiedRecovery = true
+			}
 			v.Submitted = true
 			if t.Confirmations > send.Confirmations {
 				send.Confirmations = t.Confirmations
@@ -238,6 +249,12 @@ func (e *Engine) advanceSend(ctx context.Context, send *WalletSend) {
 		send.Error = lookupError.Error()
 		send.State = "unknown"
 		return
+	}
+	if verifiedRecovery && e.fresh(send.Chain) {
+		if e.recoverySends == nil {
+			e.recoverySends = map[string]bool{}
+		}
+		e.recoverySends[send.ID] = true
 	}
 	if send.Confirmations > 0 {
 		send.State = "confirmed"
@@ -300,6 +317,11 @@ func (e *Engine) advanceSends(ctx context.Context) {
 		}
 		id := ids[(start+i)%len(ids)]
 		e.sendCursor = id // Advance even when this lookup uses the remaining budget.
+		// During reconciliation, preserve positively checked payments on the same
+		// validated chain history and spend the next slice on unresolved records.
+		if e.s.Recovery != nil && e.s.Recovery.Status.State != "ready" && e.recoverySends[id] {
+			continue
+		}
 		if e.fresh(e.s.Sends[id].Chain) {
 			e.advanceSend(sendCtx, e.s.Sends[id])
 		}

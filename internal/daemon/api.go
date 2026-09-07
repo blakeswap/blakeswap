@@ -15,6 +15,20 @@ import (
 func (e *Engine) Status() Status { e.mu.Lock(); defer e.mu.Unlock(); return e.status() }
 func (e *Engine) status() Status {
 	s := Status{Network: e.Config.Network, Name: e.Config.Name, Mode: e.Config.Mode, PubKey: e.identity.Public().Hex(), Addresses: map[chain.ID]string{}, Balances: map[chain.ID]int64{}, Heights: map[chain.ID]uint32{}, Paused: e.s.Paused, Orders: []protocol.Offer{}, Swaps: []PublicSwap{}, TowerJobs: []map[string]any{}, LastError: e.lastError, Tower: e.Config.Tower}
+	var backupErr error
+	s.Backup, backupErr = StateBackupFreshness(e.s)
+	if backupErr != nil {
+		s.Backup = BackupFreshness{StateChanged: true, Reminder: "Recovery state could not be checked; retain the last backup and inspect the wallet error before exporting."}
+	}
+	if e.s.Recovery != nil {
+		r := e.s.Recovery.Status
+		r.Issues = append([]RecoveryIssue(nil), r.Issues...)
+		if r.State == "ready" && e.recoveryTradingReady() != nil {
+			r.State = "recovering"
+			r.Issues = append(r.Issues, RecoveryIssue{Kind: "chains", Reason: "Current chain observations are temporarily unavailable."})
+		}
+		s.Recovery = &r
+	}
 	s.Connections = map[chain.ID]ChainConnection{}
 	for _, id := range []chain.ID{chain.BTC, chain.Blake} {
 		c := ChainConnection{Ready: e.fresh(id), LastObservation: e.chainObserved[id], Error: e.chainErrors[id]}

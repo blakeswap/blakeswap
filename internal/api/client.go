@@ -110,6 +110,18 @@ func Call(ctx context.Context, socket string, req daemon.Request) (json.RawMessa
 		p := &pb.SendCoinsRequest{}
 		in = p
 		invoke = func() (proto.Message, error) { return client.SendCoins(ctx, p) }
+	case "backup.export":
+		p := &pb.ExportPortableBackupRequest{}
+		in = p
+		invoke = func() (proto.Message, error) { return client.ExportPortableBackup(ctx, p) }
+	case "backup.inspect":
+		p := &pb.InspectBackupRequest{}
+		in = p
+		invoke = func() (proto.Message, error) { return client.InspectBackup(ctx, p) }
+	case "backup.import":
+		p := &pb.ImportBackupRequest{}
+		in = p
+		invoke = func() (proto.Message, error) { return client.ImportBackup(ctx, p) }
 	case "wallet.backup":
 		p := &emptypb.Empty{}
 		in = p

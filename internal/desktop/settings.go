@@ -226,6 +226,9 @@ func loadSettings(root string) (*pb.Settings, error) {
 			return nil, err
 		}
 	}
+	if err := recoverPreparedImports(root, s); err != nil {
+		return nil, err
+	}
 	return s, nil
 }
 func saveSettings(root string, s *pb.Settings) error {

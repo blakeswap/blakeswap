@@ -294,6 +294,16 @@ func (p *Failover) Height(ctx context.Context) (h uint32, err error) {
 	})
 	return
 }
+
+// BlockHash keeps recovery checkpoint validation on the admitted source.
+func (p *Failover) BlockHash(ctx context.Context, height uint32) (hash string, err error) {
+	err = p.do(ctx, func(c context.Context, e *endpointEntry) error {
+		var inner error
+		hash, inner = e.backend.(blockHasher).BlockHash(c, height)
+		return inner
+	})
+	return
+}
 func (p *Failover) MedianTime(ctx context.Context) (v uint32, err error) {
 	err = p.do(ctx, func(c context.Context, e *endpointEntry) error {
 		var er error

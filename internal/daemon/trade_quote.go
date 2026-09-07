@@ -129,6 +129,9 @@ func (e *Engine) tradeBinding(wallet, network string) error {
 // mutation occurs while constructing or refreshing a quote.
 func (e *Engine) tradeSnapshot(p TradeQuoteRequest, now int64) (TradeQuoteSnapshot, error) {
 	var s TradeQuoteSnapshot
+	if err := e.recoveryTradingReady(); err != nil {
+		return s, err
+	}
 	if err := e.tradeBinding(p.ExpectedWallet, p.ExpectedNetwork); err != nil {
 		return s, err
 	}
@@ -240,6 +243,9 @@ func (e *Engine) tradeSnapshot(p TradeQuoteRequest, now int64) (TradeQuoteSnapsh
 }
 
 func (e *Engine) validateTradeSource(s TradeQuoteSnapshot, now int64) error {
+	if err := e.recoveryTradingReady(); err != nil {
+		return err
+	}
 	q, p := s.Quote, s.Request
 	if err := e.tradeBinding(q.Wallet, string(q.Network)); err != nil {
 		return err

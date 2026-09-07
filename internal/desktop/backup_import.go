@@ -204,9 +204,26 @@ func recoverPreparedImports(root string, settings *pb.Settings) error {
 		return err
 	}
 	listed := map[string]bool{}
-	identities := map[string]bool{}
 	for _, profile := range settings.Wallets {
 		listed[profile.Id] = true
+	}
+	pending := false
+	for _, entry := range entries {
+		if !entry.IsDir() || !walletID.MatchString(entry.Name()) || listed[entry.Name()] {
+			continue
+		}
+		if _, err := os.Stat(filepath.Join(root, "wallets", entry.Name(), "import.json")); err == nil {
+			pending = true
+			break
+		} else if !errors.Is(err, os.ErrNotExist) {
+			return err
+		}
+	}
+	if !pending {
+		return nil
+	}
+	identities := map[string]bool{}
+	for _, profile := range settings.Wallets {
 		seed, password, err := readMaster(filepath.Join(root, "wallets", profile.Id))
 		clear(password)
 		if err != nil {

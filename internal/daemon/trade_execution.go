@@ -14,6 +14,9 @@ import (
 )
 
 func (e *Engine) createOffer(ctx context.Context, raw json.RawMessage, receipt *TradeReceipt) (any, error) {
+	if err := e.recoveryTradingReady(); err != nil {
+		return nil, err
+	}
 	if e.Config.Mode != "trader" {
 		return nil, errors.New("tower cannot trade")
 	}
@@ -68,6 +71,9 @@ func (e *Engine) createOffer(ctx context.Context, raw json.RawMessage, receipt *
 		if err := e.validateTradeSource(receipt.Snapshot, time.Now().Unix()); err != nil {
 			return nil, err
 		}
+	}
+	if err := e.recoveryTradingReady(); err != nil {
+		return nil, err
 	}
 	if err := e.selectFundingFee(raw, "offer/"+o.ID, o.Sell); err != nil {
 		return nil, err
@@ -149,6 +155,9 @@ func (e *Engine) createOffer(ctx context.Context, raw json.RawMessage, receipt *
 }
 
 func (e *Engine) takeOffer(ctx context.Context, raw json.RawMessage, receipt *TradeReceipt) (any, error) {
+	if err := e.recoveryTradingReady(); err != nil {
+		return nil, err
+	}
 	if e.Config.Mode != "trader" {
 		return nil, errors.New("trader is unavailable")
 	}
@@ -204,6 +213,9 @@ func (e *Engine) takeOffer(ctx context.Context, raw json.RawMessage, receipt *Tr
 		if err := e.validateTradeSource(receipt.Snapshot, time.Now().Unix()); err != nil {
 			return nil, err
 		}
+	}
+	if err := e.recoveryTradingReady(); err != nil {
+		return nil, err
 	}
 	if err := e.selectFundingFee(raw, "swap/"+id, o.Sell.Other()); err != nil {
 		return nil, err

@@ -131,6 +131,9 @@ func (e *Engine) bumpTransaction(ctx context.Context, raw json.RawMessage) (Bump
 			return BumpResult{}, err
 		}
 	}
+	if err := e.recoveryOwnerPolicy(s, p.Kind == "refund"); err != nil {
+		return BumpResult{}, err
+	}
 	if err := e.publicationReady(target.Chain, p.Kind == "refund" || !s.SecretObserved); err != nil {
 		return BumpResult{}, err
 	}
@@ -147,7 +150,7 @@ func (e *Engine) bumpTransaction(ctx context.Context, raw json.RawMessage) (Bump
 		return BumpResult{}, err
 	}
 	result := BumpResult{TxID: tx.TxHash().String(), Fee: p.Fee, State: "broadcast"}
-	if err := e.broadcast(ctx, target.Chain, variants[index], p.Kind == "refund" || !s.SecretObserved); err != nil {
+	if err := e.broadcast(ctx, target.Chain, variants[index], p.Kind == "refund" || !s.SecretObserved, func() error { return e.recoveryOwnerPolicy(s, p.Kind == "refund") }); err != nil {
 		result.State = "saved"
 		result.Error = err.Error()
 	}
@@ -210,6 +213,14 @@ func (e *Engine) checkRefundAcceleration(ctx context.Context, s *Swap, own contr
 				return err
 			}
 			return errors.New("incoming contract was claimed; await the counterparty claim instead of refunding")
+		}
+	}
+	if e.restoredSwap(s.ID) {
+		if !e.acceptRecoveryRefund(s, all) {
+			return errors.New("restored refund requires a confirmed incoming refund")
+		}
+		if err := e.recoveryRefundTarget(ctx, own, ownSpent); err != nil {
+			return err
 		}
 	}
 	return nil
@@ -445,6 +456,9 @@ func (e *Engine) broadcastOwner(ctx context.Context, s *Swap, id chain.ID, refun
 			index = suggested
 		}
 	}
+	if err := e.recoveryOwnerPolicy(s, refund); err != nil {
+		return err
+	}
 	if err := e.publicationReady(id, refund || !s.SecretObserved); err != nil {
 		return err
 	}
@@ -463,7 +477,7 @@ func (e *Engine) broadcastOwner(ctx context.Context, s *Swap, id chain.ID, refun
 	if err := e.save(); err != nil {
 		return err
 	}
-	return e.broadcast(ctx, id, variants[index], refund || !s.SecretObserved)
+	return e.broadcast(ctx, id, variants[index], refund || !s.SecretObserved, func() error { return e.recoveryOwnerPolicy(s, refund) })
 }
 
 func estimatedTier(estimate chain.FeeEstimate, variants []string) int {

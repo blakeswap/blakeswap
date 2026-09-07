@@ -10,6 +10,8 @@ struct OnboardingView: View {
     @State private var name = "My wallet"
     @State private var mnemonic = ""
     @State private var backupPath = ""
+    @State private var backupContents: Blakeswap_V1_BackupContents?
+    @State private var sourceWallet = ""
     @State private var password = ""
     @State private var exportPassword = ""
     @State private var phraseAcknowledged = false
@@ -101,11 +103,21 @@ struct OnboardingView: View {
                             HStack {
                                 Button("Choose backup file") {
                                     let panel = NSOpenPanel(); panel.canChooseDirectories = false; panel.allowsMultipleSelection = false
-                                    if panel.runModal() == .OK { backupPath = panel.url?.path ?? "" }
+                                    if panel.runModal() == .OK { backupPath = panel.url?.path ?? ""; backupContents = nil; sourceWallet = "" }
                                 }.accessibilityIdentifier("setup-choose-backup")
                                 Text(backupPath.isEmpty ? "No file selected" : URL(fileURLWithPath: backupPath).lastPathComponent).font(.caption).foregroundStyle(.secondary)
                             }
                             SecureField("Backup password", text: $password).textFieldStyle(.roundedBorder).accessibilityIdentifier("setup-restore-password")
+                                .onChange(of: password) { _, _ in backupContents = nil; sourceWallet = "" }
+                            Button("Inspect encrypted backup") {
+                                Task { if let contents = await model.inspectBackup(path: backupPath, password: password) { backupContents = contents; sourceWallet = contents.wallets.first?.sourceWalletID ?? "" } }
+                            }.disabled(model.busy || backupPath.isEmpty || password.isEmpty)
+                            if let contents = backupContents {
+                                Picker("Wallet in backup", selection: $sourceWallet) {
+                                    ForEach(contents.wallets, id: \.sourceWalletID) { wallet in Text(wallet.name).tag(wallet.sourceWalletID) }
+                                }
+                                Text(contents.warning).font(.caption).foregroundStyle(.secondary)
+                            }
                             Text("Use the password for this backup. For a state backup saved by an older app version, use the original wallet’s vault.password file contents.").font(.caption).foregroundStyle(.secondary)
                         }
                     }
@@ -118,9 +130,9 @@ struct OnboardingView: View {
                         request.name = name.trimmingCharacters(in: .whitespacesAndNewlines)
                         request.revision = model.settings?.revision ?? 0
                         if mode == "restore" { request.mnemonic = mnemonic.trimmingCharacters(in: .whitespacesAndNewlines) }
-                        if mode == "file" { request.backupPath = backupPath; request.backupPassword = password }
+                        if mode == "file" { request.backupPath = backupPath; request.backupPassword = password; request.sourceWalletID = sourceWallet }
                         Task { if await model.setupAction("onboarding.prepare", request: request) { mnemonic = ""; password = "" } }
-                    }.buttonStyle(MintButton()).disabled(model.busy || name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || (mode == "restore" && (mnemonic.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !phraseAcknowledged)) || (mode == "file" && (backupPath.isEmpty || password.isEmpty)))
+                    }.buttonStyle(MintButton()).disabled(model.busy || name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || (mode == "restore" && (mnemonic.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !phraseAcknowledged)) || (mode == "file" && (backupPath.isEmpty || password.isEmpty || backupContents == nil || sourceWallet.isEmpty)))
                         .accessibilityIdentifier("setup-prepare")
                 }
             }

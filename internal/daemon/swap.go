@@ -84,6 +84,9 @@ func observation(all map[chain.ID]map[string]chain.Observation, c contract.HTLC)
 	return o, ok
 }
 func (e *Engine) advanceSwap(ctx context.Context, s *Swap, all map[chain.ID]map[string]chain.Observation) error {
+	if e.restoredSwap(s.ID) {
+		return e.advanceRestoredSwap(ctx, s, all)
+	}
 	var revealError error
 	if s.Terms == nil {
 		e.expirePendingRequest(s, time.Now().Unix())
@@ -423,6 +426,10 @@ func (e *Engine) advanceTower(ctx context.Context, all map[chain.ID]map[string]c
 			continue
 		}
 		state.Error = ""
+		if e.s.Recovery != nil && e.s.Recovery.TowerJobs[job.ID] && job.Kind == "refund" {
+			state.Error = "restored tower refund lacks positive peer settlement evidence"
+			continue
+		}
 		if !e.fresh(job.Target.Chain) || (job.Kind == "refund" && (!e.fresh(chain.BTC) || !e.fresh(chain.Blake))) {
 			state.Error = "chain observations unavailable; recovery held"
 			continue

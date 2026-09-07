@@ -467,3 +467,11 @@ BLAKESWAP_BTC_RPC_PORT=39443 BLAKESWAP_BLAKE_RPC_PORT=49443 \
 
 Ordinary tests without `BLAKESWAP_REGTEST` skip this matrix and are not integration
 evidence. No public offers, wallets, funds, or relay writes are needed.
+
+### Portable restore safety
+
+Portable storage/desktop tests cover chosen passwords, authenticated manifests, interrupted export/import, unchanged source files on failure, all-network receive/recovery state, duplicate identities including interrupted profiles, legacy input, re-exported recovery holds and typed post-onboarding API import. Native helper tests export after setup, inspect and import into an existing unrelated profile, reject duplicates and expose recovery-in-progress while local endpoints are unavailable.
+
+`TestRestored*` exercises both owner roles: private prepared claims/funding stay held even when both chains respond; observed secrets survive reload and peer outage; restored refunds need positive incoming refunds; permanent incoming-claim knowledge survives later conflicting/reorg observations. Positive confirmed outcomes permit readiness, reorgs remove it, and empty known-obligation snapshots or final never-funded cancellations can become ready after full synchronization. Skipped cached-confirmed payments remain held; positive variant evidence survives bounded slices only while canonical history/source stay current and is discarded on restart or reorg.
+
+With the isolated real-node fixture, run `TestRealPortableRestoreBeforeFundingPublication`, `TestRealPortableRestoreWitnessAndReorg` , `TestRealPortableRestorePreservesRefunds`, `TestRealPortableTowerRecovery`, and `TestRealPortablePaymentVariantsAndReceiveIndexes` through RPC and the Electrum fixture. They use the portable encrypted manifest shape and chosen password to reload daemon state against newer chain state. Private publication crash snapshots must not create funding or expose a secret. Actual witnessed claims recover through alternating chain outages, confirm with preserved authorizations, and return to recovery after an invalidated claim block. Actual owner refunds retain their signed ladder and become ready only after a positively observed incoming refund and both confirmed outcomes. Desktop/native tests separately cover the installer/profile boundary; real-node flags unset means these cases are skipped, not an integration pass.

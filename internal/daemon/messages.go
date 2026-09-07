@@ -38,6 +38,9 @@ func bindFunding(c contract.HTLC, raw string) (contract.HTLC, error) {
 }
 func (e *Engine) handle(from string, m transport.Message) error {
 	if m.Type == "tower-query" {
+		if err := e.recoveryTradingReady(); err != nil {
+			return err
+		}
 		if err := e.advertiseTower(); err != nil {
 			return err
 		}
@@ -88,6 +91,11 @@ func (e *Engine) handle(from string, m transport.Message) error {
 				return errors.New("tower registration outside funding window")
 			}
 			e.s.TowerJobs[job.ID] = &TowerJob{Job: job}
+			if e.s.Recovery != nil && e.recoveryTradingReady() != nil {
+				// Authenticated late registrations may be obligations omitted by the file.
+				// Retain them under the same recovery policy before acknowledging receipt.
+				e.s.Recovery.TowerJobs[job.ID] = true
+			}
 			if err := e.save(); err != nil {
 				return err
 			}
@@ -98,6 +106,12 @@ func (e *Engine) handle(from string, m transport.Message) error {
 		return errors.New("tower does not trade")
 	}
 	if m.Type == "request" {
+		if e.restoredSwap(m.SwapID) {
+			return errors.New("restored negotiations are quarantined; waiting for positive recovery evidence")
+		}
+		if err := e.recoveryTradingReady(); err != nil {
+			return err
+		}
 		var request protocol.Request
 		if err := json.Unmarshal(m.Body, &request); err != nil {
 			return err

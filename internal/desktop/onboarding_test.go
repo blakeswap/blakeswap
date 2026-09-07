@@ -191,12 +191,13 @@ func TestEncryptedBackupRoundTripPreservesStateAndSource(t *testing.T) {
 		t.Fatal("state restore unnecessarily returned recovery words")
 	}
 	// An existing state backup may have unsettled swaps; retain them and the network guard.
-	state := daemon.State{Version: 1, Network: chain.Mainnet, Mnemonic: seed, Swaps: map[string]*daemon.Swap{"pending": {ID: "pending", Stage: "funding broadcast", Secret: "test-only-secret"}}}
-	if err := saveVault(backup, []byte(password), state); err != nil {
+	state := daemon.State{Version: 1, Network: chain.Mainnet, Mnemonic: seed, Swaps: map[string]*daemon.Swap{"pending": {ID: "pending", Role: "taker", Stage: "funding broadcast", Secret: "test-only-secret"}}}
+	legacyPath := filepath.Join(t.TempDir(), "pending-legacy.db")
+	if err := saveVault(legacyPath, []byte(password), state); err != nil {
 		t.Fatal(err)
 	}
 	pending := setupManager(t)
-	if _, err := pending.prepareFirstWallet(context.Background(), &pb.PrepareFirstWalletRequest{Name: "Pending", BackupPath: backup, BackupPassword: password, Revision: pending.settings.Revision}); err != nil {
+	if _, err := pending.prepareFirstWallet(context.Background(), &pb.PrepareFirstWalletRequest{Name: "Pending", BackupPath: legacyPath, BackupPassword: password, Revision: pending.settings.Revision}); err != nil {
 		t.Fatal(err)
 	}
 	next := proto.Clone(pending.settings).(*pb.Settings)
@@ -208,8 +209,12 @@ func TestEncryptedBackupRoundTripPreservesStateAndSource(t *testing.T) {
 	if _, err := pending.exportFirstWallet(context.Background(), &pb.ExportFirstWalletRequest{Path: reexport, Password: password, Revision: pending.settings.Revision}); err != nil {
 		t.Fatal(err)
 	}
-	recovered, err := readStateBackup(pending.root, reexport, password)
-	if err != nil || recovered.Swaps["pending"].Secret != "test-only-secret" {
+	manifest, legacy, err := readBackupManifest(context.Background(), pending.root, reexport, password)
+	if err != nil {
+		t.Fatal(err)
+	}
+	recovered := manifest.Wallets[0].Networks[chain.Mainnet]
+	if legacy || recovered.Swaps["pending"].Secret != "test-only-secret" || recovered.Recovery == nil || recovered.Recovery.Status.State != "recovering" {
 		t.Fatal("pending swap state lost", err)
 	}
 }

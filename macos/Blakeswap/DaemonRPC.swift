@@ -115,6 +115,18 @@ enum DaemonRPC {
                 let request = try Blakeswap_V1_SendCoinsRequest(jsonUTF8Data: payload)
                 let response = try await service.sendCoins(request, metadata: metadata, options: options)
                 return try response.serializedData()
+            case "backup.export":
+                let request = try Blakeswap_V1_ExportPortableBackupRequest(jsonUTF8Data: payload)
+                let response = try await service.exportPortableBackup(request, metadata: metadata, options: options)
+                return try response.serializedData()
+            case "backup.inspect":
+                let request = try Blakeswap_V1_InspectBackupRequest(jsonUTF8Data: payload)
+                let response = try await service.inspectBackup(request, metadata: metadata, options: options)
+                return try response.serializedData()
+            case "backup.import":
+                let request = try Blakeswap_V1_ImportBackupRequest(jsonUTF8Data: payload)
+                let response = try await service.importBackup(request, metadata: metadata, options: options)
+                return try response.serializedData()
             case "wallet.backup":
                 let request = try Google_Protobuf_Empty(jsonUTF8Data: payload)
                 let response = try await service.backupWallet(request, metadata: metadata, options: options)
