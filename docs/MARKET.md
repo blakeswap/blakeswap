@@ -74,8 +74,8 @@ confirmation, not by submitting a different replacement request.
 Recreate is deliberate: a finished, cancelled, or expired order supplies initial
 form values for a **new** order. The new ID, funds, fees, provider proof, and terms
 must pass a fresh review. A reserved order requires a linked terminal local maker
-swap before recreation is available. Automatic renewal and repricing are not
-performed. Existing capacity limits still apply to retained orders.
+swap before recreation is available. [Automatic renewal and bounded repricing](AUTOMATION.md) require a separate
+opt-in policy authorization. Existing capacity limits still apply to retained orders.
 
 ## API
 

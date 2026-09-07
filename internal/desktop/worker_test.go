@@ -206,7 +206,7 @@ func (f *advisoryFixture) Command(ctx context.Context, req daemon.Request) (any,
 }
 
 func TestPreflightDoesNotHoldLifecycleLockAndStopsBeforeEngineClose(t *testing.T) {
-	for _, method := range []string{"wallet.preflight", "trade.quote", "trade.confirm", "activity.list", "activity.export", "market.list"} {
+	for _, method := range []string{"wallet.preflight", "trade.quote", "trade.confirm", "activity.list", "activity.export", "market.list", "automation.list", "automation.review", "automation.save", "automation.disable"} {
 		t.Run(method, func(t *testing.T) {
 			entered, cancelled, release := make(chan struct{}), make(chan struct{}), make(chan struct{})
 			alice := &advisoryFixture{workerFixture: &workerFixture{name: "alice"}, command: func(ctx context.Context, req daemon.Request) (any, error) {
@@ -223,7 +223,7 @@ func TestPreflightDoesNotHoldLifecycleLockAndStopsBeforeEngineClose(t *testing.T
 			m := &Manager{settings: settings, workers: map[string]*walletWorker{"alice": wa, "bob": wb}}
 			done := make(chan error, 1)
 			go func() {
-				_, err := m.command(context.Background(), "alice", daemon.Request{Method: method, Params: json.RawMessage(`{"expected_network":"regtest"}`)})
+				_, err := m.command(context.Background(), "alice", daemon.Request{Method: method, Params: json.RawMessage(`{"expected_network":"regtest","config":{"network":"regtest"}}`)})
 				done <- err
 			}()
 			select {

@@ -260,7 +260,7 @@ func (m *Manager) writeSettings(ctx context.Context, next *pb.Settings) (*pb.Set
 	return proto.Clone(saved).(*pb.Settings), nil
 }
 func (m *Manager) command(ctx context.Context, profile string, req daemon.Request) (any, error) {
-	if req.Method == "wallet.preflight" || req.Method == "fee.quote" || req.Method == "trade.quote" || req.Method == "trade.confirm" || req.Method == "activity.list" || req.Method == "activity.export" || req.Method == "market.list" {
+	if req.Method == "automation.list" || req.Method == "automation.review" || req.Method == "automation.save" || req.Method == "automation.disable" || req.Method == "wallet.preflight" || req.Method == "fee.quote" || req.Method == "trade.quote" || req.Method == "trade.confirm" || req.Method == "activity.list" || req.Method == "activity.export" || req.Method == "market.list" {
 		return m.preflightFunds(ctx, profile, req)
 	}
 	if req.Method == "status.refresh" {

@@ -488,3 +488,48 @@ prior outcomes, unknown-time legacy cancelled/open orders and no republication.
 Portable manifest/import tests round-trip activity, receipt and per-network
 history state. Fingerprint tests distinguish polling/progress changes from new
 replacement variants, receipt facts and reorg outcomes.
+
+## Automatic offer policies
+
+`TestAutomation*` covers exact rate/rounding bounds, chosen-maker provenance and
+freshness, quorum/spread failures, typed full authorization, fixed renewal,
+concurrent ticks, durable receipt/successor/charge transitions, restart without
+catch-up, immutable accepted sources, manual disable, unavailable fees/provider,
+network changes and reserved/committed budget preservation. Native
+`AutomationTests` exercises exact fields, full-review save binding, discarded
+stale-context responses, disable choices and restored-budget display.
+
+`TestRealAutomaticOfferPolicyUpdatePreservesAcceptedTrade` uses generated gRPC,
+private relay and isolated wallets on actual BTC/Blake regtest nodes. It creates
+an automatic offer in each sell direction, accepts it, updates the policy while
+the daemon advances settlement, confirms original principals and exact 6,500-sat
+funding fees from both nodes, and reopens the policy to check immutable committed
+charges and disabled state. Run under the exclusive fixture lock, then repeat
+with `BLAKESWAP_TEST_ELECTRUM=1`:
+
+```sh
+BLAKESWAP_REGTEST=/absolute/path/to/isolated-fixture \
+BLAKESWAP_BTC_RPC_PORT=39443 BLAKESWAP_BLAKE_RPC_PORT=49443 \
+  sh scripts/go.sh test -race -p=1 -count=1 ./internal/api \
+  -run '^TestRealAutomaticOfferPolicyUpdatePreservesAcceptedTrade$' -v
+```
+
+Ordinary unit runs skip this real-node scenario and are not integration evidence.
+No public funds, user wallets or public offer publication are needed.
+
+`TestAutomationImported*`, `TestAutomationDisabledAcknowledgement*`, and
+`TestAutomationHeldOffer*` cover pre-install policy holds, pending-grant retirement,
+accepted receipt preservation, stale signed-order rejection, current recovery
+requirements, explicit profile-bound resumption, permanent imported reservation
+accounting and re-import. `TestImportedAutomationNeverResumesOldSpendingAuthority`
+uses actual encrypted legacy and portable first-wallet installation paths.
+`TestAutomationBackupPreservesAuthorizationAndUncertainty` verifies deep-copy
+and backup fingerprint coverage for uncertainty and successor identity.
+
+`TestAutomationInvalidDurableState*` verifies malformed policy/charge pointers,
+identities and accounting are rejected before daemon load or recovery, without
+changing durable state or leaking the vault lock. `TestAutomationMalformedBackup*`
+checks authenticated legacy/portable import rejects those records before profile
+publication and preserves existing settings, wallets and source files. Backup
+fingerprint tests retain all archive fields while distinguishing no-op cadence
+checks from configuration, holds, receipts, charges and real actions.

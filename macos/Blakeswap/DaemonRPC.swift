@@ -91,6 +91,22 @@ enum DaemonRPC {
                 let request = try Blakeswap_V1_ActivityQuery(jsonUTF8Data: payload)
                 let response = try await service.listActivity(request, metadata: metadata, options: options)
                 return try response.serializedData()
+            case "automation.list":
+                let request = try Blakeswap_V1_AutomationQuery(jsonUTF8Data: payload)
+                let response = try await service.listAutomations(request, metadata: metadata, options: options)
+                return try response.serializedData()
+            case "automation.review":
+                let request = try Blakeswap_V1_AutomationEdit(jsonUTF8Data: payload)
+                let response = try await service.reviewAutomation(request, metadata: metadata, options: options)
+                return try response.serializedData()
+            case "automation.save":
+                let request = try Blakeswap_V1_AutomationEdit(jsonUTF8Data: payload)
+                let response = try await service.saveAutomation(request, metadata: metadata, options: options)
+                return try response.serializedData()
+            case "automation.disable":
+                let request = try Blakeswap_V1_DisableAutomationRequest(jsonUTF8Data: payload)
+                let response = try await service.disableAutomation(request, metadata: metadata, options: options)
+                return try response.serializedData()
             case "market.list":
                 let request = try Blakeswap_V1_MarketQuery(jsonUTF8Data: payload)
                 let response = try await service.listMarket(request, metadata: metadata, options: options)

@@ -16,6 +16,11 @@ option (grpc.gateway.protoc_gen_openapiv2.options.openapiv2_swagger) = {
 };
 
 service DaemonService {
+ rpc ListAutomations(AutomationQuery) returns (AutomationList) { option (google.api.http) = { post: "/v1/automations/query" body: "*" }; }
+ rpc ReviewAutomation(AutomationEdit) returns (AutomationReview) { option (google.api.http) = { post: "/v1/automations/review" body: "*" }; }
+ rpc SaveAutomation(AutomationEdit) returns (AutomationView) { option (google.api.http) = { put: "/v1/automations" body: "*" }; }
+ rpc DisableAutomation(DisableAutomationRequest) returns (AutomationView) { option (google.api.http) = { post: "/v1/automations/disable" body: "*" }; }
+
  rpc ListMarket(MarketQuery) returns (MarketPage) { option (google.api.http) = { post: "/v1/market/query" body: "*" }; }
  rpc ListActivity(ActivityQuery) returns (ActivityPage) { option (google.api.http) = { post: "/v1/activity/query" body: "*" }; }
  rpc ExportActivity(ActivityQuery) returns (ActivityExport) { option (google.api.http) = { post: "/v1/activity/export" body: "*" }; }
@@ -418,4 +423,46 @@ message ActivityExport {
  uint32 next_cursor = 3;
  uint32 total = 4;
  string csv = 5;
+}
+
+// Exact BLAKE satoshis per BTC satoshi; positive bounded integer ratio.
+message AutomationRate { int64 numerator = 1; int64 denominator = 2; }
+message AutomationConfig {
+ string id = 1; string wallet = 2; string network = 3; string sell = 4;
+ int64 sell_amount = 5; int64 volume_limit = 6;
+ AutomationRate rate = 7; AutomationRate min_rate = 8; AutomationRate max_rate = 9;
+ int64 lifetime = 10; int64 cadence = 11; uint32 max_open = 12;
+ int64 funding_fee = 13; int64 max_funding_fee = 14;
+ int64 btc_fee_budget = 15; int64 blake_fee_budget = 16;
+ int64 tower_bps = 17; string tower_pubkey = 18;
+ string reference = 19; repeated string reference_makers = 20;
+ int64 reference_freshness = 21; int64 reference_spread_bps = 22;
+}
+message AutomationUsage {
+ int64 reserved_volume = 1; int64 committed_volume = 2;
+ int64 reserved_btc_fees = 3; int64 committed_btc_fees = 4;
+ int64 reserved_blake_fees = 5; int64 committed_blake_fees = 6;
+ uint32 open_offers = 7;
+}
+message AutomationView {
+ AutomationConfig config = 1; uint64 revision = 2; bool enabled = 3; bool restore_hold = 4;
+ int64 next_action = 5; int64 last_action = 6; string decision = 7; string current_offer_id = 8;
+ string publication = 9; AutomationUsage usage = 10;
+ repeated string reference_events = 11; int64 reference_observed = 12;
+}
+message AutomationQuery { string expected_wallet = 1; string expected_network = 2; }
+message AutomationList { string wallet = 1; string network = 2; repeated AutomationView policies = 3; }
+// Two-stage exact authorization. Saving validates the complete review digest and
+// revision; it never edits existing signed orders or subtracts committed spending.
+message AutomationEdit {
+ AutomationConfig config = 1; uint64 expected_revision = 2; bool enabled = 3;
+ string review_digest = 4; bool acknowledge_restored_budget = 5;
+}
+message AutomationReview {
+ AutomationConfig config = 1; uint64 expected_revision = 2; bool enabled = 3;
+ string review_digest = 4; AutomationUsage usage = 5; string warning = 6;
+}
+message DisableAutomationRequest {
+ string id = 1; string expected_wallet = 2; string expected_network = 3;
+ uint64 expected_revision = 4; bool cancel_open = 5;
 }

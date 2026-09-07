@@ -34,6 +34,23 @@ func Call(ctx context.Context, socket string, req daemon.Request) (json.RawMessa
 	var in proto.Message
 	var invoke func() (proto.Message, error)
 	switch req.Method {
+	case "automation.list":
+		p := &pb.AutomationQuery{}
+		in = p
+		invoke = func() (proto.Message, error) { return client.ListAutomations(ctx, p) }
+	case "automation.review":
+		p := &pb.AutomationEdit{}
+		in = p
+		invoke = func() (proto.Message, error) { return client.ReviewAutomation(ctx, p) }
+	case "automation.save":
+		p := &pb.AutomationEdit{}
+		in = p
+		invoke = func() (proto.Message, error) { return client.SaveAutomation(ctx, p) }
+	case "automation.disable":
+		p := &pb.DisableAutomationRequest{}
+		in = p
+		invoke = func() (proto.Message, error) { return client.DisableAutomation(ctx, p) }
+
 	case "status":
 		p := &emptypb.Empty{}
 		in = p

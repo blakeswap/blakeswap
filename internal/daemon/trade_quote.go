@@ -107,9 +107,11 @@ type ConfirmTradeResult struct {
 // Pending authorization can be retried; accepted and rejected IDs never change
 // meaning, even after quote expiry, a restart or an ambiguous API response.
 type TradeReceipt struct {
-	Digest   string             `json:"digest"`
-	Snapshot TradeQuoteSnapshot `json:"snapshot"`
-	Result   ConfirmTradeResult `json:"result"`
+	AutomationID       string             `json:"automation_id,omitempty"`
+	AutomationRevision uint64             `json:"automation_revision,omitempty"`
+	Digest             string             `json:"digest"`
+	Snapshot           TradeQuoteSnapshot `json:"snapshot"`
+	Result             ConfirmTradeResult `json:"result"`
 }
 
 func (e *Engine) tradeBinding(wallet, network string) error {

@@ -31,6 +31,9 @@ func (e *Engine) createOffer(ctx context.Context, raw json.RawMessage, receipt *
 	if (action.OrderAction != "" || action.SourceOfferID != "" || action.SourceEventID != "") && receipt == nil {
 		return nil, errors.New("order replacement and recreation require a reviewed confirmation")
 	}
+	if err := e.validateAutomationReceipt(receipt); err != nil {
+		return nil, err
+	}
 	source, err := e.orderSource(action, time.Now().Unix())
 	if err != nil {
 		return nil, err
@@ -68,6 +71,9 @@ func (e *Engine) createOffer(ctx context.Context, raw json.RawMessage, receipt *
 		return nil, err
 	}
 	if receipt != nil {
+		if err := e.validateAutomationReceipt(receipt); err != nil {
+			return nil, err
+		}
 		if err := e.validateTradeSource(receipt.Snapshot, time.Now().Unix()); err != nil {
 			return nil, err
 		}
@@ -151,6 +157,7 @@ func (e *Engine) createOffer(ctx context.Context, raw json.RawMessage, receipt *
 	}
 	e.s.OrderRecords[o.ID] = record
 	acceptTrade(receipt)
+	e.acceptAutomationOffer(receipt)
 	return o, e.save()
 }
 

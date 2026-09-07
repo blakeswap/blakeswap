@@ -21,6 +21,58 @@ internal enum Blakeswap_V1_DaemonService: Sendable {
     internal static let descriptor = GRPCCore.ServiceDescriptor(fullyQualifiedService: "blakeswap.v1.DaemonService")
     /// Namespace for method metadata.
     internal enum Method: Sendable {
+        /// Namespace for "ListAutomations" metadata.
+        internal enum ListAutomations: Sendable {
+            /// Request type for "ListAutomations".
+            internal typealias Input = Blakeswap_V1_AutomationQuery
+            /// Response type for "ListAutomations".
+            internal typealias Output = Blakeswap_V1_AutomationList
+            /// Descriptor for "ListAutomations".
+            internal static let descriptor = GRPCCore.MethodDescriptor(
+                service: GRPCCore.ServiceDescriptor(fullyQualifiedService: "blakeswap.v1.DaemonService"),
+                method: "ListAutomations",
+                type: .unary
+            )
+        }
+        /// Namespace for "ReviewAutomation" metadata.
+        internal enum ReviewAutomation: Sendable {
+            /// Request type for "ReviewAutomation".
+            internal typealias Input = Blakeswap_V1_AutomationEdit
+            /// Response type for "ReviewAutomation".
+            internal typealias Output = Blakeswap_V1_AutomationReview
+            /// Descriptor for "ReviewAutomation".
+            internal static let descriptor = GRPCCore.MethodDescriptor(
+                service: GRPCCore.ServiceDescriptor(fullyQualifiedService: "blakeswap.v1.DaemonService"),
+                method: "ReviewAutomation",
+                type: .unary
+            )
+        }
+        /// Namespace for "SaveAutomation" metadata.
+        internal enum SaveAutomation: Sendable {
+            /// Request type for "SaveAutomation".
+            internal typealias Input = Blakeswap_V1_AutomationEdit
+            /// Response type for "SaveAutomation".
+            internal typealias Output = Blakeswap_V1_AutomationView
+            /// Descriptor for "SaveAutomation".
+            internal static let descriptor = GRPCCore.MethodDescriptor(
+                service: GRPCCore.ServiceDescriptor(fullyQualifiedService: "blakeswap.v1.DaemonService"),
+                method: "SaveAutomation",
+                type: .unary
+            )
+        }
+        /// Namespace for "DisableAutomation" metadata.
+        internal enum DisableAutomation: Sendable {
+            /// Request type for "DisableAutomation".
+            internal typealias Input = Blakeswap_V1_DisableAutomationRequest
+            /// Response type for "DisableAutomation".
+            internal typealias Output = Blakeswap_V1_AutomationView
+            /// Descriptor for "DisableAutomation".
+            internal static let descriptor = GRPCCore.MethodDescriptor(
+                service: GRPCCore.ServiceDescriptor(fullyQualifiedService: "blakeswap.v1.DaemonService"),
+                method: "DisableAutomation",
+                type: .unary
+            )
+        }
         /// Namespace for "ListMarket" metadata.
         internal enum ListMarket: Sendable {
             /// Request type for "ListMarket".
@@ -439,6 +491,10 @@ internal enum Blakeswap_V1_DaemonService: Sendable {
         }
         /// Descriptors for all methods in the "blakeswap.v1.DaemonService" service.
         internal static let descriptors: [GRPCCore.MethodDescriptor] = [
+            ListAutomations.descriptor,
+            ReviewAutomation.descriptor,
+            SaveAutomation.descriptor,
+            DisableAutomation.descriptor,
             ListMarket.descriptor,
             ListActivity.descriptor,
             ExportActivity.descriptor,
@@ -490,6 +546,82 @@ extension Blakeswap_V1_DaemonService {
     /// You don't need to implement this protocol directly, use the generated
     /// implementation, ``Client``.
     internal protocol ClientProtocol: Sendable {
+        /// Call the "ListAutomations" method.
+        ///
+        /// - Parameters:
+        ///   - request: A request containing a single `Blakeswap_V1_AutomationQuery` message.
+        ///   - serializer: A serializer for `Blakeswap_V1_AutomationQuery` messages.
+        ///   - deserializer: A deserializer for `Blakeswap_V1_AutomationList` messages.
+        ///   - options: Options to apply to this RPC.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
+        /// - Returns: The result of `handleResponse`.
+        func listAutomations<Result>(
+            request: GRPCCore.ClientRequest<Blakeswap_V1_AutomationQuery>,
+            serializer: some GRPCCore.MessageSerializer<Blakeswap_V1_AutomationQuery>,
+            deserializer: some GRPCCore.MessageDeserializer<Blakeswap_V1_AutomationList>,
+            options: GRPCCore.CallOptions,
+            onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Blakeswap_V1_AutomationList>) async throws -> Result
+        ) async throws -> Result where Result: Sendable
+
+        /// Call the "ReviewAutomation" method.
+        ///
+        /// - Parameters:
+        ///   - request: A request containing a single `Blakeswap_V1_AutomationEdit` message.
+        ///   - serializer: A serializer for `Blakeswap_V1_AutomationEdit` messages.
+        ///   - deserializer: A deserializer for `Blakeswap_V1_AutomationReview` messages.
+        ///   - options: Options to apply to this RPC.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
+        /// - Returns: The result of `handleResponse`.
+        func reviewAutomation<Result>(
+            request: GRPCCore.ClientRequest<Blakeswap_V1_AutomationEdit>,
+            serializer: some GRPCCore.MessageSerializer<Blakeswap_V1_AutomationEdit>,
+            deserializer: some GRPCCore.MessageDeserializer<Blakeswap_V1_AutomationReview>,
+            options: GRPCCore.CallOptions,
+            onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Blakeswap_V1_AutomationReview>) async throws -> Result
+        ) async throws -> Result where Result: Sendable
+
+        /// Call the "SaveAutomation" method.
+        ///
+        /// - Parameters:
+        ///   - request: A request containing a single `Blakeswap_V1_AutomationEdit` message.
+        ///   - serializer: A serializer for `Blakeswap_V1_AutomationEdit` messages.
+        ///   - deserializer: A deserializer for `Blakeswap_V1_AutomationView` messages.
+        ///   - options: Options to apply to this RPC.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
+        /// - Returns: The result of `handleResponse`.
+        func saveAutomation<Result>(
+            request: GRPCCore.ClientRequest<Blakeswap_V1_AutomationEdit>,
+            serializer: some GRPCCore.MessageSerializer<Blakeswap_V1_AutomationEdit>,
+            deserializer: some GRPCCore.MessageDeserializer<Blakeswap_V1_AutomationView>,
+            options: GRPCCore.CallOptions,
+            onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Blakeswap_V1_AutomationView>) async throws -> Result
+        ) async throws -> Result where Result: Sendable
+
+        /// Call the "DisableAutomation" method.
+        ///
+        /// - Parameters:
+        ///   - request: A request containing a single `Blakeswap_V1_DisableAutomationRequest` message.
+        ///   - serializer: A serializer for `Blakeswap_V1_DisableAutomationRequest` messages.
+        ///   - deserializer: A deserializer for `Blakeswap_V1_AutomationView` messages.
+        ///   - options: Options to apply to this RPC.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
+        /// - Returns: The result of `handleResponse`.
+        func disableAutomation<Result>(
+            request: GRPCCore.ClientRequest<Blakeswap_V1_DisableAutomationRequest>,
+            serializer: some GRPCCore.MessageSerializer<Blakeswap_V1_DisableAutomationRequest>,
+            deserializer: some GRPCCore.MessageDeserializer<Blakeswap_V1_AutomationView>,
+            options: GRPCCore.CallOptions,
+            onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Blakeswap_V1_AutomationView>) async throws -> Result
+        ) async throws -> Result where Result: Sendable
+
         /// Call the "ListMarket" method.
         ///
         /// - Parameters:
@@ -1113,6 +1245,126 @@ extension Blakeswap_V1_DaemonService {
         ///   - client: A `GRPCCore.GRPCClient` providing a communication channel to the service.
         internal init(wrapping client: GRPCCore.GRPCClient<Transport>) {
             self.client = client
+        }
+
+        /// Call the "ListAutomations" method.
+        ///
+        /// - Parameters:
+        ///   - request: A request containing a single `Blakeswap_V1_AutomationQuery` message.
+        ///   - serializer: A serializer for `Blakeswap_V1_AutomationQuery` messages.
+        ///   - deserializer: A deserializer for `Blakeswap_V1_AutomationList` messages.
+        ///   - options: Options to apply to this RPC.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
+        /// - Returns: The result of `handleResponse`.
+        internal func listAutomations<Result>(
+            request: GRPCCore.ClientRequest<Blakeswap_V1_AutomationQuery>,
+            serializer: some GRPCCore.MessageSerializer<Blakeswap_V1_AutomationQuery>,
+            deserializer: some GRPCCore.MessageDeserializer<Blakeswap_V1_AutomationList>,
+            options: GRPCCore.CallOptions = .defaults,
+            onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Blakeswap_V1_AutomationList>) async throws -> Result = { response in
+                try response.message
+            }
+        ) async throws -> Result where Result: Sendable {
+            try await self.client.unary(
+                request: request,
+                descriptor: Blakeswap_V1_DaemonService.Method.ListAutomations.descriptor,
+                serializer: serializer,
+                deserializer: deserializer,
+                options: options,
+                onResponse: handleResponse
+            )
+        }
+
+        /// Call the "ReviewAutomation" method.
+        ///
+        /// - Parameters:
+        ///   - request: A request containing a single `Blakeswap_V1_AutomationEdit` message.
+        ///   - serializer: A serializer for `Blakeswap_V1_AutomationEdit` messages.
+        ///   - deserializer: A deserializer for `Blakeswap_V1_AutomationReview` messages.
+        ///   - options: Options to apply to this RPC.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
+        /// - Returns: The result of `handleResponse`.
+        internal func reviewAutomation<Result>(
+            request: GRPCCore.ClientRequest<Blakeswap_V1_AutomationEdit>,
+            serializer: some GRPCCore.MessageSerializer<Blakeswap_V1_AutomationEdit>,
+            deserializer: some GRPCCore.MessageDeserializer<Blakeswap_V1_AutomationReview>,
+            options: GRPCCore.CallOptions = .defaults,
+            onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Blakeswap_V1_AutomationReview>) async throws -> Result = { response in
+                try response.message
+            }
+        ) async throws -> Result where Result: Sendable {
+            try await self.client.unary(
+                request: request,
+                descriptor: Blakeswap_V1_DaemonService.Method.ReviewAutomation.descriptor,
+                serializer: serializer,
+                deserializer: deserializer,
+                options: options,
+                onResponse: handleResponse
+            )
+        }
+
+        /// Call the "SaveAutomation" method.
+        ///
+        /// - Parameters:
+        ///   - request: A request containing a single `Blakeswap_V1_AutomationEdit` message.
+        ///   - serializer: A serializer for `Blakeswap_V1_AutomationEdit` messages.
+        ///   - deserializer: A deserializer for `Blakeswap_V1_AutomationView` messages.
+        ///   - options: Options to apply to this RPC.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
+        /// - Returns: The result of `handleResponse`.
+        internal func saveAutomation<Result>(
+            request: GRPCCore.ClientRequest<Blakeswap_V1_AutomationEdit>,
+            serializer: some GRPCCore.MessageSerializer<Blakeswap_V1_AutomationEdit>,
+            deserializer: some GRPCCore.MessageDeserializer<Blakeswap_V1_AutomationView>,
+            options: GRPCCore.CallOptions = .defaults,
+            onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Blakeswap_V1_AutomationView>) async throws -> Result = { response in
+                try response.message
+            }
+        ) async throws -> Result where Result: Sendable {
+            try await self.client.unary(
+                request: request,
+                descriptor: Blakeswap_V1_DaemonService.Method.SaveAutomation.descriptor,
+                serializer: serializer,
+                deserializer: deserializer,
+                options: options,
+                onResponse: handleResponse
+            )
+        }
+
+        /// Call the "DisableAutomation" method.
+        ///
+        /// - Parameters:
+        ///   - request: A request containing a single `Blakeswap_V1_DisableAutomationRequest` message.
+        ///   - serializer: A serializer for `Blakeswap_V1_DisableAutomationRequest` messages.
+        ///   - deserializer: A deserializer for `Blakeswap_V1_AutomationView` messages.
+        ///   - options: Options to apply to this RPC.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
+        /// - Returns: The result of `handleResponse`.
+        internal func disableAutomation<Result>(
+            request: GRPCCore.ClientRequest<Blakeswap_V1_DisableAutomationRequest>,
+            serializer: some GRPCCore.MessageSerializer<Blakeswap_V1_DisableAutomationRequest>,
+            deserializer: some GRPCCore.MessageDeserializer<Blakeswap_V1_AutomationView>,
+            options: GRPCCore.CallOptions = .defaults,
+            onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Blakeswap_V1_AutomationView>) async throws -> Result = { response in
+                try response.message
+            }
+        ) async throws -> Result where Result: Sendable {
+            try await self.client.unary(
+                request: request,
+                descriptor: Blakeswap_V1_DaemonService.Method.DisableAutomation.descriptor,
+                serializer: serializer,
+                deserializer: deserializer,
+                options: options,
+                onResponse: handleResponse
+            )
         }
 
         /// Call the "ListMarket" method.
@@ -2080,6 +2332,106 @@ extension Blakeswap_V1_DaemonService {
 // Helpers providing default arguments to 'ClientProtocol' methods.
 @available(macOS 15.0, iOS 18.0, watchOS 11.0, tvOS 18.0, visionOS 2.0, *)
 extension Blakeswap_V1_DaemonService.ClientProtocol {
+    /// Call the "ListAutomations" method.
+    ///
+    /// - Parameters:
+    ///   - request: A request containing a single `Blakeswap_V1_AutomationQuery` message.
+    ///   - options: Options to apply to this RPC.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
+    /// - Returns: The result of `handleResponse`.
+    internal func listAutomations<Result>(
+        request: GRPCCore.ClientRequest<Blakeswap_V1_AutomationQuery>,
+        options: GRPCCore.CallOptions = .defaults,
+        onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Blakeswap_V1_AutomationList>) async throws -> Result = { response in
+            try response.message
+        }
+    ) async throws -> Result where Result: Sendable {
+        try await self.listAutomations(
+            request: request,
+            serializer: GRPCProtobuf.ProtobufSerializer<Blakeswap_V1_AutomationQuery>(),
+            deserializer: GRPCProtobuf.ProtobufDeserializer<Blakeswap_V1_AutomationList>(),
+            options: options,
+            onResponse: handleResponse
+        )
+    }
+
+    /// Call the "ReviewAutomation" method.
+    ///
+    /// - Parameters:
+    ///   - request: A request containing a single `Blakeswap_V1_AutomationEdit` message.
+    ///   - options: Options to apply to this RPC.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
+    /// - Returns: The result of `handleResponse`.
+    internal func reviewAutomation<Result>(
+        request: GRPCCore.ClientRequest<Blakeswap_V1_AutomationEdit>,
+        options: GRPCCore.CallOptions = .defaults,
+        onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Blakeswap_V1_AutomationReview>) async throws -> Result = { response in
+            try response.message
+        }
+    ) async throws -> Result where Result: Sendable {
+        try await self.reviewAutomation(
+            request: request,
+            serializer: GRPCProtobuf.ProtobufSerializer<Blakeswap_V1_AutomationEdit>(),
+            deserializer: GRPCProtobuf.ProtobufDeserializer<Blakeswap_V1_AutomationReview>(),
+            options: options,
+            onResponse: handleResponse
+        )
+    }
+
+    /// Call the "SaveAutomation" method.
+    ///
+    /// - Parameters:
+    ///   - request: A request containing a single `Blakeswap_V1_AutomationEdit` message.
+    ///   - options: Options to apply to this RPC.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
+    /// - Returns: The result of `handleResponse`.
+    internal func saveAutomation<Result>(
+        request: GRPCCore.ClientRequest<Blakeswap_V1_AutomationEdit>,
+        options: GRPCCore.CallOptions = .defaults,
+        onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Blakeswap_V1_AutomationView>) async throws -> Result = { response in
+            try response.message
+        }
+    ) async throws -> Result where Result: Sendable {
+        try await self.saveAutomation(
+            request: request,
+            serializer: GRPCProtobuf.ProtobufSerializer<Blakeswap_V1_AutomationEdit>(),
+            deserializer: GRPCProtobuf.ProtobufDeserializer<Blakeswap_V1_AutomationView>(),
+            options: options,
+            onResponse: handleResponse
+        )
+    }
+
+    /// Call the "DisableAutomation" method.
+    ///
+    /// - Parameters:
+    ///   - request: A request containing a single `Blakeswap_V1_DisableAutomationRequest` message.
+    ///   - options: Options to apply to this RPC.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
+    /// - Returns: The result of `handleResponse`.
+    internal func disableAutomation<Result>(
+        request: GRPCCore.ClientRequest<Blakeswap_V1_DisableAutomationRequest>,
+        options: GRPCCore.CallOptions = .defaults,
+        onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Blakeswap_V1_AutomationView>) async throws -> Result = { response in
+            try response.message
+        }
+    ) async throws -> Result where Result: Sendable {
+        try await self.disableAutomation(
+            request: request,
+            serializer: GRPCProtobuf.ProtobufSerializer<Blakeswap_V1_DisableAutomationRequest>(),
+            deserializer: GRPCProtobuf.ProtobufDeserializer<Blakeswap_V1_AutomationView>(),
+            options: options,
+            onResponse: handleResponse
+        )
+    }
+
     /// Call the "ListMarket" method.
     ///
     /// - Parameters:
@@ -2884,6 +3236,122 @@ extension Blakeswap_V1_DaemonService.ClientProtocol {
 // Helpers providing sugared APIs for 'ClientProtocol' methods.
 @available(macOS 15.0, iOS 18.0, watchOS 11.0, tvOS 18.0, visionOS 2.0, *)
 extension Blakeswap_V1_DaemonService.ClientProtocol {
+    /// Call the "ListAutomations" method.
+    ///
+    /// - Parameters:
+    ///   - message: request message to send.
+    ///   - metadata: Additional metadata to send, defaults to empty.
+    ///   - options: Options to apply to this RPC, defaults to `.defaults`.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
+    /// - Returns: The result of `handleResponse`.
+    internal func listAutomations<Result>(
+        _ message: Blakeswap_V1_AutomationQuery,
+        metadata: GRPCCore.Metadata = [:],
+        options: GRPCCore.CallOptions = .defaults,
+        onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Blakeswap_V1_AutomationList>) async throws -> Result = { response in
+            try response.message
+        }
+    ) async throws -> Result where Result: Sendable {
+        let request = GRPCCore.ClientRequest<Blakeswap_V1_AutomationQuery>(
+            message: message,
+            metadata: metadata
+        )
+        return try await self.listAutomations(
+            request: request,
+            options: options,
+            onResponse: handleResponse
+        )
+    }
+
+    /// Call the "ReviewAutomation" method.
+    ///
+    /// - Parameters:
+    ///   - message: request message to send.
+    ///   - metadata: Additional metadata to send, defaults to empty.
+    ///   - options: Options to apply to this RPC, defaults to `.defaults`.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
+    /// - Returns: The result of `handleResponse`.
+    internal func reviewAutomation<Result>(
+        _ message: Blakeswap_V1_AutomationEdit,
+        metadata: GRPCCore.Metadata = [:],
+        options: GRPCCore.CallOptions = .defaults,
+        onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Blakeswap_V1_AutomationReview>) async throws -> Result = { response in
+            try response.message
+        }
+    ) async throws -> Result where Result: Sendable {
+        let request = GRPCCore.ClientRequest<Blakeswap_V1_AutomationEdit>(
+            message: message,
+            metadata: metadata
+        )
+        return try await self.reviewAutomation(
+            request: request,
+            options: options,
+            onResponse: handleResponse
+        )
+    }
+
+    /// Call the "SaveAutomation" method.
+    ///
+    /// - Parameters:
+    ///   - message: request message to send.
+    ///   - metadata: Additional metadata to send, defaults to empty.
+    ///   - options: Options to apply to this RPC, defaults to `.defaults`.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
+    /// - Returns: The result of `handleResponse`.
+    internal func saveAutomation<Result>(
+        _ message: Blakeswap_V1_AutomationEdit,
+        metadata: GRPCCore.Metadata = [:],
+        options: GRPCCore.CallOptions = .defaults,
+        onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Blakeswap_V1_AutomationView>) async throws -> Result = { response in
+            try response.message
+        }
+    ) async throws -> Result where Result: Sendable {
+        let request = GRPCCore.ClientRequest<Blakeswap_V1_AutomationEdit>(
+            message: message,
+            metadata: metadata
+        )
+        return try await self.saveAutomation(
+            request: request,
+            options: options,
+            onResponse: handleResponse
+        )
+    }
+
+    /// Call the "DisableAutomation" method.
+    ///
+    /// - Parameters:
+    ///   - message: request message to send.
+    ///   - metadata: Additional metadata to send, defaults to empty.
+    ///   - options: Options to apply to this RPC, defaults to `.defaults`.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
+    /// - Returns: The result of `handleResponse`.
+    internal func disableAutomation<Result>(
+        _ message: Blakeswap_V1_DisableAutomationRequest,
+        metadata: GRPCCore.Metadata = [:],
+        options: GRPCCore.CallOptions = .defaults,
+        onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Blakeswap_V1_AutomationView>) async throws -> Result = { response in
+            try response.message
+        }
+    ) async throws -> Result where Result: Sendable {
+        let request = GRPCCore.ClientRequest<Blakeswap_V1_DisableAutomationRequest>(
+            message: message,
+            metadata: metadata
+        )
+        return try await self.disableAutomation(
+            request: request,
+            options: options,
+            onResponse: handleResponse
+        )
+    }
+
     /// Call the "ListMarket" method.
     ///
     /// - Parameters:
