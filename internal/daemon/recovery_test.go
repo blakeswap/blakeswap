@@ -446,3 +446,71 @@ func TestRestoredPendingRequestCannotAcquireTerminalExpiryEvidence(t *testing.T)
 		t.Fatal("restart bypassed restored-expiry hold")
 	}
 }
+
+func TestRestoredPositiveSingleLegRefund(t *testing.T) {
+	for _, role := range []string{"maker", "taker"} {
+		t.Run(role, func(t *testing.T) {
+			e, s, _, _ := isolatedFixture(t, role)
+			own := s.Long
+			if role == "maker" {
+				own = s.Short
+				s.Long.TxID = ""
+				s.LongFunding = ""
+				s.LongSent = false
+			} else {
+				s.Short.TxID = ""
+				s.ShortFunding = ""
+				s.ShortSent = false
+			}
+			s.Stage = "refunded"
+			markRestored(t, e)
+			all := map[chain.ID]map[string]chain.Observation{chain.BTC: {}, chain.Blake: {}}
+			all[own.Chain][chain.OutpointKey(own.TxID, own.Vout)] = recoverySpend(t, e, s, own, true, nil)
+			if err := e.advanceSwap(context.Background(), s, all); err != nil {
+				t.Log(err)
+			}
+			e.reconcileRecovery(all, nil)
+			if e.recoveryTradingReady() != nil {
+				t.Fatal("positive refund of sole known funded leg did not resolve recorded obligation", e.s.Recovery.Status)
+			}
+			delete(all[own.Chain], chain.OutpointKey(own.TxID, own.Vout))
+			e.reconcileRecovery(all, nil)
+			if e.recoveryTradingReady() == nil {
+				t.Fatal("reorged sole refund retained readiness")
+			}
+		})
+	}
+}
+func TestRestoredExpiredMakerWithPeerRefund(t *testing.T) {
+	e, s, _, _ := isolatedFixture(t, "maker")
+	s.Short.TxID = ""
+	s.ShortFunding = ""
+	s.ShortSent = false
+	s.LongSent = false
+	s.SelfRefunds = nil
+	s.Stage = "expired before maker funding"
+	markRestored(t, e)
+	all := map[chain.ID]map[string]chain.Observation{chain.BTC: {}, chain.Blake: {}}
+	all[s.Long.Chain][chain.OutpointKey(s.Long.TxID, s.Long.Vout)] = recoverySpend(t, e, s, s.Long, true, nil)
+	if err := e.advanceSwap(context.Background(), s, all); err != nil {
+		t.Log(err)
+	}
+	e.reconcileRecovery(all, nil)
+	if e.recoveryTradingReady() != nil {
+		t.Fatal("final own nonfunding plus confirmed peer refund did not reconcile", e.s.Recovery.Status)
+	}
+	if s.Stage != "expired before maker funding" {
+		t.Fatal("lost durable nonfunding decision")
+	}
+	delete(all[s.Long.Chain], chain.OutpointKey(s.Long.TxID, s.Long.Vout))
+	e.reconcileRecovery(all, nil)
+	if e.recoveryTradingReady() == nil {
+		t.Fatal("peer refund reorg retained readiness")
+	}
+	s.Stage = "awaiting chain confirmations"
+	all[s.Long.Chain][chain.OutpointKey(s.Long.TxID, s.Long.Vout)] = recoverySpend(t, e, s, s.Long, true, nil)
+	e.reconcileRecovery(all, nil)
+	if e.recoveryTradingReady() == nil {
+		t.Fatal("unknown own publication resolved from peer refund")
+	}
+}

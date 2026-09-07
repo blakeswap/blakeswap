@@ -113,17 +113,34 @@ func (e *Engine) recoveryContextCurrent() bool {
 // These are irreversible local decisions made before any own funding exists.
 // They remain final across restart/reorg in the normal state machine as well.
 // A pending request or any prepared funding is intentionally not equivalent.
-func recoverySwapInactive(s *Swap) bool {
-	if s == nil || s.LongSent || s.ShortSent || s.SecretObserved || s.IncomingClaimSeen {
+func recoverySwapOwnInactive(s *Swap) bool {
+	if s == nil || s.SecretObserved || s.IncomingClaimSeen || len(s.SelfRefunds) > 0 {
+		return false
+	}
+	own, raw, sent := s.Long, s.LongFunding, s.LongSent
+	if s.Role == "maker" {
+		own, raw, sent = s.Short, s.ShortFunding, s.ShortSent
+	}
+	if own.TxID != "" || raw != "" || sent {
 		return false
 	}
 	switch s.Stage {
 	case "rejected", "expired before acceptance":
-		return s.Role == "taker" && s.Terms == nil && s.LongFunding == "" && s.ShortFunding == "" && s.Long.TxID == "" && s.Short.TxID == ""
+		return s.Role == "taker" && s.Terms == nil
 	case "expired before funding":
-		return s.Role == "taker" && s.LongFunding == "" && s.Long.TxID == "" && s.ShortFunding == "" && s.Short.TxID == ""
+		return s.Role == "taker"
 	case "expired before maker funding":
-		return s.Role == "maker" && s.ShortFunding == "" && s.Short.TxID == "" && s.LongFunding == "" && s.Long.TxID == ""
+		return s.Role == "maker"
 	}
 	return false
+}
+func recoverySwapInactive(s *Swap) bool {
+	if !recoverySwapOwnInactive(s) {
+		return false
+	}
+	incoming, raw, sent := s.Short, s.ShortFunding, s.ShortSent
+	if s.Role == "maker" {
+		incoming, raw, sent = s.Long, s.LongFunding, s.LongSent
+	}
+	return incoming.TxID == "" && raw == "" && !sent
 }

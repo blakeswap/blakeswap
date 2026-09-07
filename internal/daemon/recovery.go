@@ -93,10 +93,18 @@ func (e *Engine) advanceRestoredSwap(ctx context.Context, s *Swap, all map[chain
 		}
 	}
 	if e.recoverySwapResolved(s, all) {
+		if recoverySwapOwnInactive(s) {
+			return nil
+		} // Preserve the irreversible nonfunding decision.
 		long, _ := observation(all, s.Long)
 		short, _ := observation(all, s.Short)
-		_, lc := contract.ExtractSecret(s.Long, long.Tx)
-		_, sc := contract.ExtractSecret(s.Short, short.Tx)
+		lc, sc := false, false
+		if long.Tx != nil {
+			_, lc = contract.ExtractSecret(s.Long, long.Tx)
+		}
+		if short.Tx != nil {
+			_, sc = contract.ExtractSecret(s.Short, short.Tx)
+		}
 		if lc && sc {
 			s.Stage = "completed"
 		} else if !lc && !sc {
@@ -105,6 +113,9 @@ func (e *Engine) advanceRestoredSwap(ctx context.Context, s *Swap, all map[chain
 			s.Stage = "contested outcome"
 		}
 		return nil
+	}
+	if recoverySwapOwnInactive(s) {
+		return errors.New("own funding is durably canceled; waiting for positive refund of the known peer contract")
 	}
 	own := s.Long
 	if s.Role == "maker" {
@@ -138,6 +149,26 @@ func (e *Engine) recoverySwapResolved(s *Swap, all map[chain.ID]map[string]chain
 	}
 	if s == nil || s.Terms == nil || !e.fresh(chain.BTC) || !e.fresh(chain.Blake) || all[chain.BTC] == nil || all[chain.Blake] == nil {
 		return false
+	}
+	own, incoming := s.Long, s.Short
+	incomingRaw, incomingSent := s.ShortFunding, s.ShortSent
+	if s.Role == "maker" {
+		own, incoming = s.Short, s.Long
+		incomingRaw, incomingSent = s.LongFunding, s.LongSent
+	}
+	refunded := func(c contract.HTLC) bool {
+		obs, ok := observation(all, c)
+		if c.TxID == "" || !ok || obs.Tx == nil || obs.Confirmations < e.Config.Network.Confirmations() {
+			return false
+		}
+		_, claimed := contract.ExtractSecret(c, obs.Tx)
+		return !claimed
+	}
+	if recoverySwapOwnInactive(s) {
+		return refunded(incoming)
+	}
+	if incoming.TxID == "" && incomingRaw == "" && !incomingSent {
+		return refunded(own)
 	}
 	for _, c := range []contract.HTLC{s.Long, s.Short} {
 		obs, ok := observation(all, c)
