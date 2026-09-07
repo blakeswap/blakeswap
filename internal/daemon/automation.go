@@ -750,8 +750,8 @@ func (e *Engine) runAutomations(ctx context.Context) {
 		e.mu.Unlock()
 		return
 	}
-	if len(e.s.TradeReceipts) >= tradeReceiptCapacity {
-		p.Decision = "trade receipt capacity reached"
+	if err := e.admitWork("receipt"); err != nil {
+		p.Decision = err.Error()
 		_ = e.save()
 		e.mu.Unlock()
 		return

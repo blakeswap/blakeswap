@@ -64,7 +64,7 @@ func (e *Engine) nextSemanticToken(parts semanticParts) (string, error) {
 		// A reopen can reuse its persisted token only when the active state still
 		// matches the checkpoint which issued it. This also detects an older
 		// writer that changed state without understanding freshness tokens.
-		changed = changed || e.s.Capacity.ActiveFingerprint != parts.Active
+		changed = changed || e.s.Capacity == nil || e.s.Capacity.ActiveFingerprint != parts.Active
 	} else {
 		changed = changed || previous.Scalar != parts.Scalar
 		for key, prior := range previous.Records {
