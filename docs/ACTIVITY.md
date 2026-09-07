@@ -50,6 +50,9 @@ recorded block at its height. Observations older than two minutes become unknown
 when reconciled. Protocol secret knowledge and recovery obligations remain
 independent of this advisory ledger. Sources are opaque endpoint fingerprints,
 not URLs or credentials, with generations when supplied by the chain backend.
+Reopening invalidates previous confirmation proofs and history-pass coverage
+until fresh reads succeed; a new connection pool may reuse a generation number.
+Prior outcomes and block identities remain available for audit and reorg checks.
 
 ## Historical coverage and limits
 

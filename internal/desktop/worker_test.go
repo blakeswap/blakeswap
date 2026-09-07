@@ -206,7 +206,7 @@ func (f *advisoryFixture) Command(ctx context.Context, req daemon.Request) (any,
 }
 
 func TestPreflightDoesNotHoldLifecycleLockAndStopsBeforeEngineClose(t *testing.T) {
-	for _, method := range []string{"wallet.preflight", "trade.quote", "trade.confirm"} {
+	for _, method := range []string{"wallet.preflight", "trade.quote", "trade.confirm", "activity.list", "activity.export"} {
 		t.Run(method, func(t *testing.T) {
 			entered, cancelled, release := make(chan struct{}), make(chan struct{}), make(chan struct{})
 			alice := &advisoryFixture{workerFixture: &workerFixture{name: "alice"}, command: func(ctx context.Context, req daemon.Request) (any, error) {
@@ -226,7 +226,13 @@ func TestPreflightDoesNotHoldLifecycleLockAndStopsBeforeEngineClose(t *testing.T
 				_, err := m.command(context.Background(), "alice", daemon.Request{Method: method, Params: json.RawMessage(`{"expected_network":"regtest"}`)})
 				done <- err
 			}()
-			<-entered
+			select {
+			case <-entered:
+			case err := <-done:
+				t.Fatal("command bypassed the tracked advisory worker", err)
+			case <-time.After(time.Second):
+				t.Fatal("advisory command never reached the worker")
+			}
 			if !m.mu.TryLock() {
 				t.Fatal("preflight holds global lifecycle lock")
 			}

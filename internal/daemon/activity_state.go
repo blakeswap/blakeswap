@@ -12,6 +12,31 @@ import (
 
 const maxActivityRecords = 50000
 
+// Endpoint generations are scoped to a running backend, not persistent proof
+// identities. Reopening must not accept yesterday's generation 1 as today's.
+// Keep prior block evidence for later reorg checks and all earlier outcomes.
+func (e *Engine) invalidateActivitySession() {
+	for _, stored := range e.s.Activities {
+		if len(stored.Observations) == 0 {
+			continue
+		}
+		next := stored
+		next.Observations = append([]ActivityObservation{}, stored.Observations...)
+		for i := range next.Observations {
+			next.Observations[i].Status = "unknown"
+			next.Observations[i].Confirmations = 0
+			next.Observations[i].ObservedAt = 0
+			next.Observations[i].Error = "Wallet reopened; this outcome requires fresh chain verification."
+		}
+		e.putActivity(next, true)
+	}
+	for id, index := range e.s.ActivityIndexes {
+		index.Address, index.After, index.CompletedPass = 0, "", 0
+		index.Error = "Wallet reopened; historical coverage is being reverified."
+		e.s.ActivityIndexes[id] = index
+	}
+}
+
 func activityID(kind, key string) string { return kind + "/" + key }
 func activityOutcome(a Activity) ActivityOutcome {
 	outcome := ActivityOutcome{Status: a.Status, TxID: a.TxID, Amount: a.Amount, Fee: a.Fee, FeeKnown: a.FeeKnown, BlockHash: a.BlockHash, BlockTime: a.BlockTime, ObservedAt: a.ObservedAt, Source: a.Source, Generation: a.Generation}

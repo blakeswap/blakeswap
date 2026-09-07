@@ -122,6 +122,7 @@ func Open(ctx context.Context, c Config) (*Engine, error) {
 	if en.s.Network.Normalized() != c.Network {
 		return fail(errors.New("state belongs to a different network; use its own data directory"))
 	}
+	en.invalidateActivitySession()
 	// An old pause flag must never suppress trading or rescue work after reopen.
 	en.s.Paused = false
 	en.keys, e = wallet.FromMnemonic(en.s.Mnemonic)

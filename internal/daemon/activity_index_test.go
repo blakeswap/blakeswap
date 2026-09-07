@@ -49,6 +49,32 @@ func TestActivityLateObservationCannotUpdateNewSourceGeneration(t *testing.T) {
 	}
 }
 
+func TestActivityReopenDoesNotReusePersistedBackendGeneration(t *testing.T) {
+	id := strings.Repeat("a", 64)
+	e := &Engine{Config: Config{Name: "alice", Network: chain.Regtest}, s: State{Activities: map[string]Activity{}, ActivityIndexes: map[chain.ID]ActivityIndex{chain.Blake: {Address: 4, After: id, CompletedPass: time.Now().Unix(), Source: "old", Generation: 1}}}, nodes: map[chain.ID]chain.Backend{}}
+	e.putActivity(Activity{ID: "send/request", Chain: chain.Blake, TxID: id, Variants: []string{id}, Status: "confirmed", Observations: []ActivityObservation{{TxID: id, Status: "confirmed", Confirmations: 6, Height: 10, BlockHash: "old-block", ObservedAt: time.Now().Unix(), Source: "old", Generation: 1}}}, true)
+	encoded, _ := json.Marshal(e.s)
+	if err := json.Unmarshal(encoded, &e.s); err != nil {
+		t.Fatal(err)
+	}
+	e.nodes[chain.Blake] = activityGenerationBackend{generation: 1, activityBackend: activityBackend{observe: func(context.Context, string, uint32, string) (chain.HistoryTransaction, error) {
+		return chain.HistoryTransaction{Transaction: chain.Transaction{TxID: id, Confirmations: 2, Height: 20, BlockHash: "new-block"}, Source: "new", Generation: 1}, nil
+	}}}
+	e.invalidateActivitySession()
+	got := e.s.Activities["send/request"]
+	if got.Status != "unknown" || got.Confirmations != 0 || got.ObservedAt != 0 || len(got.History) != 1 || got.History[0].Status != "confirmed" || got.Observations[0].BlockHash != "old-block" {
+		t.Fatal("reopen reused old confirmation or discarded evidence", got)
+	}
+	if index := e.s.ActivityIndexes[chain.Blake]; index.CompletedPass != 0 || index.Address != 0 || index.After != "" {
+		t.Fatal("reopen reused old coverage cursor", index)
+	}
+	e.observeActivityChain(context.Background(), chain.Blake)
+	got = e.s.Activities["send/request"]
+	if got.Status != "confirmed" || got.BlockHash != "new-block" || got.Source != "new" {
+		t.Fatal("fresh verification did not restore current outcome", got)
+	}
+}
+
 type activityBackend struct {
 	chain.Backend
 	history func(context.Context, string, string, int) (chain.AddressHistoryPage, error)
