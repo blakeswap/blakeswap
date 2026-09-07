@@ -39,7 +39,10 @@ func mailboxSemantic(from string, message transport.Message) (string, error) {
 	}
 	if funding, ok := body.(*fundingMessage); ok {
 		if tx, err := contract.Parse(funding.Raw); err == nil {
-			funding.Raw = contract.Hex(tx)
+			// Funding identity is its non-witness txid. Alternate witness
+			// serializations cannot manufacture unlimited durable alias records.
+			// Exact sender/message-ID binding still compares the complete payload.
+			funding.Raw = tx.TxHash().String()
 		}
 	}
 	return protocol.Digest([]any{from, message.Type, message.SwapID, body}), nil
@@ -114,4 +117,27 @@ func (e *Engine) consumeUnsolicitedSlot(from string) error {
 	e.mailboxAdmissions[""]++
 	e.mailboxAdmissions[from]++
 	return nil
+}
+
+func (e *Engine) durableMailboxSemantic(from string, message transport.Message) (string, error) {
+	if message.Type == "accepted" {
+		swap := e.s.Swaps[message.SwapID]
+		if swap == nil {
+			var archived Swap
+			found, err := e.archivedValue("swaps", message.SwapID, &archived)
+			if err != nil {
+				return "", err
+			}
+			if found {
+				swap = &archived
+			}
+		}
+		// Valid late acceptances cannot revive a terminal released intention. Their
+		// varying proposed heights are not new retained settlement authority. handle
+		// still verifies the complete signed request and terms before any ACK.
+		if swap != nil && swap.Terms == nil && terminalSwap(swap) {
+			return protocol.Digest([]string{from, message.Type, message.SwapID, "inactive-acceptance"}), nil
+		}
+	}
+	return mailboxSemantic(from, message)
 }

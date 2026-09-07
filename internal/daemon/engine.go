@@ -683,7 +683,7 @@ func (e *Engine) receive(event nostr.Event) error {
 			return nil
 		}
 	} else {
-		semantic, err := mailboxSemantic(from.Hex(), m)
+		semantic, err := e.durableMailboxSemantic(from.Hex(), m)
 		if err != nil {
 			return err
 		}
