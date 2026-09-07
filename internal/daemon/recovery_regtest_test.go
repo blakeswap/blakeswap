@@ -434,6 +434,10 @@ func TestRealPortablePaymentVariantsAndReceiveIndexes(t *testing.T) {
 			if err != nil || sent.Submitted {
 				t.Fatal("expected preserved below-relay transaction", err, sent)
 			}
+			// Rejection places the selected endpoint in backoff. Establish the
+			// existing bounded positive-readiness precondition before acceleration;
+			// an immediate replacement must not assume the failed source is ready.
+			tickUntilConnected(t, e)
 			bumped, err := e.bumpSend(h.ctx, BumpRequest{ID: request.ID, Kind: "send", Fee: 6500, ExpectedTxID: sent.TxID})
 			if err != nil || bumped.Error != "" {
 				t.Fatal(err, bumped)
