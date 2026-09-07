@@ -301,3 +301,23 @@ func (s *Service) GetActionSummary(ctx context.Context, in *pb.ActionSummaryRequ
 	out := &pb.ActionSummary{}
 	return out, s.command(ctx, "actions.summary", in, out)
 }
+
+func (s *Service) ListStrategies(ctx context.Context, in *pb.AutomationQuery) (*pb.StrategyList, error) {
+	out := &pb.StrategyList{}
+	return out, s.command(ctx, "strategy.list", in, out)
+}
+
+func (s *Service) ReviewStrategy(ctx context.Context, in *pb.StrategyEdit) (*pb.StrategyReview, error) {
+	out := &pb.StrategyReview{}
+	return out, s.command(ctx, "strategy.review", in, out)
+}
+
+func (s *Service) SaveStrategy(ctx context.Context, in *pb.StrategyEdit) (*pb.StrategyView, error) {
+	out := &pb.StrategyView{}
+	return out, s.command(ctx, "strategy.save", in, out)
+}
+
+func (s *Service) StopStrategy(ctx context.Context, in *pb.StopStrategyRequest) (*pb.StrategyView, error) {
+	out := &pb.StrategyView{}
+	return out, s.command(ctx, "strategy.stop", in, out)
+}

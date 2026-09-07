@@ -28,6 +28,7 @@ func (r AutomationRate) valid() bool {
 }
 
 type AutomationConfig struct {
+	StrategyID         string         `json:"strategy_id,omitempty"`
 	ID                 string         `json:"id"`
 	Wallet             string         `json:"wallet"`
 	Network            chain.Network  `json:"network"`
@@ -208,6 +209,12 @@ func (e *Engine) listAutomations(raw json.RawMessage) (AutomationList, error) {
 	return r, nil
 }
 func (e *Engine) validateAutomationEdit(p AutomationEdit) error {
+	return e.validateAutomationEditInternal(p, false)
+}
+func (e *Engine) validateAutomationEditInternal(p AutomationEdit, strategy bool) error {
+	if !strategy && (p.Config.StrategyID != "" || (e.s.Automations[p.Config.ID] != nil && e.s.Automations[p.Config.ID].Config.StrategyID != "")) {
+		return errors.New("edit this linked policy through its two-asset strategy authorization")
+	}
 	if p.Enabled {
 		if err := e.recoveryTradingReady(); err != nil {
 			return err
@@ -342,7 +349,7 @@ func (e *Engine) disableAutomation(raw json.RawMessage) (AutomationView, error) 
 		return AutomationView{}, err
 	}
 	p := e.s.Automations[q.ID]
-	if p == nil || p.Revision != q.ExpectedRevision {
+	if p == nil || p.Revision != q.ExpectedRevision || p.Config.StrategyID != "" {
 		return AutomationView{}, errors.New("policy changed; reload before disabling")
 	}
 	retireAutomationPending(&e.s, p, "policy disabled; prior automatic authorization revoked")
@@ -498,6 +505,9 @@ func (e *Engine) validateAutomationReceipt(r *TradeReceipt) error {
 	if len(e.Config.Relays) == 0 {
 		return errors.New("automation requires a configured relay")
 	}
+	if p.Config.StrategyID != "" {
+		return e.strategyReceipt(p, r)
+	}
 	rate, _, err := e.automationPrice(p.Config, time.Now().Unix())
 	if err != nil {
 		return err
@@ -531,7 +541,9 @@ func (e *Engine) acceptAutomationOffer(r *TradeReceipt) {
 			old.State = "released"
 		}
 	}
-	p.Charges[r.Result.ID] = automationCharge(p.Config, r.Result.ID, s.BuyAmount, s.FundingFee)
+	config := p.Config
+	config.SellAmount = s.SellAmount
+	p.Charges[r.Result.ID] = automationCharge(config, r.Result.ID, s.BuyAmount, s.FundingFee)
 	p.CurrentOfferID = r.Result.ID
 	p.Pending = nil
 	p.LastAction = time.Now().Unix()
@@ -596,7 +608,14 @@ func (e *Engine) runAutomations(ctx context.Context) {
 		return
 	}
 	config, revision := p.Config, p.Revision
-	fail := func(err error) { p.Decision = err.Error(); _ = e.save(); e.mu.Unlock() }
+	fail := func(err error) {
+		p.Decision = err.Error()
+		if p.Config.StrategyID != "" {
+			e.strategyFailure(p, false, err)
+		}
+		_ = e.save()
+		e.mu.Unlock()
+	}
 	if err := e.tradeBinding(config.Wallet, string(config.Network)); err != nil {
 		fail(err)
 		return
@@ -606,6 +625,13 @@ func (e *Engine) runAutomations(ctx context.Context) {
 		return
 	}
 	rate, events, err := e.automationPrice(config, now)
+	var strategyFields OrderActionFields
+	var strategyQuote StrategyQuote
+	if config.StrategyID != "" {
+		strategy := e.s.MakerStrategies[config.StrategyID]
+		config, strategyQuote, strategyFields, err = e.strategyPlan(strategy, config.Sell, now)
+		rate, events = strategyQuote.Rate, strategyQuote.ReferenceEvents
+	}
 	if err != nil {
 		fail(err)
 		return
@@ -626,6 +652,9 @@ func (e *Engine) runAutomations(ctx context.Context) {
 	}
 	sort.Strings(sources)
 	for _, id := range sources {
+		if config.StrategyID != "" {
+			break
+		}
 		event, ok := e.s.Offers[id]
 		if !ok {
 			continue
@@ -649,6 +678,22 @@ func (e *Engine) runAutomations(ctx context.Context) {
 		if _, sourceErr := e.orderSource(fields, now); sourceErr == nil {
 			request.OrderActionFields = fields
 			break
+		}
+	}
+	if config.StrategyID != "" {
+		request.OrderActionFields = strategyFields
+		if strategyFields.OrderAction == "replace" {
+			o, _ := historicalOffer(e.s.Offers[strategyFields.SourceOfferID])
+			if o.SellAmount == config.SellAmount && o.BuyAmount == buy {
+				p.Decision = errStrategyQuoteCurrent.Error()
+				_ = e.save()
+				e.mu.Unlock()
+				return
+			}
+			if e.s.OrderRecords[o.ID].Publication != "relay_acknowledged" {
+				fail(errors.New("waiting for previous strategy quote relay acknowledgement"))
+				return
+			}
 		}
 	}
 	if err = e.automationBudget(p, automationCharge(config, "", buy, config.FundingFee), request.SourceOfferID); err != nil {
@@ -729,6 +774,17 @@ func (e *Engine) finishAutomationAttempt(id string, revision uint64, requestID s
 		p.Pending = nil
 	}
 	if p.Revision == revision {
+		if p.Config.StrategyID != "" {
+			failure := err
+			if failure == nil && result.State == "rejected" {
+				failure = errors.New(result.Error)
+			}
+			replacing := e.strategySource(p, time.Now().Unix()).OrderAction == "replace"
+			if r := e.s.TradeReceipts[requestID]; r != nil {
+				replacing = r.Snapshot.Request.OrderAction == "replace"
+			}
+			e.strategyFailure(p, replacing, failure)
+		}
 		if err != nil {
 			p.Decision = fmt.Sprintf("paused: %v", err)
 		} else if result.State == "rejected" {
@@ -752,6 +808,12 @@ func retireAutomationPending(s *State, p *AutomationPolicy, reason string) {
 
 // Called only on the private imported snapshot before any daemon starts.
 func holdImportedAutomations(s *State) {
+	for _, p := range s.MakerStrategies {
+		p.Enabled = false
+		p.RestoreHold = true
+		p.Revision++
+		p.Decision = "Imported strategy held; review remaining authorization and potentially omitted spending before enabling"
+	}
 	for _, p := range s.Automations {
 		if p == nil {
 			continue

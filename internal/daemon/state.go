@@ -88,6 +88,7 @@ type TowerJob struct {
 	Error       string       `json:"error,omitempty"`
 }
 type State struct {
+	MakerStrategies             map[string]*MakerStrategy    `json:"maker_strategies,omitempty"`
 	Automations                 map[string]*AutomationPolicy `json:"automations,omitempty"`
 	OrderRecords                map[string]OrderRecord       `json:"order_records,omitempty"`
 	Recovery                    *RecoveryRecord              `json:"recovery,omitempty"`

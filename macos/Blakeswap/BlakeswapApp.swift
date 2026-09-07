@@ -249,6 +249,8 @@ struct ContentView: View {
                 Spacer()
                 Button { creatingOffer = model.tradeContext } label: { Label("Create offer", systemImage: "plus") }.buttonStyle(MintButton()).disabled(model.busy || !["btc", "blake"].contains(where: status.canReviewOffer)).accessibilityIdentifier("create-offer")
             }
+            StrategyView(context: model.tradeContext, root: model.root)
+                .id("strategy|" + model.profile + "|" + model.network + "|" + String(model.generation))
             AutomationView(context: model.tradeContext, root: model.root)
                 .id("automation|" + model.profile + "|" + model.network + "|" + String(model.generation))
             MarketView(context: model.tradeContext, root: model.root)

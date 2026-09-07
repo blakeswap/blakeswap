@@ -55,6 +55,7 @@ func BackupFingerprint(state State) (string, error) {
 	records("automations", func(record map[string]any) {
 		stripFields(record, "next_action", "decision", "reference_events", "reference_observed")
 	})
+	records("maker_strategies", func(record map[string]any) { stripFields(record, "decision") })
 	// Activity receipts, variants, outcomes, reorg history and provenance stay
 	// covered. Only current observation polling and coverage cursors are noise;
 	// these exclusions do not apply to historical outcomes or nested policy.

@@ -39,5 +39,5 @@ func ValidateAutomationState(s *State) error {
 			blake += c.BlakeFees
 		}
 	}
-	return nil
+	return validateStrategyState(s)
 }

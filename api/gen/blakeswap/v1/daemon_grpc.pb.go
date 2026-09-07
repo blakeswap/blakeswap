@@ -20,6 +20,10 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
+	DaemonService_ListStrategies_FullMethodName       = "/blakeswap.v1.DaemonService/ListStrategies"
+	DaemonService_ReviewStrategy_FullMethodName       = "/blakeswap.v1.DaemonService/ReviewStrategy"
+	DaemonService_SaveStrategy_FullMethodName         = "/blakeswap.v1.DaemonService/SaveStrategy"
+	DaemonService_StopStrategy_FullMethodName         = "/blakeswap.v1.DaemonService/StopStrategy"
 	DaemonService_ListAutomations_FullMethodName      = "/blakeswap.v1.DaemonService/ListAutomations"
 	DaemonService_ReviewAutomation_FullMethodName     = "/blakeswap.v1.DaemonService/ReviewAutomation"
 	DaemonService_SaveAutomation_FullMethodName       = "/blakeswap.v1.DaemonService/SaveAutomation"
@@ -63,6 +67,10 @@ const (
 //
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
 type DaemonServiceClient interface {
+	ListStrategies(ctx context.Context, in *AutomationQuery, opts ...grpc.CallOption) (*StrategyList, error)
+	ReviewStrategy(ctx context.Context, in *StrategyEdit, opts ...grpc.CallOption) (*StrategyReview, error)
+	SaveStrategy(ctx context.Context, in *StrategyEdit, opts ...grpc.CallOption) (*StrategyView, error)
+	StopStrategy(ctx context.Context, in *StopStrategyRequest, opts ...grpc.CallOption) (*StrategyView, error)
 	ListAutomations(ctx context.Context, in *AutomationQuery, opts ...grpc.CallOption) (*AutomationList, error)
 	ReviewAutomation(ctx context.Context, in *AutomationEdit, opts ...grpc.CallOption) (*AutomationReview, error)
 	SaveAutomation(ctx context.Context, in *AutomationEdit, opts ...grpc.CallOption) (*AutomationView, error)
@@ -108,6 +116,46 @@ type daemonServiceClient struct {
 
 func NewDaemonServiceClient(cc grpc.ClientConnInterface) DaemonServiceClient {
 	return &daemonServiceClient{cc}
+}
+
+func (c *daemonServiceClient) ListStrategies(ctx context.Context, in *AutomationQuery, opts ...grpc.CallOption) (*StrategyList, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(StrategyList)
+	err := c.cc.Invoke(ctx, DaemonService_ListStrategies_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *daemonServiceClient) ReviewStrategy(ctx context.Context, in *StrategyEdit, opts ...grpc.CallOption) (*StrategyReview, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(StrategyReview)
+	err := c.cc.Invoke(ctx, DaemonService_ReviewStrategy_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *daemonServiceClient) SaveStrategy(ctx context.Context, in *StrategyEdit, opts ...grpc.CallOption) (*StrategyView, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(StrategyView)
+	err := c.cc.Invoke(ctx, DaemonService_SaveStrategy_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *daemonServiceClient) StopStrategy(ctx context.Context, in *StopStrategyRequest, opts ...grpc.CallOption) (*StrategyView, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(StrategyView)
+	err := c.cc.Invoke(ctx, DaemonService_StopStrategy_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
 }
 
 func (c *daemonServiceClient) ListAutomations(ctx context.Context, in *AutomationQuery, opts ...grpc.CallOption) (*AutomationList, error) {
@@ -484,6 +532,10 @@ func (c *daemonServiceClient) CheckNode(ctx context.Context, in *CheckNodeReques
 // All implementations must embed UnimplementedDaemonServiceServer
 // for forward compatibility.
 type DaemonServiceServer interface {
+	ListStrategies(context.Context, *AutomationQuery) (*StrategyList, error)
+	ReviewStrategy(context.Context, *StrategyEdit) (*StrategyReview, error)
+	SaveStrategy(context.Context, *StrategyEdit) (*StrategyView, error)
+	StopStrategy(context.Context, *StopStrategyRequest) (*StrategyView, error)
 	ListAutomations(context.Context, *AutomationQuery) (*AutomationList, error)
 	ReviewAutomation(context.Context, *AutomationEdit) (*AutomationReview, error)
 	SaveAutomation(context.Context, *AutomationEdit) (*AutomationView, error)
@@ -531,6 +583,18 @@ type DaemonServiceServer interface {
 // pointer dereference when methods are called.
 type UnimplementedDaemonServiceServer struct{}
 
+func (UnimplementedDaemonServiceServer) ListStrategies(context.Context, *AutomationQuery) (*StrategyList, error) {
+	return nil, status.Error(codes.Unimplemented, "method ListStrategies not implemented")
+}
+func (UnimplementedDaemonServiceServer) ReviewStrategy(context.Context, *StrategyEdit) (*StrategyReview, error) {
+	return nil, status.Error(codes.Unimplemented, "method ReviewStrategy not implemented")
+}
+func (UnimplementedDaemonServiceServer) SaveStrategy(context.Context, *StrategyEdit) (*StrategyView, error) {
+	return nil, status.Error(codes.Unimplemented, "method SaveStrategy not implemented")
+}
+func (UnimplementedDaemonServiceServer) StopStrategy(context.Context, *StopStrategyRequest) (*StrategyView, error) {
+	return nil, status.Error(codes.Unimplemented, "method StopStrategy not implemented")
+}
 func (UnimplementedDaemonServiceServer) ListAutomations(context.Context, *AutomationQuery) (*AutomationList, error) {
 	return nil, status.Error(codes.Unimplemented, "method ListAutomations not implemented")
 }
@@ -661,6 +725,78 @@ func RegisterDaemonServiceServer(s grpc.ServiceRegistrar, srv DaemonServiceServe
 		t.testEmbeddedByValue()
 	}
 	s.RegisterService(&DaemonService_ServiceDesc, srv)
+}
+
+func _DaemonService_ListStrategies_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(AutomationQuery)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DaemonServiceServer).ListStrategies(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: DaemonService_ListStrategies_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DaemonServiceServer).ListStrategies(ctx, req.(*AutomationQuery))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _DaemonService_ReviewStrategy_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(StrategyEdit)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DaemonServiceServer).ReviewStrategy(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: DaemonService_ReviewStrategy_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DaemonServiceServer).ReviewStrategy(ctx, req.(*StrategyEdit))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _DaemonService_SaveStrategy_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(StrategyEdit)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DaemonServiceServer).SaveStrategy(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: DaemonService_SaveStrategy_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DaemonServiceServer).SaveStrategy(ctx, req.(*StrategyEdit))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _DaemonService_StopStrategy_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(StopStrategyRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DaemonServiceServer).StopStrategy(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: DaemonService_StopStrategy_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DaemonServiceServer).StopStrategy(ctx, req.(*StopStrategyRequest))
+	}
+	return interceptor(ctx, in, info, handler)
 }
 
 func _DaemonService_ListAutomations_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
@@ -1336,6 +1472,22 @@ var DaemonService_ServiceDesc = grpc.ServiceDesc{
 	ServiceName: "blakeswap.v1.DaemonService",
 	HandlerType: (*DaemonServiceServer)(nil),
 	Methods: []grpc.MethodDesc{
+		{
+			MethodName: "ListStrategies",
+			Handler:    _DaemonService_ListStrategies_Handler,
+		},
+		{
+			MethodName: "ReviewStrategy",
+			Handler:    _DaemonService_ReviewStrategy_Handler,
+		},
+		{
+			MethodName: "SaveStrategy",
+			Handler:    _DaemonService_SaveStrategy_Handler,
+		},
+		{
+			MethodName: "StopStrategy",
+			Handler:    _DaemonService_StopStrategy_Handler,
+		},
 		{
 			MethodName: "ListAutomations",
 			Handler:    _DaemonService_ListAutomations_Handler,

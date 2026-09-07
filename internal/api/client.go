@@ -34,6 +34,23 @@ func Call(ctx context.Context, socket string, req daemon.Request) (json.RawMessa
 	var in proto.Message
 	var invoke func() (proto.Message, error)
 	switch req.Method {
+	case "strategy.list":
+		p := &pb.AutomationQuery{}
+		in = p
+		invoke = func() (proto.Message, error) { return client.ListStrategies(ctx, p) }
+	case "strategy.review":
+		p := &pb.StrategyEdit{}
+		in = p
+		invoke = func() (proto.Message, error) { return client.ReviewStrategy(ctx, p) }
+	case "strategy.save":
+		p := &pb.StrategyEdit{}
+		in = p
+		invoke = func() (proto.Message, error) { return client.SaveStrategy(ctx, p) }
+	case "strategy.stop":
+		p := &pb.StopStrategyRequest{}
+		in = p
+		invoke = func() (proto.Message, error) { return client.StopStrategy(ctx, p) }
+
 	case "automation.list":
 		p := &pb.AutomationQuery{}
 		in = p
