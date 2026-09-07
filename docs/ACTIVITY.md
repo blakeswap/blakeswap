@@ -76,6 +76,13 @@ cannot cross wallet/network/source generations. A completed pass starts again
 to discover arrivals before its previous transaction-ID cursor. Errors preserve
 evidence and retry, with coverage warnings in Activity.
 
+With endpoint failover, history borrows only the already validated active
+endpoint and its completed wallet imports. It never selects an endpoint, imports
+addresses, or changes connection health. Slow or unavailable advisory reads
+leave settlement readiness and source generations unchanged. Results carry the
+selected endpoint fingerprint and generation; a later source change invalidates
+those results before they can update the ledger.
+
 Limits are 50,000 records, 10,000 history transaction IDs per address, and 2,048
 inputs/outputs per indexed transaction. Exceeding a limit leaves an explicit
 incomplete-history warning and preserves existing records. The cursor does not
