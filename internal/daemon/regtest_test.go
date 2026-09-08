@@ -256,28 +256,61 @@ func (h *harness) fundBothFees(sell chain.ID, bps, fee, ownerCap int64) string {
 	h.t.Helper()
 	authorization := automationFillAuthorization(sell, 1000000, 2000000, fee, bps)
 	o := h.command("maker", "offer.create", map[string]any{"sell": sell, "sell_amount": 1000000, "buy_amount": 2000000, "tower_bps": bps, "funding_fee": fee, "owner_fee_cap": ownerCap, "fill_mode": authorization.Mode, "min_fill": authorization.Min, "max_fill": authorization.Max, "fee_budgets": authorization.FeeBudgets, "bounty_budgets": authorization.BountyBudgets}).(protocol.Offer)
+	offerEvent := h.engines["maker"].s.Offers[o.ID]
 	// Power loss before the first relay publish must preserve the signed offer.
 	h.offline("maker")
 	h.online("maker")
-	h.tick("maker")
+	partialWait(h, "signed offer stored by relay", func() bool {
+		delivery := h.engines["maker"].s.Outbox[offerEvent.ID.Hex()]
+		return delivery != nil && delivery.Event.ID == offerEvent.ID && delivery.Published
+	}, func() { h.tick("maker") })
 	h.offline("maker")
-	h.tick("taker")
+	partialWaitMailbox(h, "restarted maker's exact signed offer", func() bool {
+		return h.engines["taker"].s.Book[o.Maker+":"+o.ID].ID == offerEvent.ID
+	}, func() { h.tick("taker") })
 	result := h.command("taker", "swap.take", map[string]any{"maker": o.Maker, "id": o.ID, "quantity": o.SellAmount, "parent_revision": o.Revision, "tower_bps": bps, "funding_fee": fee, "owner_fee_cap": ownerCap}).(map[string]string)
 	id := result["id"]
+	capture := func(name, kind string) map[string]partialPublication {
+		expected, err := partialPublications(h.engines[name], []string{id}, kind)
+		if err != nil {
+			h.t.Fatal(err)
+		}
+		return expected
+	}
+	publish := func(name string, expected map[string]partialPublication) {
+		partialWait(h, "exact handoff message stored by relay", func() bool {
+			ready, err := partialPublicationsPublished(h.engines[name], expected)
+			if err != nil {
+				h.t.Fatal(err)
+			}
+			return ready
+		}, func() { h.tick(name) })
+	}
+	request := capture("taker", "request")
 	// The taker's request is likewise saved before any network transmission.
 	h.offline("taker")
 	h.online("taker")
-	h.tick("taker")
+	publish("taker", request)
 	h.offline("taker")
 	h.online("maker")
-	h.tick("maker")
+	partialWaitMailbox(h, "restarted maker accepts retained request", func() bool {
+		swap := h.engines["maker"].s.Swaps[id]
+		return swap != nil && swap.Terms != nil
+	}, func() { h.tick("maker") })
+	acceptance := capture("maker", "accepted")
+	publish("maker", acceptance)
 	h.offline("maker")
 	h.online("taker")
-	h.until("long funding", func() bool { return h.swap("taker", id).LongSent }, func() { h.tick("taker", "tower") })
+	partialWaitForPublications(h, "taker", acceptance, func() { h.tick("taker", "tower") })
+	partialWait(h, "long funding", func() bool { return h.swap("taker", id).LongSent }, func() { h.tick("taker", "tower") })
+	longFunding := capture("taker", "long-funded")
+	publish("taker", longFunding)
 	h.minePending()
 	h.offline("taker")
 	h.online("maker")
-	h.until("short funding", func() bool { return h.swap("maker", id).ShortSent }, func() { h.tick("maker", "tower") })
+	partialWaitForPublications(h, "maker", longFunding, func() { h.tick("maker", "tower") })
+	partialWait(h, "short funding", func() bool { return h.swap("maker", id).ShortSent }, func() { h.tick("maker", "tower") })
+	publish("maker", capture("maker", "short-funded"))
 	h.minePending()
 	return id
 }
