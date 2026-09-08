@@ -202,12 +202,13 @@ func TestRealEndpointFailoverSettlement(t *testing.T) {
 				fault.setDown(true)
 			}
 			h.online("taker")
-			tickUntilConnected(t, h.engines["taker"])
-			h.minePending()
-			tickUntilConnected(t, h.engines["maker"])
-			h.minePending()
-			tickUntilConnected(t, h.engines["taker"])
-			tickUntilConnected(t, h.engines["maker"])
+			partialWait(h, "both failover claims confirmed", func() bool {
+				return h.swap("maker", id).Stage == "completed" && h.swap("taker", id).Stage == "completed"
+			}, func() {
+				tickUntilConnected(t, h.engines["taker"])
+				tickUntilConnected(t, h.engines["maker"])
+				h.minePending()
+			})
 			maker = h.swap("maker", id)
 			if maker.Stage != "completed" || h.swap("taker", id).Stage != "completed" {
 				t.Fatal("failover settlement incomplete", maker.Stage, maker.Error, h.swap("taker", id).Stage)
