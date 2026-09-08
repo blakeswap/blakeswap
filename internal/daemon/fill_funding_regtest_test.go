@@ -492,9 +492,19 @@ func ancestryAssertRevealWindow(h *harness, s *Swap) {
 	}
 }
 
+// SelfClaim is the base authorization; fee selection may publish another exact
+// retained variant. An attempt alone is not node evidence: the caller still
+// requires the selected bytes from the actual node and verifies the full spend.
+func ancestrySelectedClaim(s *Swap) (*wire.MsgTx, error) {
+	if s.ClaimLastAttempt == 0 || s.ClaimVariant < 0 || s.ClaimVariant >= len(s.SelfClaims) {
+		return nil, errors.New("no selected owner claim publication attempt")
+	}
+	return contract.Parse(s.SelfClaims[s.ClaimVariant])
+}
+
 func ancestryAssertBroadcastClaim(h *harness, owner string, s *Swap) {
 	h.t.Helper()
-	tx, err := contract.Parse(s.SelfClaim)
+	tx, err := ancestrySelectedClaim(s)
 	if err != nil {
 		h.t.Fatal("independent actual claim missing", err)
 	}
@@ -503,7 +513,7 @@ func ancestryAssertBroadcastClaim(h *harness, owner string, s *Swap) {
 		c = s.Long // the maker rescues its incoming leg after witnessing the peer claim
 	}
 	actual, err := h.nodes[c.Chain].Transaction(h.ctx, tx.TxHash().String())
-	if err != nil || actual.TxID != tx.TxHash().String() || actual.Hex != s.SelfClaim {
+	if err != nil || actual.TxID != tx.TxHash().String() || actual.Hex != contract.Hex(tx) {
 		h.t.Fatal("independent D claim was not actually published", err)
 	}
 	funding := partialConfirmedTransaction(h, c.Chain, c.TxID)

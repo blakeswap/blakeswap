@@ -287,8 +287,10 @@ func TestOwnerLadderRequiresConsentAndPersistsBeforeEscalation(t *testing.T) {
 			}
 			s.SelfClaim = contract.Hex(claim)
 			broadcasts := 0
+			var lastBroadcast string
 			b.broadcast = func(raw string) (string, error) {
 				broadcasts++
+				lastBroadcast = raw
 				var saved State
 				if _, err := e.vault.Load(&saved); err != nil {
 					t.Fatal(err)
@@ -325,6 +327,10 @@ func TestOwnerLadderRequiresConsentAndPersistsBeforeEscalation(t *testing.T) {
 			}
 			if cap > 0 && s.ClaimVariant != 2 {
 				t.Fatal("new claim failed to reach its cap")
+			}
+			selected, err := ancestrySelectedClaim(s)
+			if err != nil || contract.Hex(selected) != lastBroadcast {
+				t.Fatal("ancestry fixture looked up a different claim than the owner selected", err)
 			}
 			for _, raw := range s.SelfClaims {
 				tx, _ := contract.Parse(raw)
