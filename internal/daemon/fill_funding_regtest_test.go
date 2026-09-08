@@ -77,7 +77,12 @@ func runRealFundingChangeAncestry(t *testing.T, sell chain.ID, role string) {
 	if len(dTx.TxOut) != 1 || len(h.swap(local, d.id).FundingParents) != 0 {
 		t.Fatal("unrelated D must consume its exact independent input without change or ancestry")
 	}
-	h.command(local, "regtest.faucet", map[string]any{"chain": paid, "amount": int64(100000000)})
+	// Fixture deposits use the private node; the trading wallet keeps its
+	// selected RPC or Electrum adapter throughout the ancestry scenario.
+	var deposit string
+	if err := h.nodes[paid].WithWallet("faucet").Call(h.ctx, "sendtoaddress", &deposit, h.engines[local].addresses[paid], chain.Coins(100000000)); err != nil {
+		t.Fatal("fund independent ancestry deposit", err)
+	}
 	h.mine(paid, 2)
 	h.tick(local)
 	a := ancestryFundTrade(h, local, "peer-a", sell, role, false)
