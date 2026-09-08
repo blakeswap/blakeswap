@@ -118,8 +118,10 @@ func TestRealPortableRestoreWitnessAndReorg(t *testing.T) {
 			archive := snapshotRecoveryArchive(t, h, "maker")
 			h.offline("maker")
 			h.online("taker")
-			h.tick("taker")
-			h.minePending()
+			partialWaitMailbox(h, "peer's confirmed first claim", func() bool {
+				taker := h.swap("taker", id)
+				return taker.SelfClaim != "" && taker.IncomingClaimSeen && taker.ShortConfirmations >= protocol.Confirmations
+			}, func() { h.tick("taker"); h.minePending() })
 			faults[incoming.Chain].setDown(true)
 			restoreRecoveryArchive(t, h, "maker", archive)
 			tickDegraded(t, h.engines["maker"])
@@ -203,14 +205,16 @@ func TestRealPortableRestorePreservesRefunds(t *testing.T) {
 			crashed := false
 			e := h.engines["taker"]
 			e.nodes[taker.Short.Chain] = &fundingCrashBackend{Backend: e.nodes[taker.Short.Chain], before: func(string) { crashed = true }}
-			func() {
+			// Keep the interceptor installed while the restarted mailbox catches
+			// up. No preliminary tick may publish this deliberately private claim.
+			partialWaitMailbox(h, "private claim crash boundary", func() bool { return crashed }, func() {
 				defer func() {
-					if r := recover(); r != "simulated funding crash" {
+					if r := recover(); r != nil && r != "simulated funding crash" {
 						t.Fatalf("unexpected private claim crash: %v", r)
 					}
 				}()
 				_ = e.Tick(h.ctx)
-			}()
+			})
 			taker = h.swap("taker", id)
 			if !crashed || taker.SelfClaim == "" || taker.SecretObserved {
 				t.Fatal("private claim crash boundary was not reached")
