@@ -830,6 +830,14 @@ func (e *Engine) signOffer(o protocol.Offer, at nostr.Timestamp) (nostr.Event, e
 }
 
 func (e *Engine) stageOffer(o protocol.Offer, event nostr.Event) {
+	e.stageOfferRecords(o, event)
+	e.ingestOffer(event)
+	e.queueEvent(event)
+}
+
+// Parent revisions validate public ordering privately before committing these
+// local records. Keep the shared record update free of archive reads.
+func (e *Engine) stageOfferRecords(o protocol.Offer, event nostr.Event) {
 	e.syncOrderRecords()
 	record, exists := e.s.OrderRecords[o.ID]
 	if !exists {
@@ -844,8 +852,6 @@ func (e *Engine) stageOffer(o protocol.Offer, event nostr.Event) {
 		}
 	}
 	e.s.Offers[o.ID] = event
-	e.ingestOffer(event)
-	e.queueEvent(event)
 }
 func (e *Engine) swapKey(id chain.ID, swapID string) (*btcec.PrivateKey, error) {
 	return e.keys.Spending(id, "swap/"+swapID)

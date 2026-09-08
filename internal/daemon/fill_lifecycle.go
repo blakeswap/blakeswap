@@ -29,11 +29,13 @@ func (e *Engine) withdrawParentAvailable(id string, now int64) error {
 	if err != nil {
 		return err
 	}
+	if event != nil {
+		if err := e.stageParentOffer(next, *event); err != nil {
+			return err
+		}
+	}
 	*p = next
 	delete(e.s.CoinReservations, "offer/"+id)
-	if event != nil {
-		e.stageOffer(parentPublicOffer(next), *event)
-	}
 	return nil
 }
 
@@ -130,6 +132,11 @@ func (e *Engine) retireUnfundedMaker(s *Swap, gateErr error) error {
 	if err != nil {
 		return err
 	}
+	if event != nil {
+		if err := e.stageParentOffer(next, *event); err != nil {
+			return err
+		}
+	}
 	*p, *child = next, value
 	s.Stage = "expired before maker funding"
 	for _, delivery := range e.s.Outbox {
@@ -138,9 +145,6 @@ func (e *Engine) retireUnfundedMaker(s *Swap, gateErr error) error {
 		}
 	}
 	delete(e.s.CoinReservations, "swap/"+s.ID)
-	if event != nil {
-		e.stageOffer(parentPublicOffer(next), *event)
-	}
 	e.reconcileReservations()
 	return e.save()
 }

@@ -180,6 +180,11 @@ func (e *Engine) acceptFillRequestAt(from string, m transport.Message, now int64
 	if err != nil {
 		return err
 	}
+	if event != nil {
+		if err := e.stageParentOffer(next, *event); err != nil {
+			return err
+		}
+	}
 	// All fallible admission/signing work is complete. One durable transaction
 	// owns the input transfer, monetary and quantity bins, terms and acceptance.
 	// A failed commit stops protocol execution; no publisher can observe success.
@@ -207,8 +212,5 @@ func (e *Engine) acceptFillRequestAt(from string, m transport.Message, now int64
 	e.s.CoinReservations["swap/"+request.ID] = reservation
 	e.s.FundingFees["swap/"+request.ID] = child.FundingPolicy
 	e.s.Outbox[delivery.MessageID] = delivery
-	if event != nil {
-		e.stageOffer(parentPublicOffer(next), *event)
-	}
 	return e.save()
 }
