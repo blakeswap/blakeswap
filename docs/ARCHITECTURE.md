@@ -53,7 +53,10 @@ Snapshots include the mnemonic, preimages, accepted immutable terms, raw signed 
 
 The desktop acquires exact owned credential bytes from its native Keychain broker.
 The helper migrates legacy password files only after item readback and verification
-of the unchanged master and existing network identities. Private migration records
+of the unchanged master, existing network identities and authenticated archive
+ownership checkpoints. This uses bounded active-state reads; cold history remains
+encrypted and is not assembled for credential verification. Backup captures own
+independent, exact credential bytes until their private providers close. Private migration records
 are separate from portable state. Initial OS unlock precedes profile opening;
 Keychain reads never display a prompt while a manager or engine lock is held.
 Explicit headless file mode retains its private password file. See
@@ -69,6 +72,8 @@ references never enter the durable wallet State or portable backups. Existing
 accepted receipts, raw signed retries, immutable swap terms and persisted bounded
 automation authorizations keep their ordinary settlement path when new consent is
 revoked; authentication never resets commitments or imported recovery holds.
+Exact signed-send and nonpending receipt lookups retain their read-only behavior
+after archival, using authenticated bounded identity lookups without reactivation.
 
 ## Chain boundary
 

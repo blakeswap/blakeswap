@@ -735,6 +735,16 @@ checks signed-send continuation after consent revocation; real funded claim/refu
 continuation requires the explicit two-chain scenario and is not implied by a
 skipped regtest suite.
 
+Native archive integration tests use non-trimmable synthetic credential bytes
+with 130 encrypted cold records. They exercise cloned and forced fallback
+captures, clearing of acquired and copied bytes, denied future reads,
+cancellation, and streamed restoration with a separate installation/provider.
+Migration rejects inconsistent authenticated ownership checkpoints before
+activation and preserves all encrypted key/value records and the password file.
+Cold signed-send and accepted-receipt controls require exact identities; unknown,
+changed, unsigned or pending records cannot authorize new work, and failed cold
+reads cannot promote old authority.
+
 The actual native-authorization API suite uses generated wallets and an injected
 credential provider. It revokes the private session and locks further credential
 acquisition after funding, then checks both claim directions and both-leg refund

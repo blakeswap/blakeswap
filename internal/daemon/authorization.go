@@ -80,7 +80,16 @@ func (e *Engine) authorizeCommand(ctx context.Context, req Request) error {
 	if req.Method == "wallet.send" {
 		var p SendRequest
 		if json.Unmarshal(req.Params, &p) == nil {
-			if s := e.s.Sends[p.ID]; s != nil && s.Raw != "" && s.Digest == protocol.Digest(p) {
+			s := e.s.Sends[p.ID]
+			if s == nil {
+				var archived WalletSend
+				if found, err := e.archivedValue("sends", p.ID, &archived); err != nil {
+					return err
+				} else if found {
+					s = &archived
+				}
+			}
+			if s != nil && s.Raw != "" && s.Digest == protocol.Digest(p) {
 				return nil
 			}
 		}
@@ -88,7 +97,16 @@ func (e *Engine) authorizeCommand(ctx context.Context, req Request) error {
 	if req.Method == "trade.confirm" {
 		var p ConfirmTradeRequest
 		if json.Unmarshal(req.Params, &p) == nil {
-			if r := e.s.TradeReceipts[p.RequestID]; r != nil && r.Result.State != "pending" && r.Digest == protocol.Digest(p) {
+			r := e.s.TradeReceipts[p.RequestID]
+			if r == nil {
+				var archived TradeReceipt
+				if found, err := e.archivedValue("trade_receipts", p.RequestID, &archived); err != nil {
+					return err
+				} else if found {
+					r = &archived
+				}
+			}
+			if r != nil && r.Result.State != "pending" && r.Digest == protocol.Digest(p) {
 				return nil
 			}
 		}

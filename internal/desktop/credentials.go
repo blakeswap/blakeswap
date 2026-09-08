@@ -161,7 +161,20 @@ func verifyProfile(root string, password []byte) (string, error) {
 			return "", errors.New("cannot verify an existing network vault")
 		}
 		var state daemon.State
-		_, err = vault.Load(&state)
+		err = func() error {
+			view, err := vault.Freeze()
+			if err != nil {
+				return err
+			}
+			defer view.Close()
+			stats, _, err := view.LoadState(&state)
+			if err != nil {
+				return err
+			}
+			// Authenticate active identity and its cold-record ownership in one
+			// bounded view before credential activation or plaintext removal.
+			return state.ValidateArchiveCheckpoint(stats)
+		}()
 		closeErr := vault.Close()
 		if err != nil {
 			return "", err

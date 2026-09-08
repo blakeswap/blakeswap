@@ -1,6 +1,7 @@
 package desktop
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
