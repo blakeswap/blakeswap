@@ -17,7 +17,6 @@ import (
 	"github.com/btcsuite/btcd/wire"
 	"os"
 	"path/filepath"
-	"sort"
 	"strconv"
 	"sync"
 	"sync/atomic"
@@ -28,6 +27,7 @@ var errEngineClosed = errors.New("engine closed")
 
 type Engine struct {
 	fundingAncestryProofs    map[string]fundingAncestryProof
+	fundingAncestryLastTurn  map[chain.ID]string
 	observedSpendPriority    *observedSpendTurn
 	observedSpendNext        *observedSpendTurn
 	observedSpendBefore      *observedSpendTurn
@@ -543,12 +543,7 @@ func (e *Engine) tickProtocol(ctx context.Context) error {
 	}
 	var err error
 	if e.Config.Mode == "trader" {
-		ids := make([]string, 0, len(e.s.Swaps))
-		for id := range e.s.Swaps {
-			ids = append(ids, id)
-		}
-		sort.Strings(ids)
-		for _, id := range ids {
+		for _, id := range e.swapTickIDs() {
 			swap := e.s.Swaps[id]
 			if swap.Stage != "rejected" {
 				swap.Error = ""

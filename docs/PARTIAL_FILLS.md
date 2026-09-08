@@ -186,9 +186,11 @@ and index-to-core binding. It never materializes the lifetime ancestor graph.
 A dependent child requires its own current confirmed funding inclusion before
 first revelation, refund, positive settlement or deep archival. That inclusion
 proves its transaction ancestors under the selected backend's consensus view.
-Each child has an independent bounded check of source generation, captured tip,
-transaction identity and canonical block; an earlier failed child cannot consume
-another child's proof allowance. Unknown evidence persists an explicit monitoring
+Each child has a bounded check of source generation, captured tip, transaction
+identity and canonical block. Dependent children rotate through their existing
+execution slots separately on each funding chain. A slow unknown child consumes
+its turn without increasing the shared per-chain read budget or repeatedly
+starving the same later children; unrelated children keep their existing slots. Unknown evidence persists an explicit monitoring
 hold. A positive contradiction of the child's saved funding inclusion returns a
 maker's Filled/Released allocation to Committed, preserving consumed charges and
 never returning inventory to Available. Fresh positive evidence can clear the
