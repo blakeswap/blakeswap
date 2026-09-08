@@ -99,6 +99,31 @@ func (e *Engine) activateArchived(kind, id string) (bool, error) {
 	if err != nil || !found {
 		return found, err
 	}
+	// An obligation must never become executable before its imported-origin
+	// restriction and exact fee policy. These bounded companions share the same
+	// pending transaction, regardless of whether a reorg or a mailbox read caused
+	// reactivation. A read/decode failure leaves the core record cold.
+	companions := []storage.ArchiveKey{}
+	switch kind {
+	case "swaps":
+		companions = append(companions, storage.ArchiveKey{Kind: "recovery_swaps", ID: id}, storage.ArchiveKey{Kind: "funding_fees", ID: "swap/" + id})
+		var swap Swap
+		if err := json.Unmarshal(record.Data, &swap); err != nil {
+			return false, err
+		}
+		if swap.Role == "maker" && swap.Terms != nil {
+			companions = append(companions, storage.ArchiveKey{Kind: "funding_fees", ID: "offer/" + swap.Terms.Offer().ID})
+		}
+	case "sends":
+		companions = append(companions, storage.ArchiveKey{Kind: "recovery_sends", ID: id})
+	case "tower_jobs":
+		companions = append(companions, storage.ArchiveKey{Kind: "recovery_tower_jobs", ID: id})
+	}
+	for _, key := range companions {
+		if _, err := e.activateArchived(key.Kind, key.ID); err != nil {
+			return false, err
+		}
+	}
 	origin, err := archiveRecordDigest(record)
 	if err != nil {
 		return false, err
