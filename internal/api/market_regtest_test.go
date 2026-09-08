@@ -45,7 +45,7 @@ func TestRealManagedOrderThroughTypedAPI(t *testing.T) {
 			}
 			// Keep the taker's authenticated old event deliberately stale while the
 			// maker durably cancels/replaces its own source and transfers reservation.
-			replacement := h.quote("maker", &pb.TradeQuoteRequest{Kind: "maker", FillMode: "whole", MinFill: 1_500_000, MaxFill: 1_500_000, FeeBudgets: map[string]int64{string(sell): 26500, string(sell.Other()): 20000}, BountyBudgets: map[string]int64{"btc": 0, "blake": 0}, Sell: string(sell), SellAmount: 1_500_000, BuyAmount: 2_500_000, FundingFee: 6500, OwnerFeeCap: 20000, Expires: expiry + 60, OrderAction: "replace", SourceOfferId: oldID, SourceEventId: old.EventId})
+			replacement := h.quote("maker", &pb.TradeQuoteRequest{Kind: "maker", FillMode: "whole", MinFill: 1_000_000, MaxFill: 1_000_000, FeeBudgets: map[string]int64{string(sell): 26500, string(sell.Other()): 20000}, BountyBudgets: map[string]int64{"btc": 0, "blake": 0}, Sell: string(sell), SellAmount: 1_000_000, BuyAmount: 2_500_000, FundingFee: 6500, OwnerFeeCap: 20000, Expires: expiry + 60, OrderAction: "replace", SourceOfferId: oldID, SourceEventId: old.EventId})
 			newID, request := h.confirm("maker", replacement)
 			orders := market("maker")
 			cancelled := find(orders, oldID)
@@ -77,8 +77,8 @@ func TestRealManagedOrderThroughTypedAPI(t *testing.T) {
 			if created.Publication != "relay_acknowledged" || find(market("maker"), oldID).Publication != "relay_acknowledged" {
 				t.Fatal("both replacement publications not acknowledged")
 			}
-			requireWholeReviewedParent(t, created.Offer, h.status("maker").Pubkey, 1_500_000, 2_500_000)
-			tq := h.quote("taker", &pb.TradeQuoteRequest{Kind: "taker", Maker: created.Offer.Maker, Id: newID, Sell: string(sell), Quantity: 1_500_000, ParentRevision: created.Offer.Revision, FundingFee: 6500, OwnerFeeCap: 20000})
+			requireWholeReviewedParent(t, created.Offer, h.status("maker").Pubkey, 1_000_000, 2_500_000)
+			tq := h.quote("taker", &pb.TradeQuoteRequest{Kind: "taker", Maker: created.Offer.Maker, Id: newID, Sell: string(sell), Quantity: 1_000_000, ParentRevision: created.Offer.Revision, FundingFee: 6500, OwnerFeeCap: 20000})
 			swapID, _ := h.confirm("taker", tq)
 			complete := func() bool {
 				for _, name := range []string{"maker", "taker"} {
@@ -106,7 +106,7 @@ func TestRealManagedOrderThroughTypedAPI(t *testing.T) {
 					if swap.Id != swapID {
 						continue
 					}
-					if swap.GetShort().GetChain() != string(sell) || swap.GetShort().GetAmount() != 1_500_000 || swap.GetLong().GetChain() != string(sell.Other()) || swap.GetLong().GetAmount() != 2_500_000 || swap.FundingFee != 6500 || swap.OwnerFeeCap != 20000 || swap.TowerPaid != 0 {
+					if swap.GetShort().GetChain() != string(sell) || swap.GetShort().GetAmount() != 1_000_000 || swap.GetLong().GetChain() != string(sell.Other()) || swap.GetLong().GetAmount() != 2_500_000 || swap.FundingFee != 6500 || swap.OwnerFeeCap != 20000 || swap.TowerPaid != 0 {
 						t.Fatal("settlement did not preserve exact reviewed replacement terms", name, swap)
 					}
 					funded := swap.Short
