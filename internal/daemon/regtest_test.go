@@ -249,14 +249,15 @@ func (h *harness) fundBoth(sell chain.ID, bps int64) string {
 }
 func (h *harness) fundBothFees(sell chain.ID, bps, fee, ownerCap int64) string {
 	h.t.Helper()
-	o := h.command("maker", "offer.create", map[string]any{"sell": sell, "sell_amount": 1000000, "buy_amount": 2000000, "tower_bps": bps, "funding_fee": fee, "owner_fee_cap": ownerCap}).(protocol.Offer)
+	authorization := automationFillAuthorization(sell, 1000000, 2000000, fee, bps)
+	o := h.command("maker", "offer.create", map[string]any{"sell": sell, "sell_amount": 1000000, "buy_amount": 2000000, "tower_bps": bps, "funding_fee": fee, "owner_fee_cap": ownerCap, "fill_mode": authorization.Mode, "min_fill": authorization.Min, "max_fill": authorization.Max, "fee_budgets": authorization.FeeBudgets, "bounty_budgets": authorization.BountyBudgets}).(protocol.Offer)
 	// Power loss before the first relay publish must preserve the signed offer.
 	h.offline("maker")
 	h.online("maker")
 	h.tick("maker")
 	h.offline("maker")
 	h.tick("taker")
-	result := h.command("taker", "swap.take", map[string]any{"maker": o.Maker, "id": o.ID, "tower_bps": bps, "funding_fee": fee, "owner_fee_cap": ownerCap}).(map[string]string)
+	result := h.command("taker", "swap.take", map[string]any{"maker": o.Maker, "id": o.ID, "quantity": o.SellAmount, "parent_revision": o.Revision, "tower_bps": bps, "funding_fee": fee, "owner_fee_cap": ownerCap}).(map[string]string)
 	id := result["id"]
 	// The taker's request is likewise saved before any network transmission.
 	h.offline("taker")

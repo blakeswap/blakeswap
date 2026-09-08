@@ -861,3 +861,44 @@ canonical ID and aligned amount order as replay. A deterministic control retains
 unchanged history and backup coverage on replay, while a distinct new variant
 still records an outcome and changes coverage. No fingerprint fields or genuine
 historical outcomes are excluded to make the archival comparison pass.
+
+## Actual partial-fill matrix
+
+`TestRealPartialFillConcurrentMixedOutcomes` is an opt-in private-node matrix.
+Run it serially once with RPC and once with `BLAKESWAP_TEST_ELECTRUM=1`, using
+the same exclusively leased BTC/Blake regtest fixture and its existing cookie
+paths. It must skip before any wallet, relay or node setup when
+`BLAKESWAP_REGTEST` is absent. Compilation and that ordinary skip are not actual
+matrix evidence.
+
+Each adapter run contains both maker sell directions and towers at zero and
+50 basis points. A parent authorizes 1,800,000 units for 2,340,001 units, with
+400,000–600,000 fill bounds and three separate confirmed maker inputs. Two
+different takers review 600,000-unit requests against the same signed revision;
+their saved encrypted events race through authenticated ingress under the
+worker's normal mutex. Dispatch is held until reopening verifies the exact
+durable allocation and acceptance. The rejected taker must review the next
+normally published revision before becoming the second accepted child. Relay
+delivery subsequently exercises the same saved events and acknowledgments.
+
+The matrix cancels only the remaining 600,000 available units, funds both
+accepted children, completes one and refunds the other while its taker stays
+offline during the reveal window. It checks actual confirmed transaction
+identities, disjoint assigned inputs, exact 6,500-unit funding fees, each
+780,001-unit rounded buy principal, owner and tower payout scripts/fees,
+permanent monetary charges, sibling secret isolation and the five quantity
+bins. A claim-block reorg precedes the sibling's refund, so the unaffected
+sibling's funding really is outside the invalidated suffix. Exact-block
+restoration is registered before invalidation and verified against the canonical
+height. Restarted confirmation retries and one-row frozen child-history pages
+retain the same identities and amounts. This matrix does not stand in for the
+separate funding-descendant, archive/import, native or whole-PR gates.
+
+The existing `fundBothFees` helper now supplies explicit whole-order bounds and
+private per-asset limits, then takes the original quantity and parent revision.
+Its original directions, protection settings, funding fee and owner cap are
+preserved. Callers are in `regtest_test.go`, `fees_regtest_test.go`,
+`failover_regtest_test.go`, `funding_recovery_test.go`, `funds_test.go` and
+`recovery_regtest_test.go`; their actual assertions remain separate required
+regressions. Direct create/take callers elsewhere also require current fields;
+there is no legacy execution fallback.
