@@ -3,6 +3,7 @@ package daemon
 import (
 	"encoding/json"
 	"fiatjaf.com/nostr"
+	"github.com/blakeswap/blakeswap/internal/chain"
 	"github.com/blakeswap/blakeswap/internal/protocol"
 	"github.com/blakeswap/blakeswap/internal/transport"
 	"testing"
@@ -12,15 +13,15 @@ func TestRealCancellationReservationAndReceiptBinding(t *testing.T) {
 	for _, scenario := range []string{"cancel-before-request", "two-takers-one-reservation"} {
 		t.Run(scenario, func(t *testing.T) {
 			h := newHarness(t, 50)
-			o := h.command("maker", "offer.create", map[string]any{"sell": "btc", "sell_amount": 1000000, "buy_amount": 2000000, "tower_bps": 50}).(protocol.Offer)
+			o := h.command("maker", "offer.create", walletWholeParams(chain.BTC, 1000000, 2000000, 2000, 0, 50)).(protocol.Offer)
 			h.tick("maker", "taker")
 			if scenario == "cancel-before-request" {
 				h.command("maker", "offer.cancel", map[string]string{"id": o.ID})
 			}
-			first := h.command("taker", "swap.take", map[string]any{"maker": o.Maker, "id": o.ID, "tower_bps": 50}).(map[string]string)["id"]
+			first := h.command("taker", "swap.take", map[string]any{"maker": o.Maker, "id": o.ID, "quantity": o.SellAmount, "parent_revision": o.Revision, "tower_bps": 50}).(map[string]string)["id"]
 
 			if scenario == "two-takers-one-reservation" {
-				raw, _ := json.Marshal(map[string]string{"maker": o.Maker, "id": o.ID})
+				raw, _ := json.Marshal(map[string]any{"maker": o.Maker, "id": o.ID, "quantity": o.SellAmount, "parent_revision": o.Revision})
 				if _, err := h.engines["taker"].Command(h.ctx, Request{Method: "swap.take", Params: raw}); err == nil {
 					t.Fatal("duplicate local reservation request accepted")
 				}
@@ -45,7 +46,7 @@ func TestRealCancellationReservationAndReceiptBinding(t *testing.T) {
 			job := winner.Jobs[0]
 			receipt := protocol.Receipt{JobID: job.ID, Digest: protocol.Digest(job)}
 			raw, _ := json.Marshal(receipt)
-			message := transport.Message{Version: 1, ID: transport.RandomID(), Type: "tower-receipt", SwapID: winner.ID, Body: raw}
+			message := transport.Message{Version: protocol.Version, ID: transport.RandomID(), Type: "tower-receipt", SwapID: winner.ID, Body: raw}
 			if err := h.engines["taker"].handle(nostr.Generate().Public().Hex(), message); err == nil {
 				t.Fatal("receipt accepted from wrong tower")
 			}

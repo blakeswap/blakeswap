@@ -5,6 +5,8 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
+	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -38,9 +40,9 @@ func TestRealFundingPublicationSurvivesCrash(t *testing.T) {
 		for _, accepted := range []bool{false, true} {
 			t.Run(fmt.Sprintf("%s/accepted=%v", role, accepted), func(t *testing.T) {
 				h := newHarness(t, 0)
-				offer := h.command("maker", "offer.create", map[string]any{"sell": chain.BTC, "sell_amount": 1000000, "buy_amount": 2000000, "tower_bps": 0}).(protocol.Offer)
+				offer := h.command("maker", "offer.create", walletWholeParams(chain.BTC, 1000000, 2000000, 2000, 0, 0)).(protocol.Offer)
 				h.tick("maker", "taker")
-				id := h.command("taker", "swap.take", map[string]string{"maker": offer.Maker, "id": offer.ID}).(map[string]string)["id"]
+				id := h.command("taker", "swap.take", map[string]any{"maker": offer.Maker, "id": offer.ID, "quantity": offer.SellAmount, "parent_revision": offer.Revision}).(map[string]string)["id"]
 				h.tick("taker", "maker")
 				if role == "maker" {
 					h.tick("taker")
@@ -130,38 +132,151 @@ func TestRealFundingPublicationSurvivesCrash(t *testing.T) {
 	}
 }
 
-func TestRealLegacyFundingSnapshotRecoversAfterDeadline(t *testing.T) {
+// Capture the actual durable signing checkpoint before publication is authorized.
+// The backup is independent: later publication must never rewind the live engine.
+func capturePreparedFundingSnapshot(t *testing.T, e *Engine, s *Swap, path string) {
+	t.Helper()
+	_, raw, sent := localFunding(s)
+	if raw == "" || sent || len(s.SelfRefunds) != len(protocol.RescueFees) {
+		t.Fatal("snapshot is not a complete prepared-but-unpublished checkpoint")
+	}
+	kind := "long-funded"
+	if s.Role == "maker" {
+		kind = "short-funded"
+	}
+	for _, d := range e.s.Outbox {
+		if d.Type == kind {
+			t.Fatal("snapshot already contains its funding publication")
+		}
+	}
+	var durable State
+	if _, err := e.vault.Load(&durable); err != nil {
+		t.Fatal(err)
+	}
+	saved := durable.Swaps[s.ID]
+	if saved == nil || protocol.Digest(saved) != protocol.Digest(s) {
+		t.Fatal("prepared funding is not the exact durable signing checkpoint")
+	}
+	if err := e.vault.Backup(path); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestRealPreparedFundingSnapshotRecoversAfterDeadline(t *testing.T) {
 	for _, role := range []string{"taker", "maker"} {
 		t.Run(role, func(t *testing.T) {
 			h := newHarness(t, 0)
-			id := h.fundBoth(chain.BTC, 0)
-			h.online(role)
-			s := h.swap(role, id)
-			own := s.Long
-			kind := "long-funded"
-			if role == "maker" {
-				own = s.Short
-				kind = "short-funded"
-				s.ShortSent = false
-			} else {
-				s.LongSent = false
-			}
-			for key, d := range h.engines[role].s.Outbox {
-				if d.Type == kind {
-					delete(h.engines[role].s.Outbox, key)
+			o := h.command("maker", "offer.create", walletWholeParams(chain.BTC, 1000000, 2000000, 2000, 0, 0)).(protocol.Offer)
+			h.tick("maker", "taker")
+			id := h.command("taker", "swap.take", map[string]any{"maker": o.Maker, "id": o.ID, "quantity": o.SellAmount, "parent_revision": o.Revision}).(map[string]string)["id"]
+			h.tick("taker", "maker")
+			// Deliver the exact saved acceptance without ticking the taker's
+			// funding loop. The relay later delivers the same idempotent event.
+			for _, d := range h.engines["maker"].s.Outbox {
+				if d.Type == "accepted" {
+					if err := h.engines["taker"].receive(d.Event); err != nil {
+						t.Fatal(err)
+					}
 				}
 			}
-			if err := h.engines[role].save(); err != nil {
+			if h.swap("taker", id).Terms == nil {
+				t.Fatal("missing durable accepted terms")
+			}
+			if role == "maker" {
+				h.until("long funding", func() bool { return h.swap("taker", id).LongSent }, func() { h.tick("taker") })
+				h.minePending()
+				for _, d := range h.engines["taker"].s.Outbox {
+					if d.Type == "long-funded" {
+						if err := h.engines["maker"].receive(d.Event); err != nil {
+							t.Fatal(err)
+						}
+					}
+				}
+			}
+			e, s := h.engines[role], h.swap(role, id)
+			own, phase := s.Long, "fund-long"
+			if role == "maker" {
+				own, phase = s.Short, "fund-short"
+			}
+			if err := e.refresh(h.ctx); err != nil {
 				t.Fatal(err)
 			}
+			if err := e.gate(s.Terms, phase); err != nil {
+				t.Fatal(err)
+			}
+			if role == "maker" {
+				if ready, err := e.funded(h.ctx, s.Long); err != nil || !ready {
+					t.Fatal("maker preparation requires actual confirmed incoming funding", ready, err)
+				}
+			}
+			// Execute the same signing/commit/prepare operations as advanceSwap,
+			// stopping at their real save boundary before recordFunding.
+			tx, err := e.fundReserved(h.ctx, own, "swap/"+id)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if role == "maker" {
+				if err := e.commitMakerFill(s, tx); err != nil {
+					t.Fatal(err)
+				}
+				s.ShortFunding, s.Short.TxID = contract.Hex(tx), tx.TxHash().String()
+				own = s.Short
+			} else {
+				s.LongFunding, s.Long.TxID = contract.Hex(tx), tx.TxHash().String()
+				own = s.Long
+			}
+			if err := e.prepare(s, own); err != nil {
+				t.Fatal(err)
+			}
+			restored := h.configs[role]
+			restored.DataDir = t.TempDir()
+			restored.Socket = filepath.Join(restored.DataDir, "daemon.sock")
+			backupPath := filepath.Join(restored.DataDir, "state.db")
+			capturePreparedFundingSnapshot(t, e, s, backupPath)
+			captured, err := os.ReadFile(backupPath)
+			if err != nil {
+				t.Fatal(err)
+			}
+			capturedHash := sha256.Sum256(captured)
+			clear(captured)
+			password, err := os.ReadFile(restored.PasswordFile)
+			if err != nil {
+				t.Fatal(err)
+			}
+			restored.PasswordFile = filepath.Join(restored.DataDir, "pass")
+			err = os.WriteFile(restored.PasswordFile, password, 0600)
+			clear(password)
+			if err != nil {
+				t.Fatal(err)
+			}
+			raw := contract.Hex(tx)
+			// Both real transactions publish through the ordinary loop. The
+			// old captured database remains byte-for-byte untouched throughout.
+			h.until("both funding publications", func() bool { return h.swap("taker", id).LongSent && h.swap("maker", id).ShortSent }, func() {
+				h.tick("taker")
+				h.minePending()
+				h.tick("maker")
+			})
+			h.minePending()
 			h.offline("maker")
 			h.offline("taker")
+			captured, err = os.ReadFile(backupPath)
+			if err != nil || sha256.Sum256(captured) != capturedHash {
+				t.Fatal("later publication changed the independent prepared checkpoint", err)
+			}
+			clear(captured)
+			h.configs[role] = restored
 			h.mine(own.Chain, own.RefundHeight+1-h.height(own.Chain))
 			h.online(role)
 			h.tick(role)
 			recovered := h.swap(role, id)
-			if recovered.Stage != "refunding" || (role == "maker" && !recovered.ShortSent) || (role == "taker" && !recovered.LongSent) {
-				t.Fatal("legacy funding recovery failed", recovered.Stage, recovered.Error)
+			_, recoveredRaw, sent := localFunding(recovered)
+			if recovered.Stage != "refunding" || !sent || recoveredRaw != raw {
+				t.Fatal("prepared funding recovery failed", recovered.Stage, recovered.Error)
+			}
+			kind := "long-funded"
+			if role == "maker" {
+				kind = "short-funded"
 			}
 			found := false
 			for _, d := range h.engines[role].s.Outbox {
@@ -175,7 +290,7 @@ func TestRealLegacyFundingSnapshotRecoversAfterDeadline(t *testing.T) {
 			h.minePending()
 			h.tick(role)
 			if h.swap(role, id).Stage != "refunded" {
-				t.Fatal("legacy refund did not confirm", h.swap(role, id).Error)
+				t.Fatal("prepared snapshot refund did not confirm", h.swap(role, id).Error)
 			}
 		})
 	}

@@ -3,6 +3,7 @@ package daemon
 import (
 	"encoding/json"
 	"fiatjaf.com/nostr"
+	"github.com/blakeswap/blakeswap/internal/chain"
 	"github.com/blakeswap/blakeswap/internal/protocol"
 	"github.com/blakeswap/blakeswap/internal/transport"
 	"strings"
@@ -11,9 +12,9 @@ import (
 
 func TestRealMailboxIdempotencyAndAcknowledgmentAuthority(t *testing.T) {
 	h := newHarness(t, 50)
-	o := h.command("maker", "offer.create", map[string]any{"sell": "btc", "sell_amount": 1000000, "buy_amount": 2000000, "tower_bps": 50}).(protocol.Offer)
+	o := h.command("maker", "offer.create", walletWholeParams(chain.BTC, 1000000, 2000000, 2000, 0, 50)).(protocol.Offer)
 	h.tick("maker", "taker")
-	id := h.command("taker", "swap.take", map[string]string{"maker": o.Maker, "id": o.ID}).(map[string]string)["id"]
+	id := h.command("taker", "swap.take", map[string]any{"maker": o.Maker, "id": o.ID, "quantity": o.SellAmount, "parent_revision": o.Revision}).(map[string]string)["id"]
 	taker, maker := h.engines["taker"], h.engines["maker"]
 	var pending *Delivery
 	for _, d := range taker.s.Outbox {
@@ -52,7 +53,7 @@ func TestRealMailboxIdempotencyAndAcknowledgmentAuthority(t *testing.T) {
 		t.Fatal("same message ID changed its signed contents")
 	}
 	ackBody, _ := json.Marshal(map[string]string{"id": pending.MessageID, "digest": pending.Digest})
-	ack := transport.Message{Version: 1, ID: transport.RandomID(), Type: "ack", SwapID: id, Body: ackBody}
+	ack := transport.Message{Version: protocol.Version, ID: transport.RandomID(), Type: "ack", SwapID: id, Body: ackBody}
 	forged, err := transport.Wrap(nostr.Generate(), taker.identity.Public(), ack)
 	if err != nil {
 		t.Fatal(err)

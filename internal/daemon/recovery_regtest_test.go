@@ -51,7 +51,7 @@ func snapshotRecoveryArchive(t *testing.T, h *harness, name string) string {
 	identity := sha256.Sum256(key.PubKey().SerializeCompressed())
 	entry := recoveryArchiveWallet{ID: name, Name: name, Identity: hex.EncodeToString(identity[:]), Mnemonic: state.Mnemonic, Networks: map[chain.Network]*State{}}
 	for _, network := range []chain.Network{chain.Regtest, chain.Testnet, chain.Mainnet} {
-		entry.Networks[network] = &State{Version: 1, Network: network, Mnemonic: state.Mnemonic}
+		entry.Networks[network] = &State{Version: StateVersion, Network: network, Mnemonic: state.Mnemonic}
 	}
 	entry.Networks[chain.Regtest] = &state
 	archive := recoveryArchive{FormatVersion: 1, CreatedAt: time.Now().Unix(), Wallets: []recoveryArchiveWallet{entry}}
@@ -262,9 +262,9 @@ func TestRealPortableRestoreBeforeFundingPublication(t *testing.T) {
 	for _, role := range []string{"maker", "taker"} {
 		t.Run(role, func(t *testing.T) {
 			h := newHarness(t, 0)
-			offer := h.command("maker", "offer.create", map[string]any{"sell": chain.BTC, "sell_amount": 1000000, "buy_amount": 2000000, "tower_bps": 0}).(protocol.Offer)
+			offer := h.command("maker", "offer.create", walletWholeParams(chain.BTC, 1000000, 2000000, 2000, 0, 0)).(protocol.Offer)
 			h.tick("maker", "taker")
-			id := h.command("taker", "swap.take", map[string]string{"maker": offer.Maker, "id": offer.ID}).(map[string]string)["id"]
+			id := h.command("taker", "swap.take", map[string]any{"maker": offer.Maker, "id": offer.ID, "quantity": offer.SellAmount, "parent_revision": offer.Revision}).(map[string]string)["id"]
 			h.tick("taker", "maker")
 			if role == "maker" {
 				h.tick("taker")
