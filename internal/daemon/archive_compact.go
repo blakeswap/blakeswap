@@ -201,11 +201,22 @@ func (e *Engine) compactArchive(ctx context.Context, swaps, towers map[chain.ID]
 			continue
 		}
 		var chains []chain.ID
-		if !recoverySwapInactive(swap) {
-			if !settled(swaps, swap.Long) || !settled(swaps, swap.Short) {
-				continue
+		if !e.recoverySwapInactive(swap) {
+			if e.recoverySwapOwnInactive(swap) {
+				incoming := swap.Short
+				if swap.Role == "maker" {
+					incoming = swap.Long
+				}
+				if !settled(swaps, incoming) || !e.recoverySwapResolved(swap, swaps) {
+					continue
+				}
+				chains = []chain.ID{incoming.Chain}
+			} else {
+				if !settled(swaps, swap.Long) || !settled(swaps, swap.Short) {
+					continue
+				}
+				chains = []chain.ID{chain.BTC, chain.Blake}
 			}
-			chains = []chain.ID{chain.BTC, chain.Blake}
 		}
 		if err := e.retainOrderSettlement(swap); err != nil {
 			return err
@@ -362,7 +373,7 @@ func (e *Engine) reactivateArchive() error {
 			var obligation string
 			switch record.Kind {
 			case "swaps":
-				if !recoverySwapInactive(e.s.Swaps[record.ID]) {
+				if !e.recoverySwapInactive(e.s.Swaps[record.ID]) {
 					obligation = "swap/" + record.ID
 				}
 			case "sends":

@@ -63,3 +63,89 @@ func TestParentFillRecoveryHoldsPublisherAndPreservesEveryQuantityAndCharge(t *t
 		}
 	}
 }
+
+// Called after actual acceptance, retirement, authenticated late funding and
+// a signature-verified peer refund in the lifecycle test, in both directions.
+func assertRetiredImportPeerRecovery(t *testing.T, e *Engine, s *Swap, f *FillRecord, obs chain.Observation, now int64) {
+	t.Helper()
+	if err := PrepareRecovery(&e.s, now+3, false); err != nil {
+		t.Fatal(err)
+	}
+	parentBefore := protocol.Digest(e.s.ParentOrders[f.ParentID])
+	all := map[chain.ID]map[string]chain.Observation{chain.BTC: {}, chain.Blake: {}}
+	point := chain.OutpointKey(s.Long.TxID, s.Long.Vout)
+	all[s.Long.Chain][point] = obs
+	if err := e.advanceSwap(context.Background(), s, all); err != nil || !e.recoverySwapResolved(s, all) {
+		t.Fatal("positive peer refund did not resolve the imported irreversible refusal", err)
+	}
+	originalSwap, originalChild := *s, *f
+	for _, problem := range []string{"outage", "unknown scan", "absent", "mempool", "wrong transaction", "bad signature", "own funding", "known secret", "refusal missing", "committed", "changed request"} {
+		*s, *f = originalSwap, originalChild
+		e.chainFresh[s.Long.Chain] = true
+		all[s.Long.Chain] = map[string]chain.Observation{point: obs}
+		switch problem {
+		case "outage":
+			e.chainFresh[s.Long.Chain] = false
+		case "unknown scan":
+			all[s.Long.Chain] = nil
+		case "absent":
+			all[s.Long.Chain] = map[string]chain.Observation{}
+		case "mempool":
+			copy := obs
+			copy.Confirmations = 0
+			all[s.Long.Chain][point] = copy
+		case "wrong transaction":
+			copy := obs
+			copy.TxID = f.ParentID
+			all[s.Long.Chain][point] = copy
+		case "bad signature":
+			copy := obs
+			copy.Tx = obs.Tx.Copy()
+			copy.Tx.TxIn[0].Witness[0][0] ^= 1
+			all[s.Long.Chain][point] = copy
+		case "own funding":
+			s.ShortFunding = "00"
+		case "known secret":
+			s.SecretObserved = true
+		case "refusal missing":
+			f.FundingDisabled = false
+		case "committed":
+			f.Allocation.EverCommitted = true
+		case "changed request":
+			s.Request.Quantity++
+		}
+		if e.recoverySwapResolved(s, all) {
+			t.Fatal("incomplete or contradictory retirement evidence resolved recovery", problem)
+		}
+	}
+	*s, *f = originalSwap, originalChild
+	e.chainFresh[s.Long.Chain] = true
+	obs.Confirmations = archiveSettlementDepth
+	all[s.Long.Chain] = map[string]chain.Observation{point: obs}
+	e.archiveCurrent = map[chain.ID]recoveryCheckpoint{}
+	for _, id := range []chain.ID{chain.BTC, chain.Blake} {
+		previous := e.nodes[id].(*receiveBackend)
+		e.nodes[id] = &activityArchiveBackend{receiveBackend: previous, generation: 1, hashes: map[uint32]string{400: "retained-current-tip"}}
+		e.archiveCurrent[id] = recoveryCheckpoint{Height: 400, Hash: "retained-current-tip", Generation: 1}
+		e.heights[id] = 400
+	}
+	if err := e.compactArchive(context.Background(), all, nil); err != nil {
+		t.Fatal(err)
+	}
+	if e.s.Swaps[s.ID] != nil || e.s.FillRecords[s.ID] != nil {
+		t.Fatal("deep positive peer refund required a nonexistent own output before archival")
+	}
+	if err := e.save(); err != nil {
+		t.Fatal(err)
+	}
+	if !e.recoverySwapResolved(s, all) || protocol.Digest(e.s.ParentOrders[f.ParentID]) != parentBefore {
+		t.Fatal("cold refusal evidence was lost or retirement reallocated quantity")
+	}
+	if _, err := e.activateArchived("swaps", s.ID); err != nil {
+		t.Fatal(err)
+	}
+	s, f = e.s.Swaps[s.ID], e.s.FillRecords[s.ID]
+	if !e.restoredSwap(s.ID) || !f.FundingDisabled || f.Allocation.currentQuantity() != 0 || s.ShortFunding != "" {
+		t.Fatal("reactivation lost imported origin or irreversible zero allocation")
+	}
+}

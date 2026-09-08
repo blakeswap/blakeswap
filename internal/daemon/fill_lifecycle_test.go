@@ -209,6 +209,7 @@ func TestParentFillRetiredMakerKeepsLatePeerObservationsAcrossReload(t *testing.
 			if err := e.advanceSwap(context.Background(), s, all); err != nil || s.Stage != "aborted; counterparty refunded" {
 				t.Fatal("fresh exact refund did not restore the peer projection")
 			}
+			assertRetiredImportPeerRecovery(t, e, s, f, obs, now)
 		})
 	}
 }

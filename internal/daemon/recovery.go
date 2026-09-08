@@ -71,7 +71,7 @@ func (e *Engine) advanceRestoredSwap(ctx context.Context, s *Swap, all map[chain
 	if err := e.rememberSwapWitnesses(s, all); err != nil {
 		return err
 	}
-	if recoverySwapInactive(s) {
+	if e.recoverySwapInactive(s) {
 		return nil
 	}
 	if s.Terms == nil {
@@ -82,7 +82,7 @@ func (e *Engine) advanceRestoredSwap(ctx context.Context, s *Swap, all map[chain
 	}
 	terminalStable := e.observeSwapSpends(s, all)
 	if e.recoverySwapResolved(s, all) {
-		if recoverySwapOwnInactive(s) {
+		if e.recoverySwapOwnInactive(s) {
 			return nil
 		} // Preserve the irreversible nonfunding decision.
 		long, _ := observation(all, s.Long)
@@ -108,7 +108,7 @@ func (e *Engine) advanceRestoredSwap(ctx context.Context, s *Swap, all map[chain
 		}
 		return nil
 	}
-	if recoverySwapOwnInactive(s) {
+	if e.recoverySwapOwnInactive(s) {
 		return errors.New("own funding is durably canceled; waiting for positive refund of the known peer contract")
 	}
 	if terminalStable {
@@ -148,7 +148,7 @@ func (e *Engine) advanceRestoredSwap(ctx context.Context, s *Swap, all map[chain
 }
 
 func (e *Engine) recoverySwapResolved(s *Swap, all map[chain.ID]map[string]chain.Observation) bool {
-	if recoverySwapInactive(s) {
+	if e.recoverySwapInactive(s) {
 		return true
 	}
 	if s == nil || s.Terms == nil || !e.fresh(chain.BTC) || !e.fresh(chain.Blake) || all[chain.BTC] == nil || all[chain.Blake] == nil {
@@ -162,13 +162,13 @@ func (e *Engine) recoverySwapResolved(s *Swap, all map[chain.ID]map[string]chain
 	}
 	refunded := func(c contract.HTLC) bool {
 		obs, ok := observation(all, c)
-		if c.TxID == "" || !ok || obs.Tx == nil || obs.Confirmations < e.Config.Network.Confirmations() {
+		if c.TxID == "" || !ok || obs.Tx == nil || obs.Tx.TxHash().String() != obs.TxID || obs.Confirmations < e.Config.Network.Confirmations() {
 			return false
 		}
 		_, claimed := contract.ExtractSecret(c, obs.Tx)
-		return !claimed
+		return !claimed && contract.VerifySignature(c, obs.Tx, true) == nil
 	}
-	if recoverySwapOwnInactive(s) {
+	if e.recoverySwapOwnInactive(s) {
 		return refunded(incoming)
 	}
 	if incoming.TxID == "" && incomingRaw == "" && !incomingSent {
