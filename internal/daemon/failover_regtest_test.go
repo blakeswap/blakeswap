@@ -433,14 +433,29 @@ func TestRealIsolatedTowerWitnessRecovery(t *testing.T) {
 			jobID := ""
 			for key, state := range h.engines["tower"].s.TowerJobs {
 				if state.Job.SwapID == id && state.Job.Kind == "claim" {
-					jobID = key
-					if state.Secret == "" {
-						t.Fatal("tower missed actual witness while target unavailable")
+					if jobID != "" || state.Job.Target != target || state.Job.Observe == nil || *state.Job.Observe != observe {
+						t.Fatal("fixture claim job does not uniquely match the observed contracts")
 					}
+					jobID = key
 				}
 			}
 			if jobID == "" {
 				t.Fatal("fixture has no authorized tower claim")
+			}
+			learned := h.engines["tower"].s.TowerJobs[jobID]
+			// Wallet readiness does not imply the bounded historical tower scan
+			// has reached this already-confirmed witness on its first slice.
+			witnessCtx, cancelWitness := context.WithTimeout(context.Background(), 30*time.Second)
+			defer cancelWitness()
+			for cycle := 0; learned.Secret == "" && cycle < 12 && witnessCtx.Err() == nil; cycle++ {
+				if learned.Broadcast != "" {
+					t.Fatal("tower published while target was unavailable")
+				}
+				time.Sleep(100 * time.Millisecond)
+				tickDegradedContext(t, h.engines["tower"], witnessCtx)
+			}
+			if learned.Secret == "" || learned.Broadcast != "" {
+				t.Fatal("tower failed bounded witness recovery while target unavailable", learned.Error)
 			}
 			h.offline("tower")
 			if err := h.nodes[observe.Chain].Call(h.ctx, "invalidateblock", nil, claimRecord.BlockHash); err != nil {
