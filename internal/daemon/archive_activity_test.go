@@ -5,7 +5,6 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"github.com/blakeswap/blakeswap/internal/chain"
-	"github.com/blakeswap/blakeswap/internal/protocol"
 	"github.com/blakeswap/blakeswap/internal/storage"
 	"testing"
 	"time"
@@ -144,14 +143,14 @@ func TestArchiveSharedReceiptRetainsActiveClassification(t *testing.T) {
 	}
 }
 func TestArchivedSwapDetailRetainsFundingFee(t *testing.T) {
-	e, _ := receiveEngine(t)
+	e, swap, _, _ := isolatedFixture(t, "taker")
 	e.Config.Name = "fixture"
-	e.s.Swaps = map[string]*Swap{"settled": {ID: "settled", Role: "taker", Stage: "completed"}}
-	e.s.FundingFees = map[string]FeeSelection{"swap/settled": {FundingFee: 3456}}
+	swap.Stage = "completed" // This tests retained detail, not chain settlement.
+	e.s.FundingFees["swap/"+swap.ID] = FeeSelection{FundingFee: 3456}
 	if err := e.save(); err != nil {
 		t.Fatal(err)
 	}
-	for _, pair := range [][2]string{{"swaps", "settled"}, {"funding_fees", "swap/settled"}} {
+	for _, pair := range [][2]string{{"swaps", swap.ID}, {"funding_fees", "swap/" + swap.ID}} {
 		if err := e.stageArchive(pair[0], pair[1]); err != nil {
 			t.Fatal(err)
 		}
@@ -159,7 +158,11 @@ func TestArchivedSwapDetailRetainsFundingFee(t *testing.T) {
 	if err := e.save(); err != nil {
 		t.Fatal(err)
 	}
-	detail, err := e.recordDetail(json.RawMessage(`{"kind":"swap","id":"settled","expected_wallet":"fixture","expected_network":"regtest"}`))
+	request, err := json.Marshal(map[string]string{"kind": "swap", "id": swap.ID, "expected_wallet": "fixture", "expected_network": "regtest"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	detail, err := e.recordDetail(request)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -168,29 +171,36 @@ func TestArchivedSwapDetailRetainsFundingFee(t *testing.T) {
 	}
 }
 
-func TestArchivedMakerDetailUsesOfferFeeAndRejectsUnreadableEvidence(t *testing.T) {
-	e, _ := receiveEngine(t)
+func TestArchivedMakerDetailUsesExactChildFeeAndRejectsUnreadableEvidence(t *testing.T) {
+	e, swap, _, _ := isolatedFixture(t, "maker")
 	e.Config.Name = "fixture"
-	terms := &protocol.Terms{}
-	terms.Request.OfferEvent.Content = `{"id":"source"}`
-	e.s.Swaps = map[string]*Swap{"settled": {ID: "settled", Role: "maker", Stage: "completed", Terms: terms}}
-	e.s.FundingFees = map[string]FeeSelection{"offer/source": {FundingFee: 4567}, "swap/settled": {FundingFee: 1234}}
-	for _, key := range []string{"offer/source", "swap/settled"} {
+	swap.Stage = "completed" // This tests retained detail, not chain settlement.
+	parentID := swap.Terms.Offer().ID
+	childOwner := "swap/" + swap.ID
+	parentOwner := "offer/" + parentID
+	// The authoritative child's selected fee stays 2,000 even if a different
+	// parent companion exists. Parent/default inference cannot price this fill.
+	e.s.FundingFees[parentOwner] = FeeSelection{FundingFee: 4567}
+	for _, key := range []string{parentOwner, childOwner} {
 		if err := e.stageArchive("funding_fees", key); err != nil {
 			t.Fatal(err)
 		}
 	}
-	request := json.RawMessage(`{"kind":"swap","id":"settled","expected_wallet":"fixture","expected_network":"regtest"}`)
+	request, err := json.Marshal(map[string]string{"kind": "swap", "id": swap.ID, "expected_wallet": "fixture", "expected_network": "regtest"})
+	if err != nil {
+		t.Fatal(err)
+	}
 	detail, err := e.recordDetail(request)
-	if err != nil || detail.Swap.FundingFee != 4567 {
-		t.Fatal("maker detail lost its offer fee", detail, err)
+	if err != nil || detail.Swap.FundingFee != 2000 {
+		t.Fatal("maker detail lost its exact child fee", err)
 	}
-	// A present but malformed record must never become an apparently accurate
-	// legacy fee. This exercises the projection's archive decoding error path.
-	key := archiveMoveKey("funding_fees", "offer/source")
-	e.archivePuts[key] = storage.ArchiveRecord{Kind: "funding_fees", ID: "offer/source", Data: json.RawMessage(`{"funding_fee":"invalid"}`)}
+	// A present but malformed exact child record must not fall back to the
+	// available parent fee. Keep this before committing the test-only source.
+	key := archiveMoveKey("funding_fees", childOwner)
+	original := e.archivePuts[key]
+	e.archivePuts[key] = storage.ArchiveRecord{Kind: "funding_fees", ID: childOwner, Data: json.RawMessage(`{"funding_fee":"invalid"}`)}
 	if _, err := e.recordDetail(request); err == nil {
-		t.Fatal("invalid archived fee became a legacy fee")
+		t.Fatal("invalid archived child fee became a parent/default fee")
 	}
-	delete(e.archivePuts, key)
+	e.archivePuts[key] = original
 }

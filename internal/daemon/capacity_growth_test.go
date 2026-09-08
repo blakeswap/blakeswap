@@ -73,6 +73,14 @@ func TestCapacitySwapContinuationEncoding(t *testing.T) {
 					t.Fatal(err)
 				}
 				c.TxID = tx.TxHash().String()
+				if c == &s.Short {
+					inputs := make([]CoinOutpoint, len(coins))
+					for i, coin := range coins {
+						inputs[i] = CoinOutpoint{TxID: coin.TxID, Vout: coin.Vout}
+					}
+					e.s.FillRecords[s.ID].Inputs = inputs
+					e.s.CoinReservations["swap/"+s.ID] = CoinReservation{Chain: c.Chain, Inputs: append([]CoinOutpoint{}, inputs...)}
+				}
 				if c == &s.Long {
 					s.LongFunding = contract.Hex(tx)
 				} else {
@@ -102,7 +110,7 @@ func TestCapacitySwapContinuationEncoding(t *testing.T) {
 			s.Receipts = map[string]protocol.Receipt{}
 			e.s.TowerJobs = map[string]*TowerJob{}
 			for _, job := range s.Jobs {
-				s.Receipts[job.ID] = protocol.Receipt{JobID: job.ID, Digest: protocol.Digest(job)}
+				s.Receipts[job.ID] = protocol.Receipt{Version: protocol.Version, JobID: job.ID, Digest: protocol.Digest(job)}
 				e.s.TowerJobs[job.ID] = &TowerJob{Job: job, Secret: s.Secret, Variants: transactionIDs(job.Templates)}
 			}
 			for _, message := range []struct {
