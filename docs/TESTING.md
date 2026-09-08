@@ -667,3 +667,23 @@ rearchive while the strategy stays disabled under RestoreHold. Its reorg variant
 starts with imported live anchors cleared, proves the retained history prefix
 contradiction, checks the new-work hold and bounded promotion, then verifies a new
 row binding, complete report and retention of the old confirmed outcome.
+
+
+`TestHistoryPhysicalQueriesAndSettlementProgress` is a separate opt-in query
+measurement using physically written encrypted activity, deduplication and closed
+own-order records. The default is 95,000 activity rows, 190,000 unrelated Seen
+records and 1,001 signed closed orders. It requires the encoded wallet to exceed
+256 MiB, measures the first activity page under the existing 45-second API deadline,
+checks frozen tail-page/CSV and closed-own queries, and cancels a new collection.
+A concurrently eligible signed payment retries its exact durable bytes through
+full Engine.Tick calls; eligibility is advanced only in this deterministic fixture,
+and production retry timing is unchanged. Tick and Status retain the existing
+local workload budgets. Per-phase sampled heap and summed file allocation are
+reported; use OS timing/vm_stat alongside them. All nodes and funds are in-memory
+private fixtures. Reduced-count pilots are not the full physical-scale result.
+
+```sh
+BLAKESWAP_REGTEST= BLAKESWAP_HISTORY_SCALE=1 \
+  BLAKESWAP_HISTORY_SCALE_RECORDS=95000 sh scripts/go.sh test ./internal/daemon \
+  -run '^TestHistoryPhysicalQueriesAndSettlementProgress$' -count=1 -timeout=10m -v
+```
