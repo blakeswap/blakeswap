@@ -69,6 +69,7 @@ func partialRejectedRequest(e *Engine, expected protocol.Request) (bool, error) 
 // A scheduled asynchronous attempt alone cannot justify closing the sender.
 type partialPublication struct {
 	child, recipient, event, terms, kind, funding string
+	sender, message, digest                       string
 }
 
 func partialAcceptancePublications(e *Engine, ids []string) (map[string]partialPublication, error) {
@@ -114,7 +115,7 @@ func partialPublications(e *Engine, ids []string, kind string) (map[string]parti
 		if delivery == nil || delivery.Type != kind || delivery.SwapID != id || delivery.To != recipient || delivery.Retired || delivery.Acknowledged {
 			return nil, errors.New("partial matrix exact delivery is unavailable")
 		}
-		expected[key] = partialPublication{id, recipient, delivery.Event.ID.Hex(), protocol.Digest(child.Terms), kind, funding}
+		expected[key] = partialPublication{id, recipient, delivery.Event.ID.Hex(), protocol.Digest(child.Terms), kind, funding, e.identity.Public().Hex(), delivery.MessageID, delivery.Digest}
 	}
 	return expected, nil
 }
@@ -129,6 +130,63 @@ func partialPublicationsPublished(e *Engine, expected map[string]partialPublicat
 		ready = ready && e.s.Outbox[key].Published
 	}
 	return ready, nil
+}
+
+// A relay acknowledgement proves storage, while this predicate proves that the
+// exact authenticated message was applied by its intended restarted recipient.
+func partialPublicationsReceived(e *Engine, expected map[string]partialPublication) (bool, error) {
+	if len(expected) == 0 {
+		return false, errors.New("partial matrix expected mailbox is empty")
+	}
+	ready := true
+	for _, want := range expected {
+		if want.recipient != e.identity.Public().Hex() {
+			return false, errors.New("partial matrix mailbox recipient changed")
+		}
+		key := want.sender + ":" + want.message
+		seen := e.s.Seen[key]
+		if seen == "" {
+			if _, err := e.archivedValue("seen", key, &seen); err != nil {
+				return false, err
+			}
+		}
+		if seen == "" {
+			ready = false
+			continue
+		}
+		child := e.s.Swaps[want.child]
+		if seen != want.digest || child == nil || child.Terms == nil || protocol.Digest(child.Terms) != want.terms {
+			return false, errors.New("partial matrix applied message changed terms or identity")
+		}
+		var raw string
+		switch want.kind {
+		case "accepted":
+			if child.Role != "taker" {
+				return false, errors.New("partial matrix acceptance recipient has wrong role")
+			}
+		case "long-funded":
+			raw = child.LongFunding
+		case "short-funded":
+			raw = child.ShortFunding
+		default:
+			return false, errors.New("partial matrix unsupported mailbox message")
+		}
+		if want.kind != "accepted" && protocol.Digest(raw) != want.funding {
+			return false, errors.New("partial matrix applied funding differs from sender")
+		}
+	}
+	return ready, nil
+}
+
+func partialWaitForPublications(h *harness, name string, expected map[string]partialPublication, tick func()) {
+	h.t.Helper()
+	partialWaitMailbox(h, "exact retained mailbox messages for "+name, func() bool {
+		ready, err := partialPublicationsReceived(h.engines[name], expected)
+		if err != nil {
+			h.t.Fatal(err)
+		}
+		return ready
+	}, tick)
 }
 
 // Add wallets through normal startup, first with RPC so the fixture owns their
@@ -250,7 +308,21 @@ func partialBins(h *harness, parentID string, available, reserved, committed, fi
 
 func partialWait(h *harness, label string, ready func() bool, tick func()) {
 	h.t.Helper()
-	deadline := time.Now().Add(20 * time.Second)
+	partialWaitWithin(h, 20*time.Second, label, ready, tick)
+}
+
+func partialWaitMailbox(h *harness, label string, ready func() bool, tick func()) {
+	h.t.Helper()
+	// relay_sync.go resumes its persisted cursor, then pauses 30 seconds after
+	// reaching the history boundary. Live subscriptions exclude existing events.
+	// Allow that normal resweep plus the usual application allowance before
+	// starting the separate, unchanged 20-second funding/settlement deadline.
+	partialWaitWithin(h, 30*time.Second+20*time.Second, label, ready, tick)
+}
+
+func partialWaitWithin(h *harness, allowance time.Duration, label string, ready func() bool, tick func()) {
+	h.t.Helper()
+	deadline := time.Now().Add(allowance)
 	for !ready() && time.Now().Before(deadline) {
 		tick()
 		if !ready() {
@@ -361,7 +433,7 @@ func runRealPartialFillPair(t *testing.T, sell chain.ID, bps int64) {
 		t.Fatal("exact request retry allocated quantity or money twice")
 	}
 	h.online(names[loser])
-	partialWait(h, "loser receives rejection and current public revision", func() bool {
+	partialWaitMailbox(h, "loser receives rejection and current public revision", func() bool {
 		p := h.engines["parent"].s.ParentOrders[parentID]
 		remote, err := protocol.DecodeOffer(h.engines[names[loser]].s.Book[bookKey], time.Now().Unix())
 		rejected, readErr := partialRejectedRequest(h.engines[names[loser]], requests[loser])
@@ -419,9 +491,17 @@ func runRealPartialFillPair(t *testing.T, sell chain.ID, bps int64) {
 		t.Logf("stored acceptance child=%s recipient=%s event=%s created_at=%d", publication.child, publication.recipient, publication.event, h.engines["parent"].s.Outbox[key].Event.CreatedAt)
 	}
 	h.offline("parent")
+	longPublications := map[string]partialPublication{}
 	for i, name := range names {
 		h.online(name)
 		t.Log(name, "resumed mailbox", h.engines[name].relayHealth())
+		acceptance := map[string]partialPublication{}
+		for key, want := range publications {
+			if want.child == ids[i] {
+				acceptance[key] = want
+			}
+		}
+		partialWaitForPublications(h, name, acceptance, func() { h.tick(name, "tower") })
 		partialWait(h, "independent long funding", func() bool { return h.swap(name, ids[i]).LongSent }, func() { h.tick(name, "tower") })
 		s := h.swap(name, ids[i])
 		if !towerReady(s) || (bps == 0 && len(s.Jobs) != 0) || (bps > 0 && len(s.Jobs) != 1) {
@@ -437,6 +517,9 @@ func runRealPartialFillPair(t *testing.T, sell chain.ID, bps int64) {
 		if err != nil {
 			t.Fatal(err)
 		}
+		for key, want := range fundingPublication {
+			longPublications[key] = want
+		}
 		partialWait(h, "exact funding notification acknowledged by relay", func() bool {
 			ready, err := partialPublicationsPublished(h.engines[name], fundingPublication)
 			if err != nil {
@@ -448,6 +531,7 @@ func runRealPartialFillPair(t *testing.T, sell chain.ID, bps int64) {
 	}
 	h.minePending()
 	h.online("parent")
+	partialWaitForPublications(h, "parent", longPublications, func() { h.tick("parent", "tower") })
 	partialWait(h, "both short fundings after cancellation", func() bool { return h.swap("parent", ids[0]).ShortSent && h.swap("parent", ids[1]).ShortSent }, func() { h.tick("parent", "tower") })
 	h.minePending()
 	h.tick("parent")
@@ -467,6 +551,13 @@ func runRealPartialFillPair(t *testing.T, sell chain.ID, bps int64) {
 	h.offline("parent")
 	// Only the winning taker returns while either reveal window is open.
 	h.online(names[winner])
+	winnerFunding := map[string]partialPublication{}
+	for key, want := range shortPublications {
+		if want.child == ids[winner] {
+			winnerFunding[key] = want
+		}
+	}
+	partialWaitForPublications(h, names[winner], winnerFunding, func() { h.tick(names[winner], "tower") })
 	partialWait(h, "first child owner claim", func() bool {
 		return h.swap(names[winner], ids[winner]).SecretExposed && h.swap(names[winner], ids[winner]).SelfClaim != ""
 	}, func() { h.tick(names[winner], "tower") })

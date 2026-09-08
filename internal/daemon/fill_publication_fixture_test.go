@@ -13,6 +13,7 @@ import (
 	"github.com/blakeswap/blakeswap/internal/chain"
 	"github.com/blakeswap/blakeswap/internal/protocol"
 	"github.com/blakeswap/blakeswap/internal/relay"
+	"github.com/blakeswap/blakeswap/internal/transport"
 )
 
 func TestPartialMatrixAcceptanceRequiresRelayPublication(t *testing.T) {
@@ -158,4 +159,43 @@ func TestPartialMatrixAcceptanceRequiresRelayPublication(t *testing.T) {
 			}
 		})
 	}
+	t.Run("resumed-history-before-funding", func(t *testing.T) {
+		// The exact acceptance is already stored while the taker is offline.
+		// Its persisted cursor predates that gift wrap, so live-only reads and
+		// the resumed first sweep cannot deliver it. Do not reset the cursor.
+		taker.Config.Relays = maker.Config.Relays
+		key := maker.Config.Relays[0] + "\nmailbox"
+		taker.s.RelaySync = map[string]RelaySyncRecord{key: {
+			Relay: maker.Config.Relays[0], Filter: "mailbox",
+			Cursor: transport.RelayCursor{Until: maker.s.Outbox[recordID].Event.CreatedAt - 1, Limit: transport.RelayPageSize},
+		}}
+		if err := taker.save(); err != nil {
+			t.Fatal(err)
+		}
+		defer func() {
+			taker.nodes = nil
+			if err := taker.Close(); err != nil {
+				t.Error(err)
+			}
+		}()
+		h := &harness{t: t, engines: map[string]*Engine{"taker": taker}}
+		tick := func() {
+			taker.drainRelaySync()
+			if err := taker.save(); err != nil {
+				t.Fatal(err)
+			}
+			taker.acknowledgeRelayPages()
+		}
+		partialWait(h, "resumed history reaches its old boundary", func() bool {
+			return taker.s.RelaySync[key].Cursor.Sweeps == 1
+		}, tick)
+		if ready, err := partialPublicationsReceived(taker, expected); err != nil || ready || taker.s.Swaps[id].Terms != nil {
+			t.Fatal("old cursor or live-only subscription falsely delivered stored acceptance", err)
+		}
+		partialWaitForPublications(h, "taker", expected, tick)
+		if protocol.Digest(taker.s.Swaps[id].Terms) != terms || taker.s.Swaps[id].LongSent {
+			t.Fatal("mailbox catch-up changed terms or performed funding")
+		}
+	})
+
 }

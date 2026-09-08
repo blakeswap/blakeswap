@@ -883,6 +883,16 @@ durable allocation and acceptance. The rejected taker must review the next
 normally published revision before becoming the second accepted child. Relay
 delivery subsequently exercises the same saved events and acknowledgments.
 
+Before taking a sender offline, the fixture waits for relay acknowledgment of
+its exact retained acceptance or funding notification. A restarted recipient
+then proves that the same authenticated message and immutable terms/funding
+were applied. This separate mailbox phase permits the existing 30-second
+history resweep plus 20 seconds for application; each subsequent funding or
+settlement phase retains its 20-second deadline. It neither resets historical
+cursors nor changes production retry intervals. The ordinary gated-relay
+control also covers a persisted cursor older than a stored acceptance and
+requires its receipt through the normal resweep before funding.
+
 The matrix cancels only the remaining 600,000 available units, funds both
 accepted children, completes one and refunds the other while its taker stays
 offline during the reveal window. It checks actual confirmed transaction
