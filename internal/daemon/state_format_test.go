@@ -32,7 +32,9 @@ func TestStateCutoverRefusesLegacyAtEveryArchiveRecoveryBoundary(t *testing.T) {
 				func() error { _, err := CompleteState(s); return err },
 				func() error { _, _, err := s.VaultSnapshot(); return err },
 				func() error { return PrepareRecovery(&s, time.Now().Unix(), false) },
-				func() error { return PrepareStreamedRecovery(&s, storage.ArchiveStats{}, time.Now().Unix(), false) },
+				func() error {
+					return PrepareStreamedRecovery(context.Background(), &s, storage.ArchiveStats{}, nil, time.Now().Unix(), false)
+				},
 				func() error {
 					_, err := ValidateArchiveRecordAgainstState(s, storage.ArchiveRecord{Kind: "seen", ID: "old", Data: json.RawMessage(`"digest"`)})
 					return err
@@ -151,7 +153,9 @@ func TestStateCutoverOuterMarkerCannotUpgradeLegacyChild(t *testing.T) {
 			func() error { return ValidateProtocolState(&s) },
 			func() error { return ValidateArchiveState(s) },
 			func() error { return PrepareRecovery(&s, time.Now().Unix(), false) },
-			func() error { return PrepareStreamedRecovery(&s, storage.ArchiveStats{}, time.Now().Unix(), false) },
+			func() error {
+				return PrepareStreamedRecovery(context.Background(), &s, storage.ArchiveStats{}, nil, time.Now().Unix(), false)
+			},
 			func() error { _, _, err := s.VaultSnapshot(); return err },
 		} {
 			if err := check(); err == nil {

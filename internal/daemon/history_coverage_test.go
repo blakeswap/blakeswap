@@ -173,7 +173,7 @@ func TestStreamedRecoveryPreservesAdvisoryCoverageWithoutResumingAuthority(t *te
 	e, p, _, order := strategyColdHistory(t)
 	before := e.s.Capacity.HistoryCoverage[chain.BTC]
 	e.s.Capacity.Anchors = map[chain.ID]ArchiveAnchor{chain.BTC: {Height: 500, Hash: "current-tip"}}
-	if err := PrepareStreamedRecovery(&e.s, e.s.Capacity.Archived, time.Now().Unix(), false); err != nil {
+	if err := PrepareStreamedRecovery(context.Background(), &e.s, e.s.Capacity.Archived, vaultFillReader{e.vault}, time.Now().Unix(), false); err != nil {
 		t.Fatal(err)
 	}
 	if len(e.s.Capacity.Anchors) != 0 || e.s.Capacity.HistoryCoverage[chain.BTC] != before {
@@ -471,7 +471,7 @@ func restoreHistoryFixture(t *testing.T, e *Engine) {
 		t.Fatal(err)
 	}
 	active.Capacity.Archived = stats
-	if err := PrepareStreamedRecovery(&active, stats, time.Now().Unix(), false); err != nil {
+	if err := PrepareStreamedRecovery(context.Background(), &active, stats, source, time.Now().Unix(), false); err != nil {
 		t.Fatal(err)
 	}
 	v, err := storage.Open(filepath.Join(t.TempDir(), "restored.db"), []byte("private-restored-history-fixture"))
