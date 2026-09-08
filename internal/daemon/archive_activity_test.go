@@ -1,6 +1,7 @@
 package daemon
 
 import (
+	"context"
 	"encoding/hex"
 	"encoding/json"
 	"github.com/blakeswap/blakeswap/internal/chain"
@@ -17,6 +18,8 @@ func TestArchiveReceiptClassificationUsesRetainedParentAndOwnedInputs(t *testing
 	for _, a := range []*Activity{&parent, &owned} {
 		a.Version = 1
 		a.Network = chain.Regtest
+		a.BlockHash = "test-canonical-tip"
+		a.ObservedAt = time.Now().Unix()
 		a.Observations = []ActivityObservation{{TxID: a.TxID, Status: "confirmed", Confirmations: 200, Height: 1, BlockHash: "test-canonical-tip", ObservedAt: time.Now().Unix(), Source: "fixture"}}
 	}
 	e.s.Activities = map[string]Activity{parent.ID: parent, owned.ID: owned}
@@ -27,7 +30,7 @@ func TestArchiveReceiptClassificationUsesRetainedParentAndOwnedInputs(t *testing
 	}
 	e.archiveCurrent = map[chain.ID]recoveryCheckpoint{chain.BTC: {Height: 200, Hash: "test-canonical-tip"}}
 	remaining := 64
-	if err := e.compactActivity(&remaining, map[chain.ID]bool{chain.BTC: true}); err != nil {
+	if err := e.compactActivity(context.Background(), &remaining, map[chain.ID]bool{chain.BTC: true}); err != nil {
 		t.Fatal(err)
 	}
 	if err := e.save(); err != nil {
@@ -129,7 +132,7 @@ func TestArchiveSharedReceiptRetainsActiveClassification(t *testing.T) {
 	}
 	e.archiveCurrent = map[chain.ID]recoveryCheckpoint{chain.BTC: {Height: 200, Hash: "test-canonical-tip"}}
 	remaining := 64
-	if err := e.compactActivity(&remaining, map[chain.ID]bool{chain.BTC: true}); err != nil {
+	if err := e.compactActivity(context.Background(), &remaining, map[chain.ID]bool{chain.BTC: true}); err != nil {
 		t.Fatal(err)
 	}
 	if err := e.save(); err != nil {

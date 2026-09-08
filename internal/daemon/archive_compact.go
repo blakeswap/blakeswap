@@ -280,7 +280,7 @@ func (e *Engine) compactArchive(ctx context.Context, swaps, towers map[chain.ID]
 			}
 		}
 	}
-	if err := e.compactActivity(&remaining, valid); err != nil {
+	if err := e.compactActivity(ctx, &remaining, valid); err != nil {
 		return err
 	}
 	for _, id := range sortedArchiveIDs(e.s.Seen) {

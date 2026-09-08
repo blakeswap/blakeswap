@@ -1,9 +1,12 @@
 package daemon
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
 	"github.com/blakeswap/blakeswap/internal/chain"
 	"strings"
+	"time"
 )
 
 // Compact lookup indexes let a newly discovered receipt find an archived parent
@@ -106,16 +109,72 @@ func (e *Engine) allowActivityGrowth(previous, next any) bool {
 	return true
 }
 
-func (e *Engine) compactActivity(remaining *int, valid map[chain.ID]bool) error {
+// A current tip alone does not authenticate a cached activity's inclusion. Its
+// exact selected block must belong to that same prefix before the row can stop
+// receiving regular observations. Archive depth remains a storage policy.
+func (e *Engine) activityArchiveProof(ctx context.Context, a Activity) (bool, error) {
+	point := e.archiveCurrent[a.Chain]
+	if point.Hash == "" || !e.fresh(a.Chain) || !e.activitySourceCurrent(a.Chain, point.Generation) {
+		return false, nil
+	}
+	var observation *ActivityObservation
+	for i := range a.Observations {
+		o := &a.Observations[i]
+		if o.TxID == a.TxID && o.BlockHash == a.BlockHash && o.Status == "confirmed" && o.Confirmations >= archiveSettlementDepth && o.Height > 0 && o.Height <= point.Height && point.Height-o.Height+1 >= archiveSettlementDepth && o.ObservedAt > 0 && o.ObservedAt <= time.Now().Unix() && e.activitySourceCurrent(a.Chain, o.Generation) {
+			observation = o
+			break
+		}
+	}
+	if observation == nil {
+		return false, nil
+	}
+	source, ok := e.nodes[a.Chain].(recoveryBlockHasher)
+	if !ok {
+		return false, nil
+	}
+	hash, err := source.BlockHash(ctx, observation.Height)
+	if err != nil || hash == "" {
+		return false, errors.Join(err, errors.New("archived activity block verification unavailable"))
+	}
+	tip, err := source.BlockHash(ctx, point.Height)
+	if err != nil || tip != point.Hash {
+		delete(e.archiveCurrent, a.Chain)
+		return false, errors.Join(err, errors.New("chain changed during archived activity verification"))
+	}
+	if !e.activitySourceCurrent(a.Chain, point.Generation) || !e.activitySourceCurrent(a.Chain, observation.Generation) {
+		return false, errors.New("chain source changed during archived activity verification")
+	}
+	if hash != observation.BlockHash {
+		// Retain the old positive outcome, but make the positively contradicted
+		// current projection explicit before any report can reuse it.
+		a.Observations = append([]ActivityObservation{}, a.Observations...)
+		for i := range a.Observations {
+			if a.Observations[i].TxID == observation.TxID {
+				a.Observations[i].Status = "orphaned"
+				a.Observations[i].Confirmations = 0
+				a.Observations[i].ObservedAt = time.Now().Unix()
+				a.Observations[i].Error = "The current canonical block contradicted this recorded confirmation."
+			}
+		}
+		if !e.putActivity(a, true) {
+			return false, errors.Join(e.fatal, errors.New("activity contradiction remains pending; historical indexing capacity is unavailable"))
+		}
+		return false, e.fatal
+	}
+	return true, nil
+}
+
+func (e *Engine) compactActivity(ctx context.Context, remaining *int, valid map[chain.ID]bool) error {
 	coins := map[string]bool{}
 	for _, id := range []chain.ID{chain.BTC, chain.Blake} {
 		for _, coin := range e.knownCoins(id) {
 			coins[string(id)+"/"+pointKey(CoinOutpoint{TxID: coin.TxID, Vout: coin.Vout})] = true
 		}
 	}
+	var verificationErr error
 	for _, id := range sortedArchiveIDs(e.s.Activities) {
 		if *remaining <= 0 {
-			return nil
+			return verificationErr
 		}
 		a := e.s.Activities[id]
 		if e.s.Swaps[a.SwapID] != nil || e.s.Sends[a.SendID] != nil || e.s.Offers[a.OrderID].Content != "" {
@@ -143,6 +202,19 @@ func (e *Engine) compactActivity(remaining *int, valid map[chain.ID]bool) error 
 		if held {
 			continue
 		}
+		// Count attempts as well as moves so unavailable block lookups cannot
+		// grow an unbounded IO loop inside settlement's compaction phase.
+		*remaining--
+		if a.Kind != "order" {
+			verified, err := e.activityArchiveProof(ctx, a)
+			verificationErr = errors.Join(verificationErr, err)
+			if ctx.Err() != nil || e.fatal != nil {
+				return errors.Join(verificationErr, ctx.Err(), e.fatal)
+			}
+			if !verified {
+				continue
+			}
+		}
 		if err := e.stageArchive("activities", id); err != nil {
 			return err
 		}
@@ -169,9 +241,8 @@ func (e *Engine) compactActivity(remaining *int, valid map[chain.ID]bool) error 
 				return err
 			}
 		}
-		*remaining--
 	}
-	return nil
+	return verificationErr
 }
 
 func (e *Engine) activityReceiptEvidence(key string) (ReceiptEvidence, bool) {
