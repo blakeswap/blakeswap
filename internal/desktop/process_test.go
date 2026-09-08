@@ -44,7 +44,7 @@ func TestDesktopSubprocess(t *testing.T) {
 	}
 	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGTERM)
 	defer cancel()
-	if err := Run(ctx, root, os.Getppid()); err != nil {
+	if err := Run(ctx, root, os.Getppid(), RunOptions{CredentialMode: "file"}); err != nil {
 		t.Fatal(err)
 	}
 }

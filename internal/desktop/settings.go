@@ -181,7 +181,8 @@ func validateExplorer(network, endpoint string) error {
 	}
 	return nil
 }
-func loadSettings(root string) (*pb.Settings, error) {
+func loadSettings(root string) (*pb.Settings, error) { return loadSettingsWithReader(root, readMaster) }
+func loadSettingsWithReader(root string, reader func(string) (string, []byte, error)) (*pb.Settings, error) {
 	path := filepath.Join(root, "settings.json")
 	raw, err := os.ReadFile(path)
 	if errors.Is(err, os.ErrNotExist) {
@@ -226,7 +227,7 @@ func loadSettings(root string) (*pb.Settings, error) {
 			return nil, err
 		}
 	}
-	if err := recoverPreparedImports(root, s); err != nil {
+	if err := recoverPreparedImports(root, s, reader); err != nil {
 		return nil, err
 	}
 	return s, nil

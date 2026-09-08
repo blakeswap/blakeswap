@@ -17,6 +17,7 @@ import (
 	"time"
 
 	pb "github.com/blakeswap/blakeswap/api/gen/blakeswap/v1"
+	"github.com/blakeswap/blakeswap/internal/authorization"
 	"github.com/grpc-ecosystem/grpc-gateway/v2/runtime"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
@@ -92,6 +93,19 @@ func Listen(ctx context.Context, socket string, service *Service) (*Server, erro
 		if len(auth) != 1 || !authorized(auth[0], ep.Token) {
 			return nil, status.Error(codes.Unauthenticated, "invalid daemon credential")
 		}
+		if service.Context != nil {
+			ctx = service.Context(ctx)
+		}
+		grant := md.Get("x-blakeswap-consent")
+		if len(grant) > 1 {
+			return nil, status.Error(codes.Unauthenticated, "invalid consent metadata")
+		}
+		if len(grant) == 1 {
+			if len(grant[0]) != 64 {
+				return nil, status.Error(codes.Unauthenticated, "invalid consent metadata")
+			}
+			ctx = authorization.WithGrant(ctx, grant[0])
+		}
 		ctx, cancel := context.WithTimeout(ctx, 45*time.Second)
 		defer cancel()
 		return handler(ctx, req)
@@ -106,6 +120,9 @@ func Listen(ctx context.Context, socket string, service *Service) (*Server, erro
 	}
 	server.client = client
 	mux := runtime.NewServeMux(runtime.WithMarshalerOption(runtime.MIMEWildcard, &runtime.JSONPb{MarshalOptions: protojson.MarshalOptions{UseProtoNames: true, EmitUnpopulated: true}}), runtime.WithIncomingHeaderMatcher(func(key string) (string, bool) {
+		if strings.EqualFold(key, "X-Blakeswap-Consent") {
+			return "x-blakeswap-consent", true
+		}
 		if strings.EqualFold(key, "Authorization") {
 			return "", false // grpc-gateway already forwards Authorization without a prefix.
 		}

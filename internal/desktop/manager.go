@@ -18,8 +18,11 @@ import (
 
 	pb "github.com/blakeswap/blakeswap/api/gen/blakeswap/v1"
 	"github.com/blakeswap/blakeswap/internal/api"
+	"github.com/blakeswap/blakeswap/internal/authorization"
 	"github.com/blakeswap/blakeswap/internal/chain"
+	"github.com/blakeswap/blakeswap/internal/credential"
 	"github.com/blakeswap/blakeswap/internal/daemon"
+	"github.com/blakeswap/blakeswap/internal/nativebridge"
 	"github.com/blakeswap/blakeswap/internal/storage"
 	"github.com/blakeswap/blakeswap/internal/wallet"
 	"google.golang.org/grpc/codes"
@@ -28,6 +31,8 @@ import (
 )
 
 type Manager struct {
+	authority      *authorization.Authority
+	credentials    *profileCredentials
 	actionCommands atomic.Int64
 	actionVersion  atomic.Uint64
 	installations  atomic.Int64
@@ -135,7 +140,14 @@ func (m *Manager) publishView() {
 
 // Run owns a per-installation lock. Parent death is checked in addition to
 // signals so a forcibly killed GUI cannot orphan its wallet daemon.
-func Run(ctx context.Context, root string, parent int) error {
+type RunOptions struct {
+	Broker         *nativebridge.Peer
+	Authority      *authorization.Authority
+	CredentialMode string
+	Store          credential.Store
+}
+
+func Run(ctx context.Context, root string, parent int, options ...RunOptions) error {
 	if !filepath.IsAbs(root) {
 		return errors.New("absolute data path required")
 	}
@@ -173,11 +185,35 @@ func Run(ctx context.Context, root string, parent int) error {
 			}
 		}()
 	}
-	settings, err := loadSettings(root)
+	var option RunOptions
+	if len(options) > 1 {
+		return errors.New("one desktop credential configuration is required")
+	}
+	if len(options) == 1 {
+		option = options[0]
+	}
+	var credentials *profileCredentials
+	if option.CredentialMode == "" || option.CredentialMode == "native" {
+		credentials, err = openProfileCredentials(ctx, root, option.Store)
+		if err != nil {
+			return err
+		}
+	} else if option.CredentialMode != "file" {
+		return errors.New("unknown desktop credential mode")
+	}
+	reader := readMaster
+	if credentials != nil {
+		reader = credentials.readMaster
+	}
+	settings, err := loadSettingsWithReader(root, reader)
 	if err != nil {
 		return err
 	}
-	m := &Manager{root: root, settings: settings, engines: map[string]*daemon.Engine{}, configs: map[string]daemon.Config{}, restart: true, runtimeSession: os.Getenv("BLAKESWAP_DESKTOP_SESSION")}
+	m := &Manager{authority: option.Authority, credentials: credentials, root: root, settings: settings, engines: map[string]*daemon.Engine{}, configs: map[string]daemon.Config{}, restart: true, runtimeSession: os.Getenv("BLAKESWAP_DESKTOP_SESSION")}
+	m.attachBroker(option.Broker)
+	if option.Authority != nil {
+		defer option.Authority.Close()
+	}
 	if settings.OnboardingStage == "" {
 		m.lastError = "Connecting"
 	}
@@ -219,11 +255,15 @@ func (m *Manager) readSettings(ctx context.Context) (*pb.Settings, error) {
 }
 func (m *Manager) writeSettings(ctx context.Context, next *pb.Settings) (*pb.Settings, error) {
 	defer m.beginAction()()
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if err := m.consumeDirectLocked(ctx, "settings.update", next); err != nil {
+		return nil, err
+	}
 	if err := validate(next); err != nil {
 		return nil, status.Error(codes.InvalidArgument, err.Error())
 	}
-	m.mu.Lock()
-	defer m.mu.Unlock()
+
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
@@ -264,7 +304,10 @@ func (m *Manager) writeSettings(ctx context.Context, next *pb.Settings) (*pb.Set
 					return nil, err
 				}
 			} else {
-				cfg := daemon.Config{DataDir: filepath.Join(m.root, "wallets", profile, m.settings.ActiveNetwork), PasswordFile: filepath.Join(m.root, "wallets", profile, "vault.password")}
+				cfg, err := m.storedConfig(profile, m.settings.ActiveNetwork)
+				if err != nil {
+					return nil, err
+				}
 				if err := daemon.CheckStoredNetwork(cfg); err != nil {
 					return nil, err
 				}
@@ -417,7 +460,7 @@ func (m *Manager) connect(ctx context.Context) {
 		}
 		pending := proto.Clone(m.settings).(*pb.Settings)
 		pending.Wallets = []*pb.WalletProfile{proto.Clone(profile).(*pb.WalletProfile)}
-		worker := &Manager{root: m.root, settings: pending, engines: map[string]*daemon.Engine{}, configs: map[string]daemon.Config{}}
+		worker := &Manager{authority: m.authority, credentials: m.credentials, root: m.root, settings: pending, engines: map[string]*daemon.Engine{}, configs: map[string]daemon.Config{}}
 		openingCtx, cancel := context.WithCancel(ctx)
 		job := &networkOpening{cancel: cancel, done: make(chan networkResult, 1)}
 		worker.chainReady = job.chainReady
@@ -495,11 +538,27 @@ func (m *Manager) openNetwork(ctx context.Context) error {
 }
 func (m *Manager) config(profile string, env *pb.Environment) (daemon.Config, error) {
 	walletDir := filepath.Join(m.root, "wallets", profile)
-	mnemonic, password, err := master(walletDir)
+	var mnemonic string
+	if m.credentials == nil {
+		var err error
+		mnemonic, _, err = master(walletDir)
+		if err != nil {
+			return daemon.Config{}, err
+		}
+	} else {
+		seed, password, err := m.readMaster(walletDir)
+		clear(password)
+		if err != nil {
+			return daemon.Config{}, err
+		}
+		mnemonic = seed
+	}
+	sourceConfig, err := m.storedConfig(profile, env.Network)
 	if err != nil {
 		return daemon.Config{}, err
 	}
-	c := daemon.Config{PublicWatchtower: env.PublicWatchtower, FavoriteWatchtowers: append([]string(nil), env.FavoriteWatchtowers...), Name: profile, Mode: "trader", Network: chain.Network(env.Network), InitialMnemonic: mnemonic, DataDir: filepath.Join(walletDir, env.Network), PasswordFile: password, Relays: append([]string(nil), env.Relays...), Nodes: map[chain.ID]daemon.NodeConfig{}}
+	c := daemon.Config{PublicWatchtower: env.PublicWatchtower, FavoriteWatchtowers: append([]string(nil), env.FavoriteWatchtowers...), Name: profile, Mode: "trader", Network: chain.Network(env.Network), InitialMnemonic: mnemonic, DataDir: filepath.Join(walletDir, env.Network), PasswordFile: sourceConfig.PasswordFile, CredentialMode: sourceConfig.CredentialMode, Credential: sourceConfig.Credential, Installation: sourceConfig.Installation, Relays: append([]string(nil), env.Relays...), Nodes: map[chain.ID]daemon.NodeConfig{}}
+	c.Authorization = m.authority
 	c.RescueFeeBPS = env.RescueFeeBps
 	for _, id := range []chain.ID{chain.BTC, chain.Blake} {
 		n := env.Nodes[string(id)]

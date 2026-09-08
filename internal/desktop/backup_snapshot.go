@@ -1,7 +1,6 @@
 package desktop
 
 import (
-	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -105,7 +104,7 @@ func (m *Manager) captureBackupLocked(ctx context.Context, selected string, all 
 			return nil, err
 		}
 		root := filepath.Join(m.root, "wallets", profile.Id)
-		seed, password, err := readMaster(root)
+		seed, password, err := m.readMaster(root)
 		if err != nil {
 			return nil, err
 		}
@@ -124,7 +123,7 @@ func (m *Manager) captureBackupLocked(ctx context.Context, selected string, all 
 				source := &capturedNetwork{wallet: index, network: network, path: filepath.Join(staging.root, fmt.Sprintf("clone-%d.db", len(c.sources)))}
 				c.sources = append(c.sources, source)
 				c.manifest.Wallets[index].Networks[network] = nil
-				source.password = bytes.Clone(bytes.TrimSpace(password))
+				source.password = bytes.Clone(password)
 				staging.clonePasswords = append(staging.clonePasswords, source.password)
 				if engine := m.engines[profile.Id]; engine != nil && engine.Config.Network.Normalized() == network {
 					source.engine = engine

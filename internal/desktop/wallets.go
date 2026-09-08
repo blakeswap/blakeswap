@@ -12,6 +12,7 @@ import (
 	pb "github.com/blakeswap/blakeswap/api/gen/blakeswap/v1"
 	"github.com/blakeswap/blakeswap/internal/api"
 	"github.com/blakeswap/blakeswap/internal/daemon"
+	"github.com/blakeswap/blakeswap/internal/wallet"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/proto"
@@ -20,7 +21,7 @@ import (
 // Called with the manager lock held (or before the run loop starts). Socket
 // names stay short enough for macOS regardless of the stable wallet ID.
 func (m *Manager) startAPI(profile string) error {
-	service := &api.Service{PortableExport: func(ctx context.Context, r *pb.ExportPortableBackupRequest) (*pb.PortableBackupResult, error) {
+	service := &api.Service{Context: func(ctx context.Context) context.Context { return withProfile(ctx, profile) }, PortableExport: func(ctx context.Context, r *pb.ExportPortableBackupRequest) (*pb.PortableBackupResult, error) {
 		return m.exportPortableAPI(ctx, profile, r)
 	}, BackupInspect: m.inspectPortable, BackupImport: m.importPortableAPI, Command: func(ctx context.Context, r daemon.Request) (any, error) { return m.command(ctx, profile, r) }, ReadSettings: m.readSettings, WriteSettings: m.writeSettings, NewWallet: m.createWallet, PrepareWallet: m.prepareFirstWallet, FirstWallet: m.firstWallet, ConfirmWallet: m.confirmFirstWallet, ExportWallet: m.exportFirstWallet, FinishSetup: m.finishOnboarding}
 	server, err := api.Listen(m.runtimeCtx, filepath.Join(m.runtimeDir, fmt.Sprintf("%d.sock", len(m.servers))), service)
@@ -59,6 +60,9 @@ func (m *Manager) createWallet(ctx context.Context, request *pb.CreateWalletRequ
 	}
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	if err := m.consumeDirectLocked(ctx, "wallet.create", request); err != nil {
+		return nil, err
+	}
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
@@ -87,7 +91,11 @@ func (m *Manager) createWallet(ctx context.Context, request *pb.CreateWalletRequ
 	if err := os.Mkdir(walletDir, 0700); err != nil {
 		return nil, err
 	}
-	if _, _, err := master(walletDir); err != nil {
+	seed, err := wallet.NewMnemonic()
+	if err != nil {
+		return nil, err
+	}
+	if err := m.initializeMaster(ctx, walletDir, id, seed); err != nil {
 		return nil, err
 	}
 	if err := m.startAPI(id); err != nil {

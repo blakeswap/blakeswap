@@ -26,6 +26,7 @@ import (
 var errEngineClosed = errors.New("engine closed")
 
 type Engine struct {
+	authorizationEpoch       string
 	strategyVerifiedSwaps    map[string]bool
 	strategyReporting        atomic.Bool
 	activityGrowth           uint64

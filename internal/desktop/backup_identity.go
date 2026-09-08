@@ -34,7 +34,7 @@ func (m *Manager) checkBackupIdentitiesLocked(manifest backupManifest) error {
 		} else if err != nil {
 			return err
 		}
-		seed, password, err := readMaster(path)
+		seed, password, err := m.readMaster(path)
 		if err != nil {
 			return errors.New("cannot verify an installed wallet identity; repair its local vault before importing")
 		}
