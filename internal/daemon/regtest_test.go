@@ -261,8 +261,8 @@ func (h *harness) fundBothFees(sell chain.ID, bps, fee, ownerCap int64) string {
 	h.offline("maker")
 	h.online("maker")
 	partialWait(h, "signed offer stored by relay", func() bool {
-		delivery := h.engines["maker"].s.Outbox[offerEvent.ID.Hex()]
-		return delivery != nil && delivery.Event.ID == offerEvent.ID && delivery.Published
+		record := h.engines["maker"].s.OrderRecords[o.ID]
+		return record.EventID == offerEvent.ID.Hex() && record.Publication == "relay_acknowledged" && record.AcknowledgedAt > 0
 	}, func() { h.tick("maker") })
 	h.offline("maker")
 	partialWaitMailbox(h, "restarted maker's exact signed offer", func() bool {
