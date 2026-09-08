@@ -28,7 +28,7 @@ func discoveryEngine(t *testing.T) *Engine {
 	t.Cleanup(func() { vault.Close() })
 	btc, _ := hex.DecodeString("0014" + strings.Repeat("11", 20))
 	blake, _ := hex.DecodeString("0014" + strings.Repeat("22", 20))
-	return &Engine{chainFresh: map[chain.ID]bool{chain.BTC: true, chain.Blake: true}, chainErrors: map[chain.ID]string{}, chainObserved: map[chain.ID]int64{}, chainGeneration: map[chain.ID]uint64{}, Config: Config{Name: "Test", Mode: "trader", Network: chain.Regtest}, identity: nostr.Generate(), vault: vault, scripts: map[chain.ID][]byte{chain.BTC: btc, chain.Blake: blake}, s: State{Towers: map[string]nostr.Event{}, Outbox: map[string]*Delivery{}, Seen: map[string]string{}}}
+	return &Engine{chainFresh: map[chain.ID]bool{chain.BTC: true, chain.Blake: true}, chainErrors: map[chain.ID]string{}, chainObserved: map[chain.ID]int64{}, chainGeneration: map[chain.ID]uint64{}, Config: Config{Name: "Test", Mode: "trader", Network: chain.Regtest}, identity: nostr.Generate(), vault: vault, scripts: map[chain.ID][]byte{chain.BTC: btc, chain.Blake: blake}, s: State{Version: StateVersion, Network: chain.Regtest, Towers: map[string]nostr.Event{}, Outbox: map[string]*Delivery{}, Seen: map[string]string{}}}
 }
 
 func TestRescueFeeRefreshesSignedQuotesImmediately(t *testing.T) {

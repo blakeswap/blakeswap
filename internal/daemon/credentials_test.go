@@ -23,7 +23,7 @@ func TestNativeCredentialFailureNeverFallsBackForLiveOrOfflineReaders(t *testing
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err = v.Save(State{Version: 1, Network: chain.Regtest}); err != nil {
+	if err = v.Save(State{Version: StateVersion, Network: chain.Regtest}); err != nil {
 		t.Fatal(err)
 	}
 	if err = v.Close(); err != nil {
@@ -59,7 +59,7 @@ func TestNativeCredentialPreservesExactBytesAndOwnedLifetime(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err = v.Save(State{Version: 1, Network: chain.Regtest}); err != nil {
+	if err = v.Save(State{Version: StateVersion, Network: chain.Regtest}); err != nil {
 		t.Fatal(err)
 	}
 	if err = v.Close(); err != nil {

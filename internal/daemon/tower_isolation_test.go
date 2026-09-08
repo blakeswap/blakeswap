@@ -30,7 +30,7 @@ func claimJob(t *testing.T, e *Engine) protocol.Job {
 	observed.TxID = transport.RandomID()
 	own := e.ownTower()
 	payout := e.scripts[chain.Blake]
-	j := protocol.Job{Network: chain.Regtest, ID: transport.RandomID(), SwapID: transport.RandomID(), Owner: e.identity.Public().Hex(), TermsHash: transport.RandomID(), Kind: "claim", Target: target, Observe: &observed, ScanFrom: 1, Lock: 150, BPS: own.BPS, Payout: hex.EncodeToString(payout), TowerScript: own.Scripts[chain.BTC]}
+	j := protocol.Job{Version: protocol.Version, Network: chain.Regtest, ID: transport.RandomID(), SwapID: transport.RandomID(), Owner: e.identity.Public().Hex(), TermsHash: transport.RandomID(), Kind: "claim", Target: target, Observe: &observed, ScanFrom: 1, Lock: 150, BPS: own.BPS, Payout: hex.EncodeToString(payout), TowerScript: own.Scripts[chain.BTC]}
 	towerScript, _ := hex.DecodeString(j.TowerScript)
 	for _, fee := range protocol.RescueFees {
 		tx, err := contract.Spend(target, claim, payout, fee, false, j.Lock, towerScript, protocol.Bounty(target.Amount, j.BPS), nil)
