@@ -3,6 +3,7 @@ package daemon
 import (
 	"context"
 	"encoding/json"
+	"maps"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -11,8 +12,9 @@ import (
 
 	"fiatjaf.com/nostr"
 	"github.com/blakeswap/blakeswap/internal/chain"
+	"github.com/blakeswap/blakeswap/internal/contract"
 	"github.com/blakeswap/blakeswap/internal/protocol"
-	"github.com/blakeswap/blakeswap/internal/storage"
+
 	"github.com/blakeswap/blakeswap/internal/transport"
 )
 
@@ -41,34 +43,79 @@ func savePolicy(t *testing.T, e *Engine, p AutomationEdit) AutomationView {
 	}
 	return v
 }
-func expirePolicyOffer(t *testing.T, e *Engine, p *AutomationPolicy) string {
+
+// Advance the expiry transition's explicit clock, without rewriting any signed
+// economics or an earlier committed parent. The cancellation is an actual
+// parent withdrawal with a later signed tombstone, not a relay-only snapshot.
+func expirePolicyParent(t *testing.T, e *Engine, p *AutomationPolicy) string {
 	t.Helper()
 	id := p.CurrentOfferID
-	o, err := historicalOffer(e.s.Offers[id])
-	if err != nil {
-		t.Fatal(err)
-	}
-	o.Expires = time.Now().Unix() - 1
-	event, err := e.signOffer(o, nostr.Now())
-	if err != nil {
-		t.Fatal(err)
-	}
-	e.stageOffer(o, event)
-	// Advance this synthetic parent to the same expired terms and run the
-	// actual expiry transition; the public snapshot alone is not custody.
 	parent := e.s.ParentOrders[id]
-	parent.Offer.Expires, parent.LastSignedAt = o.Expires, o.Expires-1
-	parent.Economics = parent.Offer.EconomicsDigest()
-	if err := e.expireParents(time.Now().Unix()); err != nil {
+	if parent == nil {
+		t.Fatal("missing current parent")
+	}
+	before := parent.Economics
+	if err := e.expireParents(parent.Offer.Expires); err != nil {
 		t.Fatal(err)
+	}
+	if parent.Economics != before || !parent.Quantities.Closed || parent.Quantities.Withdrawn != parent.Quantities.Total {
+		t.Fatal("expiry changed economics or failed to withdraw the unfilled parent")
 	}
 	p.NextAction = 0
 	e.reconcileReservations()
-	if err = e.save(); err != nil {
+	return id
+}
+func expirePolicyOffer(t *testing.T, e *Engine, p *AutomationPolicy) string {
+	t.Helper()
+	id := expirePolicyParent(t, e, p)
+	if err := e.save(); err != nil {
 		t.Fatal(err)
 	}
 	return id
 }
+
+// Exercise acceptance and signed funding with the original exact parent inputs
+// and fee caps. No chain outcome is inferred from this private signing fixture.
+func fundPolicyOffer(t *testing.T, e *Engine, id string) *Swap {
+	t.Helper()
+	from, message := automationOrderRequest(t, e, e.s.Offers[id])
+	if err := e.handle(from, message); err != nil {
+		t.Fatal(err)
+	}
+	s := e.s.Swaps[message.SwapID]
+	if s == nil || e.s.FillRecords[s.ID] == nil {
+		t.Fatal("accepted child custody missing")
+	}
+	// A same-second acceptance remains pending publication; wait for its normal
+	// next-second signed revision before presenting the parent as reserved.
+	parent := e.s.ParentOrders[id]
+	wait := time.Until(time.Unix(parent.LastSignedAt+1, 0))
+	if wait > 2*time.Second {
+		t.Fatal("unexpected parent publication deadline")
+	}
+	if wait > 0 {
+		time.Sleep(wait)
+	}
+	if err := e.publishPendingParents(); err != nil {
+		t.Fatal(err)
+	}
+	tx, err := e.fundReserved(context.Background(), s.Short, "swap/"+s.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := e.commitMakerFill(s, tx); err != nil {
+		t.Fatal(err)
+	}
+	s.ShortFunding, s.Short.TxID = contract.Hex(tx), tx.TxHash().String()
+	if err := e.prepare(s, s.Short); err != nil {
+		t.Fatal(err)
+	}
+	if !e.s.FillRecords[s.ID].Allocation.EverCommitted || s.ShortFunding == "" || len(s.SelfRefunds) == 0 {
+		t.Fatal("funding authority was not persisted")
+	}
+	return s
+}
+
 func TestAutomationFixedRenewalAtomicReceiptRestartAndNoBurst(t *testing.T) {
 	e, p := automationFixture(t)
 	e.runAutomations(context.Background())
@@ -112,20 +159,20 @@ func TestAutomationBudgetDoesNotRefundSignedFundingOrUnknownObligations(t *testi
 			e, p := automationFixture(t)
 			e.runAutomations(context.Background())
 			id := p.CurrentOfferID
-			o, _ := historicalOffer(e.s.Offers[id])
-			o.Status, o.Available, o.Revision = "reserved", 0, o.Revision+1
-			o.Reservation = transport.RandomID()
-			o.Expires = time.Now().Unix() - 1
-			event, err := e.signOffer(o, nostr.Now())
-			if err != nil {
-				t.Fatal(err)
-			}
-			e.stageOffer(o, event)
 			if mode == "signed" {
-				request := automationChildRequest(t, e, event)
-				e.s.Swaps[request.ID] = &Swap{ID: request.ID, Role: "maker", Request: request, ShortFunding: "persisted signed funding", Stage: "refunded"}
+				s := fundPolicyOffer(t, e, id)
+				// Cached outcome text cannot refund may-signed authority.
+				s.Stage = "refunded"
+			} else {
+				from, message := automationOrderRequest(t, e, e.s.Offers[id])
+				if err := e.handle(from, message); err != nil {
+					t.Fatal(err)
+				}
+				if e.s.Swaps[message.SwapID] == nil {
+					t.Fatal("unknown peer funding lost accepted custody")
+				}
 			}
-			if err = e.save(); err != nil {
+			if err := e.save(); err != nil {
 				t.Fatal(err)
 			}
 			want := "reserved"
@@ -136,7 +183,7 @@ func TestAutomationBudgetDoesNotRefundSignedFundingOrUnknownObligations(t *testi
 				t.Fatal("refunded uncertain/signed charge", p.Charges[id])
 			}
 			p.Config.VolumeLimit = 100000
-			if err = e.automationBudget(p, automationCharge(p.Config, "new", 200000, 2000), id); mode == "signed" && err == nil {
+			if err := e.automationBudget(p, automationCharge(p.Config, "new", 200000, 2000), id); mode == "signed" && err == nil {
 				t.Fatal("historical recreation reused committed volume")
 			}
 		})
@@ -301,6 +348,31 @@ func TestAutomationUnavailableFeesProviderAndFundsPause(t *testing.T) {
 	}
 }
 
+// A restarted process acquires the saved vault into a new Engine. In particular
+// it cannot retain a closed old process's disposable validation index.
+func reopenAutomationFixture(t *testing.T, source *Engine, path string) *Engine {
+	t.Helper()
+	v, saved, err := openCurrentStateVault(path, []byte("receive-test-password"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { v.Close() })
+	e := &Engine{Config: source.Config, s: saved, vault: v, keys: source.keys, identity: source.identity,
+		nodes: maps.Clone(source.nodes), watch: maps.Clone(source.watch), addresses: maps.Clone(source.addresses), scripts: maps.Clone(source.scripts),
+		heights: maps.Clone(source.heights), clocks: maps.Clone(source.clocks), balances: map[chain.ID]int64{},
+		chainFresh: maps.Clone(source.chainFresh), chainObserved: maps.Clone(source.chainObserved), chainGeneration: maps.Clone(source.chainGeneration), chainErrors: map[chain.ID]string{},
+		fillValidation: captureFillValidation(&saved, nil)}
+	for _, id := range []chain.ID{chain.BTC, chain.Blake} {
+		if err := e.loadReceiveAddresses(context.Background(), id); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := e.refresh(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	return e
+}
+
 func TestAutomationPendingCommitFaultPreservesOneIdentityAndCharge(t *testing.T) {
 	e, p := automationFixture(t)
 	request := TradeQuoteRequest{FillOrderFields: automationWholeFields(chain.Blake, 100000, 200000, 2000, 0), Kind: "maker", ExpectedWallet: e.Config.Name, ExpectedNetwork: string(e.Config.Network), Sell: chain.Blake, SellAmount: 100000, BuyAmount: 200000, Expires: time.Now().Unix() + 120, FeeSelection: FeeSelection{FundingFee: 2000, OwnerFeeCap: 20000}}
@@ -319,11 +391,8 @@ func TestAutomationPendingCommitFaultPreservesOneIdentityAndCharge(t *testing.T)
 		t.Fatal(err)
 	}
 	e.vault.Close()
-	vault, err := storage.Open(path, []byte("receive-test-password"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	e.vault = vault
+	e = reopenAutomationFixture(t, e, path)
+	p = e.s.Automations[p.Config.ID]
 	backend := e.nodes[chain.Blake]
 	e.nodes[chain.Blake] = &replacementCrashBackend{Backend: backend, before: func() {
 		if err := e.vault.Close(); err != nil {
@@ -337,23 +406,14 @@ func TestAutomationPendingCommitFaultPreservesOneIdentityAndCharge(t *testing.T)
 	if len(e.s.Offers) != 1 || len(p.Charges) != 1 {
 		t.Fatal("fault missed atomic creation boundary")
 	}
-	reopened, err := storage.Open(path, []byte("receive-test-password"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer reopened.Close()
-	var saved State
-	if _, err = reopened.Load(&saved); err != nil {
-		t.Fatal(err)
-	}
+	e.nodes[chain.Blake] = backend
+	e = reopenAutomationFixture(t, e, path)
+	saved := e.s
 	old := saved.Automations[p.Config.ID]
 	if len(saved.Offers) != 0 || len(old.Charges) != 0 || old.Pending.RequestID != confirm.RequestID || saved.TradeReceipts[confirm.RequestID].Result.State != "pending" {
 		t.Fatal("partial policy charge or successor persisted")
 	}
-	e.vault, e.s, e.fatal = reopened, saved, nil
-	e.nodes[chain.Blake] = backend
-	e.tradeQuotes = nil
-	e.tradeConfirming = nil
+
 	e.s.Automations[p.Config.ID].NextAction = 0
 	e.runAutomations(context.Background())
 	current := e.s.Automations[p.Config.ID]
@@ -376,16 +436,9 @@ func TestAutomationLastFillBudgetAndRestoredHold(t *testing.T) {
 		t.Fatal("exact remaining budget did not fit selected fee", p.Decision)
 	}
 	id := p.CurrentOfferID
-	event := e.s.Offers[id]
-	o, _ := historicalOffer(event)
-	o.Status, o.Reservation = "reserved", "funded"
-	reserved, signErr := e.signOffer(o, nostr.Now())
-	if signErr != nil {
-		t.Fatal(signErr)
-	}
-	e.stageOffer(o, reserved)
-	request := automationChildRequest(t, e, event)
-	e.s.Swaps[request.ID] = &Swap{ID: request.ID, Role: "maker", Request: request, ShortFunding: "signed", Stage: "refunded"}
+	s := fundPolicyOffer(t, e, id)
+	// Advisory terminal text does not erase permanently signed spending.
+	s.Stage = "refunded"
 	e.reconcileAutomations()
 	p.NextAction = 0
 	e.runAutomations(context.Background())

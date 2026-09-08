@@ -388,25 +388,33 @@ func TestStrategyExposurePositiveProofAndReorgDoNotRefundCharges(t *testing.T) {
 func TestStrategyReportUsesActualConfirmedActivityAndIsAdvisory(t *testing.T) {
 	e, p := strategyFixture(t)
 	child := e.s.Automations[strategyPolicyID(p.Config.ID, chain.Blake)]
-	order := transport.RandomID()
+	// Create and accept the exact 200k/202k parent with its reviewed 6500 fee.
+	// The report projection below supplies observations, not spending custody.
+	request := TradeQuoteRequest{Kind: "maker", ExpectedWallet: e.Config.Name, ExpectedNetwork: string(e.Config.Network), Sell: chain.Blake, SellAmount: 200000, BuyAmount: 202000, Expires: time.Now().Unix() + 120, FeeSelection: FeeSelection{FundingFee: 6500, OwnerFeeCap: 20000}, FillOrderFields: automationWholeFields(chain.Blake, 200000, 202000, 6500, 0)}
+	created := confirmQuote(t, e, confirmation(requestQuote(t, e, request)))
+	if created.State != "accepted" {
+		t.Fatal(created)
+	}
+	order := created.ID
+	s := fundPolicyOffer(t, e, order)
+	swapID := s.ID
 	child.Charges[order] = automationCharge(child.Config, order, 202000, 6500)
 	child.Charges[order].State = "committed"
-	o := protocol.Offer{Version: protocol.Version, Revision: 1, Available: 200000, FillPolicy: protocol.FillPolicy{Mode: protocol.FillWhole, Min: 200000, Max: 200000}, ID: order, Network: e.Config.Network, Maker: e.identity.Public().Hex(), Sell: chain.Blake, SellAmount: 200000, BuyAmount: 202000, Status: "open", Expires: time.Now().Unix() + 120}
-	event, err := e.signOffer(o, nostr.Now())
+	s.Stage, s.ShortSpend, s.LongSpend = "completed", "peer-claim", "claim"
+	s.ShortConfirmations, s.LongConfirmations = 2, 2
+	s.Long.TxID = strings.Repeat("e", 64)
+	funding := s.Short.TxID
+	o, err := historicalOffer(s.Request.OfferEvent)
 	if err != nil {
 		t.Fatal(err)
 	}
-	request := automationChildRequest(t, e, event)
-	swapID := request.ID
-	e.s.Swaps[swapID] = &Swap{ID: swapID, Role: "maker", Request: request, Stage: "completed", ShortSpend: "peer-claim", LongSpend: "claim", ShortConfirmations: 2, LongConfirmations: 2}
-	e.s.Swaps[swapID].Short.TxID = "funding"
-	e.s.Swaps[swapID].Long.TxID = "peer-funding"
+	e.s.Activities = map[string]Activity{}
 	e.strategyVerifiedSwaps = map[string]bool{swapID: true}
 	// A separate positively observed refund is still a fee, never trade volume.
 	child.Charges[order].ExposureSettled = &StrategyExposureProof{SwapID: "refunded", Sell: chain.Blake, FundingTxID: "refund-funding", SpendTxID: "refund", PeerSpendTxID: "peer-refund", CheckedAt: time.Now().Unix()}
 	now := time.Now().Unix()
 	for _, a := range []Activity{
-		{ID: "fund", Kind: "swap_funding", Chain: chain.Blake, OrderID: order, SwapID: swapID, TxID: "funding", Principal: 200000, Fee: 6500, FeeKnown: true, FeePayer: "wallet", Movement: true, Status: "confirmed", Confirmations: 2, ObservedAt: now},
+		{ID: "fund", Kind: "swap_funding", Chain: chain.Blake, OrderID: order, SwapID: swapID, TxID: funding, Principal: 200000, Fee: 6500, FeeKnown: true, FeePayer: "wallet", Movement: true, Status: "confirmed", Confirmations: 2, ObservedAt: now},
 		{ID: "claim", Kind: "swap_claim", Chain: chain.BTC, OrderID: order, SwapID: swapID, TxID: "claim", Principal: 202000, Amount: 196000, Fee: 6000, FeeKnown: true, FeePayer: "wallet", Movement: true, Status: "confirmed", Confirmations: 2, ObservedAt: now},
 		{ID: "refund", Kind: "swap_refund", Chain: chain.Blake, OrderID: order, SwapID: "refunded", TxID: "refund", Principal: 200000, Fee: 2000, FeeKnown: true, FeePayer: "wallet", Movement: true, Status: "confirmed", Confirmations: 2, ObservedAt: now},
 		{ID: "pending", Kind: "swap_claim", Chain: chain.BTC, OrderID: order, SwapID: "pending", TxID: "pending", Fee: 20000, FeeKnown: true, FeePayer: "wallet", Movement: true, Status: "mempool", ObservedAt: now},

@@ -100,9 +100,24 @@ func TestAutomationImportedPolicyRequiresNewAuthorization(t *testing.T) {
 func TestAutomationDisabledAcknowledgementRetainsImportedBudget(t *testing.T) {
 	e, p := automationFixture(t)
 	e.runAutomations(context.Background())
+	var beforeExpiry State
+	if _, err := e.vault.Load(&beforeExpiry); err != nil {
+		t.Fatal(err)
+	}
 	id := expirePolicyOffer(t, e, p)
-	p.Charges[id].State = "reserved" // Snapshot was taken before expiry was known.
-	holdImportedAutomations(&e.s)
+	// Restore the independently exported pre-expiry snapshot. The source's
+	// later observed withdrawal never rewinds its committed parent or charges.
+	if err := PrepareRecovery(&beforeExpiry, time.Now().Unix(), false); err != nil {
+		t.Fatal(err)
+	}
+	e = conservationRestoredEngine(t, e, beforeExpiry)
+	for _, id := range []chain.ID{chain.BTC, chain.Blake} {
+		if err := e.loadReceiveAddresses(context.Background(), id); err != nil {
+			t.Fatal(err)
+		}
+	}
+	p = e.s.Automations[p.Config.ID]
+	readyManagedRecovery(t, e)
 	savePolicy(t, e, AutomationEdit{Config: p.Config, ExpectedRevision: p.Revision, Enabled: false, AcknowledgeRestoredBudget: true})
 	if !p.RestoreHold || p.Charges[id].State != "reserved" || !p.Charges[id].Uncertain {
 		t.Fatal("disabled save erased imported reservation")
