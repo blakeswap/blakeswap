@@ -304,11 +304,19 @@ func (e *Engine) reviewStrategy(raw json.RawMessage) (StrategyReview, error) {
 	if err := e.validateStrategyEdit(q); err != nil {
 		return StrategyReview{}, err
 	}
-	p := MakerStrategy{Config: q.Config, Enabled: q.Enabled}
+	p := MakerStrategy{Config: q.Config, Enabled: q.Enabled, WalletKey: e.identity.Public().Hex()}
 	if old := e.s.MakerStrategies[q.Config.ID]; old != nil {
 		p = *old
 		p.Config = q.Config
 		p.Enabled = q.Enabled
+	}
+	// Preview the reviewed prospective authority without changing durable
+	// holds, breaker state or charges. Save repeats all validation.
+	if q.Enabled {
+		p.Tripped = false
+		if q.AcknowledgeRestoredBudget {
+			p.RestoreHold = false
+		}
 	}
 	return StrategyReview{Config: q.Config, ExpectedRevision: q.ExpectedRevision, Enabled: q.Enabled, ReviewDigest: strategyDigest(q, e.identity.Public().Hex()), Preview: e.strategyView(&p), Warning: "Authorize both maker directions within the exact displayed limits. Gross signed-funding consumption never resets after refunds, reorgs, stop or restart. Each chain has one shared lifetime fee/rescue allowance. Preview uses confirmed coins and excludes pending receipts and locked principal; coin granularity can prevent a quote. All wallet offers and unsettled swaps count toward exposure and concurrency. Selected makers may collude. No profitability or fiat valuation is implied. Stop cancels only unreserved quotes; accepted swaps still settle. Imported reservations remain uncertain even after fresh authorization."}, nil
 }

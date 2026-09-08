@@ -448,3 +448,14 @@ published wallet installation. It forces `complete=false` and
 installed but Settings publication failed. It does not assert that this profile
 is already monitored. Direct setup/import/Settings mutation is covered by the
 same in-flight guard as wallet commands.
+
+## Inventory strategy
+
+The separate typed strategy list/review/save/stop/report RPCs bind wallet,
+network, stable strategy ID and revision; they do not grow `Status` history.
+`StrategySide` holds exact native-satoshi limits. `StrategyConfig` adds exact rate
+ratios, per-side spread/skew bounds, reference/protection and shared risk limits.
+The full-review digest covers every authorization field. `StrategyView` separates
+reserved/committed authorization from optional confirmed activity metrics;
+`report_included` is true only after an explicit `ReportStrategy` query.
+See [fields, accounting and command semantics](STRATEGIES.md#reports-and-api).

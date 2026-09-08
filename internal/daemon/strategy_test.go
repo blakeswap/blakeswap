@@ -390,6 +390,17 @@ func TestStrategyReportUsesActualConfirmedActivityAndIsAdvisory(t *testing.T) {
 	order := transport.RandomID()
 	child.Charges[order] = automationCharge(child.Config, order, 202000, 6500)
 	child.Charges[order].State = "committed"
+	o := protocol.Offer{ID: order, Network: e.Config.Network, Maker: e.identity.Public().Hex(), Sell: chain.Blake, SellAmount: 200000, BuyAmount: 202000, Status: "open", Expires: time.Now().Unix() + 120}
+	event, err := e.signOffer(o, nostr.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	e.s.Swaps["swap"] = &Swap{ID: "swap", Role: "maker", Request: protocol.Request{OfferEvent: event}, Stage: "completed", ShortSpend: "peer-claim", LongSpend: "claim", ShortConfirmations: 2, LongConfirmations: 2}
+	e.s.Swaps["swap"].Short.TxID = "funding"
+	e.s.Swaps["swap"].Long.TxID = "peer-funding"
+	e.strategyVerifiedSwaps = map[string]bool{"swap": true}
+	// A separate positively observed refund is still a fee, never trade volume.
+	child.Charges[order].ExposureSettled = &StrategyExposureProof{SwapID: "refunded", Sell: chain.Blake, FundingTxID: "refund-funding", SpendTxID: "refund", PeerSpendTxID: "peer-refund", CheckedAt: time.Now().Unix()}
 	now := time.Now().Unix()
 	for _, a := range []Activity{
 		{ID: "fund", Kind: "swap_funding", Chain: chain.Blake, OrderID: order, SwapID: "swap", TxID: "funding", Principal: 200000, Fee: 6500, FeeKnown: true, FeePayer: "wallet", Movement: true, Status: "confirmed", Confirmations: 2, ObservedAt: now},
@@ -399,6 +410,23 @@ func TestStrategyReportUsesActualConfirmedActivityAndIsAdvisory(t *testing.T) {
 	} {
 		e.s.Activities[a.ID] = a
 	}
+	// A foreign maker's canonical trade deliberately reuses the same order ID.
+	// It must not be charged to this strategy's report even though this wallet
+	// was its taker, or if it happened after the strategy's own trade.
+	foreign := e.s.Activities["fund"]
+	foreign.ID, foreign.SwapID, foreign.TxID = "foreign-fund", "foreign-swap", "foreign-funding"
+	e.s.Activities[foreign.ID] = foreign
+	foreign = e.s.Activities["claim"]
+	foreign.ID, foreign.SwapID, foreign.TxID = "foreign-claim", "foreign-swap", "foreign-claim"
+	e.s.Activities[foreign.ID] = foreign
+	other := nostr.Generate()
+	o.Maker = other.Public().Hex()
+	public, _ := o.PublicJSON()
+	foreignEvent := nostr.Event{Kind: transport.OfferKind, CreatedAt: nostr.Now(), Tags: nostr.Tags{{"d", order}, {"t", e.Config.Network.Namespace()}}, Content: string(public)}
+	if err := transport.Sign(&foreignEvent, other); err != nil {
+		t.Fatal(err)
+	}
+	e.s.Swaps["foreign-swap"] = &Swap{ID: "foreign-swap", Role: "taker", Request: protocol.Request{OfferEvent: foreignEvent}, Stage: "completed"}
 	raw, _ := json.Marshal(map[string]any{"id": p.Config.ID, "expected_wallet": e.Config.Name, "expected_network": string(e.Config.Network), "expected_revision": p.Revision})
 	before, _ := json.Marshal(e.s)
 	v, err := e.strategyReport(context.Background(), raw)
@@ -443,5 +471,28 @@ func TestStrategyExternalOrderIDCannotHideLocalUncertainExposure(t *testing.T) {
 	u, _, n := e.strategyUsage(p.Config, "")
 	if u[chain.Blake].Exposure != 200000 || n != 1 {
 		t.Fatal("external maker ID collided with local authority", u, n)
+	}
+}
+
+func TestStrategyNewAuthorizationPreviewUsesCurrentIdentityWithoutSaving(t *testing.T) {
+	e, p := strategyFixture(t)
+	config := p.Config
+	e.s.MakerStrategies = nil
+	delete(e.s.Automations, strategyPolicyID(config.ID, chain.BTC))
+	delete(e.s.Automations, strategyPolicyID(config.ID, chain.Blake))
+	before, _ := json.Marshal(e.s)
+	raw, _ := json.Marshal(StrategyEdit{Config: config, Enabled: true})
+	r, err := e.reviewStrategy(raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, q := range r.Preview.Quotes {
+		if !q.Ready {
+			t.Fatal("new reviewed authority did not preview its current wallet", q)
+		}
+	}
+	after, _ := json.Marshal(e.s)
+	if string(before) != string(after) {
+		t.Fatal("prospective preview changed durable authority")
 	}
 }

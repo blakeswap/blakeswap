@@ -70,4 +70,52 @@ final class StrategyTests: XCTestCase {
         XCTAssertTrue(disabled); XCTAssertEqual(model.strategies.first?.inventory["btc"]?.committedVolume, 1000000)
         let draft = StrategyDraft(policy); XCTAssertTrue(draft.common.restored); XCTAssertFalse(draft.common.acknowledgeRestored)
     }
+    func testConfirmedReportBindsRevisionAndDiscardsChangedContext() async throws {
+        var policy = Blakeswap_V1_StrategyView()
+        policy.config.id = "strategy"; policy.config.wallet = context.profile; policy.config.network = context.network; policy.revision = 7
+        var current = context
+        var resume: CheckedContinuation<Data, Error>?
+        let model = StrategyModel(context: context, root: "/unused") { method, data in
+            if method == "strategy.list" {
+                var page = Blakeswap_V1_StrategyList(); page.wallet = self.context.profile; page.network = self.context.network; page.strategies = [policy]
+                return try page.serializedData()
+            }
+            let request = try Blakeswap_V1_StrategyReportRequest(jsonUTF8Data: data)
+            XCTAssertEqual(request.id, "strategy"); XCTAssertEqual(request.expectedRevision, 7)
+            XCTAssertEqual(request.expectedWallet, self.context.profile); XCTAssertEqual(request.expectedNetwork, self.context.network)
+            return try await withCheckedThrowingContinuation { resume = $0 }
+        }
+        await model.load(current: { current })
+        let report = Task { await model.report(policy, current: { current }) }
+        while resume == nil { await Task.yield() }
+        current = TradeContext(profile: "bob", network: "regtest", generation: 2, walletKey: "another-key")
+        var result = policy; result.reportIncluded = true; result.inventory["btc", default: Blakeswap_V1_StrategyInventory()].knownFees = 6500
+        resume?.resume(returning: try result.serializedData()); await report.value
+        XCTAssertFalse(model.strategies[0].reportIncluded)
+        XCTAssertNil(model.strategies[0].inventory["btc"])
+    }
+    func testReportKeepsActualFeesSeparateAndRejectsUnboundResponse() async throws {
+        var policy = Blakeswap_V1_StrategyView()
+        policy.config.id = "strategy"; policy.config.wallet = context.profile; policy.config.network = context.network; policy.revision = 9
+        policy.inventory["btc", default: Blakeswap_V1_StrategyInventory()].committedFees = 26500
+        var wrongRevision = false
+        let model = StrategyModel(context: context, root: "/unused") { method, _ in
+            if method == "strategy.list" {
+                var page = Blakeswap_V1_StrategyList(); page.wallet = self.context.profile; page.network = self.context.network; page.strategies = [policy]
+                return try page.serializedData()
+            }
+            var result = policy; result.reportIncluded = true; result.inventory["btc", default: Blakeswap_V1_StrategyInventory()].knownFees = 6500
+            if wrongRevision { result.revision += 1 }
+            return try result.serializedData()
+        }
+        await model.load(current: { self.context })
+        await model.report(policy, current: { self.context })
+        XCTAssertEqual(model.strategies[0].inventory["btc"]?.knownFees, 6500)
+        XCTAssertEqual(model.strategies[0].inventory["btc"]?.committedFees, 26500)
+        wrongRevision = true
+        await model.report(policy, current: { self.context })
+        XCTAssertNotNil(model.error)
+        XCTAssertEqual(model.strategies[0].revision, 9)
+    }
+
 }
