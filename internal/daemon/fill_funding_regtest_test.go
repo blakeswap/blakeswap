@@ -163,15 +163,22 @@ func runRealFundingChangeAncestry(t *testing.T, sell chain.ID, role string) {
 		h.online(d.taker)
 		ancestryAssertRevealWindow(h, h.swap(d.taker, d.id))
 		partialWait(h, "independent D first claim", func() bool { return h.swap(d.taker, d.id).SelfClaim != "" }, func() { h.tick(d.taker) })
-		ancestryAssertBroadcastClaim(h, h.swap(d.taker, d.id))
-		h.tick(local)
+		ancestryAssertBroadcastClaim(h, d.taker, h.swap(d.taker, d.id))
+		partialWait(h, "independent local D witnessed rescue", func() bool {
+			s := h.swap(local, d.id)
+			return s.SecretObserved && s.SelfClaim != ""
+		}, func() {
+			h.tick(local)
+			ancestryAssertHeld(h, local, b, c, d, before, true)
+		})
+		ancestryAssertBroadcastClaim(h, local, h.swap(local, d.id))
 	} else {
 		h.online(d.maker)
 		partialWait(h, "independent D incoming funding", func() bool { return h.swap(d.maker, d.id).ShortSent }, func() { h.tick(d.maker) })
 		h.mine(sell, 2) // other chain only; D's own paid chain remains invalidated
 		ancestryAssertRevealWindow(h, h.swap(local, d.id))
 		partialWait(h, "independent D first claim", func() bool { return h.swap(local, d.id).SelfClaim != "" }, func() { h.tick(local, d.maker) })
-		ancestryAssertBroadcastClaim(h, h.swap(local, d.id))
+		ancestryAssertBroadcastClaim(h, local, h.swap(local, d.id))
 	}
 	ancestryAssertHeld(h, local, b, c, d, before, true)
 	restore()
@@ -450,13 +457,16 @@ func ancestryAssertRevealWindow(h *harness, s *Swap) {
 	}
 }
 
-func ancestryAssertBroadcastClaim(h *harness, s *Swap) {
+func ancestryAssertBroadcastClaim(h *harness, owner string, s *Swap) {
 	h.t.Helper()
 	tx, err := contract.Parse(s.SelfClaim)
 	if err != nil {
 		h.t.Fatal("independent actual claim missing", err)
 	}
 	c := s.Short // first reveal is the taker's incoming short leg
+	if s.Role == "maker" {
+		c = s.Long // the maker rescues its incoming leg after witnessing the peer claim
+	}
 	actual, err := h.nodes[c.Chain].Transaction(h.ctx, tx.TxHash().String())
 	if err != nil || actual.TxID != tx.TxHash().String() || actual.Hex != s.SelfClaim {
 		h.t.Fatal("independent D claim was not actually published", err)
@@ -469,6 +479,15 @@ func ancestryAssertBroadcastClaim(h *harness, s *Swap) {
 	clear(secret)
 	if !ok {
 		h.t.Fatal("independent D progress did not use the claim branch")
+	}
+	feeOK := false
+	if len(tx.TxOut) == 1 {
+		for _, fee := range protocol.RescueFees {
+			feeOK = feeOK || c.Amount-tx.TxOut[0].Value == fee
+		}
+	}
+	if !feeOK || !bytes.Equal(tx.TxOut[0].PkScript, h.engines[owner].scripts[c.Chain]) {
+		h.t.Fatal("independent D claim changed the reviewed owner payout or fee ladder")
 	}
 }
 
