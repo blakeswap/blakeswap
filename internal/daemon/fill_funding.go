@@ -16,7 +16,7 @@ func (e *Engine) commitMakerFill(s *Swap, tx *wire.MsgTx) error {
 		return errors.New("maker funding lacks the exact current child authorization")
 	}
 	parent := e.s.ParentOrders[child.ParentID]
-	if parent == nil || len(tx.TxIn) != len(child.Inputs) {
+	if parent == nil || parent.RestoreHold || len(tx.TxIn) != len(child.Inputs) {
 		return errors.New("maker funding does not spend its assigned child inputs")
 	}
 	for i, point := range child.Inputs {

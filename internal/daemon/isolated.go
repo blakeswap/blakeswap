@@ -137,6 +137,9 @@ func (e *Engine) advanceIsolatedSwap(ctx context.Context, s *Swap, all map[chain
 	if s.Role == "maker" {
 		incoming = s.Long
 	}
+	if err := e.reconcileFillContradiction(s, all); err != nil {
+		return err
+	}
 	terminalStable := e.observeSwapSpends(s, all)
 	if terminalStable {
 		// An unrelated outage is not a reorg. Keep completed history terminal;

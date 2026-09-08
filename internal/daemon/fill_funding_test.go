@@ -39,6 +39,12 @@ func TestParentFillFundingSpendsOnlyAssignedInputsAndConsumesOnce(t *testing.T) 
 	if len(tx.TxIn) != 1 || tx.TxIn[0].PreviousOutPoint.Hash.String() != child.Inputs[0].TxID {
 		t.Fatal("funding selected another child or parent coin")
 	}
+	p.RestoreHold = true
+	held := protocol.Digest(e.s)
+	if err := e.commitMakerFill(s, tx); err == nil || protocol.Digest(e.s) != held {
+		t.Fatal("parent restore hold was bypassed by a locally unchanged child")
+	}
+	p.RestoreHold = false
 	if err := e.commitMakerFill(s, tx); err != nil {
 		t.Fatal(err)
 	}

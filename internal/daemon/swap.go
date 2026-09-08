@@ -103,11 +103,21 @@ func (e *Engine) advanceSwap(ctx context.Context, s *Swap, all map[chain.ID]map[
 			return e.observeRetiredMaker(s, all)
 		}
 	}
+	if err := e.reconcileFillContradiction(s, all); err != nil {
+		return err
+	}
 	if (s.Stage == "expired before maker funding" && s.ShortFunding == "") || (s.Stage == "expired before funding" && s.LongFunding == "") {
 		return nil // Safe expiry is final even if a reorg moves the clock back.
 	}
 	if !e.fresh(chain.BTC) || !e.fresh(chain.Blake) {
 		return e.advanceIsolatedSwap(ctx, s, all)
+	}
+	for _, c := range []contract.HTLC{s.Long, s.Short} {
+		if obs, found := observation(all, c); found {
+			if err := validateContractObservation(c, obs); err != nil {
+				return err
+			}
+		}
 	}
 	// Reconcile prepared transactions even in older snapshots whose broadcast
 	// succeeded before the sent flag was saved. Lookup errors are not absence.

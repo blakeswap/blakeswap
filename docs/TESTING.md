@@ -809,3 +809,34 @@ wallet password, helper startup or developer wallet is accessed. A skipped test
 is not native Keychain evidence. Ad-hoc rebuilds can change the app's trusted code
 identity; verify release identity behavior separately rather than enabling a file
 fallback or broadening the Keychain access list.
+
+## Partial-fill outcome accounting controls
+
+`fill_reorg_test.go` exercises real two-child acceptance and disjoint locally
+signed funding, then supplies valid signed contract spends as deterministic
+chain observations. It covers both sell directions, mixed claim/refund outcomes,
+child-specific loss/depth contradictions before unrelated lookup failure,
+outage/incomplete/source-generation refusal, malformed transaction/signature
+refusal, and a failed demotion save followed by reopening the original complete
+checkpoint. A positive contradiction on one leg is retained even when the other
+leg reports malformed evidence. Sibling allocations, exact terms, inputs,
+secret knowledge and consumed fee/bounty charges remain unchanged.
+
+Actual `PrepareRecovery` controls verify positive committed-child settlement,
+cold placement/reactivation and reorg accounting while the parent stays held.
+A separate pre-commit-export model supplies independently obtained exact public
+funding/outcome evidence and verifies one-time accounting of the old reserved
+grant. Absence, incomplete/mempool data and invalid signatures cannot consume
+or release that grant. This model adds no new discovery transport and does not
+claim actual-node inclusion, funding-descendant coverage, or complete aggregate
+archive validation.
+
+The initial unchanged production controls failed in 4.715 seconds. Corrected
+outcome and existing isolated/restored/strategy controls passed in 8.670 seconds;
+the initial focused race selection passed in 111.543 seconds. The final extra
+proof-error, source, failed-save, held-parent signing and restored pre-commit
+controls passed under race in 15.841 seconds. An intermediate new fixture panic
+came from an unimplemented injected `Output` backend after successful cold
+reactivation; the fixture now returns unknown explicitly. All test and service
+handles closed. These are development controls; actual matrices and the final
+protocol/security and whole-PR gates remain separate.

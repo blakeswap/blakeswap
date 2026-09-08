@@ -80,6 +80,9 @@ func (e *Engine) advanceRestoredSwap(ctx context.Context, s *Swap, all map[chain
 	if err := s.Terms.Validate(); err != nil {
 		return err
 	}
+	if err := e.reconcileFillContradiction(s, all); err != nil {
+		return err
+	}
 	terminalStable := e.observeSwapSpends(s, all)
 	if e.recoverySwapResolved(s, all) {
 		if e.recoverySwapOwnInactive(s) {
@@ -95,8 +98,14 @@ func (e *Engine) advanceRestoredSwap(ctx context.Context, s *Swap, all map[chain
 			_, sc = contract.ExtractSecret(s.Short, short.Tx)
 		}
 		if lc && sc {
+			if err := e.settleRestoredMakerFill(s, FillFilled, all); err != nil {
+				return err
+			}
 			s.Stage = "completed"
 		} else if !lc && !sc {
+			if err := e.settleRestoredMakerFill(s, FillReleased, all); err != nil {
+				return err
+			}
 			s.Stage = "refunded"
 		} else {
 			s.Stage = "contested outcome"
@@ -176,7 +185,7 @@ func (e *Engine) recoverySwapResolved(s *Swap, all map[chain.ID]map[string]chain
 	}
 	for _, c := range []contract.HTLC{s.Long, s.Short} {
 		obs, ok := observation(all, c)
-		if c.TxID == "" || !ok || obs.Tx == nil || obs.Confirmations < e.Config.Network.Confirmations() {
+		if c.TxID == "" || !ok || obs.Confirmations < e.Config.Network.Confirmations() || validateContractObservation(c, obs) != nil {
 			return false
 		}
 	}

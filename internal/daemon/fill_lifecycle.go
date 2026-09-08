@@ -166,6 +166,7 @@ func (e *Engine) settleMakerFill(s *Swap, to FillDisposition) error {
 	if err != nil {
 		return err
 	}
+	child.ImportedUncertain = false
 	*p, *f = next, child
 	return nil
 }
