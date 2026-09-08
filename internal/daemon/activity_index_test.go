@@ -11,6 +11,7 @@ import (
 
 	"github.com/blakeswap/blakeswap/internal/chain"
 	"github.com/blakeswap/blakeswap/internal/contract"
+	"github.com/blakeswap/blakeswap/internal/protocol"
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
 	"github.com/btcsuite/btcd/wire"
 )
@@ -78,7 +79,10 @@ func TestActivityReopenDoesNotReusePersistedBackendGeneration(t *testing.T) {
 func TestActivityPreparedClaimAttemptAndObservationAreDistinct(t *testing.T) {
 	tx := activityTransaction(t, "", []byte{0x51}, 100000, nil, 0)
 	s := &Swap{ID: "swap", Role: "maker", SelfClaim: tx.Hex, Stage: "accepted"}
-	s.Request.OfferEvent.Content = `{"id":"order","sell":"btc","sell_amount":200000,"buy_amount":102000}`
+	// This is a read-only activity projection, not signing/admission authority.
+	offer, _ := json.Marshal(protocol.Offer{Version: protocol.Version, Network: chain.Regtest, ID: "order", Sell: chain.BTC, SellAmount: 200000, BuyAmount: 102000, Revision: 1, Available: 200000, FillPolicy: protocol.FillPolicy{Mode: protocol.FillWhole, Min: 200000, Max: 200000}})
+	s.Request.Version, s.Request.Quantity, s.Request.Revision = protocol.Version, 200000, 1
+	s.Request.OfferEvent.Content = string(offer)
 	s.Long.Chain, s.Long.Amount = chain.Blake, 102000
 	s.Short.Chain, s.Short.Amount = chain.BTC, 200000
 	e := &Engine{Config: Config{Name: "alice", Network: chain.Regtest}, s: State{ActivityVersion: 1, Swaps: map[string]*Swap{s.ID: s}}}

@@ -7,7 +7,6 @@ import (
 	"fiatjaf.com/nostr"
 	"fmt"
 	"github.com/blakeswap/blakeswap/internal/contract"
-	"github.com/blakeswap/blakeswap/internal/protocol"
 	"github.com/blakeswap/blakeswap/internal/storage"
 	"maps"
 	"path/filepath"
@@ -260,24 +259,20 @@ func TestImportedStrategyRecoversCoreAndHistoricalProofWhilePolicyStaysHeld(t *t
 				e.s.Automations[c.ID] = &AutomationPolicy{Config: c, WalletKey: p.WalletKey, Revision: 1, Enabled: true, Charges: map[string]*AutomationCharge{}}
 			}
 			offer := swap.Terms.Offer()
-			offer.Maker = e.identity.Public().Hex()
-			event, err := e.signOffer(offer, nostr.Now())
+			if offer.Maker != e.identity.Public().Hex() {
+				t.Fatal("fixture maker differs from the owned parent")
+			}
+			// The common fixture already binds current request/terms to its
+			// committed maker allocation. Publish that ledger's reserved view;
+			// changing the accepted OfferEvent would invalidate its exact digest.
+			parent := e.s.ParentOrders[offer.ID]
+			published := parentPublicOffer(*parent)
+			event, err := e.signOffer(published, nostr.Now())
 			if err != nil {
 				t.Fatal(err)
 			}
-			swap.Request.OfferEvent = event
-			terms, err := protocol.NewTerms(swap.Request, swap.Terms.MakerKeys, swap.Terms.StartHeights)
-			if err != nil {
-				t.Fatal(err)
-			}
-			swap.Terms = &terms
-			offer.Status = "reserved"
-			offer.Reservation = swap.ID
-			event, err = e.signOffer(offer, nostr.Now())
-			if err != nil {
-				t.Fatal(err)
-			}
-			e.stageOffer(offer, event)
+			parent.SignedRevision, parent.LastSignedAt = parent.Quantities.Revision, int64(event.CreatedAt)
+			e.stageOffer(published, event)
 			e.s.Outbox = map[string]*Delivery{}
 			child := e.s.Automations[strategyPolicyID(cfg.ID, offer.Sell)]
 			child.Charges[offer.ID] = automationCharge(child.Config, offer.ID, offer.BuyAmount, 2000)
@@ -499,10 +494,10 @@ func restoreHistoryFixture(t *testing.T, e *Engine) {
 }
 
 func TestHistoryCoverageValidationKeepsMissingProofAndRejectsMalformedBindings(t *testing.T) {
-	for _, mode := range []string{"legacy", "valid", "invalid-chain", "invalid-id", "empty-hash", "oversize-hash", "zero-height", "bad-row-binding"} {
+	for _, mode := range []string{"missing", "valid", "invalid-chain", "invalid-id", "empty-hash", "oversize-hash", "zero-height", "bad-row-binding"} {
 		t.Run(mode, func(t *testing.T) {
-			s := State{Version: 1, Network: chain.Regtest}
-			if mode != "legacy" {
+			s := State{Version: StateVersion, Network: chain.Regtest}
+			if mode != "missing" {
 				s.Capacity = &CapacityRecord{HistoryCoverage: map[chain.ID]HistoryCoverage{chain.BTC: {ID: transport.RandomID(), Height: 144, Hash: strings.Repeat("f", 64)}}}
 			}
 			if s.Capacity != nil {
@@ -528,7 +523,7 @@ func TestHistoryCoverageValidationKeepsMissingProofAndRejectsMalformedBindings(t
 			}
 			before, _ := json.Marshal(s)
 			err := ValidateHistoryCoverage(&s)
-			if (err == nil) != (mode == "legacy" || mode == "valid") {
+			if (err == nil) != (mode == "missing" || mode == "valid") {
 				t.Fatal("coverage validation", err)
 			}
 			after, _ := json.Marshal(s)

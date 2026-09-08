@@ -3,7 +3,7 @@ package daemon
 import "testing"
 
 func TestBackupFingerprintTracksRecoveryMaterialWithoutPollingNoise(t *testing.T) {
-	state := State{Version: 1, Swaps: map[string]*Swap{"swap": {ID: "swap", Role: "maker", Stage: "waiting", Secret: "secret", SelfRefunds: []string{"signed refund"}}}, TowerJobs: map[string]*TowerJob{"job": {LastAttempt: 1, Attempt: 2}}, Outbox: map[string]*Delivery{"message": {LastAttempt: 1}}}
+	state := State{Version: StateVersion, Swaps: map[string]*Swap{"swap": {ID: "swap", Role: "maker", Stage: "waiting", Secret: "secret", SelfRefunds: []string{"signed refund"}}}, TowerJobs: map[string]*TowerJob{"job": {LastAttempt: 1, Attempt: 2}}, Outbox: map[string]*Delivery{"message": {LastAttempt: 1}}}
 	initial, err := BackupFingerprint(state)
 	if err != nil {
 		t.Fatal(err)
@@ -34,7 +34,7 @@ func TestBackupFingerprintTracksRecoveryMaterialWithoutPollingNoise(t *testing.T
 }
 
 func TestBackupFreshnessRecordsExportedStateWithoutClaimingLaterChanges(t *testing.T) {
-	state := State{Version: 1, Swaps: map[string]*Swap{"swap": {ID: "swap", Role: "maker"}}}
+	state := State{Version: StateVersion, Swaps: map[string]*Swap{"swap": {ID: "swap", Role: "maker"}}}
 	status, err := StateBackupFreshness(state)
 	if err != nil || !status.StateChanged || status.LastExportAt != 0 {
 		t.Fatal("missing backup hidden", status, err)
