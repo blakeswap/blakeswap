@@ -4,8 +4,10 @@ package daemon
 import (
 	"encoding/json"
 	"fiatjaf.com/nostr"
+	"github.com/blakeswap/blakeswap/internal/authorization"
 	"github.com/blakeswap/blakeswap/internal/chain"
 	"github.com/blakeswap/blakeswap/internal/contract"
+	"github.com/blakeswap/blakeswap/internal/credential"
 	"github.com/blakeswap/blakeswap/internal/protocol"
 	"github.com/blakeswap/blakeswap/internal/storage"
 )
@@ -13,20 +15,24 @@ import (
 type NodeConfig = chain.Endpoint
 type TowerConfig = protocol.Tower
 type Config struct {
-	RescueFeeBPS        int64                   `json:"rescue_fee_bps,omitempty"`
-	ChainReady          func(chain.ID, uint32)  `json:"-"`
-	PublicWatchtower    bool                    `json:"public_watchtower"`
-	FavoriteWatchtowers []string                `json:"favorite_watchtowers,omitempty"`
-	InitialMnemonic     string                  `json:"-"`
-	Network             chain.Network           `json:"network"`
-	Name                string                  `json:"name"`
-	Mode                string                  `json:"mode"`
-	DataDir             string                  `json:"data_dir"`
-	PasswordFile        string                  `json:"password_file"`
-	Socket              string                  `json:"socket"`
-	Relays              []string                `json:"relays"`
-	Nodes               map[chain.ID]NodeConfig `json:"nodes"`
-	Tower               TowerConfig             `json:"tower"`
+	CredentialMode      string                   `json:"credential_mode,omitempty"`
+	Credential          credential.Source        `json:"-"`
+	Authorization       *authorization.Authority `json:"-"`
+	Installation        string                   `json:"-"`
+	RescueFeeBPS        int64                    `json:"rescue_fee_bps,omitempty"`
+	ChainReady          func(chain.ID, uint32)   `json:"-"`
+	PublicWatchtower    bool                     `json:"public_watchtower"`
+	FavoriteWatchtowers []string                 `json:"favorite_watchtowers,omitempty"`
+	InitialMnemonic     string                   `json:"-"`
+	Network             chain.Network            `json:"network"`
+	Name                string                   `json:"name"`
+	Mode                string                   `json:"mode"`
+	DataDir             string                   `json:"data_dir"`
+	PasswordFile        string                   `json:"password_file"`
+	Socket              string                   `json:"socket"`
+	Relays              []string                 `json:"relays"`
+	Nodes               map[chain.ID]NodeConfig  `json:"nodes"`
+	Tower               TowerConfig              `json:"tower"`
 }
 type Delivery struct {
 	Acknowledged bool        `json:"acknowledged,omitempty"`
