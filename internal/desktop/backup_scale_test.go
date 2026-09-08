@@ -398,6 +398,14 @@ func portableScaleGrowFunding(t *testing.T, state *daemon.State) map[string]port
 		}
 		child.ShortFunding = contract.Hex(tx)
 		child.Short.TxID, child.Short.Vout = tx.TxHash().String(), 0
+		if state.FillKeys == nil {
+			state.FillKeys = map[string]string{}
+		}
+		index := fmt.Sprintf("funding/%s/%s", child.Short.Chain, child.Short.TxID)
+		if prior := state.FillKeys[index]; prior != "" && prior != id {
+			t.Fatal("grown funding identity belongs to another child")
+		}
+		state.FillKeys[index] = id
 		if len(child.ShortFunding) < 24000 {
 			t.Fatal("valid funding did not preserve original retained-byte growth")
 		}
