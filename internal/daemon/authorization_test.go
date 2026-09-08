@@ -1,10 +1,14 @@
 package daemon
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
+	"github.com/blakeswap/blakeswap/internal/chain"
+	"github.com/blakeswap/blakeswap/internal/transport"
 	"testing"
+	"time"
 
 	"github.com/blakeswap/blakeswap/internal/authorization"
 	"github.com/blakeswap/blakeswap/internal/contract"
@@ -124,5 +128,152 @@ func TestActionDigestRetainsExactIntegers(t *testing.T) {
 	c, _ := ActionDigest(json.RawMessage(`{"amount":9007199254740992,"fee":2}`))
 	if c == a {
 		t.Fatal("authorization rounded exact money")
+	}
+}
+
+func nativePolicyEngine(t *testing.T, e *Engine) {
+	name := e.Config.Name
+	consentEngine(t, e)
+	e.Config.Name = name
+}
+func nativePolicyRequest(t *testing.T, e *Engine, q AutomationEdit) Request {
+	t.Helper()
+	raw, _ := json.Marshal(q)
+	review, err := e.reviewAutomation(raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	q.ReviewDigest = review.ReviewDigest
+	raw, _ = json.Marshal(q)
+	return Request{Method: "automation.save", Params: raw}
+}
+func nativeStrategyRequest(t *testing.T, e *Engine, q StrategyEdit) Request {
+	t.Helper()
+	raw, _ := json.Marshal(q)
+	review, err := e.reviewStrategy(raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	q.ReviewDigest = review.ReviewDigest
+	raw, _ = json.Marshal(q)
+	return Request{Method: "strategy.save", Params: raw}
+}
+func TestNativeConsentPolicyEditPreservesRevisionAndImportedHold(t *testing.T) {
+	e, p := automationFixture(t)
+	nativePolicyEngine(t, e)
+	e.runAutomations(context.Background())
+	old := p.CurrentOfferID
+	if old == "" {
+		t.Fatal("existing policy did not execute within its authorization")
+	}
+	q := AutomationEdit{Config: p.Config, ExpectedRevision: p.Revision, Enabled: true}
+	q.Config.SellAmount = 120000
+	req := nativePolicyRequest(t, e, q)
+	grant := approveEngine(t, e, req)
+	changed := q
+	changed.Config.VolumeLimit++
+	other := nativePolicyRequest(t, e, changed)
+	if _, err := e.Command(grant, other); !errors.Is(err, authorization.ErrChanged) {
+		t.Fatal("changed policy used native grant", err)
+	}
+	if _, err := e.Command(grant, req); !errors.Is(err, authorization.ErrChanged) {
+		t.Fatal("mismatched policy grant replayed", err)
+	}
+	if _, err := e.Command(approveEngine(t, e, req), req); err != nil {
+		t.Fatal(err)
+	}
+	if p.Config.SellAmount != 120000 || p.Revision != q.ExpectedRevision+1 {
+		t.Fatal("reviewed policy edit not applied")
+	}
+	stale := nativePolicyRequest(t, e, AutomationEdit{Config: p.Config, ExpectedRevision: p.Revision, Enabled: true})
+	staleGrant := approveEngine(t, e, stale)
+	raw, _ := json.Marshal(map[string]any{"id": p.Config.ID, "expected_wallet": e.Config.Name, "expected_network": e.Config.Network, "expected_revision": p.Revision, "cancel_open": false})
+	disable := Request{Method: "automation.disable", Params: raw}
+	if _, err := e.Command(context.Background(), disable); !errors.Is(err, authorization.ErrRequired) {
+		t.Fatal("disable bypassed consent", err)
+	}
+	if _, err := e.Command(approveEngine(t, e, disable), disable); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := e.Command(staleGrant, stale); err == nil {
+		t.Fatal("old policy revision reenabled disabled authority")
+	}
+	if p.Enabled {
+		t.Fatal("stale policy enabled")
+	}
+	if err := PrepareRecovery(&e.s, time.Now().Unix(), false); err != nil {
+		t.Fatal(err)
+	}
+	p = e.s.Automations[p.Config.ID]
+	before, _ := json.Marshal(p.Charges)
+	held := nativePolicyRequest(t, e, AutomationEdit{Config: p.Config, ExpectedRevision: p.Revision, Enabled: false, AcknowledgeRestoredBudget: true})
+	if _, err := e.Command(approveEngine(t, e, held), held); err != nil {
+		t.Fatal(err)
+	}
+	after, _ := json.Marshal(p.Charges)
+	if !p.RestoreHold || !p.Charges[old].Uncertain || !bytes.Equal(before, after) {
+		t.Fatal("native consent cleared imported uncertain accounting")
+	}
+}
+func TestNativeConsentCannotResumeStrategyWithPreTripReview(t *testing.T) {
+	e, p := strategyFixture(t)
+	nativePolicyEngine(t, e)
+	child := e.s.Automations[strategyPolicyID(p.Config.ID, chain.Blake)]
+	id := transport.RandomID()
+	child.Charges[id] = automationCharge(child.Config, id, 202000, 2000)
+	child.Charges[id].State = "committed"
+	charges, _ := json.Marshal(child.Charges)
+	q := StrategyEdit{Config: p.Config, ExpectedRevision: p.Revision, Enabled: true}
+	req := nativeStrategyRequest(t, e, q)
+	grant := approveEngine(t, e, req)
+	e.strategyFailure(child, true, errors.New("synthetic replacement failure"))
+	e.strategyFailure(child, true, errors.New("synthetic replacement failure"))
+	if !p.Tripped || p.Enabled {
+		t.Fatal("fixture did not trip breaker")
+	}
+	if err := e.save(); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := e.Command(grant, req); err == nil {
+		t.Fatal("pre-trip native permission resumed strategy")
+	}
+	q.ExpectedRevision = p.Revision
+	fresh := nativeStrategyRequest(t, e, q)
+	cancelled := approveEngine(t, e, fresh)
+	e.Config.Authorization.Revoke()
+	if _, err := e.Command(cancelled, fresh); !errors.Is(err, authorization.ErrChanged) {
+		t.Fatal("revoked native policy grant resumed strategy", err)
+	}
+	if _, err := e.Command(approveEngine(t, e, fresh), fresh); err != nil {
+		t.Fatal(err)
+	}
+	after, _ := json.Marshal(child.Charges)
+	if !p.Enabled || p.Tripped || !bytes.Equal(charges, after) {
+		t.Fatal("fresh reviewed native resumption changed permanent commitments")
+	}
+}
+func TestNativeRevocationRetainsPreviouslyBoundedAutomation(t *testing.T) {
+	e, p := automationFixture(t)
+	nativePolicyEngine(t, e)
+	done := make(chan struct{})
+	if err := e.Config.Authorization.BindLifetime(done); err != nil {
+		t.Fatal(err)
+	}
+	close(done)
+	e.runAutomations(context.Background())
+	if p.CurrentOfferID == "" || len(p.Charges) != 1 {
+		t.Fatal("private owner loss blocked already-reviewed bounded policy", p.Decision)
+	}
+	first := expirePolicyOffer(t, e, p)
+	e.runAutomations(context.Background())
+	if p.CurrentOfferID == first || p.Charges[first].Successor != p.CurrentOfferID {
+		t.Fatal("renewal required new OS permission", p.Decision)
+	}
+	if use := e.automationUsage(p, ""); use.ReservedVolume != 100000 || use.CommittedVolume != 0 {
+		t.Fatal("revocation changed bounded economic authority", use)
+	}
+	req := nativePolicyRequest(t, e, AutomationEdit{Config: p.Config, ExpectedRevision: p.Revision, Enabled: true})
+	if _, err := e.Command(context.Background(), req); !errors.Is(err, authorization.ErrRequired) {
+		t.Fatal("old policy authorized a new public edit", err)
 	}
 }

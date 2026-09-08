@@ -97,10 +97,14 @@ func TestRealNativeRevocationRetainsSavedSendRetries(t *testing.T) {
 	}
 	h.configs["maker"] = config
 	h.restart("maker")
-	h.waitReady("maker")
 	requests := map[chain.ID]*pb.SendCoinsRequest{}
 	saved := map[chain.ID]*pb.WalletSend{}
 	for _, id := range []chain.ID{chain.BTC, chain.Blake} {
+		// The previous injected broadcast failure deliberately enters endpoint
+		// backoff. Each NEW send still needs a complete fresh two-chain view;
+		// let normal observation recover before requesting the next approval.
+		// Refusal stays enabled and the saved send's 30-second retry is intact.
+		h.waitReady("maker")
 		var coin *pb.WalletCoin
 		for _, c := range h.status("maker").Coins {
 			if c.Chain == string(id) && !c.Reserved && c.Confirmations >= 2 {
@@ -117,7 +121,7 @@ func TestRealNativeRevocationRetainsSavedSendRetries(t *testing.T) {
 		}
 		sent, err := h.clients["maker"].SendCoins(nativeApproved(t, h, "maker", "wallet.send", request), request)
 		if err != nil || sent.GetTxid() == "" || sent.Submitted {
-			t.Fatal("expected durable signed send before injected broadcast failure", sent, err)
+			t.Fatal("expected durable signed send before injected broadcast failure", id, sent, err)
 		}
 		if _, err := h.nodes[id].Transaction(h.ctx, sent.Txid); err == nil {
 			t.Fatal("injected refusal published before consent revocation")

@@ -735,6 +735,29 @@ checks signed-send continuation after consent revocation; real funded claim/refu
 continuation requires the explicit two-chain scenario and is not implied by a
 skipped regtest suite.
 
+The actual native-authorization API suite uses generated wallets and an injected
+credential provider. It revokes the private session and locks further credential
+acquisition after funding, then checks both claim directions and both-leg refund
+settlement, exact accepted terms, actual node fees and persisted receipts. Its
+saved-send case injects a pre-publication broadcast refusal on each chain, waits
+for normal endpoint readiness before the next new authorization, and verifies
+that the exact persisted bytes confirm after revocation using the existing
+30-second retry interval. It also rejects bearer-only and changed/replayed grants.
+
+Run on an exclusively owned local fixture, once with RPC and once with
+`BLAKESWAP_TEST_ELECTRUM=1`:
+
+```sh
+BLAKESWAP_REGTEST=/path/to/isolated-fixture \
+  BLAKESWAP_BTC_RPC_PORT=39443 BLAKESWAP_BLAKE_RPC_PORT=49443 \
+  sh scripts/go.sh test -race -count=1 -p 1 ./internal/api \
+  -run '^TestRealNativeRevocation' -v
+```
+
+The isolated daemon controls also cover full policy edits, stale strategy reviews
+after a breaker trip, preserved imported uncertainty and previously authorized
+bounded automation continuing after native permission revocation.
+
 Native protocol tests inject an authenticator and credential store, including
 cancellation/unavailability, lock during a prompt, lock after approval, stale
 session/reply refusal and bounded pipe framing. With a freshly built helper,
