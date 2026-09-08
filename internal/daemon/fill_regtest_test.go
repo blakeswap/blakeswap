@@ -240,9 +240,37 @@ func partialFixtureWallet(h *harness, name string, deposits map[chain.ID][]int64
 	}
 }
 
+// The reviewed UI/API path requires an explicitly selected, freshly discovered
+// provider. A configured legacy CLI quote does not supply that review proof.
+func partialTowerKey(h *harness, bps int64) string {
+	if bps == 0 {
+		return ""
+	}
+	return h.engines["tower"].identity.Public().Hex()
+}
+
+func partialDiscoverTower(h *harness, bps int64, names ...string) {
+	h.t.Helper()
+	if bps == 0 {
+		return
+	}
+	key := partialTowerKey(h, bps)
+	for _, name := range names {
+		h.command(name, "tower.resolve", map[string]string{"pubkey": key})
+		partialWaitMailbox(h, "private signed tower discovery for "+name, func() bool {
+			event, exists := h.engines[name].s.Towers[key]
+			if !exists {
+				return false
+			}
+			tower, err := protocol.DecodeTower(event, chain.Regtest, time.Now().Unix())
+			return err == nil && tower.Verify() == nil && tower.PubKey == key && tower.BPS == bps && !tower.Public
+		}, func() { h.tick(name, "tower") })
+	}
+}
+
 func partialReviewedTake(h *harness, name string, offer protocol.Offer, quantity, bps int64) (string, ConfirmTradeRequest, nostr.Event) {
 	h.t.Helper()
-	request := TradeQuoteRequest{Kind: "taker", ExpectedWallet: name, ExpectedNetwork: "regtest", Maker: offer.Maker, ID: offer.ID, TowerBPS: bps, FeeSelection: FeeSelection{FundingFee: 6500, OwnerFeeCap: 20000}, FillTakeFields: FillTakeFields{Quantity: quantity, ParentRevision: offer.Revision}}
+	request := TradeQuoteRequest{Kind: "taker", ExpectedWallet: name, ExpectedNetwork: "regtest", Maker: offer.Maker, ID: offer.ID, TowerBPS: bps, TowerPubKey: partialTowerKey(h, bps), FeeSelection: FeeSelection{FundingFee: 6500, OwnerFeeCap: 20000}, FillTakeFields: FillTakeFields{Quantity: quantity, ParentRevision: offer.Revision}}
 	quote := h.command(name, "trade.quote", request).(TradeQuote)
 	buy, err := protocol.RoundedBuy(offer.SellAmount, offer.BuyAmount, quantity)
 	if err != nil || !quote.Ready || quote.Error != "" || quote.Quantity != quantity || quote.ParentRevision != offer.Revision || quote.PaidPrincipal != buy || quote.ReceivedPrincipal != quantity || len(quote.FeeBudgets) != 2 || len(quote.BountyBudgets) != 2 {
@@ -359,12 +387,13 @@ func runRealPartialFillPair(t *testing.T, sell chain.ID, bps int64) {
 	h := newHarness(t, bps)
 	partialFixtureWallet(h, "parent", map[chain.ID][]int64{sell: {610000, 610000, 610000}})
 	partialFixtureWallet(h, "second", map[chain.ID][]int64{chain.BTC: {100000000}, chain.Blake: {100000000}})
+	partialDiscoverTower(h, bps, "parent", "taker", "second")
 	const total, price, quantity int64 = 1800000, 2340001, 600000
 	buy, err := protocol.RoundedBuy(total, price, quantity)
 	if err != nil || buy != 780001 {
 		t.Fatal("awkward-ratio fixture arithmetic", buy, err)
 	}
-	create := TradeQuoteRequest{Kind: "maker", ExpectedWallet: "parent", ExpectedNetwork: "regtest", Sell: sell, SellAmount: total, BuyAmount: price, TowerBPS: bps, FeeSelection: FeeSelection{FundingFee: 6500, OwnerFeeCap: 20000}, FillOrderFields: FillOrderFields{FillPolicy: protocol.FillPolicy{Mode: protocol.FillPartial, Min: 400000, Max: quantity}, FeeBudgets: map[chain.ID]int64{sell: 4 * 26500, sell.Other(): 4 * 20000}, BountyBudgets: map[chain.ID]int64{sell: 4 * protocol.Bounty(quantity, bps), sell.Other(): 4 * protocol.Bounty(buy, bps)}}}
+	create := TradeQuoteRequest{Kind: "maker", ExpectedWallet: "parent", ExpectedNetwork: "regtest", Sell: sell, SellAmount: total, BuyAmount: price, TowerBPS: bps, TowerPubKey: partialTowerKey(h, bps), FeeSelection: FeeSelection{FundingFee: 6500, OwnerFeeCap: 20000}, FillOrderFields: FillOrderFields{FillPolicy: protocol.FillPolicy{Mode: protocol.FillPartial, Min: 400000, Max: quantity}, FeeBudgets: map[chain.ID]int64{sell: 4 * 26500, sell.Other(): 4 * 20000}, BountyBudgets: map[chain.ID]int64{sell: 4 * protocol.Bounty(quantity, bps), sell.Other(): 4 * protocol.Bounty(buy, bps)}}}
 	quote := h.command("parent", "trade.quote", create).(TradeQuote)
 	if !quote.Ready || quote.Error != "" || len(quote.Funds.Inputs) != 3 {
 		t.Fatal("parent review must own three real independent inputs", quote)
@@ -449,7 +478,7 @@ func runRealPartialFillPair(t *testing.T, sell chain.ID, bps int64) {
 		return rejected && err == nil && p.SignedRevision == p.Quantities.Revision && remote.Revision == p.Quantities.Revision
 	}, func() { h.tick("parent", names[loser]) })
 	// An old q/revision cannot silently turn into another authorization.
-	stale := TradeQuoteRequest{Kind: "taker", ExpectedWallet: names[loser], ExpectedNetwork: "regtest", Maker: parentKey, ID: parentID, TowerBPS: bps, FeeSelection: create.FeeSelection, FillTakeFields: FillTakeFields{Quantity: quantity, ParentRevision: offer.Revision}}
+	stale := TradeQuoteRequest{Kind: "taker", ExpectedWallet: names[loser], ExpectedNetwork: "regtest", Maker: parentKey, ID: parentID, TowerBPS: bps, TowerPubKey: partialTowerKey(h, bps), FeeSelection: create.FeeSelection, FillTakeFields: FillTakeFields{Quantity: quantity, ParentRevision: offer.Revision}}
 	raw, _ := json.Marshal(stale)
 	if q, err := h.engines[names[loser]].Command(h.ctx, Request{Method: "trade.quote", Params: raw}); err == nil && q.(TradeQuote).Ready {
 		t.Fatal("stale revision produced an executable review")
