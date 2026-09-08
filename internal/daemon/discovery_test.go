@@ -255,11 +255,22 @@ func TestRealDiscoveredTraderWatchtowerAndOfferBalance(t *testing.T) {
 	h.offline("maker")
 	h.offline("taker")
 	h.mine(long.Chain, long.RefundHeight+protocol.RefundGrace-h.height(long.Chain))
-	h.tick("tower")
-	h.minePending()
-	h.tick("tower")
+	// A restarted tower may need several bounded scans to catch up with the
+	// mined deadline. Require its confirmed rescue while both owners are offline.
+	partialWait(h, "trading watchtower confirmed delayed rescue", func() bool {
+		jobs := h.engines["tower"].s.TowerJobs
+		if len(jobs) == 0 {
+			return false
+		}
+		for _, job := range jobs {
+			if job.Confirmed < 2 {
+				return false
+			}
+		}
+		return true
+	}, func() { h.tick("tower"); h.minePending() })
 	h.online("taker")
-	h.tick("taker")
+	tickUntilConnected(t, h.engines["taker"])
 	if h.swap("taker", id).Stage != "refunded" {
 		provider, owner := h.engines["tower"], h.swap("taker", id)
 		t.Logf("rescue outcome: tower heights=%v error=%q; owner error=%q long spend=%s confirmations=%d", provider.heights, provider.lastError, owner.Error, owner.LongSpend, owner.LongConfirmations)
