@@ -17,6 +17,8 @@ struct TradeComposer: View {
     let refreshParent: ((Order) async throws -> Blakeswap_V2_MarketOrder)?
     @State private var refreshingParent = false
     let management: ManageOfferContext?
+    private let managementSeed: TradeManagementSeed?
+    private let managementError: String?
     @StateObject private var review: TradeReviewModel
     @State private var fill = TradeFillDraft()
     @State private var expectedEventID: String
@@ -36,16 +38,25 @@ struct TradeComposer: View {
         if let order { initial.seed(quantity: suggestedQuantity > 0 ? suggestedQuantity : (order.fillMode == "whole" ? order.sellAmount : 0)) }
         _fill = State(initialValue: initial)
         _review = StateObject(wrappedValue: TradeReviewModel(context: context, root: root))
-        if let original = management?.order.offer {
-            _sell = State(initialValue: original.sell)
-            _sellAmount = State(initialValue: String(original.sellAmount)); _buyAmount = State(initialValue: String(original.buyAmount))
-            // Public history cannot authorize private budgets or protection.
-            initial.mode = original.fillMode
-            initial.minimum = String(original.minFill); initial.maximum = String(original.maxFill)
-            _fill = State(initialValue: initial)
+        var seed: TradeManagementSeed?
+        var seedError: String?
+        if let management {
+            do {
+                guard management.wallet.matches(context), management.order.offer.network == context.network,
+                      management.order.offer.maker == context.walletKey else {
+                    throw RPCError.message("The source order does not match this wallet and network. Reopen it from the selected wallet's market history.")
+                }
+                seed = try TradeManagementSeed(action: management.action, source: management.order)
+            } catch { seedError = error.localizedDescription }
+            _sell = State(initialValue: seed?.sell ?? "")
+            _sellAmount = State(initialValue: seed.map { String($0.sellAmount) } ?? "")
+            _buyAmount = State(initialValue: seed.map { String($0.buyAmount) } ?? "")
+            _fill = State(initialValue: seed?.fill ?? TradeFillDraft())
         }
+        managementSeed = seed; managementError = seedError
     }
-    private var matching: Bool { context.matches(model.tradeContext) }
+    private var matching: Bool { context.matches(model.tradeContext) && (management?.wallet.matches(context) ?? true) }
+
     private var paidChain: String { order?.buy ?? sell }
     private var paidAmount: String {
         guard let order else { return sellAmount }
@@ -62,7 +73,8 @@ struct TradeComposer: View {
     }
     private var selectedTower: Blakeswap_V2_Tower? { towers.first { $0.pubkey == towerID } }
     private var validDraft: Bool {
-        guard !refreshingParent, currentFee != nil, !protection || selectedTower != nil else { return false }
+        guard managementError == nil, !refreshingParent, currentFee != nil, !protection || selectedTower != nil else { return false }
+        if let managementSeed, (try? managementSeed.validate(sell: sell, amount: sellAmount)) == nil { return false }
         var draft = Blakeswap_V2_TradeQuoteRequest(); draft.sellAmount = order?.sellAmount ?? (Int64(sellAmount) ?? 0)
         guard (try? fill.apply(to: &draft, order: order)) != nil else { return false }
         if order != nil { return true }
@@ -79,7 +91,11 @@ struct TradeComposer: View {
             } else if review.quote != nil || review.pending != nil {
                 TradeEconomicsReview(review: review)
             } else {
-                form.disabled(review.busy || review.journalBlocked || refreshingParent)
+                if let managementError {
+                    Text(managementError).foregroundStyle(.orange)
+                } else {
+                    form.disabled(review.busy || review.journalBlocked || refreshingParent)
+                }
                 HStack {
                     Spacer()
                     Button("Review economics") { Task { await reviewDraft() } }
@@ -132,11 +148,17 @@ struct TradeComposer: View {
                 }
                 Text("Exact rounded payment preview: \(paidAmount.isEmpty ? "Unavailable" : paidAmount) \(symbol(order.buy)) sats. The daemon checks the remaining tail and current funds.").font(.caption)
             } else {
-                Picker("You sell", selection: $sell) {
-                    Text("Bitcoin (BTC)").tag("btc")
-                    Text("Bitcoin Blake2b (BLAKE)").tag("blake")
+                if replacement != nil, let managementSeed {
+                    Text("Replace available remainder: \(managementSeed.sellAmount) \(symbol(managementSeed.sell)) sats")
+                        .accessibilityIdentifier("replacement-remainder")
+                    Text("The sell asset and remaining quantity are fixed. Review a new receive price, fill bounds and private limits below.").font(.caption).foregroundStyle(.secondary)
+                } else {
+                    Picker("You sell", selection: $sell) {
+                        Text("Bitcoin (BTC)").tag("btc")
+                        Text("Bitcoin Blake2b (BLAKE)").tag("blake")
+                    }
+                    TextField("Sell principal (sats)", text: $sellAmount).accessibilityIdentifier("sell-amount")
                 }
-                TextField("Sell principal (sats)", text: $sellAmount).accessibilityIdentifier("sell-amount")
                 TextField("Price-reference receive amount (sats)", text: $buyAmount).accessibilityIdentifier("buy-amount")
                 Picker("Fill mode", selection: $fill.mode) { Text("Whole").tag("whole"); Text("Partial").tag("partial") }
                 if fill.mode == "partial" {
@@ -174,14 +196,14 @@ struct TradeComposer: View {
         request.sellAmount = order?.sellAmount ?? (Int64(sellAmount) ?? 0)
         request.buyAmount = order?.buyAmount ?? (Int64(buyAmount) ?? 0)
         if order == nil { request.expires = Int64(expires.timeIntervalSince1970) }
-        if let management {
-            request.orderAction = management.action; request.sourceOfferID = management.order.offer.id; request.sourceEventID = management.order.eventID
-        }
         request.fundingFee = fee.quote.fee; request.ownerFeeCap = 20_000
         if fee.automatic { request.rateSatKvb = fee.quote.estimate.rateSatKvb; request.feeTimestamp = fee.quote.estimate.timestamp }
         let tower = protection ? selectedTower : nil
         request.towerBps = tower?.bps ?? 0; request.towerPubkey = tower?.pubkey ?? ""
-        do { try fill.apply(to: &request, order: order) }
+        do {
+            try managementSeed?.applySource(to: &request)
+            try fill.apply(to: &request, order: order)
+        }
         catch { review.error = error.localizedDescription; return }
         await review.review(request, expectedEventID: expectedEventID, current: { model.tradeContext })
     }

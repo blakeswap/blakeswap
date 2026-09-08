@@ -57,6 +57,89 @@ struct TradeFillDraft: Equatable {
     }
 }
 
+// A replacement is a new review of the locally known remainder. Public
+// availability may lag the private ledger and must never seed this amount.
+struct TradeManagementSeed {
+    let action: String
+    let sell: String
+    let sellAmount: Int64
+    let buyAmount: Int64
+    let sourceOfferID: String
+    let sourceEventID: String
+    let fill: TradeFillDraft
+
+    init(action: String, source: Blakeswap_V2_MarketOrder) throws {
+        let original = source.offer
+        let range: ClosedRange<Int64> = 100_000...10_000_000_000
+        guard action == "replace" || action == "recreate", source.own,
+              original.version == 2, original.revision > 0,
+              !original.id.isEmpty, !original.maker.isEmpty, !source.eventID.isEmpty,
+              original.sell == "btc" || original.sell == "blake",
+              range.contains(original.sellAmount), range.contains(original.buyAmount),
+              original.fillMode == "whole" || original.fillMode == "partial",
+              original.minFill >= 100_000, original.minFill <= original.maxFill,
+              original.maxFill <= original.sellAmount,
+              original.fillMode != "whole" || (original.minFill == original.sellAmount && original.maxFill == original.sellAmount) else {
+            throw RPCError.message("The source order is incomplete. Refresh your market history before reviewing it.")
+        }
+        var amount = original.sellAmount
+        if action == "replace" {
+            guard source.hasQuantities, source.quantities.total == original.sellAmount else {
+                throw RPCError.message("The available remainder is unknown. Refresh your market history before replacing this order.")
+            }
+            let quantities = source.quantities
+            var unaccounted = quantities.total
+            for bin in [quantities.available, quantities.reserved, quantities.committed, quantities.filled, quantities.released] {
+                guard bin >= 0, bin <= unaccounted else {
+                    throw RPCError.message("The source quantity summary is inconsistent. Refresh before replacing this order.")
+                }
+                unaccounted -= bin
+            }
+            guard unaccounted == 0, range.contains(quantities.available),
+                  original.fillMode != "whole" || quantities.available == original.sellAmount else {
+                throw RPCError.message("No valid available remainder can be replaced. Refresh your market history.")
+            }
+            amount = quantities.available
+        }
+        let reference = try roundedFillBuy(total: original.sellAmount, buy: original.buyAmount, quantity: amount)
+        guard range.contains(reference) else {
+            throw RPCError.message("The remainder cannot form a new order at this price reference.")
+        }
+        var draft = TradeFillDraft()
+        draft.mode = original.fillMode
+        var minimum = min(original.minFill, amount), maximum = min(original.maxFill, amount)
+        if action == "replace", draft.mode == "partial" {
+            let leastParts = 1 + (amount - 1) / maximum
+            // The new parent's rounded reference can change its economic
+            // interval. Seed one legal fill if clipped old bounds cannot cover
+            // it; these are editable draft values, never a retained grant.
+            let minimumReceive = try roundedFillBuy(total: amount, buy: reference, quantity: minimum)
+            if leastParts > amount / minimum || minimumReceive < 100_000 {
+                minimum = amount; maximum = amount
+            }
+        }
+        draft.minimum = String(minimum); draft.maximum = String(maximum)
+        // Neither a public order nor its old private authorization supplies
+        // fresh limits for this new parent, including conditional bounties.
+        draft.btcFees = ""; draft.blakeFees = ""; draft.btcBounty = ""; draft.blakeBounty = ""
+        self.action = action; sell = original.sell; sellAmount = amount; buyAmount = reference
+        sourceOfferID = original.id; sourceEventID = source.eventID; fill = draft
+    }
+
+    func validate(sell: String, amount: String) throws {
+        if action == "replace" {
+            guard sell == self.sell, try TradeFillDraft.amount(amount, positive: true) == sellAmount else {
+                throw RPCError.message("A replacement must use exactly the available remainder in its original sell asset.")
+            }
+        }
+    }
+
+    func applySource(to request: inout Blakeswap_V2_TradeQuoteRequest) throws {
+        try validate(sell: request.sell, amount: String(request.sellAmount))
+        request.orderAction = action; request.sourceOfferID = sourceOfferID; request.sourceEventID = sourceEventID
+    }
+}
+
 // Parent and example economics are different views, never summed together.
 struct TradeEconomicsPresentation {
     let quote: Blakeswap_V2_TradeQuote
