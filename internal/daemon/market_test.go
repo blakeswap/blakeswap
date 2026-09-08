@@ -68,7 +68,7 @@ func marketOffer(t *testing.T, e *Engine, own bool, sell chain.ID, btc, blake in
 			if termsErr != nil {
 				t.Fatal(termsErr)
 			}
-			child = &Swap{ID: request.ID, Role: "maker", Request: request, Terms: &terms, Long: terms.Long, Short: terms.Short, Stage: "awaiting taker funding"}
+			child = &Swap{ID: request.ID, Role: "maker", Request: request, Terms: &terms, Long: terms.Long, Short: terms.Short, OwnerFeeCap: policy.OwnerFeeCap, Stage: "awaiting taker funding"}
 			if status != "reserved" {
 				var next FillRecord
 				*parent, next, err = parent.transitionFill(*allocation, FillCommitted, false)

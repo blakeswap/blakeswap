@@ -139,13 +139,11 @@ func TestParentFillRemoteMarketUsesSignedAvailabilityAndLegalSuggestion(t *testi
 }
 
 func TestParentFillColdWholeMarketPreservesExactParentAndChildWithoutActivation(t *testing.T) {
-	e, maker, now := fillAdmissionEngine(t, chain.Blake)
+	e, maker, now := fillAdmissionEngine(t, chain.Blake, protocol.FillPolicy{Mode: protocol.FillWhole, Min: 1000000, Max: 1000000})
 	var parent *ParentOrder
 	for _, p := range e.s.ParentOrders {
 		parent = p
 	}
-	parent.Offer.FillPolicy = protocol.FillPolicy{Mode: protocol.FillWhole, Min: 1000000, Max: 1000000}
-	parent.Economics = parent.Offer.EconomicsDigest()
 	request := fillRequestFixture(t, *parent, maker, 1000000)
 	e.stageOffer(parent.Offer, request.OfferEvent)
 	if err := applyFillRequest(t, e, request, now); err != nil {
@@ -222,13 +220,11 @@ func TestParentFillMarketRetirementRefusesMismatchedCompanionBeforeMetadata(t *t
 }
 
 func wholeMarketFixture(t *testing.T) (*Engine, nostr.SecretKey, int64, *ParentOrder) {
-	e, maker, now := fillAdmissionEngine(t, chain.Blake)
+	e, maker, now := fillAdmissionEngine(t, chain.Blake, protocol.FillPolicy{Mode: protocol.FillWhole, Min: 1000000, Max: 1000000})
 	var p *ParentOrder
 	for _, value := range e.s.ParentOrders {
 		p = value
 	}
-	p.Offer.FillPolicy = protocol.FillPolicy{Mode: protocol.FillWhole, Min: 1000000, Max: 1000000}
-	p.Economics = p.Offer.EconomicsDigest()
 	request := fillRequestFixture(t, *p, maker, 1000000)
 	e.stageOffer(p.Offer, request.OfferEvent)
 	return e, maker, now, p

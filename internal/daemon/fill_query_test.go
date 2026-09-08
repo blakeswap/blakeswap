@@ -35,7 +35,15 @@ func fillHistoryFixture(t *testing.T, count int) (*Engine, FillQuery, []string) 
 		f.Inputs = []CoinOutpoint{{TxID: transport.RandomID()}}
 		e.s.FillRecords[r.ID] = f
 		e.s.FundingFees["swap/"+r.ID] = f.FundingPolicy
-		e.s.Swaps[r.ID] = &Swap{ID: r.ID, Role: "maker", Request: r, Stage: "expired before maker funding"}
+		keys, err := e.swapKeys(r.ID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		terms, err := protocol.NewTerms(r, keys, e.heights)
+		if err != nil {
+			t.Fatal(err)
+		}
+		e.s.Swaps[r.ID] = &Swap{ID: r.ID, Role: "maker", Request: r, Terms: &terms, Long: terms.Long, Short: terms.Short, OwnerFeeCap: f.FundingPolicy.OwnerFeeCap, Stage: "expired before maker funding"}
 		ids = append(ids, r.ID)
 		if i%2 == 0 {
 			for _, kind := range []string{"fill_records", "swaps"} {
@@ -180,7 +188,17 @@ func TestFillHistoryFailureAndCancellationDisposeOnlyUnpublishedResults(t *testi
 		child.RequestDigest = transport.RandomID()
 		break
 	}
-	if err := e.save(); err != nil {
+	// The writer now rejects this malformed companion before it can become a
+	// normal checkpoint. Inject it below the writer to keep independently
+	// exercising the history reader's refusal and old-result isolation.
+	if _, err := e.prepareFillValidation(); err == nil {
+		t.Fatal("writer accepted the malformed allocation companion")
+	}
+	corrupt, err := json.Marshal(e.s)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := e.vault.Save(json.RawMessage(corrupt)); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := e.Command(context.Background(), Request{Method: "fills.list", Params: raw}); err == nil {

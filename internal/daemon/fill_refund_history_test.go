@@ -173,7 +173,7 @@ func TestParentFillHotRefundDoesNotReplaceMixedPartialOrWithdrawnOutcome(t *test
 		}
 		s := e.s.Swaps[r.ID]
 		e.clocks[s.Long.Chain], e.clocks[s.Short.Chain] = s.Long.RefundHeight, s.Short.RefundHeight
-		if err := e.advanceSwap(context.Background(), s, nil); err != nil {
+		if err := e.advanceSwap(context.Background(), s, map[chain.ID]map[string]chain.Observation{chain.BTC: {}, chain.Blake: {}}); err != nil {
 			t.Fatal(err)
 		}
 		if err := e.withdrawParentAvailable(p.Offer.ID, now+1); err != nil {

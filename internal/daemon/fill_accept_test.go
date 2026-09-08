@@ -14,10 +14,17 @@ import (
 	"github.com/blakeswap/blakeswap/internal/transport"
 )
 
-func fillAdmissionEngine(t *testing.T, sell chain.ID) (*Engine, nostr.SecretKey, int64) {
+func fillAdmissionEngine(t *testing.T, sell chain.ID, policies ...protocol.FillPolicy) (*Engine, nostr.SecretKey, int64) {
 	t.Helper()
 	e, _ := receiveEngine(t)
 	p, maker := fillParentFixture(t, sell, 0)
+	if len(policies) > 1 {
+		t.Fatal("fixture has more than one initial fill policy")
+	}
+	if len(policies) == 1 {
+		p.Offer.FillPolicy = policies[0]
+		p.Economics = p.Offer.EconomicsDigest()
+	}
 	e.identity = maker
 	e.Config.Mode = "trader"
 	e.s.Version, e.s.Network = StateVersion, chain.Regtest

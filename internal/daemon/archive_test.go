@@ -47,8 +47,9 @@ func TestArchiveSemanticFreshnessSurvivesMovesChangesAndReopen(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	// The core moves with every immutable child index and its exact fee.
 	after, err := BackupFingerprint(archived)
-	if err != nil || after != fingerprint || len(archived.Archive) != 1 {
+	if err != nil || after != fingerprint || len(archived.Archive) != 1+len(snapshot.FillKeys)+1 {
 		t.Fatal("portable canonical fingerprint changed after compaction", after, fingerprint, err)
 	}
 	if _, err := BackupFingerprint(e.s); err == nil {
