@@ -11,8 +11,8 @@ import (
 
 func archiveMoveKey(kind, id string) string { return kind + "\x00" + id }
 
-// A local maker child still needs its parent's fee and policy companions even
-// after terminal settlement, while its recent evidence remains in the hot set.
+// A local maker child still needs its parent's fee after terminal settlement,
+// while its recent evidence remains in the hot set.
 func (e *Engine) activeMakerParents() map[string]bool {
 	parents := map[string]bool{}
 	for _, swap := range e.s.Swaps {

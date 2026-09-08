@@ -92,7 +92,7 @@ func assertHotRefundFee(t *testing.T, e *Engine, swap *Swap) {
 		t.Fatal("hot funding activity lost exact selected fee", a)
 	}
 }
-func TestRecentRefundRetainsParentAndFeeUntilChildArchives(t *testing.T) {
+func TestRecentRefundRetainsFeeUntilChildArchives(t *testing.T) {
 	e, swap, all := recentRefundFeeFixture(t)
 	offerID := swap.Terms.Offer().ID
 	original := e.s.Offers[offerID]
@@ -103,13 +103,26 @@ func TestRecentRefundRetainsParentAndFeeUntilChildArchives(t *testing.T) {
 	if err := e.save(); err != nil {
 		t.Fatal(err)
 	}
-	if e.s.Swaps[swap.ID] == nil || e.s.Offers[offerID].ID != original.ID {
-		t.Fatal("recent child lost its exact parent companion")
+	if e.s.Swaps[swap.ID] == nil || e.s.Offers[offerID].Content != "" {
+		t.Fatal("recent child or terminal parent has the wrong archive placement")
+	}
+	var retained nostr.Event
+	if found, err := e.archivedValue("offers", offerID, &retained); err != nil || !found || retained.ID != original.ID {
+		t.Fatal("terminal parent lost its exact retained identity", err)
 	}
 	assertHotRefundFee(t, e, swap)
 	if BackupSemanticToken(e.s) != before {
 		t.Fatal("location-only compaction changed fee economics/freshness")
 	}
+	swap.LongConfirmations, swap.ShortConfirmations = 6, 6
+	if err := e.CanChangeNetwork(); err != nil {
+		t.Fatal("retained fee gave a settled child a new network hold", err)
+	}
+	swap.Stage = "awaiting chain confirmations"
+	if err := e.CanChangeNetwork(); err == nil {
+		t.Fatal("reorg-demoted child lost its existing network hold")
+	}
+	swap.Stage = "refunded"
 	for id, observations := range all {
 		for key, obs := range observations {
 			obs.Confirmations = 500
@@ -203,6 +216,35 @@ func TestPriorSplitFeeRepairsWithoutPublisherAndFollowsLastChild(t *testing.T) {
 		t.Fatal("reorg recreated a publisher")
 	}
 }
+
+func TestRecentRefundStoredNetworkGuardTracksChildOutcome(t *testing.T) {
+	for _, stage := range []string{"refunded", "awaiting chain confirmations"} {
+		t.Run(stage, func(t *testing.T) {
+			e, swap, all := recentRefundFeeFixture(t)
+			if err := e.compactArchive(context.Background(), all, nil); err != nil {
+				t.Fatal(err)
+			}
+			swap.Stage = stage
+			swap.LongConfirmations, swap.ShortConfirmations = 6, 6
+			if err := e.save(); err != nil {
+				t.Fatal(err)
+			}
+			root := e.vault.PrivateDirectory()
+			if err := e.vault.Close(); err != nil {
+				t.Fatal(err)
+			}
+			cfg := Config{Network: chain.Regtest, DataDir: root, CredentialMode: "native", Credential: credential.SourceFunc(func(context.Context) ([]byte, error) { return []byte("receive-test-password"), nil })}
+			err := CheckStoredNetwork(cfg)
+			if stage == "refunded" && err != nil {
+				t.Fatal("stored terminal parent introduced a new network hold", err)
+			}
+			if stage != "refunded" && err == nil {
+				t.Fatal("stored reorg-demoted child lost its network hold")
+			}
+		})
+	}
+}
+
 func TestOpenRepairsPriorSplitFundingFeeBeforeActivityProjection(t *testing.T) {
 	e, swap, _ := recentRefundFeeFixture(t)
 	splitRefundFeeFixture(t, e, swap)

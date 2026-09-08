@@ -745,10 +745,12 @@ Cold signed-send and accepted-receipt controls require exact identities; unknown
 changed, unsigned or pending records cannot authorize new work, and failed cold
 reads cannot promote old authority.
 
-Recent maker swaps retain their parent and selected fee until the last active
-child archives. Regression tests exercise a refunded child at two confirmations,
+Recent maker swaps retain their selected fee until the last active child
+archives; the terminal parent can archive independently. Regression tests
+exercise a refunded child at two confirmations,
 its later archival, and reorg reactivation while preserving the 6,500-satoshi
-funding fee in status, activity and detail. Reopening an older split archive
+funding fee in status, activity and detail without adding a network-change hold
+after settlement. Reopening an older split archive
 layout loads only the exact missing fee records before activity projection;
 it does not resume the old offer publisher. Malformed or unreadable fee evidence
 rejects startup without discarding the retained records.

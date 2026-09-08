@@ -258,9 +258,6 @@ func (e *Engine) compactArchive(ctx context.Context, swaps, towers map[chain.ID]
 			break
 		}
 		event := e.s.Offers[id]
-		if activeMakerParents[id] {
-			continue
-		}
 		if e.automationNeedsOffer(id) {
 			continue
 		}
@@ -281,6 +278,11 @@ func (e *Engine) compactArchive(ctx context.Context, swaps, towers map[chain.ID]
 		for _, kind := range []string{"order_records", "offer_towers", "funding_fees"} {
 			key := id
 			if kind == "funding_fees" {
+				// Recent children still project this exact fee. Retain only the
+				// fee, not a terminal parent's old reserved/publication state.
+				if activeMakerParents[id] {
+					continue
+				}
 				key = "offer/" + id
 			}
 			if err := e.stageArchive(kind, key); err != nil {

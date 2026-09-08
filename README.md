@@ -91,15 +91,18 @@ stops the nodes. See [Operations](docs/OPERATIONS.md#local-regtest-discovery).
 sh scripts/build-mac.sh
 python3 scripts/desktop-demo.py prepare
 open bin/Blakeswap.app --args --data-dir "$PWD/.local/desktop-demo"
-python3 scripts/desktop-demo.py trade
+python3 scripts/desktop-demo.py status
 ```
 
 This developer harness starts regtest nodes and a relay, and
 configures an isolated app data directory to connect to them. It does not change
-the normal desktop wallet or add those services to the app bundle. The trade
-exchanges 1,000,000 BTC sats for 2,000,000 BLAKE sats using the app-owned daemon.
-Alternatively use Alice's Create offer, Bob's Take offer, and the regtest mining
-controls in the native UI. “BLAKE” is this app's label for Bitcoin Blake2b.
+the normal desktop wallet or add those services to the app bundle. Use Alice's
+Create offer, Bob's Take offer, and the regtest mining controls in the native UI;
+review and authenticate each new trade there. An example exchanges 1,000,000 BTC
+sats for 2,000,000 BLAKE sats. The scripted `trade` command requires a separate
+explicit file-mode helper, as described in the
+[external demo instructions](docs/PACKAGING.md#explicit-external-regtest-demonstration).
+“BLAKE” is this app's label for Bitcoin Blake2b.
 
 Closing the app stops its daemon; chain deadlines continue. A maker must return to
 accept and fund a new swap, but both participants need not be online simultaneously.
