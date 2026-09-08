@@ -137,7 +137,14 @@ func TestRealArchiveBoundaryPaymentReorgAndPortableRecovery(t *testing.T) {
 			expected := append([]SignedVariant(nil), e.s.Sends[request.ID].History...)
 			expectedRaw := e.s.Sends[request.ID].Raw
 			before := snapshotRecoveryArchive(t, h, "maker")
-			h.mine(id, archiveSettlementDepth)
+			// Mining all 144 Blake blocks in one call can exceed its ordinary 15s
+			// budget. Keep each fixture request bounded without changing depth
+			// or any wallet observation/settlement deadline.
+			for remaining := uint32(archiveSettlementDepth); remaining > 0; {
+				batch := min(remaining, 12)
+				h.mine(id, batch)
+				remaining -= batch
+			}
 			tickUntilConnected(t, e)
 			if e.s.Sends[request.ID] != nil || e.s.Capacity.Archived.Kinds["sends"] != 1 {
 				t.Fatal("deep positive payment did not cross archive boundary")
