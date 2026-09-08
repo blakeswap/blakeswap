@@ -29,12 +29,13 @@ func (e *Engine) historyCommand(ctx context.Context, request Request) (result an
 		return nil, err
 	}
 	view := &Engine{
-		Config: e.Config, identity: e.identity, vault: e.vault, nodes: e.nodes,
+		Config: e.Config, identity: e.identity, vault: e.vault, nodes: maps.Clone(e.nodes),
 		chainFresh: maps.Clone(e.chainFresh), chainGeneration: maps.Clone(e.chainGeneration),
 		archiveCurrent: maps.Clone(e.archiveCurrent), recoveryCheckpoints: maps.Clone(e.recoveryCheckpoints), recoveryReconciled: maps.Clone(e.recoveryReconciled),
 		marketObservedAt: e.marketObservedAt, marketAllRelays: e.marketAllRelays,
 		activitySnapshots: maps.Clone(e.activitySnapshots), activitySnapshotSequence: e.activitySnapshotSequence,
 	}
+	sourceGenerations := e.historySourceGenerations()
 	var query ActivityQuery
 	var market MarketQuery
 	if request.Method == "market.list" {
@@ -159,9 +160,9 @@ func (e *Engine) historyCommand(ctx context.Context, request Request) (result an
 		if e.chainGeneration[id] != view.chainGeneration[id] || e.chainFresh[id] != view.chainFresh[id] {
 			return nil, errors.New("history chain context changed; refresh the result")
 		}
-		if !e.activitySourceCurrent(id, view.chainGeneration[id]) {
-			return nil, errors.New("history chain source changed; refresh the result")
-		}
+	}
+	if !maps.Equal(sourceGenerations, e.historySourceGenerations()) {
+		return nil, errors.New("history chain source changed; refresh the result")
 	}
 	return result, nil
 }
@@ -181,4 +182,17 @@ func (e *Engine) lockHistory(ctx context.Context) (func(), error) {
 	case <-ctx.Done():
 		return nil, ctx.Err()
 	}
+}
+
+// Connection stability is independent of positive wallet observation. Generation
+// zero is a valid unchanged offline source, but never a confirmation proof.
+// Call under Engine.mu so the configured provider set belongs to one view.
+func (e *Engine) historySourceGenerations() map[chain.ID]uint64 {
+	generations := map[chain.ID]uint64{}
+	for _, id := range []chain.ID{chain.BTC, chain.Blake} {
+		if source, ok := e.nodes[id].(interface{ Generation() uint64 }); ok {
+			generations[id] = source.Generation()
+		}
+	}
+	return generations
 }

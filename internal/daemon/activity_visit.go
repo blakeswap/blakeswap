@@ -41,7 +41,8 @@ func (e *Engine) VisitActivities(ctx context.Context, visit func(Activity, bool)
 		e.mu.Unlock()
 		return ArchiveMonitoringState{}, err
 	}
-	contextView := &Engine{Config: e.Config, nodes: e.nodes, chainFresh: maps.Clone(e.chainFresh), chainGeneration: maps.Clone(e.chainGeneration), chainObserved: maps.Clone(e.chainObserved), archiveCurrent: maps.Clone(e.archiveCurrent)}
+	contextView := &Engine{Config: e.Config, nodes: maps.Clone(e.nodes), chainFresh: maps.Clone(e.chainFresh), chainGeneration: maps.Clone(e.chainGeneration), chainObserved: maps.Clone(e.chainObserved), archiveCurrent: maps.Clone(e.archiveCurrent)}
+	sourceGenerations := e.historySourceGenerations()
 	ctx, cancel := context.WithCancel(ctx)
 	e.historyCancel = cancel
 	defer cancel()
@@ -125,9 +126,12 @@ func (e *Engine) VisitActivities(ctx context.Context, visit func(Activity, bool)
 		return ArchiveMonitoringState{}, errors.New("history wallet or archive context changed during scan")
 	}
 	for _, id := range []chain.ID{chain.BTC, chain.Blake} {
-		if e.chainGeneration[id] != contextView.chainGeneration[id] || e.chainFresh[id] != contextView.chainFresh[id] || !e.activitySourceCurrent(id, contextView.chainGeneration[id]) {
+		if e.chainGeneration[id] != contextView.chainGeneration[id] || e.chainFresh[id] != contextView.chainFresh[id] {
 			return ArchiveMonitoringState{}, errors.New("history source changed during scan")
 		}
+	}
+	if !maps.Equal(sourceGenerations, e.historySourceGenerations()) {
+		return ArchiveMonitoringState{}, errors.New("history source changed during scan")
 	}
 	return monitoring, nil
 }

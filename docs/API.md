@@ -51,6 +51,7 @@ account that can read those files.
 | CreateOffer | POST `/v1/offers` | Exact chain/amount pair, optional expiry, and maker-only private tower selection |
 | CancelOffer | DELETE `/v1/offers/{id}` | Cancel an unreserved local offer; optional exact wallet/event binding |
 | ListMarket | POST `/v1/market/query` | Exact oriented sorting, independent filters, durable own-order history and publication/lineage |
+| GetRecord | POST `/v1/history/record` | Sanitized active or archived swap, send, or local tower-job detail bound to its wallet/network |
 | TakeOffer | POST `/v1/swaps` | Compatibility direct request for a signed maker offer |
 | QuoteTrade | POST `/v1/trades/quote` | Read-only maker/taker economics, exact candidate funds, short-lived bound review |
 | ConfirmTrade | POST `/v1/trades/confirm` | Revalidate one reviewed quote and durably authorize one offer/request identity |
@@ -459,3 +460,30 @@ The full-review digest covers every authorization field. `StrategyView` separate
 reserved/committed authorization from optional confirmed activity metrics;
 `report_included` is true only after an explicit `ReportStrategy` query.
 See [fields, accounting and command semantics](STRATEGIES.md#reports-and-api).
+
+
+### Capacity and retained detail
+
+`Status.capacity` separates active work and active bytes from retained record and
+byte counts. It exposes new-work admission, an estimated continuation reserve,
+available disk space when known, archive reactivation/monitoring holds, public
+admission pressure, and per-relay/filter synchronization progress. A server-limited
+or interrupted history pass remains explicitly incomplete. Admission pressure
+pauses new unrelated work; existing settlement and recovery still persist.
+
+`GetRecord` / `record.get` accepts `kind` (`swap`, `send`, or `tower`), its stable
+local `id`, and exact `expected_wallet`/`expected_network`. It returns the public
+projection plus `archived`, `monitoring_required`, and an explanatory `message`.
+Archived swap details retain their exact funding fee and private protection's
+public identity, without exposing signed rescue transactions or secret material.
+Tower earnings navigate with the local tower job ID, not the owner's remote swap
+ID. Own-order detail remains available through `ListMarket`.
+
+Activity and market queries collect only their relevant retained record kinds;
+they do not rebuild the complete wallet graph. Frozen activity pages and CSV
+share an encrypted private result, with cancellation, expiry and close cleanup.
+Stable offline sources still permit reading saved history with unknown current
+observations. A source or wallet change during collection rejects the new result;
+reconnection after completion does not rewrite an existing frozen page. Strategy
+reports separately require positive canonical coverage for cold confirmed facts
+and remain incomplete when that proof is unavailable.

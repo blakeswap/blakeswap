@@ -320,11 +320,17 @@ func TestHistoryMarketColdMergePreservesExactFiltersTiesAndRevision(t *testing.T
 type changingHistorySource struct {
 	*activityArchiveBackend
 	once   sync.Once
+	reads  int
 	change func()
 }
 
 func (b *changingHistorySource) Generation() uint64 {
-	b.once.Do(b.change)
+	b.reads++
+	// The first read captures source identity under Engine.mu. Change the
+	// wallet only during later row projection, outside that capture lock.
+	if b.reads > 1 {
+		b.once.Do(b.change)
+	}
 	return b.activityArchiveBackend.Generation()
 }
 func TestHistoryLateContextFailureDisposesUnpublishedResult(t *testing.T) {

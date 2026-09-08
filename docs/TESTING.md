@@ -687,3 +687,25 @@ BLAKESWAP_REGTEST= BLAKESWAP_HISTORY_SCALE=1 \
   BLAKESWAP_HISTORY_SCALE_RECORDS=95000 sh scripts/go.sh test ./internal/daemon \
   -run '^TestHistoryPhysicalQueriesAndSettlementProgress$' -count=1 -timeout=10m -v
 ```
+
+
+At checkpoint `645f3b6` on the same 32GiB macOS host, the full history-query fixture
+physically wrote 287,002 encrypted records: 279,508,980 encoded archive bytes,
+95,000 activities, 190,000 unrelated mailbox identities and 1,001 closed orders.
+The active checkpoint was 5,734 bytes. The first 37-row page completed in
+21.562 seconds, within the existing 45-second API deadline, while 534 full wallet
+Ticks progressed concurrently. The frozen tail page plus CSV took 9.379ms;
+closed-own history took 1.018 seconds and cancellation 37.287ms. Across queries,
+563 eligible exact saved-payment retries completed, with maximum Tick 330.342ms
+and maximum Status 2.882ms. These are deterministic private backends, not node
+round-trip timings.
+
+The process completed in 108.48 seconds wall time (test package 106.489s), with
+508,248,064-byte maximum RSS. Sampled Go heap peaked at 22,711,712 bytes overall
+and 16,719,736 bytes during first-query collection. Sampled summed file allocation
+peaked at 961,236,992 bytes (logical size 939,321,070); APFS clone sharing is not
+deduplicated, and 200ms file/20ms heap samples can miss brief peaks. Host-wide
+swap-ins increased by eight 16KiB pages; swap-outs did not change. These figures
+measure the selected-kind query path, not the separate v1 import's retained
+whole-active-State memory cost documented above. Exact ordering, count, CSV,
+key/file cleanup, archive identity and durable signed-payment assertions passed.
