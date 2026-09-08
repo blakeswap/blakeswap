@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -34,6 +35,34 @@ func TestRealPartialFillConcurrentMixedOutcomes(t *testing.T) {
 			})
 		}
 	}
+}
+
+// Rejected, never-funded requests can archive in the same tick as rejection.
+// Bind the exact original request with one authenticated cold point read, without
+// reactivating it. Missing or unreadable evidence is not a successful rejection.
+func partialRejectedRequest(e *Engine, expected protocol.Request) (bool, error) {
+	value := e.s.Swaps[expected.ID]
+	if value == nil {
+		var cold Swap
+		found, err := e.archivedValue("swaps", expected.ID, &cold)
+		if err != nil {
+			return false, err
+		}
+		if !found {
+			return false, errors.New("partial matrix request evidence is missing")
+		}
+		value = &cold
+	}
+	if value.ID != expected.ID || value.Role != "taker" || protocol.Digest(value.Request) != protocol.Digest(expected) {
+		return false, errors.New("partial matrix request identity changed")
+	}
+	if value.Stage != "rejected" {
+		return false, nil
+	}
+	if value.Terms != nil || value.Long.TxID != "" || value.Short.TxID != "" || value.LongFunding != "" || value.ShortFunding != "" || value.LongSent || value.ShortSent || len(value.SelfRefunds) > 0 || value.SecretObserved {
+		return false, errors.New("partial matrix rejection acquired accepted funding authority")
+	}
+	return true, nil
 }
 
 // Add wallets through normal startup, first with RPC so the fixture owns their
@@ -216,8 +245,10 @@ func runRealPartialFillPair(t *testing.T, sell chain.ID, bps int64) {
 	ids := make([]string, 2)
 	confirms := make([]ConfirmTradeRequest, 2)
 	events := make([]nostr.Event, 2)
+	requests := make([]protocol.Request, 2)
 	for i, name := range names {
 		ids[i], confirms[i], events[i] = partialReviewedTake(h, name, offer, quantity, bps)
+		requests[i] = h.swap(name, ids[i]).Request
 		h.offline(name)
 	}
 	partialReceiveRace(h, events)
@@ -266,7 +297,11 @@ func runRealPartialFillPair(t *testing.T, sell chain.ID, bps int64) {
 	partialWait(h, "loser receives rejection and current public revision", func() bool {
 		p := h.engines["parent"].s.ParentOrders[parentID]
 		remote, err := protocol.DecodeOffer(h.engines[names[loser]].s.Book[bookKey], time.Now().Unix())
-		return h.swap(names[loser], ids[loser]).Stage == "rejected" && err == nil && p.SignedRevision == p.Quantities.Revision && remote.Revision == p.Quantities.Revision
+		rejected, readErr := partialRejectedRequest(h.engines[names[loser]], requests[loser])
+		if readErr != nil {
+			t.Fatal(readErr)
+		}
+		return rejected && err == nil && p.SignedRevision == p.Quantities.Revision && remote.Revision == p.Quantities.Revision
 	}, func() { h.tick("parent", names[loser]) })
 	// An old q/revision cannot silently turn into another authorization.
 	stale := TradeQuoteRequest{Kind: "taker", ExpectedWallet: names[loser], ExpectedNetwork: "regtest", Maker: parentKey, ID: parentID, TowerBPS: bps, FeeSelection: create.FeeSelection, FillTakeFields: FillTakeFields{Quantity: quantity, ParentRevision: offer.Revision}}
