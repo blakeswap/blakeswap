@@ -295,7 +295,7 @@ func TestRealIsolatedWitnessRecoveryAndFirstRevealHold(t *testing.T) {
 			if maker.SelfClaim == "" {
 				t.Fatal("persisted witnessed secret did not recover isolated claim", maker.Error)
 			}
-			claim, err := contract.Parse(maker.SelfClaim)
+			claim, err := ancestrySelectedClaim(maker)
 			if err != nil {
 				t.Fatal(err)
 			}

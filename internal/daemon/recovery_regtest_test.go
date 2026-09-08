@@ -138,7 +138,7 @@ func TestRealPortableRestoreWitnessAndReorg(t *testing.T) {
 			if maker.SelfClaim == "" || !maker.SecretObserved {
 				t.Fatal("restored witness failed target-only claim", maker.Error)
 			}
-			tx, err := contract.Parse(maker.SelfClaim)
+			tx, err := ancestrySelectedClaim(maker)
 			if err != nil {
 				t.Fatal(err)
 			}
