@@ -75,7 +75,7 @@ func TestStrategySequenceOpposingFillsCancellationsRefundsAndPendingCoins(t *tes
 				continue
 			}
 			id := protocol.Digest([]any{"simulation", round, sell})
-			o := protocol.Offer{ID: id, Network: e.Config.Network, Maker: e.identity.Public().Hex(), Sell: sell, SellAmount: 200000, BuyAmount: 202000, Status: "open", Expires: time.Now().Unix() + 120}
+			o := protocol.Offer{Version: protocol.Version, Revision: 1, Available: 200000, FillPolicy: protocol.FillPolicy{Mode: protocol.FillWhole, Min: 200000, Max: 200000}, ID: id, Network: e.Config.Network, Maker: e.identity.Public().Hex(), Sell: sell, SellAmount: 200000, BuyAmount: 202000, Status: "open", Expires: time.Now().Unix() + 120}
 			event, err := e.signOffer(o, nostr.Now())
 			if err != nil {
 				t.Fatal(err)
@@ -94,7 +94,7 @@ func TestStrategySequenceOpposingFillsCancellationsRefundsAndPendingCoins(t *tes
 		for i, o := range active {
 			child := e.s.Automations[strategyPolicyID(p.Config.ID, o.Sell)]
 			if (round+i)%3 == 0 {
-				o.Status = "cancelled"
+				o.Status, o.Available, o.Revision = "cancelled", 0, o.Revision+1
 				event, err := e.signOffer(o, nostr.Now())
 				if err != nil {
 					t.Fatal(err)
@@ -113,7 +113,9 @@ func TestStrategySequenceOpposingFillsCancellationsRefundsAndPendingCoins(t *tes
 			// remains pending, never reusable to fill the next quote.
 			event := e.s.Offers[o.ID]
 			id := protocol.Digest([]string{"swap", o.ID})
-			s := &Swap{ID: id, Role: "maker", Request: protocol.Request{OfferEvent: event}, Stage: "awaiting confirmations", ShortFunding: "simulated durable signed funding"}
+			request := automationChildRequest(t, e, event)
+			request.ID = id
+			s := &Swap{ID: id, Role: "maker", Request: request, Stage: "awaiting confirmations", ShortFunding: "simulated durable signed funding"}
 			s.Short.TxID = protocol.Digest([]string{"funding", id})
 			s.Long.TxID = protocol.Digest([]string{"peer-funding", id})
 			e.s.Swaps[id] = s

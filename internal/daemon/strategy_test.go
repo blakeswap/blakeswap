@@ -19,6 +19,7 @@ import (
 func strategyFixture(t *testing.T) (*Engine, *MakerStrategy) {
 	t.Helper()
 	e, _ := tradeFixture(t, "maker")
+	e.s.Version, e.s.Network = StateVersion, chain.Regtest
 	e.s.CoinReservations = map[string]CoinReservation{}
 	for i, id := range []chain.ID{chain.BTC, chain.Blake} {
 		var b *receiveBackend
@@ -222,7 +223,7 @@ func TestStrategyReferenceOutageAndSkewBounds(t *testing.T) {
 	for i := 0; i < 3; i++ {
 		key := nostr.Generate()
 		p.Config.ReferenceMakers = append(p.Config.ReferenceMakers, key.Public().Hex())
-		o := protocol.Offer{ID: transport.RandomID(), Network: e.Config.Network, Maker: key.Public().Hex(), Sell: chain.Blake, SellAmount: 200000, BuyAmount: 200000, Status: "open", Expires: time.Now().Unix() + 120}
+		o := protocol.Offer{Version: protocol.Version, Revision: 1, Available: 200000, FillPolicy: protocol.FillPolicy{Mode: protocol.FillWhole, Min: 200000, Max: 200000}, ID: transport.RandomID(), Network: e.Config.Network, Maker: key.Public().Hex(), Sell: chain.Blake, SellAmount: 200000, BuyAmount: 200000, Status: "open", Expires: time.Now().Unix() + 120}
 		if i == 2 {
 			o.BuyAmount = 100000
 		}
@@ -339,7 +340,7 @@ func TestStrategyExposurePositiveProofAndReorgDoNotRefundCharges(t *testing.T) {
 	e, p := strategyFixture(t)
 	child := e.s.Automations[strategyPolicyID(p.Config.ID, chain.Blake)]
 	id := transport.RandomID()
-	o := protocol.Offer{ID: id, Network: e.Config.Network, Maker: e.identity.Public().Hex(), Sell: chain.Blake, SellAmount: 200000, BuyAmount: 202000, Status: "open", Expires: time.Now().Unix() + 120}
+	o := protocol.Offer{Version: protocol.Version, Revision: 1, Available: 200000, FillPolicy: protocol.FillPolicy{Mode: protocol.FillWhole, Min: 200000, Max: 200000}, ID: id, Network: e.Config.Network, Maker: e.identity.Public().Hex(), Sell: chain.Blake, SellAmount: 200000, BuyAmount: 202000, Status: "open", Expires: time.Now().Unix() + 120}
 	event, err := e.signOffer(o, nostr.Now())
 	if err != nil {
 		t.Fatal(err)
@@ -390,21 +391,23 @@ func TestStrategyReportUsesActualConfirmedActivityAndIsAdvisory(t *testing.T) {
 	order := transport.RandomID()
 	child.Charges[order] = automationCharge(child.Config, order, 202000, 6500)
 	child.Charges[order].State = "committed"
-	o := protocol.Offer{ID: order, Network: e.Config.Network, Maker: e.identity.Public().Hex(), Sell: chain.Blake, SellAmount: 200000, BuyAmount: 202000, Status: "open", Expires: time.Now().Unix() + 120}
+	o := protocol.Offer{Version: protocol.Version, Revision: 1, Available: 200000, FillPolicy: protocol.FillPolicy{Mode: protocol.FillWhole, Min: 200000, Max: 200000}, ID: order, Network: e.Config.Network, Maker: e.identity.Public().Hex(), Sell: chain.Blake, SellAmount: 200000, BuyAmount: 202000, Status: "open", Expires: time.Now().Unix() + 120}
 	event, err := e.signOffer(o, nostr.Now())
 	if err != nil {
 		t.Fatal(err)
 	}
-	e.s.Swaps["swap"] = &Swap{ID: "swap", Role: "maker", Request: protocol.Request{OfferEvent: event}, Stage: "completed", ShortSpend: "peer-claim", LongSpend: "claim", ShortConfirmations: 2, LongConfirmations: 2}
-	e.s.Swaps["swap"].Short.TxID = "funding"
-	e.s.Swaps["swap"].Long.TxID = "peer-funding"
-	e.strategyVerifiedSwaps = map[string]bool{"swap": true}
+	request := automationChildRequest(t, e, event)
+	swapID := request.ID
+	e.s.Swaps[swapID] = &Swap{ID: swapID, Role: "maker", Request: request, Stage: "completed", ShortSpend: "peer-claim", LongSpend: "claim", ShortConfirmations: 2, LongConfirmations: 2}
+	e.s.Swaps[swapID].Short.TxID = "funding"
+	e.s.Swaps[swapID].Long.TxID = "peer-funding"
+	e.strategyVerifiedSwaps = map[string]bool{swapID: true}
 	// A separate positively observed refund is still a fee, never trade volume.
 	child.Charges[order].ExposureSettled = &StrategyExposureProof{SwapID: "refunded", Sell: chain.Blake, FundingTxID: "refund-funding", SpendTxID: "refund", PeerSpendTxID: "peer-refund", CheckedAt: time.Now().Unix()}
 	now := time.Now().Unix()
 	for _, a := range []Activity{
-		{ID: "fund", Kind: "swap_funding", Chain: chain.Blake, OrderID: order, SwapID: "swap", TxID: "funding", Principal: 200000, Fee: 6500, FeeKnown: true, FeePayer: "wallet", Movement: true, Status: "confirmed", Confirmations: 2, ObservedAt: now},
-		{ID: "claim", Kind: "swap_claim", Chain: chain.BTC, OrderID: order, SwapID: "swap", TxID: "claim", Principal: 202000, Amount: 196000, Fee: 6000, FeeKnown: true, FeePayer: "wallet", Movement: true, Status: "confirmed", Confirmations: 2, ObservedAt: now},
+		{ID: "fund", Kind: "swap_funding", Chain: chain.Blake, OrderID: order, SwapID: swapID, TxID: "funding", Principal: 200000, Fee: 6500, FeeKnown: true, FeePayer: "wallet", Movement: true, Status: "confirmed", Confirmations: 2, ObservedAt: now},
+		{ID: "claim", Kind: "swap_claim", Chain: chain.BTC, OrderID: order, SwapID: swapID, TxID: "claim", Principal: 202000, Amount: 196000, Fee: 6000, FeeKnown: true, FeePayer: "wallet", Movement: true, Status: "confirmed", Confirmations: 2, ObservedAt: now},
 		{ID: "refund", Kind: "swap_refund", Chain: chain.Blake, OrderID: order, SwapID: "refunded", TxID: "refund", Principal: 200000, Fee: 2000, FeeKnown: true, FeePayer: "wallet", Movement: true, Status: "confirmed", Confirmations: 2, ObservedAt: now},
 		{ID: "pending", Kind: "swap_claim", Chain: chain.BTC, OrderID: order, SwapID: "pending", TxID: "pending", Fee: 20000, FeeKnown: true, FeePayer: "wallet", Movement: true, Status: "mempool", ObservedAt: now},
 	} {
@@ -413,11 +416,12 @@ func TestStrategyReportUsesActualConfirmedActivityAndIsAdvisory(t *testing.T) {
 	// A foreign maker's canonical trade deliberately reuses the same order ID.
 	// It must not be charged to this strategy's report even though this wallet
 	// was its taker, or if it happened after the strategy's own trade.
+	foreignSwapID := transport.RandomID()
 	foreign := e.s.Activities["fund"]
-	foreign.ID, foreign.SwapID, foreign.TxID = "foreign-fund", "foreign-swap", "foreign-funding"
+	foreign.ID, foreign.SwapID, foreign.TxID = "foreign-fund", foreignSwapID, "foreign-funding"
 	e.s.Activities[foreign.ID] = foreign
 	foreign = e.s.Activities["claim"]
-	foreign.ID, foreign.SwapID, foreign.TxID = "foreign-claim", "foreign-swap", "foreign-claim"
+	foreign.ID, foreign.SwapID, foreign.TxID = "foreign-claim", foreignSwapID, "foreign-claim"
 	e.s.Activities[foreign.ID] = foreign
 	other := nostr.Generate()
 	o.Maker = other.Public().Hex()
@@ -426,7 +430,9 @@ func TestStrategyReportUsesActualConfirmedActivityAndIsAdvisory(t *testing.T) {
 	if err := transport.Sign(&foreignEvent, other); err != nil {
 		t.Fatal(err)
 	}
-	e.s.Swaps["foreign-swap"] = &Swap{ID: "foreign-swap", Role: "taker", Request: protocol.Request{OfferEvent: foreignEvent}, Stage: "completed"}
+	foreignRequest := automationChildRequest(t, e, foreignEvent)
+	foreignRequest.ID = foreignSwapID
+	e.s.Swaps[foreignSwapID] = &Swap{ID: foreignSwapID, Role: "taker", Request: foreignRequest, Stage: "completed"}
 	raw, _ := json.Marshal(map[string]any{"id": p.Config.ID, "expected_wallet": e.Config.Name, "expected_network": string(e.Config.Network), "expected_revision": p.Revision})
 	// Install the explicit accounting fixture as a committed checkpoint. A
 	// report no longer assembles uncommitted Engine maps from a different view.
@@ -469,7 +475,7 @@ func TestStrategyExternalOrderIDCannotHideLocalUncertainExposure(t *testing.T) {
 	id := transport.RandomID()
 	child.Charges[id] = &AutomationCharge{OfferID: id, State: "reserved", Volume: 200000, Uncertain: true}
 	other := nostr.Generate()
-	o := protocol.Offer{ID: id, Network: e.Config.Network, Maker: other.Public().Hex(), Sell: chain.BTC, SellAmount: 200000, BuyAmount: 200000, Status: "open", Expires: time.Now().Unix() + 120}
+	o := protocol.Offer{Version: protocol.Version, Revision: 1, Available: 200000, FillPolicy: protocol.FillPolicy{Mode: protocol.FillWhole, Min: 200000, Max: 200000}, ID: id, Network: e.Config.Network, Maker: other.Public().Hex(), Sell: chain.BTC, SellAmount: 200000, BuyAmount: 200000, Status: "open", Expires: time.Now().Unix() + 120}
 	raw, _ := o.PublicJSON()
 	event := nostr.Event{Kind: transport.OfferKind, CreatedAt: nostr.Now(), Tags: nostr.Tags{{"d", id}, {"t", chain.Regtest.Namespace()}}, Content: string(raw)}
 	if err := transport.Sign(&event, other); err != nil {

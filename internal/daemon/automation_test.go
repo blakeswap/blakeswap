@@ -19,6 +19,7 @@ import (
 func automationFixture(t *testing.T) (*Engine, *AutomationPolicy) {
 	t.Helper()
 	e, _ := tradeFixture(t, "maker")
+	e.s.Version, e.s.Network = StateVersion, chain.Regtest
 	e.Config.Relays = []string{"ws://127.0.0.1:1"} // No external service or publication.
 	c := AutomationConfig{ID: transport.RandomID(), Wallet: e.Config.Name, Network: e.Config.Network, Sell: chain.Blake, SellAmount: 100000, VolumeLimit: 300000, Rate: AutomationRate{1, 2}, MinRate: AutomationRate{1, 4}, MaxRate: AutomationRate{1, 1}, Lifetime: 120, Cadence: 60, MaxOpen: 1, FundingFee: 2000, MaxFundingFee: 4000, BTCFeeBudget: 100000, BlakeFeeBudget: 100000, Reference: "fixed"}
 	p := savePolicy(t, e, AutomationEdit{Config: c, Enabled: true})
@@ -53,6 +54,14 @@ func expirePolicyOffer(t *testing.T, e *Engine, p *AutomationPolicy) string {
 		t.Fatal(err)
 	}
 	e.stageOffer(o, event)
+	// Advance this synthetic parent to the same expired terms and run the
+	// actual expiry transition; the public snapshot alone is not custody.
+	parent := e.s.ParentOrders[id]
+	parent.Offer.Expires, parent.LastSignedAt = o.Expires, o.Expires-1
+	parent.Economics = parent.Offer.EconomicsDigest()
+	if err := e.expireParents(time.Now().Unix()); err != nil {
+		t.Fatal(err)
+	}
 	p.NextAction = 0
 	e.reconcileReservations()
 	if err = e.save(); err != nil {
@@ -104,7 +113,7 @@ func TestAutomationBudgetDoesNotRefundSignedFundingOrUnknownObligations(t *testi
 			e.runAutomations(context.Background())
 			id := p.CurrentOfferID
 			o, _ := historicalOffer(e.s.Offers[id])
-			o.Status = "reserved"
+			o.Status, o.Available, o.Revision = "reserved", 0, o.Revision+1
 			o.Reservation = transport.RandomID()
 			o.Expires = time.Now().Unix() - 1
 			event, err := e.signOffer(o, nostr.Now())
@@ -113,7 +122,8 @@ func TestAutomationBudgetDoesNotRefundSignedFundingOrUnknownObligations(t *testi
 			}
 			e.stageOffer(o, event)
 			if mode == "signed" {
-				e.s.Swaps[o.Reservation] = &Swap{ID: o.Reservation, Role: "maker", Request: protocol.Request{OfferEvent: event}, ShortFunding: "persisted signed funding", Stage: "refunded"}
+				request := automationChildRequest(t, e, event)
+				e.s.Swaps[request.ID] = &Swap{ID: request.ID, Role: "maker", Request: request, ShortFunding: "persisted signed funding", Stage: "refunded"}
 			}
 			if err = e.save(); err != nil {
 				t.Fatal(err)
@@ -153,7 +163,7 @@ func TestAutomationPolicyReviewAndDisablePreserveExistingTerms(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if disabled.Enabled || e.s.OrderRecords[p.CurrentOfferID].Offer.Status != "cancelled" || p.Charges[p.CurrentOfferID].State != "released" {
+	if disabled.Enabled || !e.s.ParentOrders[p.CurrentOfferID].Quantities.Closed || p.Charges[p.CurrentOfferID].State != "released" {
 		t.Fatal("disable did not durably cancel intention", disabled)
 	}
 	p.NextAction = 0
@@ -170,7 +180,7 @@ func TestAutomationTakeVersusRenewalAndChangedAuthorization(t *testing.T) {
 			old := e.s.Offers[p.CurrentOfferID]
 			// Construct a persisted automatic replacement at the same handoff used
 			// by the runner, then change the authority before its external preflight.
-			request := TradeQuoteRequest{Kind: "maker", ExpectedWallet: e.Config.Name, ExpectedNetwork: string(e.Config.Network), Sell: chain.Blake, SellAmount: 100000, BuyAmount: 200000, Expires: time.Now().Unix() + 120, FeeSelection: FeeSelection{FundingFee: 2000, OwnerFeeCap: 20000}, OrderActionFields: OrderActionFields{OrderAction: "replace", SourceOfferID: p.CurrentOfferID, SourceEventID: old.ID.Hex()}}
+			request := TradeQuoteRequest{FillOrderFields: automationWholeFields(chain.Blake, 100000, 200000, 2000, 0), Kind: "maker", ExpectedWallet: e.Config.Name, ExpectedNetwork: string(e.Config.Network), Sell: chain.Blake, SellAmount: 100000, BuyAmount: 200000, Expires: time.Now().Unix() + 120, FeeSelection: FeeSelection{FundingFee: 2000, OwnerFeeCap: 20000}, OrderActionFields: OrderActionFields{OrderAction: "replace", SourceOfferID: p.CurrentOfferID, SourceEventID: old.ID.Hex()}}
 			q := requestQuote(t, e, request)
 			confirm := confirmation(q)
 			p.Pending = &confirm
@@ -181,7 +191,7 @@ func TestAutomationTakeVersusRenewalAndChangedAuthorization(t *testing.T) {
 			}
 			switch mode {
 			case "take":
-				from, message := orderRequest(t, e, old)
+				from, message := automationOrderRequest(t, e, old)
 				if err := e.handle(from, message); err != nil {
 					t.Fatal(err)
 				}
@@ -226,7 +236,7 @@ func TestAutomationExactReferenceRejectsSparseStaleAndConflictingQuotes(t *testi
 	e.marketAllRelays = true
 	e.marketObservedAt = now
 	post := func(key nostr.SecretKey, sell, buy int64, at int64) {
-		o := protocol.Offer{ID: transport.RandomID(), Network: e.Config.Network, Maker: key.Public().Hex(), Sell: chain.Blake, SellAmount: sell, BuyAmount: buy, Expires: now + 3600, Status: "open"}
+		o := protocol.Offer{Version: protocol.Version, Revision: 1, Available: sell, FillPolicy: protocol.FillPolicy{Mode: protocol.FillWhole, Min: sell, Max: sell}, ID: transport.RandomID(), Network: e.Config.Network, Maker: key.Public().Hex(), Sell: chain.Blake, SellAmount: sell, BuyAmount: buy, Expires: now + 3600, Status: "open"}
 		content, _ := o.PublicJSON()
 		event := nostr.Event{Kind: transport.OfferKind, CreatedAt: nostr.Timestamp(at), Tags: nostr.Tags{{"d", o.ID}, {"t", e.Config.Network.Namespace()}}, Content: string(content)}
 		if err := transport.Sign(&event, key); err != nil {
@@ -293,7 +303,7 @@ func TestAutomationUnavailableFeesProviderAndFundsPause(t *testing.T) {
 
 func TestAutomationPendingCommitFaultPreservesOneIdentityAndCharge(t *testing.T) {
 	e, p := automationFixture(t)
-	request := TradeQuoteRequest{Kind: "maker", ExpectedWallet: e.Config.Name, ExpectedNetwork: string(e.Config.Network), Sell: chain.Blake, SellAmount: 100000, BuyAmount: 200000, Expires: time.Now().Unix() + 120, FeeSelection: FeeSelection{FundingFee: 2000, OwnerFeeCap: 20000}}
+	request := TradeQuoteRequest{FillOrderFields: automationWholeFields(chain.Blake, 100000, 200000, 2000, 0), Kind: "maker", ExpectedWallet: e.Config.Name, ExpectedNetwork: string(e.Config.Network), Sell: chain.Blake, SellAmount: 100000, BuyAmount: 200000, Expires: time.Now().Unix() + 120, FeeSelection: FeeSelection{FundingFee: 2000, OwnerFeeCap: 20000}}
 	q := requestQuote(t, e, request)
 	confirm := confirmation(q)
 	p.Pending = &confirm
@@ -374,7 +384,8 @@ func TestAutomationLastFillBudgetAndRestoredHold(t *testing.T) {
 		t.Fatal(signErr)
 	}
 	e.stageOffer(o, reserved)
-	e.s.Swaps["funded"] = &Swap{ID: "funded", Role: "maker", Request: protocol.Request{OfferEvent: event}, ShortFunding: "signed", Stage: "refunded"}
+	request := automationChildRequest(t, e, event)
+	e.s.Swaps[request.ID] = &Swap{ID: request.ID, Role: "maker", Request: request, ShortFunding: "signed", Stage: "refunded"}
 	e.reconcileAutomations()
 	p.NextAction = 0
 	e.runAutomations(context.Background())
@@ -414,7 +425,7 @@ func TestAutomationRepriceWaitsForPublicationAndPreservesTombstone(t *testing.T)
 	}
 	post := func(buy int64) {
 		for _, key := range keys {
-			o := protocol.Offer{ID: transport.RandomID(), Network: e.Config.Network, Maker: key.Public().Hex(), Sell: chain.Blake, SellAmount: 100000, BuyAmount: buy, Expires: time.Now().Unix() + 3600, Status: "open"}
+			o := protocol.Offer{Version: protocol.Version, Revision: 1, Available: 100000, FillPolicy: protocol.FillPolicy{Mode: protocol.FillWhole, Min: 100000, Max: 100000}, ID: transport.RandomID(), Network: e.Config.Network, Maker: key.Public().Hex(), Sell: chain.Blake, SellAmount: 100000, BuyAmount: buy, Expires: time.Now().Unix() + 3600, Status: "open"}
 			content, _ := o.PublicJSON()
 			event := nostr.Event{Kind: transport.OfferKind, CreatedAt: nostr.Now(), Tags: nostr.Tags{{"d", o.ID}, {"t", e.Config.Network.Namespace()}}, Content: string(content)}
 			if err := transport.Sign(&event, key); err != nil {
@@ -429,7 +440,7 @@ func TestAutomationRepriceWaitsForPublicationAndPreservesTombstone(t *testing.T)
 	p.NextAction = 0
 	e.runAutomations(context.Background())
 	next := p.CurrentOfferID
-	if next == old || e.s.OrderRecords[old].Offer.Status != "cancelled" || e.s.OrderRecords[next].Replaces != old || p.Charges[old].Successor != next || len(e.s.CoinReservations) != 1 {
+	if next == old || !e.s.ParentOrders[old].Quantities.Closed || e.s.OrderRecords[next].Replaces != old || p.Charges[old].Successor != next || len(e.s.CoinReservations) != 1 {
 		t.Fatal("reprice bypassed atomic replacement", p.Decision)
 	}
 	// A failed relay write cannot be mistaken for successful cancellation/new

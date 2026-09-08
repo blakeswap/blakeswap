@@ -17,7 +17,7 @@ func TestAutomationImportedPolicyRequiresNewAuthorization(t *testing.T) {
 	old := p.CurrentOfferID
 	event := e.s.Offers[old]
 	acceptedBefore, _ := json.Marshal(e.s.TradeReceipts[old])
-	request := TradeQuoteRequest{Kind: "maker", ExpectedWallet: e.Config.Name, ExpectedNetwork: string(e.Config.Network), Sell: chain.Blake, SellAmount: 100000, BuyAmount: 200000, Expires: time.Now().Unix() + 120, FeeSelection: FeeSelection{FundingFee: 2000, OwnerFeeCap: 20000}, OrderActionFields: OrderActionFields{OrderAction: "replace", SourceOfferID: old, SourceEventID: event.ID.Hex()}}
+	request := TradeQuoteRequest{FillOrderFields: automationWholeFields(chain.Blake, 100000, 200000, 2000, 0), Kind: "maker", ExpectedWallet: e.Config.Name, ExpectedNetwork: string(e.Config.Network), Sell: chain.Blake, SellAmount: 100000, BuyAmount: 200000, Expires: time.Now().Unix() + 120, FeeSelection: FeeSelection{FundingFee: 2000, OwnerFeeCap: 20000}, OrderActionFields: OrderActionFields{OrderAction: "replace", SourceOfferID: old, SourceEventID: event.ID.Hex()}}
 	quote := requestQuote(t, e, request)
 	pending := confirmation(quote)
 	p.Pending = &pending
@@ -52,7 +52,7 @@ func TestAutomationImportedPolicyRequiresNewAuthorization(t *testing.T) {
 	if p.Enabled || !p.RestoreHold || !p.Charges[old].Uncertain {
 		t.Fatal("chain recovery erased policy consent/accounting")
 	}
-	from, message := orderRequest(t, e, event)
+	from, message := automationOrderRequest(t, e, event)
 	if err := e.handle(from, message); err != nil {
 		t.Fatal(err)
 	}
@@ -123,7 +123,7 @@ func TestAutomationHeldOfferCannotAcceptNewRequest(t *testing.T) {
 	event := e.s.Offers[p.CurrentOfferID]
 	p.RestoreHold = true
 	p.Enabled = false
-	from, message := orderRequest(t, e, event)
+	from, message := automationOrderRequest(t, e, event)
 	if err := e.handle(from, message); err != nil {
 		t.Fatal(err)
 	}

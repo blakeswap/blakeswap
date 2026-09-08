@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
 	"math/big"
 	"sort"
 	"time"
@@ -176,12 +177,40 @@ func (e *Engine) reconcileAutomations() {
 			if unknown || p.RestoreHold || c.Uncertain {
 				continue
 			}
+			// A local whole parent's durable withdrawal precedes its next-second
+			// signed publication. Only a fully returned, never-spent allocation
+			// can release a reservation during that publication gap.
+			if e.s.ParentOrders[id] != nil {
+				if e.automationParentUnfunded(id, c.Volume) {
+					c.State = "released"
+				}
+				continue
+			}
 			o, err := historicalOffer(e.s.Offers[id])
 			if err == nil && (o.Status == "cancelled" || (o.Status == "open" && o.Expires <= time.Now().Unix()) || (o.Status == "reserved" && e.finishedOrder(id) == "cancelled")) {
 				c.State = "released"
 			}
 		}
 	}
+}
+
+func (e *Engine) automationParentUnfunded(id string, volume int64) bool {
+	p := e.s.ParentOrders[id]
+	if p == nil || p.RestoreHold || p.Offer.ID != id || p.Offer.Maker != e.identity.Public().Hex() || p.Offer.SellAmount != volume || p.Economics != p.Offer.EconomicsDigest() || p.Offer.FillPolicy != (protocol.FillPolicy{Mode: protocol.FillWhole, Min: volume, Max: volume}) {
+		return false
+	}
+	q := p.Quantities
+	if !q.Closed || q.Total != volume || q.Released != volume || q.Available != 0 || q.Reserved != 0 || q.Committed != 0 || q.Filled != 0 || len(p.Fees) != 2 || len(p.Bounties) != 2 {
+		return false
+	}
+	for _, id := range []chain.ID{chain.BTC, chain.Blake} {
+		fee, feeOK := p.Fees[id]
+		bounty, bountyOK := p.Bounties[id]
+		if !feeOK || !bountyOK || fee.Reserved != 0 || fee.Consumed != 0 || bounty.Reserved != 0 || bounty.Consumed != 0 {
+			return false
+		}
+	}
+	return true
 }
 
 func (e *Engine) automationView(p *AutomationPolicy) AutomationView {
@@ -509,6 +538,10 @@ func (e *Engine) automationBudget(p *AutomationPolicy, charge *AutomationCharge,
 	}
 	return nil
 }
+func automationFillAuthorization(sell chain.ID, quantity, buy, fee, bps int64) FillOrderFields {
+	return FillOrderFields{FillPolicy: protocol.FillPolicy{Mode: protocol.FillWhole, Min: quantity, Max: quantity}, FeeBudgets: map[chain.ID]int64{sell: fee + 20000, sell.Other(): 20000}, BountyBudgets: map[chain.ID]int64{sell: protocol.Bounty(quantity, bps), sell.Other(): protocol.Bounty(buy, bps)}}
+}
+
 func (e *Engine) validateAutomationReceipt(r *TradeReceipt) error {
 	if r == nil || r.AutomationID == "" {
 		return nil
@@ -522,6 +555,11 @@ func (e *Engine) validateAutomationReceipt(r *TradeReceipt) error {
 	}
 	if len(e.Config.Relays) == 0 {
 		return errors.New("automation requires a configured relay")
+	}
+	request := r.Snapshot.Request
+	whole := automationFillAuthorization(p.Config.Sell, request.SellAmount, request.BuyAmount, request.FundingFee, p.Config.TowerBPS)
+	if request.FundingFee < 1 || request.OwnerFeeCap != 20000 || request.TowerBPS != p.Config.TowerBPS || request.TowerPubKey != p.Config.TowerPubKey || request.FillPolicy != whole.FillPolicy || !maps.Equal(request.FeeBudgets, whole.FeeBudgets) || !maps.Equal(request.BountyBudgets, whole.BountyBudgets) {
+		return errors.New("automatic authorization requires exact whole-child quantity, fees and protection limits")
 	}
 	if p.Config.StrategyID != "" {
 		return e.strategyReceipt(p, r)
@@ -659,7 +697,7 @@ func (e *Engine) runAutomations(ctx context.Context) {
 		fail(err)
 		return
 	}
-	request := TradeQuoteRequest{Kind: "maker", ExpectedWallet: config.Wallet, ExpectedNetwork: string(config.Network), Sell: config.Sell, SellAmount: config.SellAmount, BuyAmount: buy, Expires: now + config.Lifetime, TowerBPS: config.TowerBPS, TowerPubKey: config.TowerPubKey}
+	request := TradeQuoteRequest{Kind: "maker", ExpectedWallet: config.Wallet, ExpectedNetwork: string(config.Network), Sell: config.Sell, SellAmount: config.SellAmount, BuyAmount: buy, Expires: now + config.Lifetime, TowerBPS: config.TowerBPS, TowerPubKey: config.TowerPubKey, FillOrderFields: FillOrderFields{FillPolicy: protocol.FillPolicy{Mode: protocol.FillWhole, Min: config.SellAmount, Max: config.SellAmount}}}
 	// Prefer renewing a source without a successor. Accepted sources are never
 	// replaced; an extra slot can use fresh funds while they settle.
 	sources := []string{}
@@ -731,6 +769,10 @@ func (e *Engine) runAutomations(ctx context.Context) {
 		return
 	}
 	request.FeeSelection = FeeSelection{FundingFee: fee.Fee, OwnerFeeCap: 20000}
+	// Automation authorizes one whole child. Derive its private limits only
+	// after selecting the fresh funding fee; the policy's lifetime charges
+	// remain a separate, permanent authorization ledger.
+	request.FillOrderFields = automationFillAuthorization(config.Sell, config.SellAmount, buy, fee.Fee, config.TowerBPS)
 	if config.FundingFee == 0 {
 		request.Rate = fee.Estimate.Rate
 		request.Timestamp = fee.Estimate.Timestamp

@@ -287,6 +287,7 @@ func TestStrategyFreshEstimatedReplacementRejectionWithdrawsQuoteOnce(t *testing
 	if id == "" {
 		t.Fatal("initial low fee quote", child.Decision, p.Decision)
 	}
+	assertAutomaticWholeParent(t, e, child) // The fresh estimator also freezes exact one-child caps.
 	record := e.s.OrderRecords[id]
 	record.Publication = "relay_acknowledged"
 	e.s.OrderRecords[id] = record
@@ -318,7 +319,7 @@ func TestStrategyFreshEstimatedReplacementRejectionWithdrawsQuoteOnce(t *testing
 		t.Fatal("rejection produced new or retry authority", rejected)
 	}
 	old, err := historicalOffer(e.s.Offers[id])
-	if err != nil || old.Status != "cancelled" || child.Charges[id].State != "released" {
+	if err != nil || !e.s.ParentOrders[id].Quantities.Closed || child.Charges[id].State != "released" {
 		t.Fatal("eligible unfunded quote remained open", old, err)
 	}
 	afterReceipt, _ := json.Marshal(e.s.TradeReceipts[id])
