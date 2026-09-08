@@ -55,7 +55,7 @@ func (e *Engine) indexActivityChain(ctx context.Context, id chain.ID) {
 	}
 	index := e.s.ActivityIndexes[id]
 	previousIndex := index
-	if len(e.s.Activities) >= maxActivityRecords {
+	if len(e.s.Activities) >= maxActivityRecords || !e.allowActivityGrowth(nil, nil) {
 		index.Error = "History capacity reached; existing records remain available."
 		e.s.ActivityIndexes[id] = index
 		e.mu.Unlock()
@@ -186,7 +186,14 @@ func (e *Engine) recordActivityReceipt(id chain.ID, transaction chain.Transactio
 	if e.s.ActivityReceipts == nil {
 		e.s.ActivityReceipts = map[string]ReceiptEvidence{}
 	}
-	e.s.ActivityReceipts[string(id)+"/"+transaction.TxID] = evidence
+	key := string(id) + "/" + transaction.TxID
+	if _, err := e.activateArchived("activity_receipts", key); err != nil {
+		return err
+	}
+	if !e.allowActivityGrowth(e.s.ActivityReceipts[key], evidence) {
+		return errors.New("history receipt budget reached")
+	}
+	e.s.ActivityReceipts[key] = evidence
 	e.s.ActivityObservationSequence++
 	observation := observationFor(transaction, source, generation, e.s.ActivityObservationSequence)
 	for vout, out := range tx.TxOut {
@@ -196,12 +203,17 @@ func (e *Engine) recordActivityReceipt(id chain.ID, transaction chain.Transactio
 		}
 		point := CoinOutpoint{TxID: transaction.TxID, Vout: uint32(vout)}
 		key := activityID("receive", string(id)+"/"+pointKey(point))
+		if _, err := e.activateArchived("activities", key); err != nil {
+			return err
+		}
 		a, exists := e.s.Activities[key]
 		if !exists {
 			a = Activity{ID: key, GroupID: key, Kind: "receive", Chain: id, Direction: "incoming", Classification: "unclassified_receipt", Movement: true, Amount: out.Value, Principal: out.Value, Address: address, Outpoints: []CoinOutpoint{point}, TxID: transaction.TxID, Variants: []string{transaction.TxID}, Status: observation.Status, Label: "Received payment"}
 		}
 		a.Observations = []ActivityObservation{observation}
-		e.putActivity(a, true)
+		if !e.putActivity(a, true) {
+			return errors.New("history row exceeds available indexing budget")
+		}
 	}
 	return nil
 }
@@ -378,13 +390,24 @@ func (e *Engine) reconcileActivityReceipts() {
 		}
 		a := original
 		key := string(a.Chain) + "/" + a.TxID
+		evidence, evidenceKnown := e.activityReceiptEvidence(key)
+		if e.fatal != nil {
+			return
+		}
 		a.GroupID = a.ID
 		a.RelatedIDs = nil
 		a.Direction = "incoming"
 		a.Movement = true
 		a.Classification = "unclassified_receipt"
 		a.Label = "Received payment"
-		if parent, ok := transactions[key]; ok {
+		parent, parentKnown := transactions[key]
+		if !parentKnown {
+			parent, parentKnown = e.archivedActivityParent(key)
+		}
+		if e.fatal != nil {
+			return
+		}
+		if parentKnown {
 			a.GroupID = parent.GroupID
 			a.RelatedIDs = []string{parent.ID}
 			a.OrderID, a.SwapID, a.SendID = parent.OrderID, parent.SwapID, parent.SendID
@@ -409,10 +432,10 @@ func (e *Engine) reconcileActivityReceipts() {
 				a.Classification = "swap_payout"
 				a.Label = "Swap settlement receipt"
 			}
-		} else if evidence, ok := e.s.ActivityReceipts[key]; ok && !evidence.Coinbase {
+		} else if evidenceKnown && !evidence.Coinbase {
 			known := 0
 			for _, point := range evidence.Inputs {
-				if _, ok := owned[string(a.Chain)+"/"+pointKey(point)]; ok {
+				if _, ok := owned[string(a.Chain)+"/"+pointKey(point)]; ok || e.archivedActivityOwns(string(a.Chain)+"/"+pointKey(point)) {
 					known++
 				}
 			}
@@ -439,6 +462,13 @@ func (e *Engine) seedActivityCoins() {
 			point := CoinOutpoint{TxID: coin.TxID, Vout: coin.Vout}
 			key := activityID("receive", string(id)+"/"+pointKey(point))
 			if _, exists := e.s.Activities[key]; exists {
+				continue
+			}
+			var archived Activity
+			if found, err := e.archivedValue("activities", key, &archived); err != nil {
+				e.fatal = err
+				return
+			} else if found {
 				continue
 			}
 			address := ""

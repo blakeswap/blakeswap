@@ -213,8 +213,12 @@ func TestEncryptedBackupRoundTripPreservesStateAndSource(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	recovered := manifest.Wallets[0].Networks[chain.Mainnet]
-	if legacy || recovered.Swaps["pending"].Secret != "test-only-secret" || recovered.Recovery == nil || recovered.Recovery.Status.State != "recovering" {
+	defer manifest.close()
+	recovered, err := manifest.Wallets[0].networkState(chain.Mainnet)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if legacy || recovered == nil || recovered.Swaps["pending"] == nil || recovered.Swaps["pending"].Secret != "test-only-secret" || recovered.Recovery == nil || recovered.Recovery.Status.State != "recovering" {
 		t.Fatal("pending swap state lost", err)
 	}
 }

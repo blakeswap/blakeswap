@@ -97,6 +97,7 @@ func (m *Manager) prepareFirstWallet(ctx context.Context, request *pb.PrepareFir
 		if err != nil {
 			return nil, err
 		}
+		defer manifest.close()
 		for i := range manifest.Wallets {
 			if manifest.Wallets[i].ID == request.SourceWalletId || request.SourceWalletId == "" && len(manifest.Wallets) == 1 {
 				restored = &manifest.Wallets[i]
@@ -238,48 +239,21 @@ func readStateBackup(root, source, password string) (*daemon.State, error) {
 // The legacy source policy and the portable installer have distinct file bounds.
 // Both authenticate only a private copy, so a failed read never edits its source.
 func readStateBackupBounded(root, source, password string, maxBytes int64) (*daemon.State, error) {
-	if !filepath.IsAbs(source) {
-		return nil, errors.New("choose an absolute backup file path")
-	}
-	input, err := os.Open(source)
+	var result *daemon.State
+	err := withPrivateStateBackup(root, source, password, maxBytes, func(vault *storage.Vault) error {
+		var err error
+		result, err = readLegacyStateVault(vault)
+		return err
+	})
+	return result, err
+}
+
+func readLegacyStateVault(vault *storage.Vault) (*daemon.State, error) {
+	state, err := daemon.LoadCompleteState(vault)
 	if err != nil {
-		return nil, err
-	}
-	defer input.Close()
-	info, err := input.Stat()
-	if err != nil {
-		return nil, err
-	}
-	if !info.Mode().IsRegular() || info.Size() == 0 || info.Size() > maxBytes {
-		return nil, fmt.Errorf("choose a wallet backup file up to %d MiB", maxBytes>>20)
-	}
-	// Open only a private copy: authentication failures never modify the source.
-	copy, err := os.CreateTemp(root, ".restore-*.db")
-	if err != nil {
-		return nil, err
-	}
-	defer os.Remove(copy.Name())
-	n, err := io.Copy(copy, io.LimitReader(input, maxBytes+1))
-	closeErr := copy.Close()
-	if err != nil {
-		return nil, err
-	}
-	if closeErr != nil {
-		return nil, closeErr
-	}
-	if n > maxBytes {
-		return nil, fmt.Errorf("backup exceeds %d MiB", maxBytes>>20)
-	}
-	vault, err := storage.Open(copy.Name(), []byte(password))
-	if err != nil {
-		return nil, errors.New("cannot unlock backup; check its password and file")
-	}
-	defer vault.Close()
-	var state daemon.State
-	if _, err := vault.Load(&state); err != nil {
 		return nil, errors.New("invalid wallet backup")
 	}
-	if state.Version != 1 || !state.Network.Valid() {
+	if (state.Version != 1 && state.Version != 2) || !state.Network.Valid() {
 		return nil, errors.New("unsupported wallet backup")
 	}
 	if _, err := wallet.FromMnemonic(state.Mnemonic); err != nil {
@@ -303,6 +277,54 @@ func readStateBackupBounded(root, source, password string, maxBytes int64) (*dae
 	}
 	return &state, nil
 }
+func withPrivateStateBackup(root, source, password string, maxBytes int64, use func(*storage.Vault) error) error {
+	if !filepath.IsAbs(source) {
+		return errors.New("choose an absolute backup file path")
+	}
+	input, err := os.Open(source)
+	if err != nil {
+		return err
+	}
+	defer input.Close()
+	info, err := input.Stat()
+	if err != nil {
+		return err
+	}
+	if !info.Mode().IsRegular() || info.Size() == 0 || info.Size() > maxBytes {
+		return fmt.Errorf("choose a wallet backup file up to %d MiB", maxBytes>>20)
+	}
+	if err := storage.CheckPathSpace(root, uint64(info.Size()), 2); err != nil {
+		return err
+	}
+	// Open only a private copy: authentication failures never modify the source.
+	copy, err := os.CreateTemp(root, ".restore-*.db")
+	if err != nil {
+		return err
+	}
+	defer os.Remove(copy.Name())
+	copyLimit := maxBytes
+	if copyLimit < int64(^uint64(0)>>1) {
+		copyLimit++
+	}
+	n, err := io.Copy(copy, io.LimitReader(input, copyLimit))
+	closeErr := copy.Close()
+	if err != nil {
+		return err
+	}
+	if closeErr != nil {
+		return closeErr
+	}
+	if n > maxBytes {
+		return fmt.Errorf("backup exceeds %d MiB", maxBytes>>20)
+	}
+	vault, err := storage.Open(copy.Name(), []byte(password))
+	if err != nil {
+		return errors.New("cannot unlock backup; check its password and file")
+	}
+	defer vault.Close()
+	return use(vault)
+}
+
 func normalizeState(s *daemon.State) {
 	if s.Offers == nil {
 		s.Offers = map[string]nostr.Event{}

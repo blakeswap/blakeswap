@@ -10,48 +10,16 @@ import (
 	"github.com/blakeswap/blakeswap/internal/contract"
 )
 
-// The report is explicit advisory work; it never runs on Tick, save or review.
-// Legacy active history is bounded by maxActivityRecords. The visitor boundary
-// lets the archive store stream a pinned committed view without reactivation.
-func (e *Engine) visitStrategyActivities(ctx context.Context, visit func(Activity) error) error {
-	e.mu.Lock()
-	if e.fatal != nil || e.activityClosed {
-		e.mu.Unlock()
-		return errEngineClosed
+// The report uses the same committed selected-kind visitor as history. Old
+// timestamps remain intact: only independently verified archive coverage can
+// make a cold row eligible after its ordinary polling freshness has elapsed.
+func (e *Engine) projectStrategyActivity(a Activity) Activity {
+	projectActivityObservation(&a, e.Config.Network.Confirmations(), time.Now().Unix())
+	if a.Generation > 0 && !e.activitySourceCurrent(a.Chain, a.Generation) {
+		a.Status = "unknown"
+		a.Confirmations = 0
 	}
-	e.activityReaders.Add(1)
-	defer e.activityReaders.Done()
-	rows := make([]Activity, 0, len(e.s.Activities))
-	for _, a := range e.s.Activities {
-		// Copy only scalar accounting facts, not lifetime outcomes/raw variants.
-		projectActivityObservation(&a, e.Config.Network.Confirmations(), time.Now().Unix())
-		if a.Generation > 0 && !e.activitySourceCurrent(a.Chain, a.Generation) {
-			a.Status = "unknown"
-			a.Confirmations = 0
-		}
-		a.Observations = nil
-		a.History = nil
-		a.Variants = nil
-		a.VariantAmounts = nil
-		a.Outpoints = nil
-		a.RelatedIDs = nil
-		rows = append(rows, a)
-	}
-	e.mu.Unlock()
-	for _, a := range rows {
-		if err := ctx.Err(); err != nil {
-			return err
-		}
-		if err := visit(a); err != nil {
-			return err
-		}
-	}
-	e.mu.Lock()
-	defer e.mu.Unlock()
-	if e.fatal != nil || e.activityClosed {
-		return errEngineClosed
-	}
-	return ctx.Err()
+	return a
 }
 
 // Partial or changed-context results are discarded in their entirety. This is
@@ -84,10 +52,16 @@ func (e *Engine) strategyReport(ctx context.Context, raw json.RawMessage) (Strat
 	}
 	v := e.strategyView(p)
 	owned := map[string]strategyReportSwap{}
+	uncertain := map[string]strategyReportSwap{}
 	for _, id := range []chain.ID{chain.BTC, chain.Blake} {
 		for order, c := range e.s.Automations[strategyPolicyID(q.ID, id)].Charges {
-			if proof := c.ExposureSettled; proof != nil && !proof.Held {
-				owned[proof.SwapID] = strategyReportSwap{order: order, sell: proof.Sell, funding: proof.FundingTxID, ownSpend: proof.SpendTxID, peerSpend: proof.PeerSpendTxID, settled: true}
+			if proof := c.ExposureSettled; proof != nil {
+				identity := strategyReportSwap{order: order, sell: proof.Sell, funding: proof.FundingTxID, ownSpend: proof.SpendTxID, peerSpend: proof.PeerSpendTxID, settled: true}
+				if !proof.Held {
+					owned[proof.SwapID] = identity
+				} else {
+					uncertain[proof.SwapID] = identity
+				}
 			}
 		}
 	}
@@ -95,6 +69,7 @@ func (e *Engine) strategyReport(ctx context.Context, raw json.RawMessage) (Strat
 		// A live record supersedes any prior archived proof, including after a
 		// reorg. An order ID alone cannot identify the maker of a foreign swap.
 		delete(owned, id)
+		delete(uncertain, id)
 		o, err := historicalOffer(swap.Request.OfferEvent)
 		if err != nil || swap.Role != "maker" || o.Maker != e.identity.Public().Hex() {
 			continue
@@ -106,17 +81,30 @@ func (e *Engine) strategyReport(ctx context.Context, raw json.RawMessage) (Strat
 		owned[id] = strategyReportSwap{order: o.ID, sell: o.Sell, funding: swap.Short.TxID, ownSpend: swap.ShortSpend, peerSpend: swap.LongSpend, settled: swap.Stage == "completed" && e.strategyVerifiedSwaps[id] && strategySettled(swap, e.Config.Network.Confirmations())}
 	}
 	revision := p.Revision
+	token := BackupSemanticToken(e.s)
 	generations := map[chain.ID]uint64{chain.BTC: e.chainGeneration[chain.BTC], chain.Blake: e.chainGeneration[chain.Blake]}
 	e.mu.Unlock()
 	funding, claims := map[string]Activity{}, map[string]Activity{}
 	seen := map[string]bool{}
 	now := time.Now().Unix()
-	err := e.visitStrategyActivities(ctx, func(a Activity) error {
+	monitoring, err := e.VisitActivities(ctx, func(a Activity, archived bool) error {
+		a.Observations = nil
+		a.History = nil
+		a.Variants = nil
+		a.VariantAmounts = nil
+		a.Outpoints = nil
+		a.RelatedIDs = nil
 		identity, ok := owned[a.SwapID]
+		if held, found := uncertain[a.SwapID]; archived && found && held.matches(a) {
+			return errors.New("strategy history is incomplete: retained settlement ownership requires fresh recovery proof")
+		}
 		if !ok || !identity.matches(a) {
 			return nil
 		}
-		if a.Status != "confirmed" || a.Confirmations < chain.Network(q.ExpectedNetwork).Confirmations() || a.ObservedAt <= 0 || a.ObservedAt > now || now-a.ObservedAt > 120 {
+		if archived && !a.ArchiveVerified {
+			return errors.New("strategy history is incomplete: archived inclusion has not been verified against the current source")
+		}
+		if a.Status != "confirmed" || a.Confirmations < chain.Network(q.ExpectedNetwork).Confirmations() || a.ObservedAt <= 0 || a.ObservedAt > now || (!archived && now-a.ObservedAt > 120) {
 			return nil
 		}
 		if a.Kind == "swap_funding" {
@@ -146,6 +134,9 @@ func (e *Engine) strategyReport(ctx context.Context, raw json.RawMessage) (Strat
 	if err != nil {
 		return StrategyView{}, err
 	}
+	if monitoring.Reactivating || len(monitoring.Invalidated) != 0 || monitoring.SemanticToken != token {
+		return StrategyView{}, errors.New("strategy history or authority changed; discard the incomplete report")
+	}
 	for id, f := range funding {
 		if _, ok := claims[id]; ok {
 			i := v.Inventory[f.Chain]
@@ -162,7 +153,7 @@ func (e *Engine) strategyReport(ctx context.Context, raw json.RawMessage) (Strat
 	if ctx.Err() != nil {
 		return StrategyView{}, ctx.Err()
 	}
-	if e.fatal != nil || e.activityClosed || p == nil || p.Revision != revision || e.Config.Name != q.ExpectedWallet || string(e.Config.Network) != q.ExpectedNetwork || e.chainGeneration[chain.BTC] != generations[chain.BTC] || e.chainGeneration[chain.Blake] != generations[chain.Blake] {
+	if e.fatal != nil || e.activityClosed || BackupSemanticToken(e.s) != token || ArchiveMonitoring(e.s).Revision != monitoring.Revision || e.archiveHold() != nil || p == nil || p.Revision != revision || e.Config.Name != q.ExpectedWallet || string(e.Config.Network) != q.ExpectedNetwork || e.chainGeneration[chain.BTC] != generations[chain.BTC] || e.chainGeneration[chain.Blake] != generations[chain.Blake] {
 		return StrategyView{}, errors.New("wallet or chain source changed; discard the old report")
 	}
 	v.ReportIncluded = true

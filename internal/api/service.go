@@ -326,3 +326,8 @@ func (s *Service) ReportStrategy(ctx context.Context, in *pb.StrategyReportReque
 	out := &pb.StrategyView{}
 	return out, s.command(ctx, "strategy.report", in, out)
 }
+
+func (s *Service) GetRecord(ctx context.Context, in *pb.RecordQuery) (*pb.RecordDetail, error) {
+	out := &pb.RecordDetail{}
+	return out, s.command(ctx, "record.get", in, out)
+}

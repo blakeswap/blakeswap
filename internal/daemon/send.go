@@ -107,11 +107,20 @@ func (e *Engine) sendCoins(ctx context.Context, raw json.RawMessage) (PublicSend
 		}
 		return previous.public(), nil
 	}
+	var archived WalletSend
+	if found, err := e.archivedValue("sends", p.ID, &archived); err != nil {
+		return PublicSend{}, err
+	} else if found {
+		if archived.Digest != digest {
+			return PublicSend{}, errors.New("send request ID already used with different details")
+		}
+		return archived.public(), nil
+	}
 	if err := e.recoveryTradingReady(); err != nil {
 		return PublicSend{}, err
 	}
-	if len(e.s.Sends) >= 1000 {
-		return PublicSend{}, errors.New("send history capacity reached")
+	if err := e.admitWork("send"); err != nil {
+		return PublicSend{}, err
 	}
 	address, err := btcutil.DecodeAddress(p.Destination, e.Config.Network.Params())
 	if err != nil || !address.IsForNet(e.Config.Network.Params()) {
@@ -213,11 +222,14 @@ func (e *Engine) advanceSend(ctx context.Context, send *WalletSend) {
 	}
 	send.Confirmations = 0
 	var lookupError error
+	unobserved := false
 	for offset := 0; offset < len(send.History); offset++ {
 		i := (send.ObserveCursor + offset) % len(send.History)
 		v := &send.History[i]
 		t, err := e.nodes[send.Chain].Transaction(ctx, v.TxID)
-		if err != nil && !chain.TransactionNotFound(err) {
+		unknownInclusion := errors.Is(err, chain.ErrTransactionUnobserved)
+		unobserved = unobserved || unknownInclusion
+		if err != nil && !chain.TransactionNotFound(err) && !unknownInclusion {
 			lookupError = err
 			if ctx.Err() != nil {
 				send.ObserveCursor = (i + 1) % len(send.History)
@@ -227,6 +239,7 @@ func (e *Engine) advanceSend(ctx context.Context, send *WalletSend) {
 		}
 		v.Confirmations = 0
 		if err == nil {
+			e.noteArchivePayment(send, v.TxID, t)
 			v.Confirmations = t.Confirmations
 			if e.recoveryPaymentConfirmed(send, v.TxID, t) {
 				verifiedRecovery = true
@@ -289,6 +302,12 @@ func (e *Engine) advanceSend(ctx context.Context, send *WalletSend) {
 		send.State = "stuck"
 	}
 	send.Error = ""
+	if unobserved {
+		// Known bytes without an index membership never establish submission or
+		// clear recovery. They also cannot veto a retry of this durable payment.
+		send.State = "unknown"
+		send.Error = chain.ErrTransactionUnobserved.Error()
+	}
 	if time.Now().Unix()-send.LastAttempt < 30 {
 		return
 	}
@@ -299,9 +318,10 @@ func (e *Engine) advanceSend(ctx context.Context, send *WalletSend) {
 	}
 	send.Submitted = true
 	latest.Submitted = true
-	if send.State == "saved" {
+	if send.State == "saved" || send.State == "unknown" {
 		send.State = "broadcast"
 	}
+	send.Error = ""
 }
 func (e *Engine) advanceSends(ctx context.Context) {
 	ids := make([]string, 0, len(e.s.Sends))

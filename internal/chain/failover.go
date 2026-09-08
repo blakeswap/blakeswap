@@ -202,7 +202,7 @@ func (p *Failover) do(ctx context.Context, fn func(context.Context, *endpointEnt
 			return ctx.Err()
 		}
 		var held *broadcastGuardError
-		if TransactionNotFound(err) || errors.As(err, &held) {
+		if TransactionNotFound(err) || errors.Is(err, ErrTransactionUnobserved) || errors.As(err, &held) {
 			return err
 		}
 		p.mu.Lock()

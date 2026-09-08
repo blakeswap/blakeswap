@@ -181,7 +181,7 @@ final class AppModel: ObservableObject {
             return "Connected at block \(result.height)"
         } catch { return error.localizedDescription }
     }
-    var recoveryInProgress: Bool { status?.hasRecovery == true && status?.recovery.state != "ready" }
+    var recoveryInProgress: Bool { (status?.hasRecovery == true && status?.recovery.state != "ready") || status?.capacity.reactivating == true || (status?.capacity.monitoringHolds ?? 0) > 0 }
     func inspectBackup(path: String, password: String) async -> Blakeswap_V1_BackupContents? {
         guard !busy else { return nil }
         busy = true; notice = nil

@@ -187,3 +187,54 @@ func TestActionEncryptedStoredObligationSurvivesEndpointFailure(t *testing.T) {
 		t.Fatal("wrong-network file was trusted")
 	}
 }
+
+func TestActionSummaryIncludesColdArchiveHoldsBeforeReactivation(t *testing.T) {
+	now := time.Now().Unix()
+	e := actionEngine(now)
+	e.s = State{Version: 2, Network: chain.Regtest, Capacity: &CapacityRecord{Reactivating: true, Invalidated: map[string]bool{"send/cold": true, "swap/active": true}}}
+	e.s.Swaps = map[string]*Swap{"active": {ID: "active", Role: "maker", Stage: "completed"}}
+	got := e.walletActions(now)
+	seen := map[string]int{}
+	for _, a := range got.Actions {
+		seen[a.ID]++
+		if !a.RequiresMonitoring || !a.Uncertain {
+			t.Fatal("cold/reopened obligation treated as settled", a)
+		}
+		if a.ID == "send/cold" && (a.ObjectID != "cold" || a.Kind != "send") {
+			t.Fatal("cold detail identity lost", a)
+		}
+	}
+	if seen["archive"] != 1 || seen["send/cold"] != 1 || seen["swap/active"] != 1 || len(got.Actions) != 3 {
+		t.Fatal("missing/duplicate archived obligation", got)
+	}
+	summary := SummarizeActions(chain.Regtest, 1, []WalletActions{got}, now)
+	if !summary.Complete || !summary.RequiresMonitoring {
+		t.Fatal("all-wallet quit projection lost archive hold", summary)
+	}
+	root := t.TempDir()
+	password := filepath.Join(root, "password")
+	if err := os.WriteFile(password, []byte("private-action-archive-test"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	vault, err := storage.Open(filepath.Join(root, "state.db"), []byte("private-action-archive-test"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = vault.Save(e.s); err != nil {
+		t.Fatal(err)
+	}
+	if err = vault.Close(); err != nil {
+		t.Fatal(err)
+	}
+	stored, err := LoadStoredActions(Config{Name: e.Config.Name, Network: chain.Regtest, DataDir: root, PasswordFile: password})
+	if err != nil || stored.Source != "stored" || len(stored.Actions) != 3 {
+		t.Fatal("reopen omitted archived holds", stored, err)
+	}
+	e.s.Capacity.Reactivating = false
+	e.s.Capacity.Invalidated = nil
+	e.s.Swaps = nil
+	e.chainFresh[chain.BTC] = false
+	if w := e.walletActions(now); len(w.Actions) != 0 {
+		t.Fatal("ordinary archive checkpoint outage manufactured an obligation", w)
+	}
+}

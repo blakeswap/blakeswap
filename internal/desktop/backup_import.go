@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math"
 	"os"
 	"path/filepath"
 	"time"
@@ -18,11 +19,9 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
-// A portable snapshot may occupy the full archive budget on one network.
-// Recovery adds an index of existing obligation IDs; allow another archive's
-// worth of material plus bbolt allocation/page overhead. Check the actual file
-// before publishing so every installed profile fits the restart reader's bound.
-const portableVaultLimit = 2*storage.PortableLimit + (32 << 20)
+// Portable-produced vault validation uses actual filesystem and disk bounds.
+// The legacy source reader retains its independent 64 MiB input policy.
+const portableVaultLimit = math.MaxInt64
 
 type portableImportRequest struct {
 	Path         string
@@ -53,6 +52,7 @@ func (m *Manager) importPortable(ctx context.Context, request portableImportRequ
 	if err != nil {
 		return result, err
 	}
+	defer manifest.close()
 	var selected *backupWallet
 	for i := range manifest.Wallets {
 		if manifest.Wallets[i].ID == request.SourceWallet || request.SourceWallet == "" && len(manifest.Wallets) == 1 {
@@ -183,25 +183,32 @@ func prepareImportedProfile(ctx context.Context, staging string, entry backupWal
 		if err := ctx.Err(); err != nil {
 			return metadata, err
 		}
-		state := entry.Networks[network]
-		if state == nil {
-			// Even networks omitted by a legacy file enter the same recovery gate.
-			state = &daemon.State{Version: 1, Network: network, Mnemonic: entry.Mnemonic}
-			normalizeState(state)
-		}
-		if err := daemon.PrepareRecovery(state, snapshotAt, legacy); err != nil {
-			return metadata, err
-		}
 		path := filepath.Join(staging, string(network), "state.db")
-		if err := saveVault(path, password, state); err != nil {
-			return metadata, err
+		if source := entry.sources[network]; source != nil {
+			if err := source.restore(ctx, path, password, snapshotAt, legacy); err != nil {
+				return metadata, err
+			}
+		} else {
+			state := entry.Networks[network]
+			if state == nil {
+				// Even networks omitted by a legacy file enter the recovery gate.
+				state = &daemon.State{Version: 1, Network: network, Mnemonic: entry.Mnemonic}
+				normalizeState(state)
+			}
+			if err := daemon.PrepareRecovery(state, snapshotAt, legacy); err != nil {
+				return metadata, err
+			}
+			if err := saveVault(path, password, state); err != nil {
+				return metadata, err
+			}
 		}
+
 		info, err := os.Stat(path)
 		if err != nil {
 			return metadata, err
 		}
-		if info.Size() > portableVaultLimit {
-			return metadata, errors.New("prepared imported state exceeds its safe validation limit")
+		if err := storage.CheckPathSpace(staging, uint64(info.Size()), 4); err != nil {
+			return metadata, err
 		}
 		metadata.Networks = append(metadata.Networks, network)
 	}
@@ -312,13 +319,28 @@ func validateInstalledRecovery(root, seed string, networks []chain.Network) erro
 		}
 		// Authenticate a private copy with the same bound enforced before atomic
 		// installation. The legacy source's 64 MiB policy does not apply here.
-		state, err := readStateBackupBounded(root, filepath.Join(root, string(network), "state.db"), string(password), portableVaultLimit)
+		err = withPrivateStateBackup(root, filepath.Join(root, string(network), "state.db"), string(password), portableVaultLimit, func(vault *storage.Vault) error {
+			view, err := vault.Freeze()
+			if err != nil {
+				return err
+			}
+			defer view.Close()
+			var state daemon.State
+			stats, _, err := view.LoadState(&state)
+			if err != nil {
+				return err
+			}
+			if err = validateStreamedActive(&state, stats); err != nil {
+				return err
+			}
+			if state.Mnemonic != seed || state.Network.Normalized() != network || state.Recovery == nil || state.Recovery.ImportedAt <= 0 || state.Recovery.ImportedAt > time.Now().Add(24*time.Hour).Unix() {
+				return errors.New("interrupted import lacks its recovery gate")
+			}
+			return view.VisitArchive(context.Background(), func(record storage.ArchiveRecord) error { return validateStreamedRecord(state, record) })
+		})
 		clear(password)
 		if err != nil {
 			return err
-		}
-		if state.Mnemonic != seed || state.Network.Normalized() != network || state.Recovery == nil || state.Recovery.ImportedAt <= 0 || state.Recovery.ImportedAt > time.Now().Add(24*time.Hour).Unix() {
-			return errors.New("interrupted import lacks its recovery gate")
 		}
 	}
 	return nil

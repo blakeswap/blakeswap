@@ -15,15 +15,17 @@ import (
 // OrderRecord retains management evidence alongside T08's linked activity.
 // Publication means acknowledged relay storage, never global availability.
 type OrderRecord struct {
-	Offer            protocol.Offer `json:"offer"`
-	EventID          string         `json:"event_id"`
-	CreatedAt        int64          `json:"created_at"`
-	Publication      string         `json:"publication"`
-	AcknowledgedAt   int64          `json:"acknowledged_at"`
-	CancelledEventID string         `json:"cancelled_event_id,omitempty"`
-	Replaces         string         `json:"replaces,omitempty"`
-	ReplacedBy       string         `json:"replaced_by,omitempty"`
-	RecreatedFrom    string         `json:"recreated_from,omitempty"`
+	Offer            protocol.Offer    `json:"offer"`
+	EventID          string            `json:"event_id"`
+	CreatedAt        int64             `json:"created_at"`
+	Publication      string            `json:"publication"`
+	AcknowledgedAt   int64             `json:"acknowledged_at"`
+	CancelledEventID string            `json:"cancelled_event_id,omitempty"`
+	Replaces         string            `json:"replaces,omitempty"`
+	ReplacedBy       string            `json:"replaced_by,omitempty"`
+	RecreatedFrom    string            `json:"recreated_from,omitempty"`
+	Settlements      map[string]string `json:"settlements,omitempty"`
+	Protection       *protocol.Tower   `json:"protection,omitempty"`
 }
 
 func historicalOffer(event nostr.Event) (protocol.Offer, error) {
@@ -138,18 +140,25 @@ func (e *Engine) marketOrder(o protocol.Offer, eventID string, record OrderRecor
 		row.Status = "expired"
 	}
 	active := false
+	linked := map[string]bool{}
+	for id := range record.Settlements {
+		linked[id] = true
+	}
 	for id, s := range e.s.Swaps {
 		var requested protocol.Offer
 		if json.Unmarshal([]byte(s.Request.OfferEvent.Content), &requested) != nil || requested.Maker != o.Maker || requested.ID != o.ID {
 			continue
 		}
-		row.SwapIDs = append(row.SwapIDs, id)
+		linked[id] = true
 		if !terminalSwap(s) {
 			active = true
 			if !row.Own && row.Status == "open" {
 				row.Status = "pending"
 			}
 		}
+	}
+	for id := range linked {
+		row.SwapIDs = append(row.SwapIDs, id)
 	}
 	sort.Strings(row.SwapIDs)
 	if row.Own && row.Status == "reserved" && !active {
@@ -160,6 +169,10 @@ func (e *Engine) marketOrder(o protocol.Offer, eventID string, record OrderRecor
 	row.Availability = row.Status
 	if row.Own {
 		row.Offer = e.ownOffer(o)
+		if _, live := e.s.OfferTowers[o.ID]; !live && record.Protection != nil {
+			copy := *record.Protection
+			row.Offer.Tower, row.Offer.TowerBPS = &copy, copy.BPS
+		}
 		row.Publication, row.AcknowledgedAt, row.CreatedAt = record.Publication, record.AcknowledgedAt, record.CreatedAt
 		row.Replaces, row.ReplacedBy, row.RecreatedFrom = record.Replaces, record.ReplacedBy, record.RecreatedFrom
 		row.ActivityID = activityID("order", o.ID)
@@ -199,13 +212,13 @@ func marketLess(a, b MarketOrder, key string, descending bool) bool {
 	return (comparison < 0) != descending
 }
 
-func (e *Engine) marketPage(raw json.RawMessage) (MarketPage, error) {
+func (e *Engine) parseMarketQuery(raw json.RawMessage) (MarketQuery, error) {
 	var q MarketQuery
 	if err := json.Unmarshal(raw, &q); err != nil {
-		return MarketPage{}, err
+		return MarketQuery{}, err
 	}
 	if err := e.tradeBinding(q.ExpectedWallet, q.ExpectedNetwork); err != nil {
-		return MarketPage{}, err
+		return MarketQuery{}, err
 	}
 	if q.Owner == "" {
 		q.Owner = "all"
@@ -223,12 +236,19 @@ func (e *Engine) marketPage(raw json.RawMessage) (MarketPage, error) {
 		q.Limit = 100
 	}
 	if (q.Owner != "all" && q.Owner != "mine" && q.Owner != "others") || (q.Side != "all" && q.Side != "buy_btc" && q.Side != "sell_btc") || (q.Sort != "rate" && q.Sort != "size" && q.Sort != "expiry") || q.BTCMin < 0 || q.BTCMax < 0 || q.BTCMin > 10000000000 || q.BTCMax > 10000000000 || (q.BTCMax > 0 && q.BTCMax < q.BTCMin) || q.Offset < 0 || q.Limit < 1 || q.Limit > 500 {
-		return MarketPage{}, errors.New("invalid market filters or page")
+		return MarketQuery{}, errors.New("invalid market filters or page")
 	}
 	switch q.Status {
 	case "all", "open", "pending", "reserved", "filled", "cancelled", "expired", "refunded":
 	default:
-		return MarketPage{}, errors.New("invalid order status filter")
+		return MarketQuery{}, errors.New("invalid order status filter")
+	}
+	return q, nil
+}
+func (e *Engine) marketPage(raw json.RawMessage) (MarketPage, error) {
+	q, err := e.parseMarketQuery(raw)
+	if err != nil {
+		return MarketPage{}, err
 	}
 	page := MarketPage{Wallet: e.Config.Name, Network: e.Config.Network, Records: []MarketOrder{}, ObservedAt: e.marketObservedAt, AllRelays: e.marketAllRelays}
 	now := time.Now().Unix()

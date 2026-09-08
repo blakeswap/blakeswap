@@ -46,13 +46,17 @@ type Manager struct {
 	restart             bool
 	stopped             bool
 	openings            map[string]*networkOpening
-	runtimeCtx          context.Context
-	runtimeDir          string
-	runtimeSession      string
-	servers             map[string]*api.Server
-	actionReady         func(daemon.WalletActions)
-	storedActions       map[string]daemon.WalletActions
-	chainReady          func(chain.ID, uint32)
+	backupSourceCancel  context.CancelFunc
+	backupSourceDone    <-chan struct{}
+	// Tests can exercise the portable fallback even on clone-capable filesystems.
+	backupNoClone  bool
+	runtimeCtx     context.Context
+	runtimeDir     string
+	runtimeSession string
+	servers        map[string]*api.Server
+	actionReady    func(daemon.WalletActions)
+	storedActions  map[string]daemon.WalletActions
+	chainReady     func(chain.ID, uint32)
 }
 
 type networkOpening struct {
@@ -147,6 +151,9 @@ func Run(ctx context.Context, root string, parent int) error {
 		return errors.New("this Blakeswap data directory is already open")
 	}
 	defer syscall.Flock(int(lock.Fd()), syscall.LOCK_UN)
+	if err := cleanupPortableStaging(root); err != nil {
+		return err
+	}
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	if parent > 0 {
@@ -350,6 +357,11 @@ func (m *Manager) closeNetwork() {
 }
 
 func (m *Manager) stopOpening() {
+	if m.backupSourceCancel != nil {
+		m.backupSourceCancel()
+		<-m.backupSourceDone
+		m.backupSourceCancel, m.backupSourceDone = nil, nil
+	}
 	for _, job := range m.openings {
 		job.cancel()
 	}
@@ -363,6 +375,17 @@ func (m *Manager) stopOpening() {
 // Each wallet bootstraps independently, including after a cold start. A slow
 // history scan never holds back another wallet that is already ready to trade.
 func (m *Manager) connect(ctx context.Context) {
+	// A fallback owns inactive source handles. Do not begin another opener for
+	// those paths until it has released them; already running workers continue.
+	if m.backupSourceDone != nil {
+		select {
+		case <-m.backupSourceDone:
+			m.backupSourceCancel, m.backupSourceDone = nil, nil
+		default:
+			return
+		}
+	}
+
 	if m.openings == nil {
 		m.openings = map[string]*networkOpening{}
 	}

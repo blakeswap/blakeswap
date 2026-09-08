@@ -26,18 +26,14 @@ func (m *Manager) exportPortable(ctx context.Context, profile, path, password st
 	if !filepath.IsAbs(path) || len(password) < 16 {
 		return result, errors.New("choose an absolute destination and a backup password of at least 16 bytes")
 	}
-	m.mu.Lock()
-	manifest, err := m.backupSnapshotLocked(ctx, profile, all)
-	if m.runtimeCtx != nil && !m.stopped {
-		m.startWorkers(m.runtimeCtx)
-	}
-	m.mu.Unlock()
+	manifest, err := m.backupSnapshot(ctx, profile, all)
+	defer manifest.close()
 	if err != nil {
 		return result, err
 	}
 	secret := []byte(password)
 	defer clear(secret)
-	if err := storage.WritePortable(ctx, path, secret, manifest); err != nil {
+	if err := writeStreamManifest(ctx, path, secret, manifest); err != nil {
 		return result, err
 	}
 	result.Path, result.CreatedAt, result.Wallets = path, manifest.CreatedAt, len(manifest.Wallets)
@@ -71,12 +67,19 @@ func (m *Manager) recordPortableLocked(manifest backupManifest) error {
 				return errors.New("wallet identity changed after snapshot")
 			}
 			for network, snapshot := range profile.Networks {
-				fingerprint, err := daemon.BackupFingerprint(*snapshot)
-				if err != nil {
-					return err
+				mark, marked := profile.marks[network]
+				if !marked {
+					if snapshot == nil {
+						return errors.New("portable snapshot mark is missing")
+					}
+					fingerprint, err := daemon.BackupFingerprint(*snapshot)
+					if err != nil {
+						return err
+					}
+					mark = backupMark{Fingerprint: fingerprint, SemanticToken: daemon.BackupSemanticToken(*snapshot)}
 				}
 				if engine := m.engines[profile.ID]; engine != nil && engine.Config.Network.Normalized() == network {
-					if err := engine.RecordBackup(fingerprint, manifest.CreatedAt); err != nil {
+					if err := engine.RecordBackupSnapshot(mark.Fingerprint, mark.SemanticToken, manifest.CreatedAt); err != nil {
 						return err
 					}
 					continue
@@ -99,7 +102,7 @@ func (m *Manager) recordPortableLocked(manifest backupManifest) error {
 					if live.Mnemonic != profile.Mnemonic || live.Network.Normalized() != network {
 						return errors.New("network state changed identity")
 					}
-					live.Backup = &daemon.BackupRecord{CreatedAt: manifest.CreatedAt, Fingerprint: fingerprint}
+					live.Backup = &daemon.BackupRecord{CreatedAt: manifest.CreatedAt, Fingerprint: mark.Fingerprint, SemanticToken: mark.SemanticToken}
 					return vault.Save(live)
 				}()
 				closeErr := vault.Close()

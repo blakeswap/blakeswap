@@ -228,19 +228,40 @@ func (r *Relay) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 			r.mu.Lock()
 			key := connection + ":" + id
 			subs[id] = key
-			events := []nostr.Event{}
+			candidates := []nostr.Event{}
 			for _, event := range r.events {
 				if expired(event) {
 					continue
 				}
 				for _, f := range filters {
 					if f.Matches(event) {
-						events = append(events, event)
+						candidates = append(candidates, event)
 						break
 					}
 				}
 			}
-			sort.Slice(events, func(i, j int) bool { return newer(events[i], events[j]) })
+			sort.Slice(candidates, func(i, j int) bool { return newer(candidates[i], candidates[j]) })
+			// NIP-01 applies each filter's limit independently to the initial
+			// descending-time, lowest-ID-first result. A limit of zero still
+			// establishes a live subscription below.
+			counts := make([]int, len(filters))
+			events := make([]nostr.Event, 0, min(len(candidates), 10001))
+			for _, event := range candidates {
+				include := false
+				for i, f := range filters {
+					if f.LimitZero || (f.Limit > 0 && counts[i] >= f.Limit) || !f.Matches(event) {
+						continue
+					}
+					counts[i]++
+					include = true
+				}
+				if include {
+					events = append(events, event)
+				}
+				if len(events) > 10000 {
+					break
+				}
+			}
 			if len(events) > 10000 {
 				send([]any{"CLOSED", id, "history exceeds safe bound; narrow filter"})
 				delete(r.subscriptions, key)

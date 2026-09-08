@@ -15,12 +15,18 @@ import (
 // Everything in this manifest is inside the authenticated ciphertext. Source
 // profile identifiers are descriptive only and never become filesystem paths.
 type backupManifest struct {
+	release      func()
+	capturePause time.Duration
+
 	FormatVersion int            `json:"format_version"`
 	CreatedAt     int64          `json:"created_at"`
 	Wallets       []backupWallet `json:"wallets"`
 }
 
 type backupWallet struct {
+	sources map[chain.Network]*backupNetwork
+	marks   map[chain.Network]backupMark
+
 	ID       string                          `json:"id"`
 	Name     string                          `json:"name"`
 	Identity string                          `json:"identity"`
@@ -64,8 +70,12 @@ func validateBackupManifest(manifest *backupManifest) error {
 		if len(profile.Networks) == 0 || len(profile.Networks) > 3 {
 			return errors.New("backup must describe each wallet's network state")
 		}
-		for network, state := range profile.Networks {
-			if network == "" || !network.Valid() || state == nil || state.Version != 1 || state.Network.Normalized() != network || state.Mnemonic != profile.Mnemonic {
+		for network := range profile.Networks {
+			state, err := profile.networkState(network)
+			if err != nil {
+				return err
+			}
+			if network == "" || !network.Valid() || state == nil || (state.Version != 1 && state.Version != 2) || state.Network.Normalized() != network || state.Mnemonic != profile.Mnemonic {
 				return errors.New("backup network state does not match its wallet manifest")
 			}
 			if err := validateBackupState(state); err != nil {
@@ -77,6 +87,26 @@ func validateBackupManifest(manifest *backupManifest) error {
 }
 
 func validateBackupState(state *daemon.State) error {
+	if err := daemon.ValidateArchiveState(*state); err != nil {
+		return err
+	}
+	logical, err := daemon.CompleteState(*state)
+	if err != nil {
+		return err
+	}
+	state = &logical
+	return validateActiveBackupState(state)
+}
+
+// Validate an already separated active checkpoint or one typed archive record.
+// Archive completeness and overlap are verified by the streaming owner.
+func validateActiveBackupState(state *daemon.State) error {
+	if err := daemon.ValidateHistoryCoverage(state); err != nil {
+		return err
+	}
+	if err := daemon.ValidateOrderSettlements(state); err != nil {
+		return err
+	}
 	if err := daemon.ValidateAutomationState(state); err != nil {
 		return err
 	}
@@ -115,6 +145,5 @@ func validateBackupState(state *daemon.State) error {
 			return errors.New("invalid receive chain in backup")
 		}
 	}
-	normalizeState(state)
 	return nil
 }

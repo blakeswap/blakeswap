@@ -128,6 +128,12 @@ func TestNeverFundedRegistrationsExpireWithoutForgettingFundedJobs(t *testing.T)
 	funding.AddTxOut(wire.NewTxOut(job.Target.Amount, script))
 	state.Job.Target.TxID = funding.TxHash().String()
 	lookup.tx = chain.Transaction{TxID: state.Job.Target.TxID, Hex: contract.Hex(funding)}
+	lookup.err = chain.ErrTransactionUnobserved
+	e.refreshTowerJobs(context.Background())
+	if state.Expired || state.FundingSeen || e.CanChangeNetwork() == nil {
+		t.Fatal("known bytes without history became absence or positive funding")
+	}
+	lookup.err = nil
 	e.refreshTowerJobs(context.Background())
 	lookup.err = &chain.RPCError{Code: -5, Message: "transaction not found"}
 	e.refreshTowerJobs(context.Background())

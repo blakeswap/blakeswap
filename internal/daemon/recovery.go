@@ -13,6 +13,9 @@ import (
 
 func (e *Engine) restoredSwap(id string) bool { return e.s.Recovery != nil && e.s.Recovery.Swaps[id] }
 func (e *Engine) recoveryTradingReady() error {
+	if err := e.archiveHold(); err != nil {
+		return err
+	}
 	if e.s.Recovery == nil {
 		return nil
 	}
@@ -188,7 +191,8 @@ func (e *Engine) reconcileRecovery(all, towers map[chain.ID]map[string]chain.Obs
 	if r == nil {
 		return
 	}
-	status := RecoveryStatus{State: "recovering", ImportedAt: r.ImportedAt, SnapshotAt: r.SnapshotAt, Legacy: r.Legacy, CheckedAt: time.Now().Unix(), QuarantinedOffers: len(r.Offers), QuarantinedMessages: len(r.Outbox), Coverage: recoveryCoverage}
+	offers, messages := recoveryQuarantineCounts(e.s)
+	status := RecoveryStatus{State: "recovering", ImportedAt: r.ImportedAt, SnapshotAt: r.SnapshotAt, Legacy: r.Legacy, CheckedAt: time.Now().Unix(), QuarantinedOffers: offers, QuarantinedMessages: messages, Coverage: recoveryCoverage}
 	if !e.fresh(chain.BTC) || !e.fresh(chain.Blake) || all[chain.BTC] == nil || all[chain.Blake] == nil {
 		status.Issues = append(status.Issues, RecoveryIssue{Kind: "chains", Reason: "Complete current wallet and contract observations from both chains are required."})
 	}

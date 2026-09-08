@@ -593,3 +593,132 @@ BLAKESWAP_BTC_RPC_PORT=39443 BLAKESWAP_BLAKE_RPC_PORT=49443 \
 
 A run without `BLAKESWAP_REGTEST` compiles and skips these scenarios. It does not
 establish actual-chain settlement, inventory or fee correctness.
+
+## T09 archive, synchronization and resource acceptance
+
+Run focused archive/capacity/mailbox tests with `BLAKESWAP_REGTEST= sh scripts/go.sh test ./internal/storage ./internal/daemon ./internal/desktop -run 'Archive|Capacity|Mailbox|Portable|Stream' -count=1`. Storage tests cover encrypted identity binding, atomic ownership, duplicate/collision rejection, process termination before/after commit, framing order/completeness and private import staging. Restored reactivation tests fill the entire 64-core batch and verify that original authority markers and exact fee companions precede execution; malformed companion reads cannot expose a core record.
+
+`TestCapacityPaymentContinuationEncoding` signs 50-input payments on both chains and retains all 16 variants plus the current copy. `TestCapacitySwapContinuationEncoding` retains both 50-input funding legs, the three owner claim/refund variants, two three-template tower jobs, receipts and outbound encrypted messages. These are measured normal-operation shapes with explicit signature-length headroom, not a universal bound on arbitrary previously accepted imports. Metadata-only capacity tests deliberately inject archive stats to prove active/disk accounting without pretending to be physical workloads.
+
+The opt-in physical test uses real private files and no chain nodes:
+
+```sh
+/usr/bin/time -l env BLAKESWAP_REGTEST= BLAKESWAP_PORTABLE_SCALE=1 BLAKESWAP_SCALE_RECORDS=95000 \
+  sh scripts/go.sh test ./internal/desktop \
+  -run '^TestPortablePhysicalLargeHistoryAndCoreContinuation$' -count=1 -timeout=20m -v
+```
+
+It writes and imports an accepted near-limit v1 population, creates a physical encrypted cold archive, adds retained core payloads so the complete output exceeds the old v1 envelope, and exports/installs a complete v2 profile. The phase log separates original v1 parsing, cold storage, total source preparation/validation, the separate **complete worker join/save/capture/resume pause**, export, and v2 validation/restore. The 20ms sampled Go heap high-water marks are measurements, not strict peak guarantees; `/usr/bin/time -l` records OS peak RSS. Payload growth in this format test is not a claim of actual broadcast protocol validity. Run it without concurrent broad native/Go builds or node integration to make memory and latency results interpretable. A smaller `BLAKESWAP_SCALE_RECORDS=1000` run checks fixture mechanics but does not satisfy the large physical workload.
+
+The snapshot capture regressions force the non-clone fallback even on APFS. They
+exercise concurrent 8 MiB bbolt writer growth from an archive callback, exact
+retry and delete/reinsert generation fences, final-callback mutation, cancellation,
+independent cloned credentials, private cleanup and late semantic freshness.
+`TestPortableCaptureWalletWorkerProgressDuringPreparationAndMaterialization`
+runs the real daemon and wallet worker against disposable HTTP observation
+fixtures and proves chain reads continue during inactive credential preparation
+and a deliberately blocked archive callback. This is scheduling evidence, not a
+real-chain settlement test. The physical fixture reports `source_snapshot_total`
+separately from the complete `source_snapshot_worker_pause`, including worker
+join/save/capture/resume; its large-history measurement remains the latency test.
+
+At checkpoint `da8858609f2fd8c30a733045dfcf9557ba54e9b6` on the measured APFS
+host, 95,000 retained activity rows and 2,021 core obligations produced a
+232,874,099-byte accepted v1 input and a 284,706,570-byte complete v2 output.
+The full export/restore fixture passed in 120.251 seconds. Source preparation and
+private validation took 10.359 seconds in total; the common worker pause was
+79.627 milliseconds, compared with 31.280 seconds before capture was separated.
+A small independent real-daemon/HTTP fixture verifies worker progress outside
+that interval. These are measurements on this host, not universal timing bounds.
+
+Maximum process RSS was 2,179,645,440 bytes; peak sampled heap was 1,436,303,512
+bytes during the unchanged legacy v1 import. Sampled summed file allocation peaked at
+1,829,212,160 bytes (logical size 1,863,316,815), with hardlinked inodes counted
+once. Separate APFS clone inodes can share extents; clone sharing is not
+deduplicated, so this is not a unique physical-disk high-water measurement.
+Disk samples run every 200ms and heap samples every 20ms, so brief higher
+peaks may be missed. Host-wide swap-in counters advanced by eight 16KiB pages;
+swap-out counters were unchanged. Active checkpoint/core and individual-record
+memory costs remain, even though cold history does not require a full graph.
+
+
+The history query regressions exercise selected-kind encrypted collection rather
+than whole-wallet reconstruction. `TestHistoryRowsFreezeAcrossColdMutationAndAgreeWithCSV`
+checks 401 mixed hot/cold rows, timestamp ties, stable pagination and CSV agreement,
+then later mutation, FIFO eviction and close cleanup. The cold-market equivalence
+matrix checks 72 owner/status/sort/direction combinations and exact revisions against
+the existing live projection, including rational rates whose products exceed int64.
+Queued cancellation and late-context failure tests verify result key/file disposal.
+Storage tests cover 17,003-row multi-level encrypted merging, malformed ciphertext,
+truncation, ordinal/cross-result substitution and final-callback archive ABA.
+
+`TestHistoryVisitorDoesNotPinSettlementWriter` requires a real 8 MiB save to finish
+before a blocked visitor callback is released, with a five-second bound and joined
+read/write goroutines on every outcome. Merely observing a runnable bbolt mmap
+frame is not a lock failure: normal file growth dereferences pages after acquiring
+the mmap lock. The behavioral test still fails against the original pinned reader.
+
+Cold strategy report tests preserve hour-old observation times while requiring
+the row's own current canonical prefix. Outage, unrelated/repaired prefixes,
+source changes, absent proof and held ownership remain incomplete. The realistic
+import regression follows signed maker completion, core/history compaction,
+private streamed promotion/quarantine/import, restored positive scanning and
+rearchive while the strategy stays disabled under RestoreHold. Its reorg variant
+starts with imported live anchors cleared, proves the retained history prefix
+contradiction, checks the new-work hold and bounded promotion, then verifies a new
+row binding, complete report and retention of the old confirmed outcome.
+
+
+`TestHistoryPhysicalQueriesAndSettlementProgress` is a separate opt-in query
+measurement using physically written encrypted activity, deduplication and closed
+own-order records. The default is 95,000 activity rows, 190,000 unrelated Seen
+records and 1,001 signed closed orders. It requires the encoded wallet to exceed
+256 MiB, measures the first activity page under the existing 45-second API deadline,
+checks frozen tail-page/CSV and closed-own queries, and cancels a new collection.
+A concurrently eligible signed payment retries its exact durable bytes through
+full Engine.Tick calls; eligibility is advanced only in this deterministic fixture,
+and production retry timing is unchanged. Tick and Status retain the existing
+local workload budgets. Per-phase sampled heap and summed file allocation are
+reported; use OS timing/vm_stat alongside them. All nodes and funds are in-memory
+private fixtures. Reduced-count pilots are not the full physical-scale result.
+
+```sh
+BLAKESWAP_REGTEST= BLAKESWAP_HISTORY_SCALE=1 \
+  BLAKESWAP_HISTORY_SCALE_RECORDS=95000 sh scripts/go.sh test ./internal/daemon \
+  -run '^TestHistoryPhysicalQueriesAndSettlementProgress$' -count=1 -timeout=10m -v
+```
+
+
+At checkpoint `645f3b6` on the same 32GiB macOS host, the full history-query fixture
+physically wrote 287,002 encrypted records: 279,508,980 encoded archive bytes,
+95,000 activities, 190,000 unrelated mailbox identities and 1,001 closed orders.
+The active checkpoint was 5,734 bytes. The first 37-row page completed in
+21.562 seconds, within the existing 45-second API deadline, while 534 full wallet
+Ticks progressed concurrently. The frozen tail page plus CSV took 9.379ms;
+closed-own history took 1.018 seconds and cancellation 37.287ms. Across queries,
+563 eligible exact saved-payment retries completed, with maximum Tick 330.342ms
+and maximum Status 2.882ms. These are deterministic private backends, not node
+round-trip timings.
+
+The process completed in 108.48 seconds wall time (test package 106.489s), with
+508,248,064-byte maximum RSS. Sampled Go heap peaked at 22,711,712 bytes overall
+and 16,719,736 bytes during first-query collection. Sampled summed file allocation
+peaked at 961,236,992 bytes (logical size 939,321,070); APFS clone sharing is not
+deduplicated, and 200ms file/20ms heap samples can miss brief peaks. Host-wide
+swap-ins increased by eight 16KiB pages; swap-outs did not change. These figures
+measure the selected-kind query path, not the separate v1 import's retained
+whole-active-State memory cost documented above. Exact ordering, count, CSV,
+key/file cleanup, archive identity and durable signed-payment assertions passed.
+
+
+The orphan-observation regression uses an actual Electrum transaction lookup
+over a private in-memory transport and the ordinary failover pool. Known raw
+bytes with no matching history remain a distinct error, without endpoint backoff,
+positive publication metadata, or `TransactionNotFound` semantics. Malformed IDs,
+missing/null heights or response shapes, conflicting entries and invalid proofs
+remain errors; the raw-response witness hook still precedes metadata processing.
+Daemon controls verify the unchanged 30-second exact saved-payment retry,
+required fresh target chain, retained archive/recovery/network holds, and durable
+identity/interval after reopen. Prepared maker/taker funding and unseen tower
+registration controls keep unknown observation separate from positive funding or
+explicit absence.

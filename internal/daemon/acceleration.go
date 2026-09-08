@@ -317,6 +317,9 @@ func (e *Engine) bumpSend(ctx context.Context, p BumpRequest) (BumpResult, error
 			return BumpResult{TxID: v.TxID, Fee: v.Fee, State: s.State, Error: s.Error}, nil
 		}
 	}
+	if err := e.admitWork("variant"); err != nil {
+		return BumpResult{}, err
+	}
 	if len(s.History) >= 16 {
 		return BumpResult{}, errors.New("replacement limit reached; all signed variants remain monitored")
 	}

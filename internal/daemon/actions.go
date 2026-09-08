@@ -115,10 +115,21 @@ func (e *Engine) walletActions(now int64) WalletActions {
 	fresh := e.actionChainFresh(chain.BTC, now) && e.actionChainFresh(chain.Blake, now)
 	held := map[string]bool{}
 	if r := e.s.Recovery; r != nil {
-		held = r.InvalidatedSettlements
+		for id, required := range r.InvalidatedSettlements {
+			if required {
+				held[id] = true
+			}
+		}
 		if r.Status.State != "ready" || len(held) > 0 {
 			w.Actions = append(w.Actions, WalletAction{ID: "recovery", Kind: "recovery", State: "recovery_required", RequiresMonitoring: true, Uncertain: true})
 		}
+	}
+	archived := ArchiveMonitoring(e.s)
+	for _, id := range archived.Invalidated {
+		held[id] = true
+	}
+	if archived.Reactivating {
+		w.Actions = append(w.Actions, WalletAction{ID: "archive", Kind: "recovery", State: "reopened", RequiresMonitoring: true, Uncertain: true})
 	}
 	for id, event := range e.s.Offers {
 		offer, err := protocol.DecodeOffer(event, now)
@@ -256,6 +267,22 @@ func (e *Engine) walletActions(now int64) WalletActions {
 		}
 		w.Actions = append(w.Actions, a)
 	}
+	// A contradicted cold record remains an obligation before its bounded
+	// reactivation batch reaches the active maps. Preserve its detail identity.
+	emitted := map[string]bool{}
+	for _, action := range w.Actions {
+		emitted[action.ID] = true
+	}
+	for id := range held {
+		if emitted[id] {
+			continue
+		}
+		kind, object, ok := strings.Cut(id, "/")
+		if !ok || (kind != "swap" && kind != "send" && kind != "tower") {
+			kind, object = "recovery", ""
+		}
+		w.Actions = append(w.Actions, WalletAction{ID: id, Kind: kind, ObjectID: object, State: "reopened", RequiresMonitoring: true, Uncertain: true})
+	}
 	sort.Slice(w.Actions, func(i, j int) bool { return w.Actions[i].ID < w.Actions[j].ID })
 	return w
 }
@@ -317,8 +344,15 @@ func LoadStoredActions(c Config) (WalletActions, error) {
 		if _, err = vault.Load(&e.s); err != nil {
 			return WalletActions{}, err
 		}
+		stats, err := vault.ArchiveStats()
+		if err != nil {
+			return WalletActions{}, err
+		}
+		if err = e.s.ValidateArchiveCheckpoint(stats); err != nil {
+			return WalletActions{}, err
+		}
 	}
-	if e.s.Version != 0 && (e.s.Version != 1 || e.s.Network.Normalized() != c.Network.Normalized()) {
+	if e.s.Version != 0 && ((e.s.Version != 1 && e.s.Version != 2) || e.s.Network.Normalized() != c.Network.Normalized()) {
 		return WalletActions{}, errors.New("stored obligation state has an unsupported version or network")
 	}
 	if err := ValidateAutomationState(&e.s); err != nil {

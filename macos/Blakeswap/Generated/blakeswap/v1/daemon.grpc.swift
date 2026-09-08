@@ -86,6 +86,19 @@ internal enum Blakeswap_V1_DaemonService: Sendable {
                 type: .unary
             )
         }
+        /// Namespace for "GetRecord" metadata.
+        internal enum GetRecord: Sendable {
+            /// Request type for "GetRecord".
+            internal typealias Input = Blakeswap_V1_RecordQuery
+            /// Response type for "GetRecord".
+            internal typealias Output = Blakeswap_V1_RecordDetail
+            /// Descriptor for "GetRecord".
+            internal static let descriptor = GRPCCore.MethodDescriptor(
+                service: GRPCCore.ServiceDescriptor(fullyQualifiedService: "blakeswap.v1.DaemonService"),
+                method: "GetRecord",
+                type: .unary
+            )
+        }
         /// Namespace for "ListAutomations" metadata.
         internal enum ListAutomations: Sendable {
             /// Request type for "ListAutomations".
@@ -574,6 +587,7 @@ internal enum Blakeswap_V1_DaemonService: Sendable {
             ReviewStrategy.descriptor,
             SaveStrategy.descriptor,
             StopStrategy.descriptor,
+            GetRecord.descriptor,
             ListAutomations.descriptor,
             ReviewAutomation.descriptor,
             SaveAutomation.descriptor,
@@ -723,6 +737,25 @@ extension Blakeswap_V1_DaemonService {
             deserializer: some GRPCCore.MessageDeserializer<Blakeswap_V1_StrategyView>,
             options: GRPCCore.CallOptions,
             onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Blakeswap_V1_StrategyView>) async throws -> Result
+        ) async throws -> Result where Result: Sendable
+
+        /// Call the "GetRecord" method.
+        ///
+        /// - Parameters:
+        ///   - request: A request containing a single `Blakeswap_V1_RecordQuery` message.
+        ///   - serializer: A serializer for `Blakeswap_V1_RecordQuery` messages.
+        ///   - deserializer: A deserializer for `Blakeswap_V1_RecordDetail` messages.
+        ///   - options: Options to apply to this RPC.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
+        /// - Returns: The result of `handleResponse`.
+        func getRecord<Result>(
+            request: GRPCCore.ClientRequest<Blakeswap_V1_RecordQuery>,
+            serializer: some GRPCCore.MessageSerializer<Blakeswap_V1_RecordQuery>,
+            deserializer: some GRPCCore.MessageDeserializer<Blakeswap_V1_RecordDetail>,
+            options: GRPCCore.CallOptions,
+            onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Blakeswap_V1_RecordDetail>) async throws -> Result
         ) async throws -> Result where Result: Sendable
 
         /// Call the "ListAutomations" method.
@@ -1588,6 +1621,36 @@ extension Blakeswap_V1_DaemonService {
             try await self.client.unary(
                 request: request,
                 descriptor: Blakeswap_V1_DaemonService.Method.StopStrategy.descriptor,
+                serializer: serializer,
+                deserializer: deserializer,
+                options: options,
+                onResponse: handleResponse
+            )
+        }
+
+        /// Call the "GetRecord" method.
+        ///
+        /// - Parameters:
+        ///   - request: A request containing a single `Blakeswap_V1_RecordQuery` message.
+        ///   - serializer: A serializer for `Blakeswap_V1_RecordQuery` messages.
+        ///   - deserializer: A deserializer for `Blakeswap_V1_RecordDetail` messages.
+        ///   - options: Options to apply to this RPC.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
+        /// - Returns: The result of `handleResponse`.
+        internal func getRecord<Result>(
+            request: GRPCCore.ClientRequest<Blakeswap_V1_RecordQuery>,
+            serializer: some GRPCCore.MessageSerializer<Blakeswap_V1_RecordQuery>,
+            deserializer: some GRPCCore.MessageDeserializer<Blakeswap_V1_RecordDetail>,
+            options: GRPCCore.CallOptions = .defaults,
+            onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Blakeswap_V1_RecordDetail>) async throws -> Result = { response in
+                try response.message
+            }
+        ) async throws -> Result where Result: Sendable {
+            try await self.client.unary(
+                request: request,
+                descriptor: Blakeswap_V1_DaemonService.Method.GetRecord.descriptor,
                 serializer: serializer,
                 deserializer: deserializer,
                 options: options,
@@ -2835,6 +2898,31 @@ extension Blakeswap_V1_DaemonService.ClientProtocol {
         )
     }
 
+    /// Call the "GetRecord" method.
+    ///
+    /// - Parameters:
+    ///   - request: A request containing a single `Blakeswap_V1_RecordQuery` message.
+    ///   - options: Options to apply to this RPC.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
+    /// - Returns: The result of `handleResponse`.
+    internal func getRecord<Result>(
+        request: GRPCCore.ClientRequest<Blakeswap_V1_RecordQuery>,
+        options: GRPCCore.CallOptions = .defaults,
+        onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Blakeswap_V1_RecordDetail>) async throws -> Result = { response in
+            try response.message
+        }
+    ) async throws -> Result where Result: Sendable {
+        try await self.getRecord(
+            request: request,
+            serializer: GRPCProtobuf.ProtobufSerializer<Blakeswap_V1_RecordQuery>(),
+            deserializer: GRPCProtobuf.ProtobufDeserializer<Blakeswap_V1_RecordDetail>(),
+            options: options,
+            onResponse: handleResponse
+        )
+    }
+
     /// Call the "ListAutomations" method.
     ///
     /// - Parameters:
@@ -3903,6 +3991,35 @@ extension Blakeswap_V1_DaemonService.ClientProtocol {
             metadata: metadata
         )
         return try await self.stopStrategy(
+            request: request,
+            options: options,
+            onResponse: handleResponse
+        )
+    }
+
+    /// Call the "GetRecord" method.
+    ///
+    /// - Parameters:
+    ///   - message: request message to send.
+    ///   - metadata: Additional metadata to send, defaults to empty.
+    ///   - options: Options to apply to this RPC, defaults to `.defaults`.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
+    /// - Returns: The result of `handleResponse`.
+    internal func getRecord<Result>(
+        _ message: Blakeswap_V1_RecordQuery,
+        metadata: GRPCCore.Metadata = [:],
+        options: GRPCCore.CallOptions = .defaults,
+        onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Blakeswap_V1_RecordDetail>) async throws -> Result = { response in
+            try response.message
+        }
+    ) async throws -> Result where Result: Sendable {
+        let request = GRPCCore.ClientRequest<Blakeswap_V1_RecordQuery>(
+            message: message,
+            metadata: metadata
+        )
+        return try await self.getRecord(
             request: request,
             options: options,
             onResponse: handleResponse

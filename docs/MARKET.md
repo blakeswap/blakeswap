@@ -92,6 +92,11 @@ is `all`, `open`, `pending`, `reserved`, `filled`, `cancelled`, `expired`, or
 Send that revision with a nonzero offset; a changed set rejects the next page so
 the client can refresh rather than skip or duplicate rows. No chain or relay I/O
 occurs in this read. Desktop reads use the cancellable advisory lifecycle route.
+Closed own orders remain queryable from their encrypted archive with their exact
+signed source, terminal swap IDs and retained tower policy. Only relevant record
+categories are read; bounded encrypted sorting preserves the same rational rate,
+size, expiry and stable-ID order. Querying cold metadata cannot resume publication
+or grant recreation without its normal fresh review and recovery checks.
 
 For replacement/recreation, use `QuoteTrade` with `kind: "maker"`,
 `order_action: "replace"` or `"recreate"`, `source_offer_id`, and the exact

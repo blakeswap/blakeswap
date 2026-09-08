@@ -202,7 +202,7 @@ func (b *fundingLookupBackend) Broadcast(_ context.Context, raw string) (string,
 
 func TestPreparedFundingReconciliationHonorsDeadlineAndLookupErrors(t *testing.T) {
 	for _, role := range []string{"maker", "taker"} {
-		for _, outcome := range []string{"known", "missing", "unavailable"} {
+		for _, outcome := range []string{"known", "missing", "unavailable", "unobserved"} {
 			t.Run(role+"/"+outcome, func(t *testing.T) {
 				e := discoveryEngine(t)
 				mnemonic, err := wallet.NewMnemonic()
@@ -266,6 +266,9 @@ func TestPreparedFundingReconciliationHonorsDeadlineAndLookupErrors(t *testing.T
 				}
 				if outcome == "unavailable" {
 					backend.err = context.DeadlineExceeded
+				}
+				if outcome == "unobserved" {
+					backend.err = chain.ErrTransactionUnobserved
 				}
 				e.nodes = map[chain.ID]chain.Backend{chain.BTC: backend, chain.Blake: backend}
 				err = e.advanceSwap(context.Background(), s, nil)

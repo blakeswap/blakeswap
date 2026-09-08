@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"fiatjaf.com/nostr"
+	"github.com/blakeswap/blakeswap/internal/storage"
 )
 
 // RecoveryRecord survives restart and re-export. Original obligations remain
@@ -51,8 +52,56 @@ const recoveryCoverage = "Recovery checks the obligations recorded in this file.
 // vault. It intentionally never erases signed transactions, secret knowledge,
 // receipts, pending payments or earlier recovery holds.
 func PrepareRecovery(s *State, snapshotAt int64, legacy bool) error {
-	if s == nil || s.Version != 1 || snapshotAt <= 0 {
+	if s == nil || (s.Version != 1 && s.Version != 2) || snapshotAt <= 0 {
 		return errors.New("invalid recovery snapshot")
+	}
+	if err := ValidateArchiveState(*s); err != nil {
+		return err
+	}
+	if len(s.Archive) > 0 {
+		complete, err := CompleteState(*s)
+		if err != nil {
+			return err
+		}
+		*s = complete
+	}
+	return prepareRecoveryActive(s, snapshotAt, legacy)
+}
+
+// PrepareStreamedRecovery is for a fully authenticated private staged import.
+// Every core obligation must have been promoted before this call; advisory and
+// quarantined history may stay cold. No cold lookup grants publication authority.
+func PrepareStreamedRecovery(s *State, stats storage.ArchiveStats, snapshotAt int64, legacy bool) error {
+	if s == nil || (s.Version != 1 && s.Version != 2) || snapshotAt <= 0 || len(s.Archive) != 0 {
+		return errors.New("invalid streamed recovery snapshot")
+	}
+	if err := s.ValidateArchiveCheckpoint(stats); err != nil {
+		return err
+	}
+	for kind, count := range stats.Kinds {
+		if count > 0 && recoveryCoreKind(kind) {
+			return errors.New("streamed recovery omits a core obligation")
+		}
+		if count > 0 && (kind == "offers" || kind == "outbox") {
+			return errors.New("streamed recovery retains live publication archive")
+		}
+	}
+	return prepareRecoveryActive(s, snapshotAt, legacy)
+}
+
+func prepareRecoveryActive(s *State, snapshotAt int64, legacy bool) error {
+	if err := ValidateHistoryCoverage(s); err != nil {
+		return err
+	}
+	if s.Capacity != nil {
+		s.Capacity.Anchors = nil
+		if s.Capacity.Archived.Kinds["activities"] == 0 {
+			s.Capacity.HistoryCoverage = nil
+		}
+		s.Capacity.Reactivating = false
+	}
+	if err := ValidateOrderSettlements(s); err != nil {
+		return err
 	}
 	if err := ValidateAutomationState(s); err != nil {
 		return err
@@ -98,7 +147,51 @@ func PrepareRecovery(s *State, snapshotAt int64, legacy bool) error {
 	s.Book = map[string]nostr.Event{}
 	r.ImportedAt = time.Now().Unix()
 	r.Legacy = r.Legacy || legacy
-	r.Status = RecoveryStatus{State: "recovering", ImportedAt: r.ImportedAt, SnapshotAt: r.SnapshotAt, Legacy: r.Legacy, Issues: []RecoveryIssue{{Kind: "chains", Reason: "Waiting for complete current observations from both chains."}}, QuarantinedOffers: len(r.Offers), QuarantinedMessages: len(r.Outbox), Coverage: recoveryCoverage}
 	s.Recovery = r
+	offers, messages := recoveryQuarantineCounts(*s)
+	r.Status = RecoveryStatus{State: "recovering", ImportedAt: r.ImportedAt, SnapshotAt: r.SnapshotAt, Legacy: r.Legacy, Issues: []RecoveryIssue{{Kind: "chains", Reason: "Waiting for complete current observations from both chains."}}, QuarantinedOffers: offers, QuarantinedMessages: messages, Coverage: recoveryCoverage}
 	return nil
+}
+
+func recoveryCoreKind(kind string) bool {
+	switch kind {
+	case "swaps", "sends", "tower_jobs", "recovery_swaps", "recovery_sends", "recovery_tower_jobs", "funding_fees":
+		return true
+	}
+	return false
+}
+
+// PromoteRecoveryRecord retains exact core records in the imported active
+// checkpoint. It rejects overlap instead of choosing an authority by disk order.
+func PromoteRecoveryRecord(s *State, record storage.ArchiveRecord) (bool, error) {
+	if !recoveryCoreKind(record.Kind) {
+		return false, nil
+	}
+	return true, mergeArchiveRecord(s, record)
+}
+
+func QuarantineArchiveRecord(record storage.ArchiveRecord) (storage.ArchiveRecord, bool) {
+	if recoveryCoreKind(record.Kind) {
+		return record, false
+	}
+	switch record.Kind {
+	case "offers":
+		record.Kind = "quarantined_offers"
+	case "outbox":
+		record.Kind = "quarantined_outbox"
+	}
+	return record, true
+}
+
+func recoveryQuarantineCounts(s State) (int, int) {
+	offers, messages := 0, 0
+	if s.Recovery != nil {
+		offers, messages = len(s.Recovery.Offers), len(s.Recovery.Outbox)
+	}
+	if s.Capacity != nil {
+		maxInt := uint64(^uint(0) >> 1)
+		offers = int(min(maxInt, uint64(offers)+min(maxInt-uint64(offers), s.Capacity.Archived.Kinds["quarantined_offers"])))
+		messages = int(min(maxInt, uint64(messages)+min(maxInt-uint64(messages), s.Capacity.Archived.Kinds["quarantined_outbox"])))
+	}
+	return offers, messages
 }

@@ -103,6 +103,7 @@ struct ContentView: View {
     @State private var pendingTrade: PendingTradeConfirmation?
     @State private var takingOrder: TakeOfferContext?
     @State private var sendContext: SendContext?
+    @State private var retainedRecord: RetainedRecordPresentation?
     var body: some View {
         HStack(spacing: 0) {
             sidebar
@@ -135,14 +136,26 @@ struct ContentView: View {
                 }
                 .task(id: model.page + "|" + (model.activityDestination?.anchor ?? "")) {
                     await Task.yield()
-                    if let target = model.activityDestination, target.page == model.page { scroll.scrollTo(target.anchor, anchor: .top) }
+                    if let target = model.activityDestination, target.page == model.page {
+                        let parts = target.anchor.split(separator: "/", maxSplits: 1).map(String.init)
+                        if parts.count == 2, ["swap", "send", "tower"].contains(parts[0]) {
+                            let context = model.tradeContext
+                            do {
+                                let raw = try await DaemonRPC.call(root: model.root, profile: context.profile, method: "record.get", params: ["kind": parts[0], "id": parts[1], "expected_wallet": context.profile, "expected_network": context.network])
+                                let detail = try Blakeswap_V1_RecordDetail(serializedBytes: raw)
+                                guard context.matches(model.tradeContext), target == model.activityDestination else { return }
+                                retainedRecord = RetainedRecordPresentation(detail: detail, context: context)
+                            } catch { if context.matches(model.tradeContext) { model.notice = "Record detail unavailable: \(error.localizedDescription)" } }
+                        } else { scroll.scrollTo(target.anchor, anchor: .top) }
+                    }
                 }
                 }
                 footer
             }.background(Color(red: 0.065, green: 0.078, blue: 0.10))
         }
         .sheet(item: $model.monitoringDestination) { destination in MonitoringDetailsView(model: model.monitoring, destination: destination) }
- .sheet(item: $sendContext) { context in SendCoinsView(context: context).environmentObject(model) }
+        .sheet(item: $retainedRecord) { record in RetainedRecordView(record: record) }
+        .sheet(item: $sendContext) { context in SendCoinsView(context: context).environmentObject(model) }
         .sheet(item: $creatingOffer, onDismiss: refreshPendingTrade) { context in TradeComposer(context: context, root: model.root).environmentObject(model) }
         .sheet(item: $resumingTrade, onDismiss: refreshPendingTrade) { context in TradeComposer(context: context, root: model.root).environmentObject(model) }
         .task(id: model.profile + "|" + model.network + "|" + String(model.generation)) { refreshPendingTrade() }
@@ -352,6 +365,7 @@ struct ContentView: View {
             }
             VStack(alignment: .leading, spacing: 14) {
                 Text("Recovery & protection").font(.headline)
+                if status.hasCapacity { CapacityHealthView(health: status.capacity) }
                 WalletBackupControls(status: status)
                 Text("Choose a favorite watchtower when creating an offer. Its rescue fee is paid only when used; mining fees are separate.").font(.caption).foregroundStyle(.secondary)
             }.padding(24).background(panel, in: RoundedRectangle(cornerRadius: 14))

@@ -30,8 +30,33 @@ var errEngineClosed = errors.New("engine closed")
 type Engine struct {
 	strategyVerifiedSwaps    map[string]bool
 	strategyReporting        atomic.Bool
+	activityGrowth           uint64
+	publicationQueue         chan publicationAttempt
+	publicationResults       chan publicationResult
+	publicationBusy          map[string]bool
+	relayCancel              context.CancelFunc
+	relayReaders             sync.WaitGroup
+	relayWorkers             []*relayWorker
+	relayAcks                []chan struct{}
 	automationBusy           atomic.Bool
 	automationCancel         context.CancelFunc
+	historyGate              chan struct{}
+	historyCancel            context.CancelFunc
+	historyContext           context.Context
+	archiveRead              func(string, string) (storage.ArchiveRecord, bool, error)
+	archiveReadError         error
+	mailboxWindow            int64
+	mailboxAdmissions        map[string]int
+	semanticParts            *semanticParts
+	archiveOrigins           map[string][32]byte
+	archivePuts              map[string]storage.ArchiveRecord
+	archiveDeletes           map[string]storage.ArchiveKey
+	archiveCurrent           map[chain.ID]recoveryCheckpoint
+	archiveSends             map[string]bool
+	backupFingerprint        string
+	stateBytes               uint64
+	capacityDiskAvailable    uint64
+	capacityDiskKnown        bool
 	marketObservedAt         int64
 	marketAllRelays          bool
 	recoveryRefunds          map[string]bool
@@ -107,6 +132,9 @@ func Open(ctx context.Context, c Config) (*Engine, error) {
 	}
 	en := &Engine{chainFresh: map[chain.ID]bool{}, chainObserved: map[chain.ID]int64{}, chainErrors: map[chain.ID]string{}, chainGeneration: map[chain.ID]uint64{}, Config: c, vault: v, nodes: map[chain.ID]chain.Backend{}, watch: map[chain.ID]chain.Backend{}, scanners: map[chain.ID]chain.SpendScanner{}, addresses: map[chain.ID]string{}, scripts: map[chain.ID][]byte{}, heights: map[chain.ID]uint32{}, clocks: map[chain.ID]uint32{}, balances: map[chain.ID]int64{}}
 	fail := func(err error) (*Engine, error) { en.Close(); return nil, err }
+	if err := storage.CleanupSortedRows(v.PrivateDirectory()); err != nil {
+		return fail(err)
+	}
 	if _, e = v.Load(&en.s); e != nil {
 		return fail(e)
 	}
@@ -129,11 +157,17 @@ func Open(ctx context.Context, c Config) (*Engine, error) {
 	if c.InitialMnemonic != "" && c.InitialMnemonic != en.s.Mnemonic {
 		return fail(errors.New("wallet seed differs from this profile"))
 	}
-	if en.s.Version != 1 {
+	if en.s.Version != 1 && en.s.Version != 2 {
 		return fail(errors.New("unsupported state version"))
 	}
 	if en.s.Network.Normalized() != c.Network {
 		return fail(errors.New("state belongs to a different network; use its own data directory"))
+	}
+	if err := ValidateHistoryCoverage(&en.s); err != nil {
+		return fail(err)
+	}
+	if err := ValidateOrderSettlements(&en.s); err != nil {
+		return fail(err)
 	}
 	if err := ValidateAutomationState(&en.s); err != nil {
 		return fail(err)
@@ -214,6 +248,12 @@ func (e *Engine) Close() error {
 		return nil
 	}
 	e.activityClosed = true
+	if e.historyCancel != nil {
+		e.historyCancel()
+	}
+	if e.relayCancel != nil {
+		e.relayCancel()
+	}
 	if e.automationCancel != nil {
 		e.automationCancel()
 	}
@@ -225,8 +265,15 @@ func (e *Engine) Close() error {
 	}
 	e.mu.Unlock()
 	e.activityReaders.Wait()
+	e.relayReaders.Wait()
 	e.mu.Lock()
 	e.activityDrained = true
+	for _, snapshot := range e.activitySnapshots {
+		if snapshot.Rows != nil {
+			_ = snapshot.Rows.Close()
+		}
+	}
+	e.activitySnapshots = nil
 	e.mu.Unlock()
 	for _, r := range e.nodes {
 		_ = r.Close()
@@ -247,10 +294,40 @@ func (e *Engine) persistState() error {
 	e.reconcileStrategyExposure()
 	e.syncOrderRecords()
 	e.syncActivity()
-	if err := e.vault.Save(e.s); err != nil {
+	if e.fatal != nil && !errors.Is(e.fatal, errEngineClosed) {
+		return e.fatal
+	}
+	parts, err := stateSemanticParts(e.s)
+	if err != nil {
+		return err
+	}
+	token, err := e.nextSemanticToken(parts)
+	if err != nil {
+		return err
+	}
+	if e.s.Capacity == nil {
+		e.s.Capacity = &CapacityRecord{}
+	}
+	e.s.Capacity.SemanticToken, e.s.Capacity.ActiveFingerprint = token, parts.Active
+	encoded, err := json.Marshal(e.s)
+	if err != nil {
+		return err
+	}
+	stateBytes := uint64(len(encoded))
+	clear(encoded)
+	stats, err := e.vault.CommitArchive(e.s, e.pendingArchive(), 0)
+	if err == nil && e.s.Capacity != nil && (stats.Count != e.s.Capacity.Archived.Count || stats.Bytes != e.s.Capacity.Archived.Bytes) {
+		err = errors.New("active and archive ownership checkpoints disagree")
+	}
+	if err != nil {
 		e.fatal = fmt.Errorf("durability failure; execution stopped: %w", err)
 		return e.fatal
 	}
+	e.archivePuts, e.archiveDeletes, e.archiveOrigins = nil, nil, nil
+	e.semanticParts = &parts
+	e.backupFingerprint, e.stateBytes = parts.Complete, stateBytes
+	e.refreshCapacityDisk()
+	e.activityGrowth = 0
 	return nil
 }
 
@@ -349,6 +426,9 @@ func (e *Engine) refreshChain(ctx context.Context, id chain.ID) error {
 	}
 	e.balances[id] = balance
 	e.refreshHTLCBalance(ctx, id)
+	if err := e.refreshArchiveCheckpoint(ctx, id); err != nil {
+		return err
+	}
 	return e.refreshRecoveryCheckpoint(ctx, id)
 }
 func (e *Engine) Run(ctx context.Context) error {
@@ -388,6 +468,7 @@ func (e *Engine) tickProtocol(ctx context.Context) error {
 	}
 	e.strategyVerifiedSwaps = map[string]bool{}
 	e.recoveryRefunds = map[string]bool{}
+	e.archiveSends = map[string]bool{}
 	refreshErr := e.refresh(ctx)
 	e.advanceSends(ctx)
 	// Payment lookups must not extend evidence beyond a checkpoint that reorged
@@ -406,35 +487,15 @@ func (e *Engine) tickProtocol(ctx context.Context) error {
 		return err
 	}
 	e.pruneDiscovery()
+	publicErr := e.prunePublicOffers()
 	e.lastError = ""
+	if publicErr != nil {
+		e.lastError = "public history: " + publicErr.Error()
+	}
 	if err := e.refreshFavoriteTowers(); err != nil {
 		e.lastError = "watchtower discovery: " + err.Error()
 	}
-	filters := []nostr.Filter{{Kinds: []nostr.Kind{transport.TowerKind}, Tags: nostr.TagMap{"t": {e.Config.Network.Namespace()}}}, {Kinds: []nostr.Kind{transport.OfferKind}, Tags: nostr.TagMap{"t": {e.Config.Network.Namespace()}}}, {Kinds: []nostr.Kind{1059}, Tags: nostr.TagMap{"p": {e.identity.Public().Hex()}}}}
-	e.marketAllRelays = len(e.Config.Relays) > 0
-	for _, url := range e.Config.Relays {
-		events, err := transport.PullAs(ctx, url, e.identity, filters...)
-		if err != nil {
-			e.marketAllRelays = false
-			e.lastError = fmt.Sprintf("relay %s: %v", url, err)
-			continue
-		}
-		e.marketObservedAt = time.Now().Unix()
-		sort.Slice(events, func(i, j int) bool { return events[i].CreatedAt < events[j].CreatedAt })
-		for _, event := range events {
-			if event.Kind == transport.TowerKind {
-				e.ingestTower(event)
-				continue
-			}
-			if event.Kind == transport.OfferKind {
-				e.ingestOffer(event)
-				continue
-			}
-			if err = e.receive(event); err != nil {
-				e.lastError = "mailbox: " + err.Error()
-			}
-		}
-	}
+	e.drainRelaySync()
 	observations, scanErr := e.scan(ctx)
 	if e.fatal != nil {
 		return e.fatal
@@ -472,22 +533,25 @@ func (e *Engine) tickProtocol(ctx context.Context) error {
 		e.lastError = "watchtower: " + towerErr.Error()
 	}
 	e.reconcileRecovery(observations, towerObservations)
+	if archiveErr := e.compactArchive(ctx, observations, towerObservations); archiveErr != nil {
+		e.lastError = "archive: " + archiveErr.Error()
+	}
+	e.reconcileArchiveHolds(observations, towerObservations)
 	if err = e.save(); err != nil {
 		return err
 	}
-	flushErr := e.flush(ctx)
-	return errors.Join(refreshErr, scanErr, flushErr)
+	e.acknowledgeRelayPages()
+	publishErr := e.dispatchPublications()
+	return errors.Join(refreshErr, scanErr, publishErr, publicErr)
 }
-func (e *Engine) ingestOffer(event nostr.Event) {
+func (e *Engine) ingestOffer(event nostr.Event) error {
 	o, err := protocol.DecodeOffer(event, time.Now().Unix())
+	// Historical sweeps routinely contain expired or otherwise permanently
+	// ineligible events. Only failures applying a valid event are retryable.
 	if err != nil || o.Network.Normalized() != e.Config.Network {
-		return
+		return nil
 	}
-	key := o.Maker + ":" + o.ID
-	old, exists := e.s.Book[key]
-	if !exists || event.CreatedAt > old.CreatedAt || (event.CreatedAt == old.CreatedAt && event.ID.Hex() < old.ID.Hex()) {
-		e.s.Book[key] = event
-	}
+	return e.retainPublicOffer(event, o)
 }
 func (e *Engine) queue(to, typ, swapID string, body any) error {
 	raw, err := json.Marshal(body)
@@ -497,6 +561,25 @@ func (e *Engine) queue(to, typ, swapID string, body any) error {
 	id := protocol.Digest([]string{to, typ, swapID, string(raw)})
 	if e.s.Outbox[id] != nil {
 		return nil
+	}
+	var previous Delivery
+	if found, err := e.archivedValue("outbox", id, &previous); err != nil {
+		return err
+	} else if found {
+		if previous.To != to || previous.Type != typ {
+			return errors.New("archived delivery identity mismatch")
+		}
+		if previous.Acknowledged {
+			return nil
+		}
+		if previous.IsAck {
+			if _, err := e.activateArchived("outbox", id); err != nil {
+				return err
+			}
+			e.s.Outbox[id].LastAttempt = 0
+			return nil
+		}
+		return errors.New("archived delivery has no acknowledgment evidence")
 	}
 	pub, err := nostr.PubKeyFromHex(to)
 	if err != nil {
@@ -594,12 +677,15 @@ func (e *Engine) receive(event nostr.Event) error {
 		e.s.DiscoverySeen[key] = expires
 		return e.save()
 	}
-	if len(e.s.Seen) > 10000 || len(e.s.Outbox) > 10000 {
-		return errors.New("mailbox capacity reached")
-	}
 	digest := protocol.Digest(m)
 	seenKey := from.Hex() + ":" + m.ID
-	if previous := e.s.Seen[seenKey]; previous != "" {
+	previous := e.s.Seen[seenKey]
+	if previous == "" {
+		if _, err := e.archivedValue("seen", seenKey, &previous); err != nil {
+			return err
+		}
+	}
+	if previous != "" {
 		if previous != digest {
 			return errors.New("message ID reused with different contents")
 		}
@@ -617,15 +703,44 @@ func (e *Engine) receive(event nostr.Event) error {
 			return err
 		}
 		if delivery := e.s.Outbox[a.ID]; delivery != nil && delivery.To == from.Hex() && delivery.Digest == a.Digest && !delivery.IsAck {
-			delete(e.s.Outbox, a.ID)
+			delivery.Acknowledged = true
+			if err := e.stageArchive("outbox", a.ID); err != nil {
+				return err
+			}
+		} else {
+			// Unsolicited/duplicate ACKs carry no new recovery fact. They must
+			// not consume lifetime dedup space or prevent matching ACK drainage.
+			return nil
 		}
 	} else {
+		semantic, err := e.durableMailboxSemantic(from.Hex(), m)
+		if err != nil {
+			return err
+		}
+		priorSemantic := e.s.SeenSemantics[semantic]
+		if !priorSemantic {
+			if _, err := e.archivedValue("seen_semantics", semantic, &priorSemantic); err != nil {
+				return err
+			}
+		}
+		if priorSemantic {
+			if err := e.admitMailboxAlias(from.Hex()); err != nil {
+				return err
+			}
+		}
+		if err = e.admitMailbox(from.Hex(), m); err != nil {
+			return err
+		}
 		if err = e.handle(from.Hex(), m); err != nil {
 			return err
 		}
 		if err = e.queue(from.Hex(), "ack", m.SwapID, map[string]string{"id": m.ID, "digest": digest}); err != nil {
 			return err
 		}
+		if e.s.SeenSemantics == nil {
+			e.s.SeenSemantics = map[string]bool{}
+		}
+		e.s.SeenSemantics[semantic] = true
 	}
 	e.s.Seen[seenKey] = digest
 	return e.save()

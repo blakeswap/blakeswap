@@ -180,7 +180,7 @@ Restoring stale snapshots is not generally safe automatic recovery. Previously s
 
 **Contested outcome:** inspect both spend IDs and chain histories. A claim/refund split reflects violated liveness/security assumptions, not a state that the relay or a UI cancellation can reverse.
 
-**Relay history/storage limit:** the local implementation fails visibly at bounded capacities. Archive/rebuild a disposable regtest environment only after completing or safely recovering all swaps. There is no production retention/compaction workflow.
+**Capacity or incomplete relay history:** open **Wallet capacity**. New work can pause while existing signed recovery and acknowledgments continue. Retain a complete portable backup, check available disk and current chain observations, and inspect the per-relay history reason. An incomplete history report is not proof that no older event exists.
 
 ### External RPC wallet synchronization
 
@@ -436,3 +436,41 @@ disable quit protection. Public deadline displays use observed chain MTP,
 regtest uses blocks, and unavailable clocks stay uncertain. See
 [Deadline alerts and shutdown protection](MONITORING.md) for privacy, restart,
 sleep/wake and terminal/reorg behavior.
+
+
+## Encrypted history and capacity
+
+Active admission is separate from lifetime usage. Status includes all active obligations and a recent terminal tail; activity pages and `record.get` retain access to archived order, swap, payment and tower details in the exact selected wallet/network. Archived details are read-only projections. Opening old history never reinstates an offer publisher or signing permission.
+
+The archive lives in the same encrypted vault as the active checkpoint. Record kind and identity are authenticated with each ciphertext; disk indexes conceal plaintext IDs. A checkpoint atomically transfers ownership, so interruption exposes either the preceding complete state or the new complete state. Each maintenance cycle moves at most 64 primary records plus their bounded policy companions. A failed write stops the engine before an acknowledgment or publication can imply that uncommitted state was saved.
+
+| Evidence | Retention and behavior |
+| --- | --- |
+| Pending contracts, signed payments and accepted tower registrations | Remain active until positively resolved. Registration expiry alone does not retire an issued signature. |
+| Recently settled funded obligations | Remain frequently scanned through 144 confirmations. Archival requires current positive spend/payment evidence and canonical chain hashes. |
+| Archived funded obligations | Keep exact signed transactions, secret knowledge, original restore markers, fee policy and receipts. Canonical ancestor contradictions durably hold new admission and network exit, then reactivate the original records. |
+| Old order publication, cancellation/replacement and request identities | Remain available for identity checks and history; historical copies cannot authorize a new trade. Automation-required current/unresolved sources and pending receipts remain active. |
+| Mailbox deduplication and acknowledgments | Preserve authenticated sender/message-ID/payload identity and semantic identity in the archive. Exact retries retain their ACK behavior; changed payloads under an old ID fail. |
+| Activity lineage and receipt evidence | Remain in complete backup coverage. Before archival, a selected transaction's recorded block is checked against the current canonical prefix and endpoint generation, then the tip is rechecked. Unknown or unavailable evidence remains active. Shared transaction evidence still classifies active sibling outputs after another output moves to archive. |
+
+The 144-confirmation threshold is a storage policy, not a finality claim. The application checks retained canonical ancestors on both chains before accepting more work. An observed rewind or competing ancestor reopens monitoring even if the displayed prior outcome was terminal. Ordinary outages preserve the prior historical outcome while preventing an unsupported claim of fresh observations. Recovery markers and fee companions become active before the corresponding obligation can execute. A deep reorg can require many bounded reactivation cycles; keep the wallet running and retain the original evidence. Availability of historical blocks and transactions at configured sources remains necessary to resolve the reopened records positively.
+
+An Electrum server may still return an orphaned transaction's bytes while its
+current history lists no inclusion or mempool entry. This remains unknown
+observation, without claiming the transaction was unpublished, in the mempool,
+or confirmed. Such an observation does not make an otherwise healthy endpoint
+unavailable. A previously saved payment may retry only its exact authorized
+bytes at the existing interval while its chain is fresh; this does not clear
+monitoring or recovery holds. New funding and owner/tower recovery retain their
+ordinary positive evidence requirements. Invalid bytes, malformed history,
+transport failures and bad inclusion proofs remain failures.
+
+Capacity reports active checkpoint bytes, retained archive bytes, available filesystem space, and **estimated** continuation space separately. Cold history does not consume the active working-data admission ceiling. New work reserves 1 MiB per core obligation (including retained archived obligations and pending maker offers) as an estimate based on supported message and signed-transaction shapes. It also leaves active and filesystem headroom. This is not a promise that arbitrary imported data or indefinitely changing advisory history has a fixed future size. Existing admitted settlement/witness facts and matching ACKs remain persistable above the admission ceiling; actual encrypted checkpoint and backup disk checks can still fail if the filesystem is full. An oversized imported active population pauses unrelated admissions without deleting its existing obligations.
+
+Relay synchronization uses independent durable progress per relay/filter, bounded history pages and a separate live subscription. Pages overlap and resweep old history, including gift wraps with randomized old timestamps. Timestamp bounds are inclusive; ties use the Nostr ordering rule. A relay that hides more events behind a saturated timestamp cannot be exhaustively paginated with standard exact-ID filters. The application reports that limitation and retains its boundary; a short page or EOSE is never presented as proof of exhaustive historical delivery. Unknown public identities and unsolicited mailbox aliases have separate limits, while authenticated messages for established active or archived obligations retain their recovery path.
+
+Portable exports include every archived record across the selected profile's networks. New files use ordered authenticated chunks with explicit total byte and record accounting; there is no 256 MiB total ceiling on this new format. Both original v1 files (up to 256 MiB plaintext) and legacy database copies remain readable. Database copies above the legacy reader's 64 MiB limit are refused before success; use the complete portable action instead. Insufficient disk, cancellation, incomplete records, reordered/duplicated chunks or failed authentication cannot produce a successful partial export/import. Oversized all-profile selections can be exported as complete individual profiles.
+
+Portable export briefly joins wallet workers to save and capture every selected profile/network at one local boundary. On supported filesystems it takes independent encrypted file clones; otherwise it captures the active checkpoint and copies encrypted archive pages in short read transactions after workers resume. If the archive changes during that fallback, the export asks you to retry and discards its partial private staging. Once the complete snapshot is validated, later wallet changes are allowed and keep its freshness reminder stale. Validation, full history copying and chosen-password encryption run with wallet workers available. Private clones remain encrypted with source credentials until cleanup; generated staging directories are restricted and removed after cancellation or on the next exclusive startup. Free-space checks include potential clone copy-on-write growth or actual encoded staging requirements.
+
+Streaming keeps archive records out of a full lifetime in-memory clone, but a network's active checkpoint and restored core obligations still require memory. A single large record also requires memory for its decoding. Imported legacy v1 input uses its original whole-manifest reader. The snapshot staging interval and these residual active-state costs are measured in the opt-in physical resource fixture documented in TESTING; chunk size alone is not a latency or total-memory guarantee. Keep adequate free memory and disk for unusually large imported populations.

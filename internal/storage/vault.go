@@ -4,7 +4,9 @@ package storage
 import (
 	"crypto/aes"
 	"crypto/cipher"
+	"crypto/hmac"
 	"crypto/rand"
+	"crypto/sha256"
 	"encoding/json"
 	"errors"
 	bolt "go.etcd.io/bbolt"
@@ -17,8 +19,10 @@ import (
 var bucket = []byte("vault-v1")
 
 type Vault struct {
-	db   *bolt.DB
-	aead cipher.AEAD
+	path       string
+	db         *bolt.DB
+	aead       cipher.AEAD
+	archiveKey []byte
 }
 
 func Open(path string, password []byte) (*Vault, error) {
@@ -60,6 +64,9 @@ func Open(path string, password []byte) (*Vault, error) {
 		return fail(e)
 	}
 	block, e := aes.NewCipher(key)
+	mac := hmac.New(sha256.New, key)
+	mac.Write([]byte("blakeswap/archive-index/v1"))
+	archiveKey := mac.Sum(nil)
 	clear(key)
 	if e != nil {
 		return fail(e)
@@ -68,9 +75,8 @@ func Open(path string, password []byte) (*Vault, error) {
 	if e != nil {
 		return fail(e)
 	}
-	v := &Vault{db, aead}
-	var probe any
-	exists, e := v.Load(&probe)
+	v := &Vault{path: path, db: db, aead: aead, archiveKey: archiveKey}
+	exists, e := v.authenticate()
 	if e != nil {
 		return fail(errors.New("vault password incorrect or state corrupted"))
 	}
@@ -101,19 +107,46 @@ func (v *Vault) Load(out any) (bool, error) {
 	return true, json.Unmarshal(raw, out)
 }
 func (v *Vault) Save(state any) error {
-	raw, e := json.Marshal(state)
-	if e != nil {
-		return e
+	var records []ArchiveRecord
+	if portable, ok := state.(interface {
+		VaultSnapshot() (any, []ArchiveRecord, error)
+	}); ok {
+		var err error
+		state, records, err = portable.VaultSnapshot()
+		if err != nil {
+			return err
+		}
 	}
-	defer clear(raw)
-	nonce := make([]byte, v.aead.NonceSize())
-	if _, e = rand.Read(nonce); e != nil {
-		return e
-	}
-	sealed := v.aead.Seal(nonce, nonce, raw, []byte("blakeswap/state/v1"))
-	return v.db.Update(func(tx *bolt.Tx) error { return tx.Bucket(bucket).Put([]byte("state"), sealed) })
+	_, err := v.CommitArchive(state, ArchiveBatch{Put: records}, 0)
+	return err
 }
 func (v *Vault) Close() error { return v.db.Close() }
 func (v *Vault) Backup(path string) error {
 	return v.db.View(func(tx *bolt.Tx) error { return tx.CopyFile(path, 0600) })
 }
+
+// Authenticate without allocating a second generic object graph of the entire
+// active state. The typed caller still performs semantic validation on Load.
+func (v *Vault) authenticate() (bool, error) {
+	exists := false
+	err := v.db.View(func(tx *bolt.Tx) error {
+		sealed := tx.Bucket(bucket).Get([]byte("state"))
+		if sealed == nil {
+			return nil
+		}
+		raw, err := v.unseal(sealed, []byte("blakeswap/state/v1"))
+		if err != nil {
+			return err
+		}
+		defer clear(raw)
+		if !json.Valid(raw) {
+			return errors.New("invalid encrypted state JSON")
+		}
+		exists = true
+		return nil
+	})
+	return exists, err
+}
+
+// PrivateDirectory is the wallet-owned directory under the exclusive vault lock.
+func (v *Vault) PrivateDirectory() string { return filepath.Dir(v.path) }

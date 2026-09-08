@@ -12,6 +12,7 @@ func (m *Manager) inspectPortable(ctx context.Context, request *pb.InspectBackup
 	if err != nil {
 		return nil, err
 	}
+	defer manifest.close()
 	result := &pb.BackupContents{FormatVersion: int32(manifest.FormatVersion), CreatedAt: manifest.CreatedAt, Legacy: legacy, Warning: "Import creates a new isolated wallet profile. Recovery checks current chain evidence before allowing new trades. Old orders stay quarantined; an older file can omit later activity or secrets."}
 	if legacy {
 		result.Warning += " This legacy file has no reliable snapshot creation time."
@@ -20,7 +21,7 @@ func (m *Manager) inspectPortable(ctx context.Context, request *pb.InspectBackup
 	for _, wallet := range manifest.Wallets {
 		entry := &pb.BackupWalletEntry{SourceWalletId: wallet.ID, Name: wallet.Name}
 		for _, network := range []chain.Network{chain.Regtest, chain.Testnet, chain.Mainnet} {
-			if wallet.Networks[network] != nil {
+			if _, exists := wallet.Networks[network]; exists {
 				entry.Networks = append(entry.Networks, string(network))
 			}
 		}

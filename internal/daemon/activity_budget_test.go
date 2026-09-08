@@ -203,15 +203,10 @@ func TestActivityBudgetCutoffPreservesAgeButNotStaleAuthority(t *testing.T) {
 			} else if !reflect.DeepEqual(got.Observations, prior.Observations) || got.ObservedAt != prior.ObservedAt {
 				t.Fatal("cut-off read refreshed or replaced the previous observation")
 			}
-			var projected Activity
-			if err := e.visitStrategyActivities(context.Background(), func(a Activity) error {
-				if a.ID == "b" {
-					projected = a
-				}
-				return nil
-			}); err != nil {
-				t.Fatal(err)
-			}
+			// Exercise the same scalar projection used by the durable visitor;
+			// this observer-budget fixture deliberately has no vault.
+			projected := e.projectStrategyActivity(e.s.Activities["b"])
+
 			if mode == "fresh" || mode == "canceled" {
 				if projected.Status != "confirmed" || projected.ObservedAt != old.ObservedAt {
 					t.Fatal("unchanged current proof lost its original provenance")
