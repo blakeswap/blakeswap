@@ -9,10 +9,12 @@ struct DaemonEndpoint: Decodable {
     let token: String
     let ownerPID: Int32?
     let ownerSession: String?
+    let credentialMode: String?
     enum CodingKeys: String, CodingKey {
         case socket, http, token
         case ownerPID = "owner_pid"
         case ownerSession = "owner_session"
+        case credentialMode = "credential_mode"
     }
 }
 
@@ -38,9 +40,12 @@ enum DaemonRPC {
     }
     static func call(root: String, profile: String, method: String, payload: Data) async throws -> Data {
         let endpoint = try endpoint(root: root, profile: profile)
-        do { return try await withGRPCClient(transport: .http2NIOPosix(target: .unixDomainSocket(path: endpoint.socket), transportSecurity: .plaintext)) { client in
+        let consent = try await NativeSecurityRegistry.authorize(root: root, endpoint: endpoint, profile: profile, method: method, payload: payload)
+        let consentID = await consent?.id
+        do { var result = try await withGRPCClient(transport: .http2NIOPosix(target: .unixDomainSocket(path: endpoint.socket), transportSecurity: .plaintext)) { client in
             let service = Blakeswap_V1_DaemonService.Client(wrapping: client)
-            let metadata: Metadata = ["authorization": "Bearer \(endpoint.token)"]
+            var metadata: Metadata = ["authorization": "Bearer \(endpoint.token)"]
+            if let consentID { metadata.addString(consentID, forKey: "x-blakeswap-consent") }
             var options = CallOptions.defaults
             options.timeout = .seconds(method == "actions.summary" ? 3 : method == "status.refresh" ? 70 : 45)
             options.maxRequestMessageBytes = 131_072
@@ -221,6 +226,9 @@ enum DaemonRPC {
             default: throw RPCError.message("Unknown daemon action.")
             }
         }
+            do { try Task.checkCancellation(); try await consent?.validateReply() }
+            catch { result.resetBytes(in:0..<result.count); throw error }
+            return result
         } catch let error as GRPCCore.RPCError {
             throw RPCError.message(error.message.isEmpty ? "The wallet request failed (\(error.code))." : error.message)
         }

@@ -6,11 +6,12 @@ Blakeswap targets macOS 15 or later using SwiftUI, SwiftProtobuf, and gRPC Swift
 The app bundle contains one native UI executable and the Go `blakeswap` helper,
 plus documentation and dependency license/privacy resources.
 
-Opening the app launches `Contents/Resources/blakeswap desktop --data-dir …
+Opening the app requests macOS owner authentication, then launches
+`Contents/Resources/blakeswap desktop --credential-mode native --data-dir …
 --parent-pid …`. The helper holds an exclusive lock on that data directory and
 owns the wallet engines, API listeners, and runtime credential files. Settings
 supports creating independent wallets and editing their display names. All saved
-wallets are selectable and run on every network. New installations create or
+wallets are selectable and run on the active network. New installations create or
 restore their first wallet in onboarding; legacy Alice/Bob vaults retain their original encrypted master seeds.
 The isolated regtest demonstration explicitly prepares Alice and Bob.
 
@@ -20,8 +21,9 @@ is normal and does not display a file error. The wait is cancellable and bounded
 to 15 seconds; helper exits, invalid/private-file checks, and startup timeouts
 remain visible as connection errors.
 
-There is no pause control. The client restarts an unexpectedly exited helper while
-the app remains open, and old persisted pause flags are cleared on reopen.
+There is no pause control. An unexpectedly exited helper needs a new initial unlock before it reopens;
+**Unlock wallet service** explicitly retries a cancelled or denied prompt.
+Old persisted pause flags are cleared on reopen.
 Watchtower service runs alongside trading, with public listing off by default.
 
 Quitting, including closing the last window, sends SIGTERM to the owned helper
@@ -41,7 +43,10 @@ Normal application data is `~/Library/Application Support/Blakeswap`:
 - `runtime.json`: current socket/HTTP endpoints and bearer credentials, mode 0600.
 - `desktop.lock`, `desktop.log`: process ownership and error log.
 - `wallets/alice/master.db`: encrypted master seed shared across that profile's networks.
-- `wallets/alice/vault.password`: random local vault password, mode 0600.
+- `installation.json`: private local installation ID, not a portable credential.
+- `wallets/alice/credential.json`: verified migration phase and exact Keychain account reference; no password.
+- `wallets/<id>/profile.json`: public identity marker for interrupted profile publication.
+- `vault.password` exists only in explicit file mode or during an incomplete legacy migration.
 - `wallets/alice/<network>/state.db`: isolated network-specific swap state.
 - Additional `wallets/<id>/` directories have their own master and network state.
 
@@ -75,9 +80,63 @@ The command moves the active data directory to a dated sibling archive and
 prints its location. It refuses a running app or an unrelated directory. It
 does not delete the archive; the next launch creates fresh settings and displays
 onboarding. To resume the exact archived installation, quit the app and launch
-with `--data-dir /absolute/archive/path`. Archives contain wallet passwords and
-pending state, so keep them private. Resetting local storage does not cancel any
+with `--data-dir /absolute/archive/path`. A native archive also needs its original
+Keychain item; use a portable backup when moving to another Mac. Old file-mode
+archives may contain wallet passwords. Keep all archives private. Resetting local storage does not cancel any
 existing on-chain obligations.
+
+## Credentials and authentication
+
+The native app owns non-synchronizing Keychain items, scoped by installation,
+profile and a fresh record ID. Their access list names the signed app identity;
+the verified bundled helper receives separately owned bytes through inherited
+anonymous pipes. Those pipes carry no stdout logs and have no public approval
+endpoint. The runtime manifest contains endpoint tokens and process/session
+identity, never a vault password, Keychain item data or an approved grant.
+
+Existing file installations migrate under the installation lock. A private
+journal records item creation, readback, verification of the existing master and
+all present network vaults, activation, and removal of the old password file.
+Interrupted steps resume the same record without replacing it or generating a
+new identity. A denied, locked, missing or mismatched active item is an explicit
+error; desktop startup never selects an old file as a fallback. File removal
+cannot erase historic filesystem snapshots. Failed additional-wallet setup stays
+in private staging; a verified published profile survives later settings failure
+and completes publication after an authenticated restart.
+
+Initial unlock and every new sensitive request use macOS
+`deviceOwnerAuthentication`, with the OS-managed Mac password fallback when
+Touch ID is unavailable. The app never collects the Mac login password. Cancelling
+or denying a prompt leaves the action unauthorized. Approvals bind the exact
+wallet/key, network, helper session, reviewed request and current revision; they
+are one-use and expire. Wallet creation/import, recovery disclosure/export,
+withdrawal/trade authorization and spending/automation/settings edits all require
+this boundary, including compatibility API routes and stop/disable actions.
+
+Screen sleep, system sleep and user-session departure revoke pending permission.
+Screen-lock and screensaver distributed events provide additional revocation
+signals whose availability can vary by macOS version; returning/unlocking never
+approves or resurrects a request. Each new sensitive action still needs fresh OS
+authentication. The helper keeps already-loaded keys and advances accepted trades,
+raw signed retries and already-reviewed bounded automatic policies while the app
+remains open. Closing the private consent connection retires new approvals without
+stopping these obligations. A disconnected owner must reopen the app to establish
+a new private session; normal Quit still performs the all-wallet shutdown check.
+This is a hot-wallet session, not hardware-wallet protection or key eviction on
+screen lock. See [Risks](RISKS.md).
+
+A portable backup contains durable wallet state encrypted under its chosen backup
+password. It contains no original Keychain reference or ephemeral permission.
+Restoring on another installation creates a fresh local Keychain account and
+retains recovery, imported-policy and uncertain-budget holds. Authentication does
+not clear those holds.
+
+For deliberate headless operation, use `blakeswap desktop --credential-mode file
+--data-dir /absolute/private/path`, or set `"credential_mode": "file"` in a standalone
+`daemon --config` file. File mode gives the operator's authenticated API clients
+spending authority without native prompts and retains the private password file.
+The development launcher explicitly selects it. There is no silent desktop
+fallback and no public endpoint that approves a native challenge.
 
 ## Build and install
 
@@ -160,13 +219,14 @@ directory, and configures the app to connect to those endpoints:
 sh scripts/build-mac.sh
 python3 scripts/desktop-demo.py prepare
 open bin/Blakeswap.app --args --data-dir "$PWD/.local/desktop-demo"
-python3 scripts/desktop-demo.py trade
 python3 scripts/desktop-demo.py status
 ```
 
-The trade command funds only regtest addresses, sends typed gRPC requests to the
-app-owned daemon, mines external test-node blocks, and writes public transaction
-evidence to `.local/desktop-demo/successful-trade.json`. The UI can instead create,
-take, and mine the same trade manually. After quitting the app, explicitly stop
+Use the native UI to create and take trades; each new authorization requests
+macOS authentication. The CLI trade command cannot approve native consent. For an
+unattended demo, run a separate explicit file-mode helper on the prepared isolated
+root and invoke `python3 scripts/desktop-demo.py trade`; do not simultaneously open
+the native app on that root. This command funds only regtest addresses and writes
+public transaction evidence to `.local/desktop-demo/successful-trade.json`. After quitting the app, explicitly stop
 fixtures with `python3 scripts/desktop-demo.py stop-relay` and
 `python3 scripts/local.py stop-nodes`.

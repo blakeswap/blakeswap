@@ -11105,10 +11105,12 @@ const file_blakeswap_v1_daemon_proto_rawDesc = "" +
 	"\x10FinishOnboarding\x12\x16.blakeswap.v1.Settings\x1a\x16.blakeswap.v1.Settings\" \x82\xd3\xe4\x93\x02\x1a:\x01*\"\x15/v1/onboarding/finish\x12S\n" +
 	"\vGetSettings\x12\x16.google.protobuf.Empty\x1a\x16.blakeswap.v1.Settings\"\x14\x82\xd3\xe4\x93\x02\x0e\x12\f/v1/settings\x12Y\n" +
 	"\x0eUpdateSettings\x12\x16.blakeswap.v1.Settings\x1a\x16.blakeswap.v1.Settings\"\x17\x82\xd3\xe4\x93\x02\x11:\x01*\x1a\f/v1/settings\x12p\n" +
-	"\tCheckNode\x12\x1e.blakeswap.v1.CheckNodeRequest\x1a\x1f.blakeswap.v1.CheckNodeResponse\"\"\x82\xd3\xe4\x93\x02\x1c:\x01*\"\x17/v1/settings/check-nodeB\xb5\x03\x92A\xf0\x02\x12\xff\x01\n" +
-	"\x14Blakeswap daemon API\x12\xe1\x01Local wallet API. All amounts are integer satoshis. Protobuf JSON represents int64 as decimal strings. Bearer credentials are read from a private runtime file. HTTP binds only to loopback; gRPC binds to a private Unix socket.2\x031.0*\x01\x012\x10application/json:\x10application/jsonZ7\n" +
+	"\tCheckNode\x12\x1e.blakeswap.v1.CheckNodeRequest\x1a\x1f.blakeswap.v1.CheckNodeResponse\"\"\x82\xd3\xe4\x93\x02\x1c:\x01*\"\x17/v1/settings/check-nodeB\x93\a\x92A\xce\x06\x12\xa1\x04\n" +
+	"\x14Blakeswap daemon API\x12\x83\x04Local wallet API. All amounts are integer satoshis. Protobuf JSON represents int64 as decimal strings. Bearer credentials are read from a private runtime file. HTTP binds only to loopback; gRPC binds to a private Unix socket. Native desktop sensitive actions additionally require a one-use exact-action grant in X-Blakeswap-Consent (gRPC x-blakeswap-consent), approved only by the owned native OS-authentication broker. Read-only calls need no grant. Explicit file mode retains operator-controlled bearer authority.2\x031.0*\x01\x012\x10application/json:\x10application/jsonZ\xf2\x01\n" +
 	"5\n" +
-	"\x06Bearer\x12+\b\x02\x12\x16Bearer <runtime token>\x1a\rAuthorization \x02b\f\n" +
+	"\x06Bearer\x12+\b\x02\x12\x16Bearer <runtime token>\x1a\rAuthorization \x02\n" +
+	"\xb8\x01\n" +
+	"\rNativeConsent\x12\xa6\x01\b\x02\x12\x8a\x01Conditional on native mode and a new sensitive action: opaque, expiring, one-use exact reviewed action grant. No public approval endpoint.\x1a\x13X-Blakeswap-Consent \x02b\f\n" +
 	"\n" +
 	"\n" +
 	"\x06Bearer\x12\x00Z?github.com/blakeswap/blakeswap/api/gen/blakeswap/v1;blakeswapv1b\x06proto3"

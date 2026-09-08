@@ -2,7 +2,7 @@
   "swagger": "2.0",
   "info": {
     "title": "Blakeswap daemon API",
-    "description": "Local wallet API. All amounts are integer satoshis. Protobuf JSON represents int64 as decimal strings. Bearer credentials are read from a private runtime file. HTTP binds only to loopback; gRPC binds to a private Unix socket.",
+    "description": "Local wallet API. All amounts are integer satoshis. Protobuf JSON represents int64 as decimal strings. Bearer credentials are read from a private runtime file. HTTP binds only to loopback; gRPC binds to a private Unix socket. Native desktop sensitive actions additionally require a one-use exact-action grant in X-Blakeswap-Consent (gRPC x-blakeswap-consent), approved only by the owned native OS-authentication broker. Read-only calls need no grant. Explicit file mode retains operator-controlled bearer authority.",
     "version": "1.0"
   },
   "tags": [
@@ -4816,6 +4816,12 @@
       "type": "apiKey",
       "description": "Bearer \u003cruntime token\u003e",
       "name": "Authorization",
+      "in": "header"
+    },
+    "NativeConsent": {
+      "type": "apiKey",
+      "description": "Conditional on native mode and a new sensitive action: opaque, expiring, one-use exact reviewed action grant. No public approval endpoint.",
+      "name": "X-Blakeswap-Consent",
       "in": "header"
     }
   },

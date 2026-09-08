@@ -19,7 +19,7 @@ final class OnboardingTests: XCTestCase {
         }
         func start(_ root: String) async throws -> AppSettings {
             let process = Process(); process.executableURL = URL(fileURLWithPath: helper)
-            process.arguments = ["desktop", "--data-dir", root]
+            process.arguments = ["desktop", "--data-dir", root, "--credential-mode", "file"]
             process.standardOutput = FileHandle.nullDevice; process.standardError = FileHandle.nullDevice
             try process.run(); processes.append(process)
             for _ in 0..<100 {

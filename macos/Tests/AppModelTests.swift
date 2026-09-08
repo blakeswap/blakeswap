@@ -3,6 +3,20 @@ import XCTest
 
 final class AppModelTests: XCTestCase {
     @MainActor
+    func testScreenLockRetiresModelGenerationAndSensitiveDisplays() {
+        let model = AppModel(daemon:DaemonProcess(root:"/isolated-lock-test",security:isolatedNativeSecurity()))
+        var settings = AppSettings(); settings.activeNetwork = "regtest"; settings.revision = 1
+        var status = DaemonStatus(); status.name = "alice"; status.network = "regtest"
+        XCTAssertTrue(model.acceptSnapshot(status,settings:settings,profile:"alice",generation:model.generation))
+        model.recovery = "isolated synthetic recovery display"
+        model.setupWallet = Blakeswap_V1_FirstWallet()
+        let old = model.generation
+        model.lockNewActions()
+        XCTAssertGreaterThan(model.generation,old)
+        XCTAssertNil(model.recovery); XCTAssertNil(model.setupWallet); XCTAssertNil(model.status)
+        XCTAssertFalse(model.acceptSnapshot(status,settings:settings,profile:"alice",generation:old),"Reply from before lock republished old context")
+    }
+    @MainActor
     func testSwitchingWalletKeepsPollingAndNewRefreshIndependent() {
         let model = AppModel()
         XCTAssertTrue(model.beginSwapRefresh())
@@ -192,7 +206,7 @@ extension AppModelTests {
     func testMonitoringNavigationBindsWalletAndKeepsNetworkExplicit() {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: directory) }
-        let model = AppModel(daemon: DaemonProcess(root: directory.path))
+        let model = AppModel(daemon: DaemonProcess(root: directory.path, security: isolatedNativeSecurity()))
         var settings = AppSettings(); settings.activeNetwork = "regtest"; settings.revision = 1
         var alice = Blakeswap_V1_WalletProfile(); alice.id = "alice"
         var bob = alice; bob.id = "bob"; settings.wallets = [alice, bob]

@@ -13,7 +13,7 @@ final class DaemonProcessTests: XCTestCase {
         // Record each launch, then exit to simulate a helper crash.
         try Data("#!/bin/sh\necho started >> \"$3/starts\"\n".utf8).write(to: script)
         try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: script.path)
-        let process = DaemonProcess(root: root.path, executable: script)
+        let process = DaemonProcess(root: root.path, executable: script, security: isolatedNativeSecurity())
         func launches() -> Int { ((try? String(contentsOf: root.appendingPathComponent("starts"), encoding: .utf8)) ?? "").split(separator: "\n").count }
         try process.start()
         for _ in 0..<100 {
@@ -39,7 +39,7 @@ extension DaemonProcessTests {
     func testPendingInstallationOffersStayOpenAndExplicitQuit() async throws {
         guard let helper = ProcessInfo.processInfo.environment["BLAKESWAP_TEST_HELPER"] else { throw XCTSkip("Set BLAKESWAP_TEST_HELPER to the freshly built helper") }
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
-        let daemon = DaemonProcess(root: root.path, executable: URL(fileURLWithPath: helper))
+        let daemon = DaemonProcess(root: root.path, executable: URL(fileURLWithPath: helper), security: isolatedNativeSecurity())
         addTeardownBlock { await daemon.stop(); try? FileManager.default.removeItem(at: root) }
         try daemon.start(); try await daemon.waitUntilReady(profile: "alice")
         var value = ActionSummary(); value.complete = true; value.installationPending = true
@@ -57,8 +57,8 @@ extension DaemonProcessTests {
     func testSecondActualHelperCannotRemoveFirstOwnersRuntime() async throws {
         guard let helper = ProcessInfo.processInfo.environment["BLAKESWAP_TEST_HELPER"] else { throw XCTSkip("Set BLAKESWAP_TEST_HELPER to the freshly built helper") }
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
-        let first = DaemonProcess(root: root.path, executable: URL(fileURLWithPath: helper))
-        let second = DaemonProcess(root: root.path, executable: URL(fileURLWithPath: helper))
+        let first = DaemonProcess(root: root.path, executable: URL(fileURLWithPath: helper), security: isolatedNativeSecurity())
+        let second = DaemonProcess(root: root.path, executable: URL(fileURLWithPath: helper), security: isolatedNativeSecurity())
         addTeardownBlock { await second.stop(); await first.stop(); try? FileManager.default.removeItem(at: root) }
         try first.start(); try await first.waitUntilReady(profile: "alice")
         let runtime = root.appendingPathComponent("runtime.json")
@@ -82,7 +82,7 @@ extension DaemonProcessTests {
     func testForcedActualHelperCleanupUsesItsLaunchIdentity() async throws {
         guard let helper = ProcessInfo.processInfo.environment["BLAKESWAP_TEST_HELPER"] else { throw XCTSkip("Set BLAKESWAP_TEST_HELPER to the freshly built helper") }
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
-        let daemon = DaemonProcess(root: root.path, executable: URL(fileURLWithPath: helper), shutdownTimeout: 0.15)
+        let daemon = DaemonProcess(root: root.path, executable: URL(fileURLWithPath: helper), shutdownTimeout: 0.15, security: isolatedNativeSecurity())
         addTeardownBlock { await daemon.stop(); try? FileManager.default.removeItem(at: root) }
         try daemon.start(); try await daemon.waitUntilReady(profile: "alice")
         let endpoint = try DaemonRPC.endpoint(root: root.path, profile: "alice")
@@ -100,7 +100,7 @@ extension DaemonProcessTests {
     func testActualHelperLastWindowStayOpenThenExplicitQuitCleansRuntime() async throws {
         guard let helper = ProcessInfo.processInfo.environment["BLAKESWAP_TEST_HELPER"] else { throw XCTSkip("Set BLAKESWAP_TEST_HELPER to the freshly built helper") }
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
-        let daemon = DaemonProcess(root: root.path, executable: URL(fileURLWithPath: helper))
+        let daemon = DaemonProcess(root: root.path, executable: URL(fileURLWithPath: helper), security: isolatedNativeSecurity())
         addTeardownBlock { await daemon.stop(); try? FileManager.default.removeItem(at: root) }
         try daemon.start(); try await daemon.waitUntilReady(profile: "alice")
         let endpoint = try DaemonRPC.endpoint(root: root.path, profile: "alice")
@@ -135,7 +135,7 @@ extension DaemonProcessTests {
         guard let helper = ProcessInfo.processInfo.environment["BLAKESWAP_TEST_HELPER"] else { throw XCTSkip("Set BLAKESWAP_TEST_HELPER to the freshly built helper") }
         for unavailable in [false, true] {
             let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
-            let daemon = DaemonProcess(root: root.path, executable: URL(fileURLWithPath: helper))
+            let daemon = DaemonProcess(root: root.path, executable: URL(fileURLWithPath: helper), security: isolatedNativeSecurity())
             addTeardownBlock { await daemon.stop(); try? FileManager.default.removeItem(at: root) }
             try daemon.start(); try await daemon.waitUntilReady(profile: "alice")
             var prompted = false
@@ -157,7 +157,7 @@ extension DaemonProcessTests {
         let script = root.appendingPathComponent("ignores-term")
         try Data("#!/bin/sh\ntrap '' TERM\necho ready > \"$3/ready\"\nwhile :; do :; done\n".utf8).write(to: script)
         try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: script.path)
-        let daemon = DaemonProcess(root: root.path, executable: script, shutdownTimeout: 0.15)
+        let daemon = DaemonProcess(root: root.path, executable: script, shutdownTimeout: 0.15, security: isolatedNativeSecurity())
         try daemon.start()
         for _ in 0..<100 { if FileManager.default.fileExists(atPath: root.appendingPathComponent("ready").path) { break }; try await Task.sleep(nanoseconds: 10_000_000) }
         let started = ProcessInfo.processInfo.systemUptime

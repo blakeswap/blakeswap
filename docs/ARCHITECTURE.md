@@ -4,7 +4,7 @@
 
 | Component | Responsibility | Keys and authority |
 | --- | --- | --- |
-| SwiftUI macOS app | Market, exact-amount offer form, swaps, receive QR, coin-control send review, outgoing status, recovery controls, local test mining | No standing wallet key storage; recovery phrase is displayed only on explicit request |
+| SwiftUI macOS app | Market, exact-amount offer form, swaps, receive QR, coin-control send review, outgoing status, recovery controls, local test mining | Owns installation Keychain access and OS consent; recovery material is displayed only after exact-action authentication |
 | Go trader daemon | Derivation, signing, order projection, negotiation, chain verification, durable state, rescue scheduling | Its own spending keys and Nostr identity; never the counterparty's keys |
 | Nostr relays | Store signed public offers and opaque persistent gift wraps; support WebSocket subscriptions | No spending authority and no private swap plaintext |
 | Watchtower daemon | Validate and persist fixed rescue templates; acknowledge jobs; scan both chains; insert public preimages and broadcast after delay | Nostr identity and its fee wallet; no trader private keys or undisclosed swap preimages |
@@ -51,7 +51,24 @@ Each chain gets distinct deposit and per-swap keys. No extended public keys are 
 
 Snapshots include the mnemonic, preimages, accepted immutable terms, raw signed transactions, tower jobs, receipts, inbox deduplication records, and the outbox. They are JSON encoded, encrypted with AES-256-GCM using fresh random nonces, and committed atomically by bbolt. A random 32-byte salt and scrypt (`N=32768, r=8, p=1`) derive the key from the vault password. Authenticated associated data binds the state format. Backups copy the consistent encrypted database.
 
-Both the desktop and local launcher create a random password in a separate `0600` file. This is not Keychain-backed storage. Someone who obtains both files can decrypt the wallet. See [Risks](RISKS.md).
+The desktop acquires exact owned credential bytes from its native Keychain broker.
+The helper migrates legacy password files only after item readback and verification
+of the unchanged master and existing network identities. Private migration records
+are separate from portable state. Initial OS unlock precedes profile opening;
+Keychain reads never display a prompt while a manager or engine lock is held.
+Explicit headless file mode retains its private password file. See
+[Packaging](PACKAGING.md#credentials-and-authentication) and [Risks](RISKS.md).
+
+Sensitive public commands require an ephemeral one-use grant minted only through
+the owned inherited-pipe broker. Private preparation uses the same normalized typed
+payload as HTTP/gRPC and binds its exact digest, wallet/key, network, installation,
+engine/settings epoch and native launch session. OS authentication occurs outside
+Go locks; later public consumption rechecks the action. Broker completion retires
+the authority synchronously, including pending replies. Grants and Keychain
+references never enter the durable wallet State or portable backups. Existing
+accepted receipts, raw signed retries, immutable swap terms and persisted bounded
+automation authorizations keep their ordinary settlement path when new consent is
+revoked; authentication never resets commitments or imported recovery holds.
 
 ## Chain boundary
 

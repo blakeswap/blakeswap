@@ -722,3 +722,40 @@ required fresh target chain, retained archive/recovery/network holds, and durabl
 identity/interval after reopen. Prepared maker/taker funding and unseen tower
 registration controls keep unknown observation separate from positive funding or
 explicit absence.
+
+## Native credentials and sensitive actions
+
+Credential/provider tests use isolated generated wallets and owned byte buffers.
+The journal suite injects faults at creation, storage, verification, activation and
+file removal; desktop controls cover all-network identity preservation, denial,
+no file fallback, separate-install portable restore and interrupted publication.
+Direct gRPC/HTTP tests distinguish bearer authentication from exact one-use native
+consent, including stale payloads, replay and private-peer teardown. The daemon
+checks signed-send continuation after consent revocation; real funded claim/refund
+continuation requires the explicit two-chain scenario and is not implied by a
+skipped regtest suite.
+
+Native protocol tests inject an authenticator and credential store, including
+cancellation/unavailability, lock during a prompt, lock after approval, stale
+session/reply refusal and bounded pipe framing. With a freshly built helper,
+`BLAKESWAP_TEST_HELPER` enables actual owned-helper startup/restart and public API
+consumption tests. Ordinary native tests do not touch the login Keychain.
+
+Run the separate native Keychain integration only with the freshly signed app:
+
+```sh
+BLAKESWAP_KEYCHAIN_TEST_APP="$PWD/bin/Blakeswap.app/Contents/MacOS/Blakeswap" \
+  swift test --package-path macos --scratch-path .cache/swift-build \
+  --cache-path .cache/swift-cache -c release --filter KeychainIntegrationTests
+```
+
+This test invokes the app's explicit pre-startup test command in three independent
+processes. It uses the fixed `org.blakeswap.test.credential.v1` service, internally
+generated unique accounts and synthetic bytes. It verifies creation, duplicate
+refusal, wrong-record absence, same signed-app restart readback and owned-item
+deletion. Its private temporary record contains only the synthetic account and
+hash; it is retained if OS denial prevents cleanup. No production Keychain service,
+wallet password, helper startup or developer wallet is accessed. A skipped test
+is not native Keychain evidence. Ad-hoc rebuilds can change the app's trusted code
+identity; verify release identity behavior separately rather than enabling a file
+fallback or broadening the Keychain access list.

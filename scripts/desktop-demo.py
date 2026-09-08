@@ -3,7 +3,8 @@
 
 prepare starts regtest services and writes isolated Settings; it never
 installs or changes the normal desktop wallet. Launch the app with the printed
---data-dir. trade uses the app-owned daemon's gRPC API and real test coins.
+--data-dir. Native trades require the app's OS authentication. Unattended
+trade uses an explicitly launched file-mode helper's gRPC API and regtest coins.
 """
 import argparse, json, os, pathlib, subprocess, time
 import local
@@ -25,7 +26,7 @@ def prepare():
     if (DATA / "runtime.json").exists(): raise RuntimeError("Quit the demo app before preparing its settings")
     if not (DATA / "settings.json").exists():
         with (DATA / "setup.log").open("ab") as log:
-            helper = subprocess.Popen([str(EXE), "desktop", "--data-dir", str(DATA)], stdout=log, stderr=log)
+            helper = subprocess.Popen([str(EXE), "desktop", "--credential-mode", "file", "--data-dir", str(DATA)], stdout=log, stderr=log)
             try:
                 for _ in range(100):
                     if (DATA / "settings.json").exists(): break
