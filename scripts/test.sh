@@ -2,7 +2,7 @@
 set -eu
 cd "$(dirname "$0")/.."
 mkdir -p .local/test-results
-make test-reset test-local-nodes test-packaging
+make test-reset test-local-nodes test-packaging test-demo
 python3 scripts/bootstrap.py
 python3 scripts/local.py nodes
 sh scripts/go.sh vet ./...

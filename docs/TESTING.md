@@ -17,6 +17,8 @@ BLAKESWAP_REGTEST="$PWD" sh scripts/go.sh test -p=1 ./internal/contract ./intern
 
 Without `BLAKESWAP_REGTEST`, real-node cases explicitly skip; a passing unit run is not evidence of a two-chain integration pass. The complete script initializes actual upstream nodes first. It never substitutes a mock chain or a second unmodified Bitcoin node for Blake2b.
 
+CI divides the expanded ordinary race suite into four deterministic partitions, retaining the default Go package timeout and every test's own deadline. `python3 scripts/test_go_shard.py 0 4` reproduces partition zero; use indexes 0 through 3 for the complete suite. The runner discovers all package tests, examples, and fuzz seed functions, assigns equal names to one partition, and verifies that every selected function starts and finishes exactly once. Each partition still runs packages serially with `-p=1` and includes the pinned NIP-44 vectors. The `go` check requires all four partitions and static checks to pass. This ordinary runner clears `BLAKESWAP_*` flags; actual node and physical scale validation remain separately serialized gates.
+
 ## Invariants
 
 | ID | Invariant / boundary | Evidence |
@@ -809,3 +811,148 @@ wallet password, helper startup or developer wallet is accessed. A skipped test
 is not native Keychain evidence. Ad-hoc rebuilds can change the app's trusted code
 identity; verify release identity behavior separately rather than enabling a file
 fallback or broadening the Keychain access list.
+
+## Partial-fill outcome accounting controls
+
+`fill_reorg_test.go` exercises real two-child acceptance and disjoint locally
+signed funding, then supplies valid signed contract spends as deterministic
+chain observations. It covers both sell directions, mixed claim/refund outcomes,
+child-specific loss/depth contradictions before unrelated lookup failure,
+outage/incomplete/source-generation refusal, malformed transaction/signature
+refusal, and a failed demotion save followed by reopening the original complete
+checkpoint. A positive contradiction on one leg is retained even when the other
+leg reports malformed evidence. Sibling allocations, exact terms, inputs,
+secret knowledge and consumed fee/bounty charges remain unchanged.
+
+Actual `PrepareRecovery` controls verify positive committed-child settlement,
+cold placement/reactivation and reorg accounting while the parent stays held.
+A separate pre-commit-export model supplies independently obtained exact public
+funding/outcome evidence and verifies one-time accounting of the old reserved
+grant. Absence, incomplete/mempool data and invalid signatures cannot consume
+or release that grant. This model adds no new discovery transport and does not
+claim actual-node inclusion, funding-descendant coverage, or complete aggregate
+archive validation.
+
+The initial unchanged production controls failed in 4.715 seconds. Corrected
+outcome and existing isolated/restored/strategy controls passed in 8.670 seconds;
+the initial focused race selection passed in 111.543 seconds. The final extra
+proof-error, source, failed-save, held-parent signing and restored pre-commit
+controls passed under race in 15.841 seconds. An intermediate new fixture panic
+came from an unimplemented injected `Output` backend after successful cold
+reactivation; the fixture now returns unknown explicitly. All test and service
+handles closed. These are development controls; actual matrices and the final
+protocol/security and whole-PR gates remain separate.
+
+## Partial-fill cold identity custody
+
+`fill_archive_test.go` checks that archiving a child moves its exact hash/key
+indexes, allocation, fee and recovery-origin companions in one checkpoint.
+Planning failures leave all prior owners unchanged; a failed commit reopens the
+complete old hot checkpoint, and a successful retry publishes the complete cold
+checkpoint. Both market directions preserve the complete backup fingerprint and
+semantic token through serialization, installation in another encrypted vault,
+preflight, reactivation and repeated archival. Immutable identity lookups stay
+cold, including a taker's locally generated secret and an exact confirmation
+receipt retry. Archival eligibility remains a separate lifecycle decision.
+
+The initial backup comparison exposed an independent projection change: a new
+activity retained fee-template variant order, while its next unchanged save
+sorted those variants and appended a false historical outcome. The diagnostic
+reproduced the same change with no archival. First insertion now uses the same
+canonical ID and aligned amount order as replay. A deterministic control retains
+unchanged history and backup coverage on replay, while a distinct new variant
+still records an outcome and changes coverage. No fingerprint fields or genuine
+historical outcomes are excluded to make the archival comparison pass.
+
+## Actual partial-fill matrix
+
+`TestRealPartialFillConcurrentMixedOutcomes` is an opt-in private-node matrix.
+Run it serially once with RPC and once with `BLAKESWAP_TEST_ELECTRUM=1`, using
+the same exclusively leased BTC/Blake regtest fixture and its existing cookie
+paths. It must skip before any wallet, relay or node setup when
+`BLAKESWAP_REGTEST` is absent. Compilation and that ordinary skip are not actual
+matrix evidence.
+
+Each adapter run contains both maker sell directions and towers at zero and
+50 basis points. A parent authorizes 1,800,000 units for 2,340,001 units, with
+400,000–600,000 fill bounds and three separate confirmed maker inputs. Two
+different takers review 600,000-unit requests against the same signed revision;
+their saved encrypted events race through authenticated ingress under the
+worker's normal mutex. Dispatch is held until reopening verifies the exact
+durable allocation and acceptance. The rejected taker must review the next
+normally published revision before becoming the second accepted child. Relay
+delivery subsequently exercises the same saved events and acknowledgments.
+
+Before taking a sender offline, the fixture waits for relay acknowledgment of
+its exact retained acceptance or funding notification. A restarted recipient
+then proves that the same authenticated message and immutable terms/funding
+were applied. This separate mailbox phase permits the existing 30-second
+history resweep plus 20 seconds for application; each subsequent funding or
+settlement phase retains its 20-second deadline. It neither resets historical
+cursors nor changes production retry intervals. The ordinary gated-relay
+control also covers a persisted cursor older than a stored acceptance and
+requires its receipt through the normal resweep before funding.
+The ancestry fixture uses the same publication and catch-up boundaries while
+keeping the intentionally withheld peer offline. Settlement checks compare
+confirmed transactions with the exact retained signed owner variant or tower
+job template, since a confirmed receipt advances the current receive address.
+They retain the original principal, fee, bounty, output-count and spend checks.
+Ancestor change must match the retained funding transaction and a derived
+historical receive script.
+
+The matrix cancels only the remaining 600,000 available units, funds both
+accepted children, completes one and refunds the other while its taker stays
+offline during the reveal window. It checks actual confirmed transaction
+identities, disjoint assigned inputs, exact 6,500-unit funding fees, each
+780,001-unit rounded buy principal, owner and tower payout scripts/fees,
+permanent monetary charges, sibling secret isolation and the five quantity
+bins. A claim-block reorg precedes the sibling's refund, so the unaffected
+sibling's funding really is outside the invalidated suffix. Exact-block
+restoration is registered before invalidation and verified against the canonical
+height. Restarted confirmation retries and one-row frozen child-history pages
+retain the same identities and amounts. This matrix does not stand in for the
+separate funding-descendant, archive/import, native or whole-PR gates.
+
+The existing `fundBothFees` helper now supplies explicit whole-order bounds and
+private per-asset limits, then takes the original quantity and parent revision.
+Its original directions, protection settings, funding fee and owner cap are
+preserved. Callers are in `regtest_test.go`, `fees_regtest_test.go`,
+`failover_regtest_test.go`, `funding_recovery_test.go`, `funds_test.go` and
+`recovery_regtest_test.go`; their actual assertions remain separate required
+regressions. Direct create/take callers elsewhere also require current fields;
+there is no legacy execution fallback.
+
+## Observed peer spend evidence
+
+Observed peer spends are verified against their actual input position, witness,
+sequence and signature mode. The strict local signer and tower templates retain
+their own fixed policy. Multi-input Blake UnifiedAll observations require the
+complete input-aligned previous-output vector: each additional transaction is
+hash checked before selecting its output. The daemon bounds this work to 128
+reads and 4 MiB per scan, with a 500 ms enrichment slice, and retains only compact
+active-contract verification results bound to the witness hash and source
+generation. Missing evidence stays unknown and retries on a later scan.
+Deferred witnesses rotate through later candidates before retrying an earlier
+prefix; tests cover two unavailable prefixes followed by a healthy child, and
+an oversized response that consumes the pass's remaining byte quota. A changed
+or missing witness cannot keep its previous priority. No raw previous-output
+vector is retained between passes.
+
+`observed_spend_test.go` covers mixed multi-input child outcomes, both directions
+and restored wallets; malformed/missing/oversized/slow previous transactions;
+witness and generation changes; aggregate work bounds without evicting earlier
+child proofs; and persistence failure before any proof lookup. Already-known
+contradictions are saved before enrichment. An unrelated uncertain proof can
+still permit the exact incoming claim with a durably witnessed public preimage.
+That path cannot fund, refund, release quantity, or make a first revelation.
+Unverified target spends cannot authorize the mempool replacement exception or
+suppress rescue as if they were confirmed. Missing complete scan maps remain
+distinct from current empty scans, including before funding or retirement.
+Archival also requires qualified current spend evidence: unknown refunds stay
+in active custody, while valid single-input and multi-input refunds can archive
+without moving an unrelated active sibling.
+
+The unchanged peer-sequence regressions in `fill_reorg_test.go` independently
+execute the Bitcoin witness script before checking ordinary/restored accounting
+and live rescue. Actual-node partial-fill and funding-ancestry matrices remain
+separate from these deterministic controls.

@@ -6,6 +6,7 @@ import (
 
 	"github.com/blakeswap/blakeswap/internal/chain"
 	"github.com/blakeswap/blakeswap/internal/contract"
+	"github.com/blakeswap/blakeswap/internal/protocol"
 )
 
 // These checkpoints and payment proofs are deliberately never serialized. A
@@ -51,7 +52,7 @@ func (e *Engine) invalidateRecoverySettlements(id chain.ID) error {
 	}
 	for key := range r.Swaps {
 		s := e.s.Swaps[key]
-		if s == nil || recoverySwapInactive(s) {
+		if s == nil || e.recoverySwapInactive(s) {
 			continue
 		}
 		for _, c := range []contract.HTLC{s.Long, s.Short} {
@@ -194,7 +195,7 @@ func (e *Engine) recoveryContextCurrent() bool {
 // These are irreversible local decisions made before any own funding exists.
 // They remain final across restart/reorg in the normal state machine as well.
 // A pending request or any prepared funding is intentionally not equivalent.
-func recoverySwapOwnInactive(s *Swap) bool {
+func (e *Engine) recoverySwapOwnInactive(s *Swap) bool {
 	if s == nil || s.SecretObserved || s.IncomingClaimSeen || len(s.SelfRefunds) > 0 {
 		return false
 	}
@@ -205,18 +206,27 @@ func recoverySwapOwnInactive(s *Swap) bool {
 	if own.TxID != "" || raw != "" || sent {
 		return false
 	}
+	if s.Role == "maker" {
+		child, err := e.retainedFillRecord(s.ID)
+		if err != nil || !child.FundingDisabled || child.Allocation.EverCommitted || (child.Allocation.Disposition != FillRetired && child.Allocation.Disposition != FillReleased) || child.RequestDigest != protocol.Digest(s.Request) {
+			return false
+		}
+		// ImportedUncertain cannot erase an already durable irreversible
+		// refusal. Exact identity and absence of any contradictory own signed
+		// authority are required; a display stage never supplies this proof.
+		_, err = e.fillSummary(s, e.s.Swaps[s.ID] == nil)
+		return err == nil
+	}
 	switch s.Stage {
 	case "rejected", "expired before acceptance":
 		return s.Role == "taker" && s.Terms == nil
 	case "expired before funding":
 		return s.Role == "taker"
-	case "expired before maker funding":
-		return s.Role == "maker"
 	}
 	return false
 }
-func recoverySwapInactive(s *Swap) bool {
-	if !recoverySwapOwnInactive(s) {
+func (e *Engine) recoverySwapInactive(s *Swap) bool {
+	if !e.recoverySwapOwnInactive(s) {
 		return false
 	}
 	incoming, raw, sent := s.Short, s.ShortFunding, s.ShortSent

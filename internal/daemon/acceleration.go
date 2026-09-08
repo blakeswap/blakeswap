@@ -131,6 +131,14 @@ func (e *Engine) bumpTransaction(ctx context.Context, raw json.RawMessage) (Bump
 			return BumpResult{}, err
 		}
 	}
+	// Manual settlement needs the same current child-funding proof as a tick.
+	// Observe witnesses first so an already public secret can still authorize
+	// target-only rescue even when the local funding ancestry is unavailable.
+	if p.Kind == "refund" || !s.SecretObserved {
+		if err := e.refreshFundingAncestry(ctx, s); err != nil {
+			return BumpResult{}, err
+		}
+	}
 	if err := e.recoveryOwnerPolicy(s, p.Kind == "refund"); err != nil {
 		return BumpResult{}, err
 	}
@@ -195,6 +203,10 @@ func (e *Engine) checkRefundAcceleration(ctx context.Context, s *Swap, own contr
 	if _, ok := all[chain.Blake]; !ok {
 		return errors.New("Blake2b spend observation unavailable")
 	}
+	e.prepareObservedSpends(ctx, s, all)
+	if err := e.swapObservationError(s, all); err != nil {
+		return err
+	}
 	ownObs, ownSpent := observation(all, own)
 	if !refundReplaceable(own, ownSpent, ownObs) {
 		return errors.New("funded output has a claim or confirmed spend; refund acceleration is unsafe")
@@ -246,7 +258,11 @@ func (e *Engine) checkClaimAcceleration(ctx context.Context, s *Swap) error {
 		}
 		return errors.New("claim target spend observation unavailable")
 	}
+	e.prepareObservedSpends(ctx, s, all)
 	if !s.SecretObserved {
+		if err := e.swapObservationError(s, all); err != nil {
+			return err
+		}
 		if s.Role != "taker" || !e.fresh(chain.BTC) || !e.fresh(chain.Blake) {
 			return errors.New("first revelation requires both chains; a privately signed claim is not a witnessed secret")
 		}
@@ -287,7 +303,7 @@ func (e *Engine) checkClaimAcceleration(ctx context.Context, s *Swap) error {
 		// A mempool claim consumes this output; current spend scanning below
 		// establishes whether that spend reveals the same agreed preimage.
 		obs, spent := observation(all, target)
-		if spent && obs.Tx != nil && obs.Confirmations == 0 {
+		if spent && obs.Tx != nil && obs.Confirmations == 0 && e.validateContractObservation(target, obs) == nil {
 			if _, claimed := contract.ExtractSecret(target, obs.Tx); claimed {
 				return nil
 			}

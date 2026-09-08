@@ -16,32 +16,34 @@ import (
 	"testing"
 )
 
+// Publish the fixture's exact conserved parent projection without rewriting
+// the signed source event embedded in an accepted child request.
+func stageArchiveParent(t *testing.T, e *Engine, swap *Swap) nostr.Event {
+	t.Helper()
+	parent := e.s.ParentOrders[swap.Terms.Offer().ID]
+	if parent.Offer.Maker != e.identity.Public().Hex() {
+		t.Fatal("fixture parent is not owned")
+	}
+	offer := parentPublicOffer(*parent)
+	event, err := e.signOffer(offer, nostr.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	parent.SignedRevision, parent.LastSignedAt = parent.Quantities.Revision, int64(event.CreatedAt)
+	e.stageOffer(offer, event)
+	return event
+}
+
 func recentRefundFeeFixture(t *testing.T) (*Engine, *Swap, map[chain.ID]map[string]chain.Observation) {
 	t.Helper()
-	e, swap, backend, secret := isolatedFixture(t, "maker")
+	e, swap, backend, secret := isolatedFixture(t, "maker", FeeSelection{FundingFee: 6500, OwnerFeeCap: 20000})
 	e.Config.Name = "funded-order"
 	e.Config.Mode = "trader"
 	offer := swap.Terms.Offer()
-	offer.Maker = e.identity.Public().Hex()
-	open, err := e.signOffer(offer, nostr.Now())
-	if err != nil {
-		t.Fatal(err)
-	}
-	swap.Request.OfferEvent = open
-	terms, err := protocol.NewTerms(swap.Request, swap.Terms.MakerKeys, swap.Terms.StartHeights)
-	if err != nil {
-		t.Fatal(err)
-	}
-	swap.Terms = &terms
-	offer.Status = "reserved"
-	offer.Reservation = swap.ID
-	reserved, err := e.signOffer(offer, nostr.Now())
-	if err != nil {
-		t.Fatal(err)
-	}
-	e.stageOffer(offer, reserved)
+	stageArchiveParent(t, e, swap)
 	e.s.Outbox = map[string]*Delivery{}
-	e.s.FundingFees = map[string]FeeSelection{"offer/" + offer.ID: {FundingFee: 6500, OwnerFeeCap: 20000}}
+	// A stale parent fee cache is not this child's accepted authorization.
+	e.s.FundingFees["offer/"+offer.ID] = FeeSelection{FundingFee: 2000}
 	swap.Stage = "waiting for refunds"
 	all := map[chain.ID]map[string]chain.Observation{chain.BTC: {}, chain.Blake: {}}
 	e.archiveCurrent = map[chain.ID]recoveryCheckpoint{}
@@ -139,16 +141,16 @@ func TestRecentRefundRetainsFeeUntilChildArchives(t *testing.T) {
 		t.Fatal("deep child/parent did not archive")
 	}
 	var fee FeeSelection
-	if found, err := e.archivedValue("funding_fees", "offer/"+offerID, &fee); err != nil || !found || fee.FundingFee != 6500 {
+	if found, err := e.archivedValue("funding_fees", "swap/"+swap.ID, &fee); err != nil || !found || fee.FundingFee != 6500 {
 		t.Fatal("last child lost retained fee", err)
 	}
 }
 func splitRefundFeeFixture(t *testing.T, e *Engine, swap *Swap) {
 	t.Helper()
 	offerID := swap.Terms.Offer().ID
-	// Reconstruct the already-persisted old layout directly, without relying on
-	// the corrected compactor to produce it again.
-	for _, key := range []storage.ArchiveKey{{Kind: "offers", ID: offerID}, {Kind: "order_records", ID: offerID}, {Kind: "offer_towers", ID: offerID}, {Kind: "funding_fees", ID: "offer/" + offerID}} {
+	// Model a current-format hot core whose exact child fee is already cold;
+	// startup repair must point-read it without promoting the parent publisher.
+	for _, key := range []storage.ArchiveKey{{Kind: "offers", ID: offerID}, {Kind: "order_records", ID: offerID}, {Kind: "offer_towers", ID: offerID}, {Kind: "funding_fees", ID: "swap/" + swap.ID}} {
 		if err := e.stageArchive(key.Kind, key.ID); err != nil {
 			t.Fatal(err)
 		}
@@ -194,7 +196,7 @@ func TestPriorSplitFeeRepairsWithoutPublisherAndFollowsLastChild(t *testing.T) {
 	if e.s.Swaps[swap.ID] != nil {
 		t.Fatal("deep repaired child remains hot")
 	}
-	if _, hot := e.s.FundingFees["offer/"+offerID]; hot {
+	if _, hot := e.s.FundingFees["swap/"+swap.ID]; hot {
 		t.Fatal("orphan repaired fee remains hot after last child")
 	}
 	if _, err := e.activateArchived("swaps", swap.ID); err != nil {
@@ -269,14 +271,14 @@ func TestOpenRepairsPriorSplitFundingFeeBeforeActivityProjection(t *testing.T) {
 	if _, err = reopened.vault.Load(&durable); err != nil {
 		t.Fatal(err)
 	}
-	if durable.FundingFees["offer/"+swap.Terms.Offer().ID].FundingFee != 6500 {
+	if durable.FundingFees["swap/"+swap.ID].FundingFee != 6500 {
 		t.Fatal("startup repair was not committed")
 	}
 }
 func TestOpenRejectsUnreadableSplitFeeBeforeConsumers(t *testing.T) {
 	e, swap, _ := recentRefundFeeFixture(t)
 	splitRefundFeeFixture(t, e, swap)
-	owner := "offer/" + swap.Terms.Offer().ID
+	owner := "swap/" + swap.ID
 	old, found, err := e.vault.ReadArchive("funding_fees", owner)
 	if err != nil || !found {
 		t.Fatal(err)
@@ -319,7 +321,9 @@ func TestOpenRejectsUnreadableSplitFeeBeforeConsumers(t *testing.T) {
 		opened.Close()
 		t.Fatal("unreadable fee opened")
 	}
-	if err == nil || !strings.Contains(err.Error(), "cannot restore retained funding fee") {
+	// Completed custody validation now rejects this exact malformed fee before
+	// the later startup repair phase can run.
+	if err == nil || !strings.Contains(err.Error(), "FeeSelection.funding_fee") {
 		t.Fatal("startup did not refuse fee evidence before consumers", err)
 	}
 	vault, err := storage.Open(filepath.Join(root, "state.db"), []byte("receive-test-password"))
@@ -342,7 +346,7 @@ func TestOpenRejectsUnreadableSplitFeeBeforeConsumers(t *testing.T) {
 }
 func TestFeeCompanionReadErrorDoesNotInventLegacyDefault(t *testing.T) {
 	e, swap, _ := recentRefundFeeFixture(t)
-	delete(e.s.FundingFees, "offer/"+swap.Terms.Offer().ID)
+	delete(e.s.FundingFees, "swap/"+swap.ID)
 	readErr := errors.New("isolated archive unavailable")
 	e.archiveRead = func(string, string) (storage.ArchiveRecord, bool, error) {
 		return storage.ArchiveRecord{}, false, readErr

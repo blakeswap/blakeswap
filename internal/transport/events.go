@@ -17,7 +17,8 @@ import (
 const OfferKind nostr.Kind = 38481 // Experimental, namespaced; not NIP-69 fiat orders.
 const TowerKind nostr.Kind = 38482 // Experimental, network-scoped watchtower announcements.
 const RumorKind nostr.Kind = 10481
-const Namespace = "blakeswap-regtest-v1"
+const Namespace = "blakeswap-regtest-v2"
+const MessageVersion = 2
 const MaxEventSize = 65536
 
 type Message struct {
@@ -164,7 +165,7 @@ func UnwrapFor(namespace string, sk nostr.SecretKey, outer nostr.Event) (nostr.P
 	if e = json.Unmarshal([]byte(rumor.Content), &m); e != nil {
 		return fail(e)
 	}
-	if m.Version != 1 || len(m.ID) != 64 || len(m.Type) > 32 || m.Type == "" {
+	if m.Version != MessageVersion || len(m.ID) != 64 || len(m.Type) > 32 || m.Type == "" {
 		return fail(errors.New("invalid application message"))
 	}
 	return seal.PubKey, m, nil

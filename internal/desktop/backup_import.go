@@ -12,7 +12,7 @@ import (
 	"path/filepath"
 	"time"
 
-	pb "github.com/blakeswap/blakeswap/api/gen/blakeswap/v1"
+	pb "github.com/blakeswap/blakeswap/api/gen/blakeswap/v2"
 	"github.com/blakeswap/blakeswap/internal/chain"
 	"github.com/blakeswap/blakeswap/internal/daemon"
 	"github.com/blakeswap/blakeswap/internal/storage"
@@ -197,7 +197,7 @@ func writeImportedProfile(ctx context.Context, staging string, entry backupWalle
 			state := entry.Networks[network]
 			if state == nil {
 				// Even networks omitted by a legacy file enter the recovery gate.
-				state = &daemon.State{Version: 1, Network: network, Mnemonic: entry.Mnemonic}
+				state = &daemon.State{Version: daemon.StateVersion, Network: network, Mnemonic: entry.Mnemonic}
 				normalizeState(state)
 			}
 			if err := daemon.PrepareRecovery(state, snapshotAt, legacy); err != nil {

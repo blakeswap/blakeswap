@@ -40,7 +40,7 @@ func captureManagerFixture(t *testing.T, fallback bool) *Manager {
 		raw, _ := json.Marshal(records[i])
 		stats.Bytes += uint64(len(raw) + 1)
 	}
-	active := daemon.State{Version: 2, Network: chain.Regtest, Mnemonic: seed, Capacity: &daemon.CapacityRecord{Archived: stats}}
+	active := daemon.State{Version: daemon.StateVersion, Network: chain.Regtest, Mnemonic: seed, Capacity: &daemon.CapacityRecord{Archived: stats}}
 	normalizeState(&active)
 	if _, err = v.CommitArchive(active, storage.ArchiveBatch{Put: records}, 0); err != nil {
 		t.Fatal(err)

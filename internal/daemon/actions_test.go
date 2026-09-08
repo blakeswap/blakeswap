@@ -114,8 +114,8 @@ func TestActionStoredEmptyAndUnavailableAreDistinct(t *testing.T) {
 func TestActionArmedTowerDoesNotSuppressFirstRevealAndImportedCannotReveal(t *testing.T) {
 	now := time.Now().Unix()
 	e := actionEngine(now)
-	job := protocol.Job{ID: "j"}
-	s := &Swap{ID: "s", Role: "taker", Stage: "awaiting chain confirmations", Protection: &protocol.Tower{BPS: 50}, Jobs: []protocol.Job{job}, Receipts: map[string]protocol.Receipt{"j": {Digest: protocol.Digest(job)}}, Terms: &protocol.Terms{RevealBefore: 106, Long: contract.HTLC{Chain: chain.BTC, RefundHeight: 200}, Short: contract.HTLC{Chain: chain.Blake, RefundHeight: 316}}}
+	job := protocol.Job{Version: protocol.Version, ID: protocol.Digest("action receipt job")}
+	s := &Swap{ID: "s", Role: "taker", Stage: "awaiting chain confirmations", Protection: &protocol.Tower{BPS: 50}, Jobs: []protocol.Job{job}, Receipts: map[string]protocol.Receipt{job.ID: {Version: protocol.Version, JobID: job.ID, Digest: protocol.Digest(job)}}, Terms: &protocol.Terms{RevealBefore: 106, Long: contract.HTLC{Chain: chain.BTC, RefundHeight: 200}, Short: contract.HTLC{Chain: chain.Blake, RefundHeight: 316}}}
 	e.s.Swaps = map[string]*Swap{"s": s}
 	a := e.walletActions(now).Actions[0]
 	if !a.TowerReady || !a.FirstReveal {
@@ -166,7 +166,9 @@ func TestActionEncryptedStoredObligationSurvivesEndpointFailure(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	state := State{Version: 1, Network: chain.Regtest, Swaps: map[string]*Swap{"s": {ID: "s", Role: "maker", Stage: "claiming", LongFunding: "signed-and-persisted"}}}
+	fixture, swap, _, _ := isolatedFixture(t, "taker")
+	swap.Stage = "claiming"
+	state := fixture.s
 	if err := v.Save(state); err != nil {
 		t.Fatal(err)
 	}
@@ -191,8 +193,10 @@ func TestActionEncryptedStoredObligationSurvivesEndpointFailure(t *testing.T) {
 func TestActionSummaryIncludesColdArchiveHoldsBeforeReactivation(t *testing.T) {
 	now := time.Now().Unix()
 	e := actionEngine(now)
-	e.s = State{Version: 2, Network: chain.Regtest, Capacity: &CapacityRecord{Reactivating: true, Invalidated: map[string]bool{"send/cold": true, "swap/active": true}}}
-	e.s.Swaps = map[string]*Swap{"active": {ID: "active", Role: "maker", Stage: "completed"}}
+	fixture, swap, _, _ := isolatedFixture(t, "taker")
+	swap.Stage = "completed"
+	e.s = fixture.s
+	e.s.Capacity = &CapacityRecord{Reactivating: true, Invalidated: map[string]bool{"send/cold": true, "swap/" + swap.ID: true}}
 	got := e.walletActions(now)
 	seen := map[string]int{}
 	for _, a := range got.Actions {
@@ -204,7 +208,7 @@ func TestActionSummaryIncludesColdArchiveHoldsBeforeReactivation(t *testing.T) {
 			t.Fatal("cold detail identity lost", a)
 		}
 	}
-	if seen["archive"] != 1 || seen["send/cold"] != 1 || seen["swap/active"] != 1 || len(got.Actions) != 3 {
+	if seen["archive"] != 1 || seen["send/cold"] != 1 || seen["swap/"+swap.ID] != 1 || len(got.Actions) != 3 {
 		t.Fatal("missing/duplicate archived obligation", got)
 	}
 	summary := SummarizeActions(chain.Regtest, 1, []WalletActions{got}, now)

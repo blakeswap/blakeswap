@@ -2,12 +2,16 @@
 
 ## Contract and transports
 
-`api/proto/blakeswap/v1/daemon.proto` is the source of truth. It declares the
-`blakeswap.v1.DaemonService` protobuf service, typed requests/responses, HTTP
+`api/proto/blakeswap/v2/daemon.proto` is the source of truth. It declares the
+`blakeswap.v2.DaemonService` protobuf service, typed requests/responses, HTTP
 bindings (`google.api.http`) and OpenAPI operation/security annotations. Generated
 Go server/client/gateway bindings, Swift message/client bindings, and the OpenAPI
 2.0 document are committed. HTTP and native clients invoke the same Go service
 and wallet command implementation.
+
+The service and every HTTP route use API v2. The v1 service and routes are
+removed; clients must update their generated bindings together with the daemon.
+This API cutover does not change wallet key derivation.
 
 The native app uses **gRPC directly**, with gRPC Swift 2 over HTTP/2 on a private
 Unix-domain socket. It never calls the HTTP gateway. SwiftProtobuf decodes binary
@@ -64,35 +68,36 @@ bearer token as full local wallet authority. See [Packaging](PACKAGING.md#creden
 
 | RPC | HTTP | Purpose |
 | --- | --- | --- |
-| GetStatus | GET `/v1/status` | Public wallet identity, network, balances, coins, sends, chain heights, offers, swaps, delivery state, errors |
-| RefreshStatus | POST `/v1/status/refresh` | Run a fresh wallet cycle and return its status |
-| SetPaused | PUT `/v1/pause` | Compatibility endpoint: pausing is rejected; resume clears legacy state |
-| ResolveWatchtower | POST `/v1/watchtowers/resolve` | Request an encrypted signed quote by npub or hex public key |
-| CreateOffer | POST `/v1/offers` | Exact chain/amount pair, optional expiry, and maker-only private tower selection |
-| CancelOffer | DELETE `/v1/offers/{id}` | Cancel an unreserved local offer; optional exact wallet/event binding |
-| ListMarket | POST `/v1/market/query` | Exact oriented sorting, independent filters, durable own-order history and publication/lineage |
-| GetRecord | POST `/v1/history/record` | Sanitized active or archived swap, send, or local tower-job detail bound to its wallet/network |
-| TakeOffer | POST `/v1/swaps` | Compatibility direct request for a signed maker offer |
-| QuoteTrade | POST `/v1/trades/quote` | Read-only maker/taker economics, exact candidate funds, short-lived bound review |
-| ConfirmTrade | POST `/v1/trades/confirm` | Revalidate one reviewed quote and durably authorize one offer/request identity |
-| PreflightFunds | POST `/v1/wallet/preflight` | Fresh fee-inclusive candidate funds and BTC replay readiness; advisory only |
-| SendCoins | POST `/v1/wallet/send` | Explicit coin selection, recipient, amount, total fee, and idempotent request ID |
-| GetRecovery | POST `/v1/wallet/recovery` | Explicit sensitive recovery phrase request |
-| ExportPortableBackup | POST `/v1/wallet/portable-backup` | Chosen-password export of the selected profile on all networks; optional all profiles |
-| InspectBackup | POST `/v1/backups/inspect` | Authenticate a portable or legacy file and list its wallet/network scope without importing |
-| ImportBackup | POST `/v1/backups/import` | Install one selected archive wallet as a new isolated profile with a durable recovery gate |
-| BackupWallet | POST `/v1/wallet/backup` | Legacy single-network vault-password database copy; use portable export for normal backups |
-| Mine | POST `/v1/regtest/mine` | Test-node mining, regtest RPC only |
-| Faucet | POST `/v1/regtest/faucet` | Test faucet to caller's deposit address, regtest RPC only |
-| CreateWallet | POST `/v1/wallets` | Create an independent wallet using a name and Settings revision |
-| GetSettings | GET `/v1/settings` | Desktop environment configuration and revision |
-| UpdateSettings | PUT `/v1/settings` | Atomic compare-and-swap configuration update |
-| PrepareFirstWallet | POST `/v1/onboarding/wallet` | Create or restore the first wallet with the current Settings revision |
-| GetFirstWallet | POST `/v1/onboarding/recovery` | Explicit recovery phrase request while backup confirmation is pending |
-| ConfirmFirstWallet | POST `/v1/onboarding/confirm` | Verify three requested recovery words and advance setup |
-| ExportFirstWallet | POST `/v1/onboarding/backup` | Save a setup wallet backup with a chosen password and unused absolute filename |
-| FinishOnboarding | POST `/v1/onboarding/finish` | Validate connections and mark setup complete using the current Settings revision |
-| CheckNode | POST `/v1/settings/check-node` | Read-only chain identity/height check and trust description |
+| GetStatus | GET `/v2/status` | Public wallet identity, network, balances, coins, sends, chain heights, offers, swaps, delivery state, errors |
+| RefreshStatus | POST `/v2/status/refresh` | Run a fresh wallet cycle and return its status |
+| SetPaused | PUT `/v2/pause` | Compatibility endpoint: pausing is rejected; resume clears legacy state |
+| ResolveWatchtower | POST `/v2/watchtowers/resolve` | Request an encrypted signed quote by npub or hex public key |
+| CreateOffer | POST `/v2/offers` | Exact chain/amount pair, optional expiry, and maker-only private tower selection |
+| CancelOffer | DELETE `/v2/offers/{id}` | Cancel an unreserved local offer; optional exact wallet/event binding |
+| ListMarket | POST `/v2/market/query` | Exact oriented sorting, independent filters, durable own-order history, available fill size and local conserved quantities |
+| ListFills | POST `/v2/orders/fills/query` | Frozen bounded local child history for an exact wallet/network/parent-maker/parent-ID identity |
+| GetRecord | POST `/v2/history/record` | Sanitized active or archived swap, send, or local tower-job detail bound to its wallet/network |
+| TakeOffer | POST `/v2/swaps` | Compatibility direct request for a signed maker offer |
+| QuoteTrade | POST `/v2/trades/quote` | Read-only maker/taker economics, exact candidate funds, short-lived bound review |
+| ConfirmTrade | POST `/v2/trades/confirm` | Revalidate one reviewed quote and durably authorize one offer/request identity |
+| PreflightFunds | POST `/v2/wallet/preflight` | Fresh fee-inclusive candidate funds and BTC replay readiness; advisory only |
+| SendCoins | POST `/v2/wallet/send` | Explicit coin selection, recipient, amount, total fee, and idempotent request ID |
+| GetRecovery | POST `/v2/wallet/recovery` | Explicit sensitive recovery phrase request |
+| ExportPortableBackup | POST `/v2/wallet/portable-backup` | Chosen-password export of the selected profile on all networks; optional all profiles |
+| InspectBackup | POST `/v2/backups/inspect` | Authenticate a portable or legacy file and list its wallet/network scope without importing |
+| ImportBackup | POST `/v2/backups/import` | Install one selected archive wallet as a new isolated profile with a durable recovery gate |
+| BackupWallet | POST `/v2/wallet/backup` | Legacy single-network vault-password database copy; use portable export for normal backups |
+| Mine | POST `/v2/regtest/mine` | Test-node mining, regtest RPC only |
+| Faucet | POST `/v2/regtest/faucet` | Test faucet to caller's deposit address, regtest RPC only |
+| CreateWallet | POST `/v2/wallets` | Create an independent wallet using a name and Settings revision |
+| GetSettings | GET `/v2/settings` | Desktop environment configuration and revision |
+| UpdateSettings | PUT `/v2/settings` | Atomic compare-and-swap configuration update |
+| PrepareFirstWallet | POST `/v2/onboarding/wallet` | Create or restore the first wallet with the current Settings revision |
+| GetFirstWallet | POST `/v2/onboarding/recovery` | Explicit recovery phrase request while backup confirmation is pending |
+| ConfirmFirstWallet | POST `/v2/onboarding/confirm` | Verify three requested recovery words and advance setup |
+| ExportFirstWallet | POST `/v2/onboarding/backup` | Save a setup wallet backup with a chosen password and unused absolute filename |
+| FinishOnboarding | POST `/v2/onboarding/finish` | Validate connections and mark setup complete using the current Settings revision |
+| CheckNode | POST `/v2/settings/check-node` | Read-only chain identity/height check and trust description |
 
 Settings methods belong to the desktop manager; standalone `daemon --config`
 uses its configuration file and returns Unimplemented for Settings updates.
@@ -167,7 +172,7 @@ accepted rescue payouts. Public offers and shared terms omit those choices.
 Desktop Settings includes `wallets: [{id, name}]`. IDs are immutable storage
 identities; names may be changed through `UpdateSettings` with its current
 revision. Wallet removal, replacement IDs, and reordering are rejected. Use
-`CreateWallet` (`POST /v1/wallets`, CLI `wallet.create`) with `name` and `revision`
+`CreateWallet` (`POST /v2/wallets`, CLI `wallet.create`) with `name` and `revision`
 to generate an independent encrypted seed and register a live endpoint in
 `runtime.json`. Creation and renaming work with disconnected chain backends.
 The desktop supports up to 20 wallets on each active network. Each wallet has its
@@ -217,7 +222,10 @@ or earlier when its order/provider/automatic-fee review expires.
 Persist a fresh 32-byte hex `request_id` before `ConfirmTrade` (CLI
 `trade.confirm`), alongside the original `token`, `revision`, wallet and network.
 The daemon rechecks signed order/proof, expiry, wallet identity, fee bounds and
-fresh exact inputs before committing. A changed quote needs a new review. One
+fresh exact inputs before committing. Backend reordering of the same outputs does
+not change the reviewed input set; missing, additional, substituted, duplicate or
+cross-chain inputs are rejected. Stored input order is preserved. A changed
+quote needs a new review. One
 quote can authorize only one request ID. `accepted` means an offer is saved for
 publication or a take request is saved for delivery; it does not mean funding or
 settlement has completed. Status tracks the automatic sequence afterward.
@@ -239,9 +247,9 @@ identity. New interactive clients should use the quote/confirm pair.
 
 ### Activity history
 
-`ListActivity` / `activity.list` (`POST /v1/activity/query`) returns versioned,
+`ListActivity` / `activity.list` (`POST /v2/activity/query`) returns versioned,
 linked records for the selected wallet/network. `ExportActivity` /
-`activity.export` (`POST /v1/activity/export`) returns CSV chunks from the same
+`activity.export` (`POST /v2/activity/export`) returns CSV chunks from the same
 snapshot. Both take `expected_wallet`, `expected_network`, optional type/status/
 chain/date filters, and `snapshot`, `cursor`, `limit` for stable pagination.
 Snapshots last ten minutes, with four retained per engine; changed or expired
@@ -295,7 +303,7 @@ protection. Zero disables that wallet’s protection; neither selection is relay
 to the counterparty. Order tower
 fields are populated only for the authenticated local maker wallet.
 
-`RefreshStatus` (`POST /v1/status/refresh`, CLI `status.refresh`) requires
+`RefreshStatus` (`POST /v2/status/refresh`, CLI `status.refresh`) requires
 `expected_network` in the desktop API and runs a fresh wallet processing cycle.
 It returns `Status`; normal `GetStatus` reads the latest background snapshot.
 A request during an existing cycle waits for a subsequent cycle so the chain reads
@@ -324,7 +332,7 @@ reservations even across restart or reorg until their inputs are observed spent.
 The native coin-control view links each hold to the owning activity and exposes
 safe open-order cancellation.
 
-`PreflightFunds`, HTTP `POST /v1/wallet/preflight`, CLI `wallet.preflight`, accepts
+`PreflightFunds`, HTTP `POST /v2/wallet/preflight`, CLI `wallet.preflight`, accepts
 `chain`, `amount`, `fee`, `expected_network`, and optional explicit `inputs`.
 Without inputs it evaluates the actual automatic funding candidate selection;
 with inputs it evaluates that exact set. Results bind `network`, `wallet`, the
@@ -346,7 +354,7 @@ provided.
 
 ## Fee review and acceleration
 
-`QuoteFee` (`fee.quote`, `POST /v1/fees/quote`) returns per-chain native sat/kvB
+`QuoteFee` (`fee.quote`, `POST /v2/fees/quote`) returns per-chain native sat/kvB
 estimates, freshness/source/targets, exact fee/change/principal, input selection
 and a conservative vsize bound. Manual `fee` stays available without estimates.
 Use the reviewed total in `SendCoins.fee` or create/take `funding_fee`, and carry
@@ -354,7 +362,7 @@ Use the reviewed total in `SendCoins.fee` or create/take `funding_fee`, and carr
 that same fee. `max_fee` on a send and `owner_fee_cap=20000` on create/take are
 explicit pre-funding authorizations; omitted caps preserve base-only behavior.
 
-`BumpTransaction` (`transaction.bump`, `POST /v1/transactions/bump`) requires
+`BumpTransaction` (`transaction.bump`, `POST /v2/transactions/bump`) requires
 activity ID, kind, higher total fee, expected current transaction ID and network.
 Send status retains all variants and a separate state; swap status exposes
 current owner settlement fees/IDs and authorized variants. Funding acceleration
@@ -408,12 +416,12 @@ Known funded obligations become ready only after positive confirmed resolution (
 
 ## Automatic offer policies
 
-`ListAutomations` (`automation.list`, `POST /v1/automations/query`) requires
+`ListAutomations` (`automation.list`, `POST /v2/automations/query`) requires
 `expected_wallet` and `expected_network` and returns typed configs, revision,
 enabled/imported-hold state, next/last action, decision, current offer/publication,
 reference event provenance, and separate reserved/committed usage totals.
 
-`ReviewAutomation` (`automation.review`, `POST /v1/automations/review`) accepts
+`ReviewAutomation` (`automation.review`, `POST /v2/automations/review`) accepts
 `AutomationEdit`: full `config`, `expected_revision` (zero for a new random 32-byte
 policy ID), desired `enabled` state, and `acknowledge_restored_budget`. Config
 contains `wallet`, `network`, immutable `sell`, `sell_amount`, `volume_limit`,
@@ -424,14 +432,14 @@ and `reference` (`fixed` or `orderbook`). Orderbook mode additionally requires
 `reference_makers`, `reference_freshness` and `reference_spread_bps`.
 
 The review is read-only and returns the exact authorization and `review_digest`.
-`SaveAutomation` (`automation.save`, `PUT /v1/automations`) accepts that same edit
+`SaveAutomation` (`automation.save`, `PUT /v2/automations`) accepts that same edit
 with its digest. Revision changes, changed economics, wrong wallet/network, or
 limits below existing reservations/commitments are rejected. Resuming imported
 state requires affirmative review of potentially missing post-backup spending.
 New enabled policies may check immediately; edits schedule future checks at least
 one cadence later and never alter existing signed/accepted terms.
 
-`DisableAutomation` (`automation.disable`, `POST /v1/automations/disable`) takes
+`DisableAutomation` (`automation.disable`, `POST /v2/automations/disable`) takes
 `id`, `expected_wallet`, `expected_network`, `expected_revision`, and `cancel_open`.
 Disable is committed before optional cancellation. A pending publication is not
 an acknowledgement, and a funded swap is never made cancellable. On an uncertain
@@ -441,7 +449,7 @@ policy authorization surface. See [accounting and reference rules](AUTOMATION.md
 
 ## All-wallet monitoring summary
 
-`GetActionSummary(ActionSummaryRequest)` / `POST /v1/actions/summary` returns
+`GetActionSummary(ActionSummaryRequest)` / `POST /v2/actions/summary` returns
 `ActionSummary` for every saved wallet on the desktop's active network. A
 standalone daemon returns its own wallet. The desktop request's `refresh: true`
 queues bounded worker refreshes and returns immediately; it never waits for
@@ -507,3 +515,29 @@ observations. A source or wallet change during collection rejects the new result
 reconnection after completion does not rewrite an existing frozen page. Strategy
 reports separately require positive canonical coverage for cold confirmed facts
 and remain incomplete when that proof is unavailable.
+
+## Partial-fill review and history
+
+Create/replace/recreate requests carry explicit `fill_mode`, `min_fill`,
+`max_fill`, and per-asset `fee_budgets` and `bounty_budgets`. A whole order sets
+min=max=total sell amount. A take request supplies the exact maker-side
+`quantity` and signed `parent_revision`; the daemon derives the child buy amount
+with upward integer rounding. Missing monetary limits are not unlimited.
+
+The quote separates aggregate parent funding reserve and monetary limits from
+its representative `example_fill`. Partial creation has no aggregate outcome
+list: the example outcomes describe only that labelled child. Take quotes and
+whole creation retain exact single-child outcomes. Confirm using the returned
+opaque token/revision and the same request identity, wallet and network.
+
+`ListFills` (`fills.list`) requires the selected wallet/network and both
+`parent_maker` and `parent_id`. The returned revision freezes the local active
+and archived result across pages; default limit is 100 and maximum 500. A stale
+revision is rejected rather than silently replaced. Child rows preserve exact
+parent revision, original quantity, allocation provenance, archive state and
+monitoring requirement. The parent
+`MarketOrder.quantities` contains durable local conservation bins; an absent
+summary on a foreign order means unknown local accounting, not zero. Complete
+child history comes from this paged route, not the parent convenience ID list.
+See [the complete field contract](PARTIAL_FILL_API.md) for quantity units,
+representative fill semantics and exact retry requirements.

@@ -9,11 +9,12 @@ import (
 	"time"
 
 	"github.com/blakeswap/blakeswap/internal/chain"
+	"github.com/blakeswap/blakeswap/internal/protocol"
 )
 
 func TestRestoredActivityRetainsAuditAndUsesCurrentExportContext(t *testing.T) {
 	txid := strings.Repeat("a", 64)
-	origin := &Engine{Config: Config{Name: "original-profile", Network: chain.Regtest}, s: State{Version: 1, Network: chain.Regtest, ActivityReceipts: map[string]ReceiptEvidence{txid: {Inputs: []CoinOutpoint{{TxID: "parent", Vout: 3}}, Total: 700, OwnedTotal: 500}}, ActivityIndexes: map[chain.ID]ActivityIndex{chain.BTC: {Address: 7, After: "old-cursor", CompletedPass: 100, Source: "old-source", Generation: 1}}}}
+	origin := &Engine{Config: Config{Name: "original-profile", Network: chain.Regtest}, s: State{Version: StateVersion, Network: chain.Regtest, ActivityReceipts: map[string]ReceiptEvidence{txid: {Inputs: []CoinOutpoint{{TxID: "parent", Vout: 3}}, Total: 700, OwnedTotal: 500}}, ActivityIndexes: map[chain.ID]ActivityIndex{chain.BTC: {Address: 7, After: "old-cursor", CompletedPass: 100, Source: "old-source", Generation: 1}}}}
 	origin.putActivity(Activity{ID: "receive/known", Kind: "receive", Chain: chain.BTC, TxID: txid, Variants: []string{txid}, Status: "confirmed", Observations: []ActivityObservation{{TxID: txid, Status: "confirmed", Confirmations: 6, Height: 10, BlockHash: "old-block", ObservedAt: time.Now().Unix(), Source: "old-source", Generation: 1}}}, true)
 	origin.putActivity(Activity{ID: "order/old", Kind: "order", Chain: chain.BTC, Status: "cancelled", LocalStatus: "cancelled"}, true)
 	snapshot, err := origin.BackupSnapshot()
@@ -73,17 +74,37 @@ func TestRestoredActivityRetainsAuditAndUsesCurrentExportContext(t *testing.T) {
 	}
 }
 
-func TestRestoredLegacyOrdersRemainAuditableWithoutRepublication(t *testing.T) {
+func TestRestoredOrdersWithoutActivityMetadataRemainAuditableWithoutRepublication(t *testing.T) {
 	for _, status := range []string{"cancelled", "open"} {
 		t.Run(status, func(t *testing.T) {
-			e, p, _ := managedSource(t)
+			e, p, _ := managedSourceExpiry(t, time.Now().Unix()+2)
 			offer := e.s.OrderRecords[p.SourceOfferID].Offer
-			offer.Status = status
-			offer.Expires = time.Now().Unix() - 1
-			if err := e.publishOffer(offer); err != nil {
+			if status == "cancelled" {
+				params, _ := json.Marshal(map[string]string{"id": offer.ID, "expected_event_id": e.s.Offers[offer.ID].ID.Hex()})
+				if _, err := e.cancelOffer(params); err != nil {
+					t.Fatal(err)
+				}
+			}
+			// Keep the originally reviewed expiry immutable. Wait for its elapsed
+			// timestamp and the eligible cancellation publication, without running
+			// expiry on an open source before import quarantines it.
+			wait := time.Until(time.Unix(offer.Expires, 0))
+			if wait > 5*time.Second {
+				t.Fatal("unexpected configured expiry")
+			}
+			if wait > 0 {
+				time.Sleep(wait)
+			}
+			if err := e.publishPendingParents(); err != nil {
 				t.Fatal(err)
 			}
 			event := e.s.Offers[offer.ID]
+			var published protocol.Offer
+			if err := json.Unmarshal([]byte(event.Content), &published); err != nil || published.Status != status || published.Expires != offer.Expires {
+				t.Fatal("source did not retain its exact published decision and expiry", published.Status, err)
+			}
+			// Missing activity metadata is an audit backfill case in a current
+			// StateVersion source. The legacy flag denotes its outer import format.
 			e.s.OrderRecords, e.s.Activities = nil, nil
 			if err := PrepareRecovery(&e.s, time.Now().Unix(), true); err != nil {
 				t.Fatal(err)
@@ -96,7 +117,7 @@ func TestRestoredLegacyOrdersRemainAuditableWithoutRepublication(t *testing.T) {
 				expected = "quarantined"
 			}
 			if !ok || got.Status != expected || got.CreatedAt != 0 || got.CreatedSource != "unknown" || got.OrderID != offer.ID {
-				t.Fatal("legacy quarantine lost order audit or invented time/expiry", got)
+				t.Fatal("quarantine lost order audit or invented time/expiry", got)
 			}
 			count := len(got.History)
 			for i := 0; i < 3; i++ {

@@ -1,7 +1,10 @@
 package daemon
 
 import (
+	"context"
+	"encoding/json"
 	"errors"
+	"reflect"
 	"time"
 
 	"fiatjaf.com/nostr"
@@ -52,7 +55,10 @@ const recoveryCoverage = "Recovery checks the obligations recorded in this file.
 // vault. It intentionally never erases signed transactions, secret knowledge,
 // receipts, pending payments or earlier recovery holds.
 func PrepareRecovery(s *State, snapshotAt int64, legacy bool) error {
-	if s == nil || (s.Version != 1 && s.Version != 2) || snapshotAt <= 0 {
+	if err := ValidateStateVersion(s); err != nil {
+		return err
+	}
+	if snapshotAt <= 0 {
 		return errors.New("invalid recovery snapshot")
 	}
 	if err := ValidateArchiveState(*s); err != nil {
@@ -69,10 +75,18 @@ func PrepareRecovery(s *State, snapshotAt int64, legacy bool) error {
 }
 
 // PrepareStreamedRecovery is for a fully authenticated private staged import.
-// Every core obligation must have been promoted before this call; advisory and
-// quarantined history may stay cold. No cold lookup grants publication authority.
-func PrepareStreamedRecovery(s *State, stats storage.ArchiveStats, snapshotAt int64, legacy bool) error {
-	if s == nil || (s.Version != 1 && s.Version != 2) || snapshotAt <= 0 || len(s.Archive) != 0 {
+// Every core obligation must have been promoted before this call. source is the
+// same pinned, authenticated checkpoint used for that promotion; ownership
+// indexes and quarantined history stay cold. Its lifetime covers this entire
+// completed check. No cold lookup grants publication or settlement authority.
+func PrepareStreamedRecovery(ctx context.Context, s *State, stats storage.ArchiveStats, source FillStateReader, snapshotAt int64, legacy bool) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if err := ValidateProtocolState(s); err != nil {
+		return err
+	}
+	if snapshotAt <= 0 || len(s.Archive) != 0 {
 		return errors.New("invalid streamed recovery snapshot")
 	}
 	if err := s.ValidateArchiveCheckpoint(stats); err != nil {
@@ -86,7 +100,57 @@ func PrepareStreamedRecovery(s *State, stats storage.ArchiveStats, snapshotAt in
 			return errors.New("streamed recovery retains live publication archive")
 		}
 	}
+	if source == nil {
+		return errors.New("streamed recovery requires its authenticated archive reader")
+	}
+	if err := ValidateFillConservation(ctx, s, recoveryFillReader{s, source}, ""); err != nil {
+		return err
+	}
 	return prepareRecoveryActive(s, snapshotAt, legacy)
+}
+
+// The source still contains promoted rows. Validate them against the promoted
+// active value, then exclude them from the cold traversal so child allocations
+// are counted once. Exact companion reads continue to use the same source.
+// One row is decoded at a time; there is no lifetime ownership collection.
+type recoveryFillReader struct {
+	active *State
+	source FillStateReader
+}
+
+func (r recoveryFillReader) ReadArchive(kind, id string) (storage.ArchiveRecord, bool, error) {
+	return r.source.ReadArchive(kind, id)
+}
+
+func (r recoveryFillReader) VisitArchive(ctx context.Context, visit func(storage.ArchiveRecord) error) error {
+	return r.source.VisitArchive(ctx, func(record storage.ArchiveRecord) error {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		if recoveryCoreKind(record.Kind) {
+			group, err := archiveMap(r.active, record.Kind, false)
+			if err != nil {
+				return err
+			}
+			if !group.IsValid() {
+				return errors.New("streamed recovery did not promote a source core")
+			}
+			value := group.MapIndex(reflect.ValueOf(record.ID))
+			if !value.IsValid() {
+				return errors.New("streamed recovery did not promote a source core")
+			}
+			original := reflect.New(value.Type())
+			if err := json.Unmarshal(record.Data, original.Interface()); err != nil {
+				return err
+			}
+			if !reflect.DeepEqual(original.Elem().Interface(), value.Interface()) {
+				return errors.New("streamed recovery changed a promoted source core")
+			}
+			return nil
+		}
+		cold, _ := QuarantineArchiveRecord(record)
+		return visit(cold)
+	})
 }
 
 func prepareRecoveryActive(s *State, snapshotAt int64, legacy bool) error {
@@ -107,6 +171,19 @@ func prepareRecoveryActive(s *State, snapshotAt int64, legacy bool) error {
 		return err
 	}
 	holdImportedAutomations(s)
+	// A snapshot cannot establish that the original installation never
+	// accepted another child or signed funding later. Keep every allocation
+	// and monetary counter, but never resume a parent's publisher/input pool.
+	for _, parent := range s.ParentOrders {
+		if parent != nil {
+			parent.RestoreHold = true
+		}
+	}
+	for _, child := range s.FillRecords {
+		if child != nil {
+			child.ImportedUncertain = true
+		}
+	}
 	r := s.Recovery
 	if r == nil {
 		r = &RecoveryRecord{SnapshotAt: snapshotAt, Legacy: legacy}
@@ -126,7 +203,10 @@ func prepareRecoveryActive(s *State, snapshotAt int64, legacy bool) error {
 	if r.Outbox == nil {
 		r.Outbox = map[string]*Delivery{}
 	}
-	for id := range s.Swaps {
+	for id, swap := range s.Swaps {
+		if swap != nil && len(swap.FundingParents) > 0 {
+			swap.FundingAncestryHeld = true
+		}
 		r.Swaps[id] = true
 	}
 	for id := range s.Sends {
@@ -155,7 +235,7 @@ func prepareRecoveryActive(s *State, snapshotAt int64, legacy bool) error {
 
 func recoveryCoreKind(kind string) bool {
 	switch kind {
-	case "swaps", "sends", "tower_jobs", "recovery_swaps", "recovery_sends", "recovery_tower_jobs", "funding_fees":
+	case "swaps", "sends", "tower_jobs", "recovery_swaps", "recovery_sends", "recovery_tower_jobs", "funding_fees", "parent_orders", "fill_records":
 		return true
 	}
 	return false

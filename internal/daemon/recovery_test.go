@@ -10,6 +10,7 @@ import (
 	"github.com/blakeswap/blakeswap/internal/chain"
 	"github.com/blakeswap/blakeswap/internal/contract"
 	"github.com/blakeswap/blakeswap/internal/protocol"
+	"github.com/btcsuite/btcd/wire"
 )
 
 func markRestored(t *testing.T, e *Engine) {
@@ -31,10 +32,7 @@ func markRestored(t *testing.T, e *Engine) {
 }
 func recoverySpend(t *testing.T, e *Engine, s *Swap, c contract.HTLC, refund bool, secret []byte) chain.Observation {
 	t.Helper()
-	key, err := e.swapKey(c.Chain, s.ID)
-	if err != nil {
-		t.Fatal(err)
-	}
+	key := isolatedSpendKey(t, e, s, c, refund)
 	lock := uint32(0)
 	if refund {
 		lock = c.RefundHeight
@@ -382,16 +380,74 @@ func TestRestoredSendSlicesAccumulateOnlyCurrentPositiveVariants(t *testing.T) {
 	}
 }
 
+// Build current requests with retained identities before recording an unfunded
+// decision. Maker refusal goes through real acceptance and retirement so its
+// parent/child quantities and exact funding authorization agree.
+func recoveryUnfundedFixture(t *testing.T, role, stage string, expires int64) (*Engine, *Swap) {
+	t.Helper()
+	if role == "maker" {
+		e, maker, now := fillAdmissionEngine(t, chain.BTC)
+		r := admissionRequest(t, e, maker, 400000)
+		var err error
+		r.Keys, err = e.swapKeys(isolatedPeerID(r.ID))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := applyFillRequest(t, e, r, now); err != nil {
+			t.Fatal(err)
+		}
+		s := e.s.Swaps[r.ID]
+		e.clocks[s.Long.Chain], e.clocks[s.Short.Chain] = s.Long.RefundHeight, s.Short.RefundHeight
+		if err := e.retireUnfundedMaker(s, e.gate(s.Terms, "fund-short")); err != nil {
+			t.Fatal(err)
+		}
+		if s.Stage != stage || !e.s.FillRecords[s.ID].FundingDisabled {
+			t.Fatal("fixture lacks durable never-funded refusal")
+		}
+		return e, s
+	}
+	e, _, _ := sendFixture(t)
+	parent, maker := fillParentFixture(t, chain.BTC, 0)
+	if expires != 0 {
+		parent.Offer.Expires = expires
+	}
+	r := fillRequestFixture(t, parent, maker, 400000)
+	r.Taker = e.identity.Public().Hex()
+	var err error
+	r.Keys, err = e.swapKeys(r.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := &Swap{ID: r.ID, Role: role, Stage: stage, Request: r}
+	if stage == "expired before funding" {
+		keys, err := e.swapKeys(isolatedPeerID(r.ID))
+		if err != nil {
+			t.Fatal(err)
+		}
+		terms, err := protocol.NewTerms(r, keys, map[chain.ID]uint32{chain.BTC: 100, chain.Blake: 100})
+		if err != nil {
+			t.Fatal(err)
+		}
+		s.Terms, s.Long, s.Short = &terms, terms.Long, terms.Short
+	}
+	e.s.Swaps[s.ID] = s
+	if err := e.retainSwapIdentity(s); err != nil {
+		t.Fatal(err)
+	}
+	if err := e.save(); err != nil {
+		t.Fatal(err)
+	}
+	return e, s
+}
+
 func TestRestoredFinalUnfundedDecisionsRemainInactive(t *testing.T) {
 	for _, stage := range []string{"rejected", "expired before acceptance", "expired before funding", "expired before maker funding"} {
 		t.Run(stage, func(t *testing.T) {
-			e, _, _ := sendFixture(t)
 			role := "taker"
 			if stage == "expired before maker funding" {
 				role = "maker"
 			}
-			s := &Swap{ID: "old-request", Role: role, Stage: stage}
-			e.s.Swaps[s.ID] = s
+			e, s := recoveryUnfundedFixture(t, role, stage, 0)
 			markRestored(t, e)
 			all := map[chain.ID]map[string]chain.Observation{chain.BTC: {}, chain.Blake: {}}
 			if err := e.advanceSwap(context.Background(), s, all); err != nil {
@@ -408,6 +464,15 @@ func TestRestoredFinalUnfundedDecisionsRemainInactive(t *testing.T) {
 			}
 			s.LongFunding = ""
 			s.Stage = "request queued"
+			if role == "maker" {
+				// A display label cannot erase an irreversible child refusal.
+				e.reconcileRecovery(all, nil)
+				if e.recoveryTradingReady() != nil {
+					t.Fatal("presentation change erased durable refusal")
+				}
+				// Missing durable authority is unknown, even with empty scans.
+				delete(e.s.FillRecords, s.ID)
+			}
 			e.reconcileRecovery(all, nil)
 			if e.recoveryTradingReady() == nil {
 				t.Fatal("active unknown request treated as terminal")
@@ -417,12 +482,7 @@ func TestRestoredFinalUnfundedDecisionsRemainInactive(t *testing.T) {
 }
 
 func TestRestoredPendingRequestCannotAcquireTerminalExpiryEvidence(t *testing.T) {
-	e, _, _ := sendFixture(t)
-	s := &Swap{ID: "stale-pending", Role: "taker", Stage: "request queued"}
-	offer := protocol.Offer{Expires: time.Now().Add(-time.Hour).Unix(), Sell: chain.BTC, BuyAmount: 100000}
-	content, _ := json.Marshal(offer)
-	s.Request.OfferEvent.Content = string(content)
-	e.s.Swaps[s.ID] = s
+	e, s := recoveryUnfundedFixture(t, "taker", "request queued", time.Now().Add(-time.Hour).Unix())
 	markRestored(t, e)
 	if e.expirePendingRequest(s, time.Now().Unix()) {
 		t.Fatal("elapsed time invented post-restore expiry evidence")
@@ -485,13 +545,16 @@ func TestRestoredPositiveSingleLegRefund(t *testing.T) {
 	}
 }
 func TestRestoredExpiredMakerWithPeerRefund(t *testing.T) {
-	e, s, _, _ := isolatedFixture(t, "maker")
-	s.Short.TxID = ""
-	s.ShortFunding = ""
-	s.ShortSent = false
-	s.LongSent = false
-	s.SelfRefunds = nil
-	s.Stage = "expired before maker funding"
+	e, s := recoveryUnfundedFixture(t, "maker", "expired before maker funding", 0)
+	// Retain the peer's known contract without inventing any own funding.
+	pk, err := s.Long.PkScript()
+	if err != nil {
+		t.Fatal(err)
+	}
+	funding := wire.NewMsgTx(2)
+	funding.AddTxIn(wire.NewTxIn(&wire.OutPoint{Index: 1}, nil, nil))
+	funding.AddTxOut(wire.NewTxOut(s.Long.Amount, pk))
+	s.Long.TxID, s.LongFunding = funding.TxHash().String(), contract.Hex(funding)
 	markRestored(t, e)
 	all := map[chain.ID]map[string]chain.Observation{chain.BTC: {}, chain.Blake: {}}
 	all[s.Long.Chain][chain.OutpointKey(s.Long.TxID, s.Long.Vout)] = recoverySpend(t, e, s, s.Long, true, nil)
@@ -502,7 +565,7 @@ func TestRestoredExpiredMakerWithPeerRefund(t *testing.T) {
 	if e.recoveryTradingReady() != nil {
 		t.Fatal("final own nonfunding plus confirmed peer refund did not reconcile", e.s.Recovery.Status)
 	}
-	if s.Stage != "expired before maker funding" {
+	if !e.recoverySwapOwnInactive(s) || !e.s.FillRecords[s.ID].FundingDisabled || e.s.FillRecords[s.ID].Allocation.currentQuantity() != 0 {
 		t.Fatal("lost durable nonfunding decision")
 	}
 	delete(all[s.Long.Chain], chain.OutpointKey(s.Long.TxID, s.Long.Vout))
@@ -512,6 +575,11 @@ func TestRestoredExpiredMakerWithPeerRefund(t *testing.T) {
 	}
 	s.Stage = "awaiting chain confirmations"
 	all[s.Long.Chain][chain.OutpointKey(s.Long.TxID, s.Long.Vout)] = recoverySpend(t, e, s, s.Long, true, nil)
+	e.reconcileRecovery(all, nil)
+	if e.recoveryTradingReady() != nil {
+		t.Fatal("display stage erased durable nonfunding decision")
+	}
+	delete(e.s.FillRecords, s.ID)
 	e.reconcileRecovery(all, nil)
 	if e.recoveryTradingReady() == nil {
 		t.Fatal("unknown own publication resolved from peer refund")

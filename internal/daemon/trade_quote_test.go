@@ -26,9 +26,11 @@ func tradeFixture(t *testing.T, kind string) (*Engine, TradeQuoteRequest) {
 		t.Fatal(err)
 	}
 	p := TradeQuoteRequest{Kind: kind, ExpectedWallet: "alice", ExpectedNetwork: "regtest", Sell: chain.Blake, SellAmount: 100000, BuyAmount: 200000, FeeSelection: FeeSelection{FundingFee: 2000, OwnerFeeCap: 20000}}
+	p.FillOrderFields = automationWholeFields(p.Sell, p.SellAmount, p.BuyAmount, p.FundingFee, p.TowerBPS)
 	if kind == "taker" {
+		p.FillOrderFields = FillOrderFields{}
 		maker := nostr.Generate()
-		offer := protocol.Offer{ID: transport.RandomID(), Network: chain.Regtest, Maker: maker.Public().Hex(), Sell: chain.BTC, SellAmount: 100000, BuyAmount: 200000, Expires: time.Now().Unix() + 3600, Status: "open"}
+		offer := protocol.Offer{Version: protocol.Version, Revision: 1, Available: 100000, FillPolicy: protocol.FillPolicy{Mode: protocol.FillWhole, Min: 100000, Max: 100000}, ID: transport.RandomID(), Network: chain.Regtest, Maker: maker.Public().Hex(), Sell: chain.BTC, SellAmount: 100000, BuyAmount: 200000, Expires: time.Now().Unix() + 3600, Status: "open"}
 		content, _ := offer.PublicJSON()
 		event := nostr.Event{Kind: transport.OfferKind, CreatedAt: nostr.Now(), Tags: nostr.Tags{{"d", offer.ID}, {"t", chain.Regtest.Namespace()}}, Content: string(content)}
 		if err := transport.Sign(&event, maker); err != nil {
@@ -36,6 +38,7 @@ func tradeFixture(t *testing.T, kind string) (*Engine, TradeQuoteRequest) {
 		}
 		e.s.Book[offer.Maker+":"+offer.ID] = event
 		p.Maker, p.ID, p.Sell = offer.Maker, offer.ID, offer.Sell
+		p.Quantity, p.ParentRevision = offer.SellAmount, offer.Revision
 	}
 	return e, p
 }
@@ -196,6 +199,7 @@ func TestTradeTimingAndOutcomeBoundsFromEachWalletPerspective(t *testing.T) {
 			e.Config.Network = network
 			p.ExpectedNetwork = string(network)
 			p.Sell = sell
+			p.FillOrderFields = automationWholeFields(p.Sell, p.SellAmount, p.BuyAmount, p.FundingFee, p.TowerBPS)
 			s, err := e.tradeSnapshot(p, time.Now().Unix())
 			if err != nil {
 				t.Fatal(err)
@@ -298,6 +302,9 @@ func TestTradeQuoteBindsProviderProofAndMatchesConstructedOutcomes(t *testing.T)
 			e.ingestTower(event)
 			p.TowerBPS = 125
 			p.TowerPubKey = provider.identity.Public().Hex()
+			if kind == "maker" {
+				p.FillOrderFields = automationWholeFields(p.Sell, p.SellAmount, p.BuyAmount, p.FundingFee, p.TowerBPS)
+			}
 			q := requestQuote(t, e, p)
 			want := 3
 			if kind == "maker" {

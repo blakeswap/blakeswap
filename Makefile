@@ -36,3 +36,8 @@ test-local-nodes:
 
 test-packaging:
 	python3 -m unittest discover -s scripts -p 'test_packaging.py'
+
+.PHONY: test-demo
+# Pure protocol-cutover request tests; no node or helper startup.
+test-demo:
+	python3 -m unittest discover -s scripts -p 'test_demo_trade.py'

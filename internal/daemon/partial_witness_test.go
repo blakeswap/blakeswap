@@ -278,7 +278,7 @@ func TestIsolatedIncompleteScanRetainsWitnessAcrossRestart(t *testing.T) {
 
 func TestIsolatedTowerIncompleteScanRetainsWitnessAcrossRestart(t *testing.T) {
 	partialWitnessScenarios(t, func(t *testing.T, backend, fault string) {
-		e, s, b, secret := isolatedFixture(t, "maker")
+		e, s, b, secret := isolatedTowerFixture(t)
 		tower := e.ownTower()
 		s.Protection = &tower
 		target, observe := s.Long, s.Short
@@ -287,11 +287,10 @@ func TestIsolatedTowerIncompleteScanRetainsWitnessAcrossRestart(t *testing.T) {
 			t.Fatal(err)
 		}
 		e.s.TowerJobs = map[string]*TowerJob{job.ID: {Job: job}}
-		e.s.Swaps = map[string]*Swap{}
 		if err := e.save(); err != nil {
 			t.Fatal(err)
 		}
-		key, _ := e.swapKey(observe.Chain, s.ID)
+		key := isolatedSpendKey(t, e, s, observe, false)
 		claim, err := contract.Spend(observe, key, e.scripts[observe.Chain], 2000, false, 0, nil, 0, secret)
 		if err != nil {
 			t.Fatal(err)

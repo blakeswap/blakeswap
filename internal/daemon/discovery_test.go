@@ -28,7 +28,7 @@ func discoveryEngine(t *testing.T) *Engine {
 	t.Cleanup(func() { vault.Close() })
 	btc, _ := hex.DecodeString("0014" + strings.Repeat("11", 20))
 	blake, _ := hex.DecodeString("0014" + strings.Repeat("22", 20))
-	return &Engine{chainFresh: map[chain.ID]bool{chain.BTC: true, chain.Blake: true}, chainErrors: map[chain.ID]string{}, chainObserved: map[chain.ID]int64{}, chainGeneration: map[chain.ID]uint64{}, Config: Config{Name: "Test", Mode: "trader", Network: chain.Regtest}, identity: nostr.Generate(), vault: vault, scripts: map[chain.ID][]byte{chain.BTC: btc, chain.Blake: blake}, s: State{Towers: map[string]nostr.Event{}, Outbox: map[string]*Delivery{}, Seen: map[string]string{}}}
+	return &Engine{chainFresh: map[chain.ID]bool{chain.BTC: true, chain.Blake: true}, chainErrors: map[chain.ID]string{}, chainObserved: map[chain.ID]int64{}, chainGeneration: map[chain.ID]uint64{}, Config: Config{Name: "Test", Mode: "trader", Network: chain.Regtest}, identity: nostr.Generate(), vault: vault, scripts: map[chain.ID][]byte{chain.BTC: btc, chain.Blake: blake}, s: State{Version: StateVersion, Network: chain.Regtest, Towers: map[string]nostr.Event{}, Outbox: map[string]*Delivery{}, Seen: map[string]string{}}}
 }
 
 func TestRescueFeeRefreshesSignedQuotesImmediately(t *testing.T) {
@@ -195,27 +195,27 @@ func TestRealDiscoveredTraderWatchtowerAndOfferBalance(t *testing.T) {
 	for _, name := range []string{"maker", "taker"} {
 		h.engines[name].Config.Tower = TowerConfig{}
 	}
-	h.command("maker", "tower.resolve", map[string]string{"pubkey": tower.ownTower().Npub})
-	h.command("taker", "tower.resolve", map[string]string{"pubkey": tower.ownTower().Npub})
-	h.tick("maker", "taker", "tower", "maker", "taker")
+	partialDiscoverTower(h, 125, "maker", "taker")
 	maker := h.engines["maker"]
 	for _, sell := range []string{"btc", "blake"} {
-		empty, _ := json.Marshal(map[string]any{"sell": sell, "sell_amount": 1000000, "buy_amount": 2000000})
-		if _, err := tower.Command(h.ctx, Request{Method: "offer.create", Params: empty}); err == nil || len(tower.s.Offers) != 0 {
+		empty, _ := json.Marshal(walletWholeParams(chain.ID(sell), 1000000, 2000000, 2000, 0, 0))
+		if _, err := tower.Command(h.ctx, Request{Method: "offer.create", Params: empty}); err == nil || !strings.Contains(err.Error(), "insufficient unlocked confirmed") || len(tower.s.Offers) != 0 {
 			t.Fatal("empty trading wallet published offer", err)
 		}
-		raw, _ := json.Marshal(map[string]any{"sell": sell, "sell_amount": 10000000000, "buy_amount": 1000000})
+		raw, _ := json.Marshal(walletWholeParams(chain.ID(sell), 10000000000, 1000000, 2000, 0, 0))
 		before := len(maker.s.Offers)
-		if _, err := maker.Command(h.ctx, Request{Method: "offer.create", Params: raw}); err == nil || !strings.Contains(err.Error(), "funding fee") || len(maker.s.Offers) != before {
+		if _, err := maker.Command(h.ctx, Request{Method: "offer.create", Params: raw}); err == nil || !strings.Contains(err.Error(), "aggregate funding reserve") || len(maker.s.Offers) != before {
 			t.Fatal("unfunded offer accepted", err)
 		}
 	}
-	o := h.command("maker", "offer.create", map[string]any{"sell": "btc", "sell_amount": 1000000, "buy_amount": 2000000, "tower_bps": 125, "tower_pubkey": tower.ownTower().Npub}).(protocol.Offer)
+	params := walletWholeParams(chain.BTC, 1000000, 2000000, 2000, 0, 125)
+	params["tower_pubkey"] = tower.ownTower().Npub
+	o := h.command("maker", "offer.create", params).(protocol.Offer)
 	if o.Tower == nil || o.Tower.Verify() != nil || o.Tower.PubKey != tower.identity.Public().Hex() {
 		t.Fatal("provider quote not pinned")
 	}
 	h.tick("maker", "taker")
-	id := h.command("taker", "swap.take", map[string]any{"maker": o.Maker, "id": o.ID, "tower_bps": 125, "tower_pubkey": tower.ownTower().Npub}).(map[string]string)["id"]
+	id := h.command("taker", "swap.take", map[string]any{"maker": o.Maker, "id": o.ID, "quantity": o.SellAmount, "parent_revision": o.Revision, "tower_bps": 125, "tower_pubkey": tower.ownTower().Npub}).(map[string]string)["id"]
 	h.until("protected long funding", func() bool { return h.swap("taker", id).LongSent }, func() { h.tick("taker", "maker", "tower") })
 	if len(tower.s.TowerJobs) == 0 || !h.swap("taker", id).LongSent {
 		t.Fatal("trading watchtower did not acknowledge and enable funding")
@@ -253,12 +253,28 @@ func TestRealDiscoveredTraderWatchtowerAndOfferBalance(t *testing.T) {
 	h.offline("maker")
 	h.offline("taker")
 	h.mine(long.Chain, long.RefundHeight+protocol.RefundGrace-h.height(long.Chain))
-	h.tick("tower")
-	h.minePending()
-	h.tick("tower")
+	// A restarted tower may need several bounded scans to catch up with the
+	// mined deadline. Require its confirmed rescue while both owners are offline.
+	partialWait(h, "trading watchtower confirmed delayed rescue", func() bool {
+		jobs := h.engines["tower"].s.TowerJobs
+		if len(jobs) == 0 {
+			return false
+		}
+		for _, job := range jobs {
+			if job.Confirmed < 2 {
+				return false
+			}
+		}
+		return true
+	}, func() { h.tick("tower"); h.minePending() })
 	h.online("taker")
-	h.tick("taker")
+	tickUntilConnected(t, h.engines["taker"])
 	if h.swap("taker", id).Stage != "refunded" {
+		provider, owner := h.engines["tower"], h.swap("taker", id)
+		t.Logf("rescue outcome: tower heights=%v error=%q; owner error=%q long spend=%s confirmations=%d", provider.heights, provider.lastError, owner.Error, owner.LongSpend, owner.LongConfirmations)
+		for _, job := range provider.s.TowerJobs {
+			t.Logf("rescue job: kind=%s chain=%s lock=%d funding_seen=%t expired=%t attempts=%d broadcast=%s confirmations=%d error=%q", job.Job.Kind, job.Job.Target.Chain, job.Job.Lock, job.FundingSeen, job.Expired, job.Attempt, job.Broadcast, job.Confirmed, job.Error)
+		}
 		t.Fatal("trading watchtower did not execute delayed rescue", h.swap("taker", id).Stage)
 	}
 	for _, job := range h.engines["tower"].s.TowerJobs {

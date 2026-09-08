@@ -51,7 +51,7 @@ func TestRelayDurabilityReplacementAndValidation(t *testing.T) {
 		t.Fatal("future order accepted")
 	}
 	bob := nostr.Generate()
-	mail, e := transport.Wrap(key, bob.Public(), transport.Message{Version: 1, ID: transport.RandomID(), Type: "test", Body: json.RawMessage(`{}`)})
+	mail, e := transport.Wrap(key, bob.Public(), transport.Message{Version: transport.MessageVersion, ID: transport.RandomID(), Type: "test", Body: json.RawMessage(`{}`)})
 	if e != nil {
 		t.Fatal(e)
 	}

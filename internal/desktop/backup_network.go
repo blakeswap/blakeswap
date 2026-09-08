@@ -81,14 +81,14 @@ func (n *backupNetwork) complete() (*daemon.State, error) {
 	return &state, err
 }
 func validateStreamedActive(state *daemon.State, stats storage.ArchiveStats) error {
-	if state == nil || len(state.Archive) != 0 || (state.Version != 1 && state.Version != 2) || !state.Network.Valid() {
+	if err := daemon.ValidateStateVersion(state); err != nil {
+		return err
+	}
+	if len(state.Archive) != 0 {
 		return errors.New("streamed checkpoint must separate its archive records")
 	}
 	if err := state.ValidateArchiveCheckpoint(stats); err != nil {
 		return err
-	}
-	if stats.Count > 0 && state.Version != 2 {
-		return errors.New("archived checkpoint requires versioned state")
 	}
 	return validateActiveBackupState(state)
 }
@@ -117,6 +117,9 @@ func (s *portableStaging) saveStream(ctx context.Context, active daemon.State, s
 			return write(record)
 		})
 	})
+	if err == nil {
+		err = daemon.ValidateVaultProtocolStateContext(ctx, vault, &active)
+	}
 	closeErr := vault.Close()
 	if err == nil {
 		err = closeErr
@@ -180,6 +183,9 @@ func (n *backupNetwork) validateSnapshot(ctx context.Context, mnemonic string, n
 			}
 			return storage.WriteJSONRecord(ctx, digest, record)
 		}); err != nil {
+			return err
+		}
+		if err := daemon.ValidateFillConservation(ctx, &active, view, ""); err != nil {
 			return err
 		}
 		mark.Fingerprint = hex.EncodeToString(digest.Sum(nil))

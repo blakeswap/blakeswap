@@ -6,7 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 
-	pb "github.com/blakeswap/blakeswap/api/gen/blakeswap/v1"
+	pb "github.com/blakeswap/blakeswap/api/gen/blakeswap/v2"
 	"github.com/blakeswap/blakeswap/internal/chain"
 	"github.com/blakeswap/blakeswap/internal/daemon"
 	"google.golang.org/grpc/codes"
@@ -331,4 +331,9 @@ func (s *Service) ReportStrategy(ctx context.Context, in *pb.StrategyReportReque
 func (s *Service) GetRecord(ctx context.Context, in *pb.RecordQuery) (*pb.RecordDetail, error) {
 	out := &pb.RecordDetail{}
 	return out, s.command(ctx, "record.get", in, out)
+}
+
+func (s *Service) ListFills(ctx context.Context, in *pb.FillQuery) (*pb.FillPage, error) {
+	out := &pb.FillPage{}
+	return out, s.command(ctx, "fills.list", in, out)
 }

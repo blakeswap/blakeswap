@@ -192,30 +192,44 @@ func (e *Engine) compactArchive(ctx context.Context, swaps, towers map[chain.ID]
 		obs, ok := observation(all, c)
 		return c.TxID != "" && valid[c.Chain] && ok && obs.Tx != nil && obs.Height > 0 && obs.Height <= e.archiveCurrent[c.Chain].Height && obs.Confirmations >= archiveSettlementDepth
 	}
-	retiredMakerParents := map[string]bool{}
+	// A retained terminal display is not current spend proof. In particular,
+	// unknown refund evidence must remain actively monitored even without a
+	// public preimage that would put the swap on the isolated claim path.
+	settledSwap := func(c contract.HTLC) bool {
+		obs, ok := observation(swaps, c)
+		return ok && e.fresh(c.Chain) && settled(swaps, c) && e.validateContractObservation(c, obs) == nil
+	}
 	for _, id := range sortedArchiveIDs(e.s.Swaps) {
 		swap := e.s.Swaps[id]
 		if remaining == 0 {
 			break
 		}
-		if swap == nil || !terminalSwap(swap) {
+		if swap == nil || !terminalSwap(swap) || !e.fundingAncestryReady(swap) {
 			continue
 		}
 		var chains []chain.ID
-		if !recoverySwapInactive(swap) {
-			if !settled(swaps, swap.Long) || !settled(swaps, swap.Short) {
-				continue
+		if !e.recoverySwapInactive(swap) {
+			if e.recoverySwapOwnInactive(swap) {
+				incoming := swap.Short
+				if swap.Role == "maker" {
+					incoming = swap.Long
+				}
+				if !settledSwap(incoming) || !e.recoverySwapResolved(swap, swaps) {
+					continue
+				}
+				chains = []chain.ID{incoming.Chain}
+			} else {
+				if !settledSwap(swap.Long) || !settledSwap(swap.Short) {
+					continue
+				}
+				chains = []chain.ID{chain.BTC, chain.Blake}
 			}
-			chains = []chain.ID{chain.BTC, chain.Blake}
 		}
 		if err := e.retainOrderSettlement(swap); err != nil {
 			return err
 		}
 		if err := move("swaps", id, chains...); err != nil {
 			return err
-		}
-		if e.s.Swaps[id] == nil && swap.Role == "maker" && swap.Terms != nil {
-			retiredMakerParents[swap.Terms.Offer().ID] = true
 		}
 		for _, kind := range []string{"recovery_swaps", "funding_fees"} {
 			key := id
@@ -228,15 +242,6 @@ func (e *Engine) compactArchive(ctx context.Context, swaps, towers map[chain.ID]
 		}
 	}
 	activeMakerParents := e.activeMakerParents()
-	for _, id := range sortedArchiveIDs(retiredMakerParents) {
-		// The parent can already be cold in a repaired older checkpoint. Once
-		// its final hot child retires, the retained fee can follow that child.
-		if _, parentHot := e.s.Offers[id]; !parentHot && !activeMakerParents[id] {
-			if err := e.stageArchive("funding_fees", "offer/"+id); err != nil {
-				return err
-			}
-		}
-	}
 	for _, id := range sortedArchiveIDs(e.s.TowerJobs) {
 		job := e.s.TowerJobs[id]
 		if remaining == 0 {
@@ -278,14 +283,20 @@ func (e *Engine) compactArchive(ctx context.Context, swaps, towers map[chain.ID]
 		for _, kind := range []string{"order_records", "offer_towers", "funding_fees"} {
 			key := id
 			if kind == "funding_fees" {
-				// Recent children still project this exact fee. Retain only the
-				// fee, not a terminal parent's old reserved/publication state.
-				if activeMakerParents[id] {
-					continue
-				}
 				key = "offer/" + id
 			}
 			if err := e.stageArchive(kind, key); err != nil {
+				return err
+			}
+		}
+	}
+	for _, id := range sortedArchiveIDs(e.s.ParentOrders) {
+		parent := e.s.ParentOrders[id]
+		if remaining == 0 {
+			break
+		}
+		if parent != nil && !activeMakerParents[id] && (parent.RestoreHold || parent.Quantities.Closed || parent.Quantities.Available == 0) && parent.Quantities.Reserved == 0 && parent.Quantities.Committed == 0 {
+			if err := move("parent_orders", id); err != nil {
 				return err
 			}
 		}
@@ -337,7 +348,7 @@ func (e *Engine) compactArchive(ctx context.Context, swaps, towers map[chain.ID]
 		if remaining == 0 {
 			break
 		}
-		if delivery := e.s.Outbox[id]; delivery != nil && delivery.IsAck && delivery.Published {
+		if delivery := e.s.Outbox[id]; delivery != nil && (delivery.Retired || (delivery.IsAck && delivery.Published)) {
 			if err := move("outbox", id); err != nil {
 				return err
 			}
@@ -369,7 +380,7 @@ func (e *Engine) reactivateArchive() error {
 			var obligation string
 			switch record.Kind {
 			case "swaps":
-				if !recoverySwapInactive(e.s.Swaps[record.ID]) {
+				if !e.recoverySwapInactive(e.s.Swaps[record.ID]) {
 					obligation = "swap/" + record.ID
 				}
 			case "sends":

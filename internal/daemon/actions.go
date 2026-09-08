@@ -336,12 +336,15 @@ func LoadStoredActions(c Config) (WalletActions, error) {
 			return WalletActions{}, err
 		}
 		defer clear(password)
-		vault, err := storage.Open(path, password)
+		vault, err := storage.OpenReadOnly(path, password)
 		if err != nil {
 			return WalletActions{}, err
 		}
 		defer vault.Close()
 		if _, err = vault.Load(&e.s); err != nil {
+			return WalletActions{}, err
+		}
+		if err := ValidateVaultProtocolState(vault, &e.s); err != nil {
 			return WalletActions{}, err
 		}
 		stats, err := vault.ArchiveStats()
@@ -352,7 +355,7 @@ func LoadStoredActions(c Config) (WalletActions, error) {
 			return WalletActions{}, err
 		}
 	}
-	if e.s.Version != 0 && ((e.s.Version != 1 && e.s.Version != 2) || e.s.Network.Normalized() != c.Network.Normalized()) {
+	if e.s.Version != 0 && (e.s.Version != StateVersion || e.s.Network.Normalized() != c.Network.Normalized()) {
 		return WalletActions{}, errors.New("stored obligation state has an unsupported version or network")
 	}
 	if err := ValidateAutomationState(&e.s); err != nil {

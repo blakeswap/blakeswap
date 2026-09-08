@@ -9,7 +9,7 @@ final class AppModelTests: XCTestCase {
         var status = DaemonStatus(); status.name = "alice"; status.network = "regtest"
         XCTAssertTrue(model.acceptSnapshot(status,settings:settings,profile:"alice",generation:model.generation))
         model.recovery = "isolated synthetic recovery display"
-        model.setupWallet = Blakeswap_V1_FirstWallet()
+        model.setupWallet = Blakeswap_V2_FirstWallet()
         let old = model.generation
         model.lockNewActions()
         XCTAssertGreaterThan(model.generation,old)
@@ -54,7 +54,7 @@ final class AppModelTests: XCTestCase {
         let model = AppModel()
         var settings = AppSettings(); settings.activeNetwork = "mainnet"; settings.revision = 2; settings.onboardingStage = "backup"
         model.acceptSnapshot(nil, settings: settings, profile: "alice", generation: model.generation)
-        var first = Blakeswap_V1_FirstWallet(); first.settings = settings; first.recovery.mnemonic = "test fixture"
+        var first = Blakeswap_V2_FirstWallet(); first.settings = settings; first.recovery.mnemonic = "test fixture"
         model.setupWallet = first
         let pending = model.generation
         settings.revision = 3; settings.onboardingStage = "connect"
@@ -109,7 +109,7 @@ extension AppModelTests {
             XCTAssertFalse(status.canSell(chain))
             XCTAssertNotNil(status.offerValidation(sell: chain, sellAmount: "100000", buyAmount: "100000"))
             status.balances[chain] = 500_000
-            var funds = Blakeswap_V1_ChainBalance()
+            var funds = Blakeswap_V2_ChainBalance()
             funds.unlockedConfirmed = 101_999
             status.funds[chain] = funds
             XCTAssertFalse(status.canSell(chain))
@@ -148,7 +148,7 @@ extension AppModelTests {
     func testCustomWalletSelectionSurvivesRenameAndNetworkSwitch() {
         let model = AppModel()
         var settings = AppSettings(); settings.activeNetwork = "mainnet"; settings.revision = 1
-        var wallet = Blakeswap_V1_WalletProfile(); wallet.id = "wallet-123"; wallet.name = "Savings"
+        var wallet = Blakeswap_V2_WalletProfile(); wallet.id = "wallet-123"; wallet.name = "Savings"
         settings.wallets = [wallet]
         model.selectProfile(wallet.id)
         var status = DaemonStatus(); status.name = wallet.id; status.network = "mainnet"
@@ -166,7 +166,7 @@ extension AppModelTests {
 extension AppModelTests {
     func testPositiveTotalWithNoUnlockedFundsCannotCreateOffer() {
         var status = DaemonStatus(); status.pubkey = "alice"; status.balances["btc"] = 500_000
-        var funds = Blakeswap_V1_ChainBalance(); funds.totalConfirmed = 500_000; funds.reservedConfirmed = 500_000
+        var funds = Blakeswap_V2_ChainBalance(); funds.totalConfirmed = 500_000; funds.reservedConfirmed = 500_000
         status.funds["btc"] = funds
         XCTAssertFalse(status.canSell("btc"))
         XCTAssertNotNil(status.offerValidation(sell: "btc", sellAmount: "100000", buyAmount: "100000"))
@@ -188,7 +188,7 @@ extension AppModelTests {
     func testOfferEntryAllowsReviewOfAffordableManualFee() {
         var status = DaemonStatus(); status.pubkey = "maker"; status.fundingFee = 2_000
         for chain in ["btc", "blake"] {
-            var funds = Blakeswap_V1_ChainBalance(); funds.unlockedConfirmed = 100_000
+            var funds = Blakeswap_V2_ChainBalance(); funds.unlockedConfirmed = 100_000
             status.funds[chain] = funds
             XCTAssertFalse(status.canReviewOffer(chain))
             funds.unlockedConfirmed = 101_000; status.funds[chain] = funds
@@ -208,7 +208,7 @@ extension AppModelTests {
         defer { try? FileManager.default.removeItem(at: directory) }
         let model = AppModel(daemon: DaemonProcess(root: directory.path, security: isolatedNativeSecurity()))
         var settings = AppSettings(); settings.activeNetwork = "regtest"; settings.revision = 1
-        var alice = Blakeswap_V1_WalletProfile(); alice.id = "alice"
+        var alice = Blakeswap_V2_WalletProfile(); alice.id = "alice"
         var bob = alice; bob.id = "bob"; settings.wallets = [alice, bob]
         model.acceptSnapshot(nil, settings: settings, profile: "alice", generation: model.generation)
         model.openMonitoring(AlertDestination(network: "regtest", wallet: "bob", kind: "swap", object: "swap"))

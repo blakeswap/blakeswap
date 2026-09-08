@@ -149,7 +149,7 @@ func TestRestoredConfirmedPaymentStopsBeforeUnavailableSibling(t *testing.T) {
 func TestRestoredTowerRefundObservesOutcomeWithoutPublishing(t *testing.T) {
 	for _, sell := range []chain.ID{chain.BTC, chain.Blake} {
 		t.Run(string(sell), func(t *testing.T) {
-			e, s, b, _ := isolatedFixtureSell(t, "maker", sell)
+			e, s, b, _ := isolatedTowerFixtureSell(t, sell)
 			tower := e.ownTower()
 			s.Protection = &tower
 			target := s.Short
@@ -161,7 +161,6 @@ func TestRestoredTowerRefundObservesOutcomeWithoutPublishing(t *testing.T) {
 				t.Fatal(err)
 			}
 			state := &TowerJob{Job: job, FundingSeen: true}
-			e.s.Swaps = map[string]*Swap{}
 			e.s.TowerJobs = map[string]*TowerJob{job.ID: state}
 			markRestored(t, e)
 			tx, err := contract.Parse(job.Templates[0])

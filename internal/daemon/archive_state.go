@@ -45,6 +45,9 @@ type ArchiveAnchor struct {
 }
 
 func (s State) ValidateArchiveCheckpoint(stats storage.ArchiveStats) error {
+	if err := ValidateStateVersion(&s); err != nil {
+		return err
+	}
 	if err := ValidateHistoryCoverage(&s); err != nil {
 		return err
 	}
@@ -75,6 +78,7 @@ func (s State) ValidateArchiveCheckpoint(stats storage.ArchiveStats) error {
 // Recovery quarantine has separate names so archived offers never acquire live
 // publication authority when a restored record is queried or reactivated.
 var archiveFields = map[string][]string{
+	"parent_orders": {"ParentOrders"}, "fill_records": {"FillRecords"}, "fill_keys": {"FillKeys"},
 	"own_public_versions": {"OwnPublicVersions"},
 	"sends":               {"Sends"}, "swaps": {"Swaps"}, "tower_jobs": {"TowerJobs"},
 	"offers": {"Offers"}, "order_records": {"OrderRecords"}, "seen": {"Seen"}, "seen_semantics": {"SeenSemantics"},
@@ -141,6 +145,9 @@ func mergeArchiveRecord(state *State, record storage.ArchiveRecord) error {
 // ownership and invalid record categories before restore or export publication.
 // Desktop then runs the same full State validators used for unarchived backups.
 func CompleteState(state State) (State, error) {
+	if err := ValidateStateVersion(&state); err != nil {
+		return State{}, err
+	}
 	raw, err := json.Marshal(state)
 	if err != nil {
 		return State{}, err
@@ -156,6 +163,12 @@ func CompleteState(state State) (State, error) {
 		}
 	}
 	complete.Archive = nil
+	if err := ValidateProtocolState(&complete); err != nil {
+		return State{}, err
+	}
+	if err := ValidateCompleteFillState(&complete); err != nil {
+		return State{}, err
+	}
 	if complete.Capacity != nil {
 		complete.Capacity.Archived = storage.ArchiveStats{Kinds: map[string]uint64{}}
 	}
@@ -163,13 +176,16 @@ func CompleteState(state State) (State, error) {
 }
 
 func ValidateArchiveState(state State) error {
+	if err := ValidateProtocolState(&state); err != nil {
+		return err
+	}
 	if len(state.Archive) == 0 {
 		if state.Capacity != nil && state.Capacity.Archived.Count != 0 {
 			return errors.New("backup omits its declared archived recovery records")
 		}
-		return nil
+		return ValidateCompleteFillState(&state)
 	}
-	if state.Version != 2 || state.Capacity == nil {
+	if state.Capacity == nil {
 		return errors.New("unsupported archived wallet state")
 	}
 	stats := storage.ArchiveStats{Kinds: map[string]uint64{}}
@@ -202,13 +218,19 @@ func ValidateArchiveState(state State) error {
 // VaultSnapshot lets storage install imported archive records in the same
 // transaction as their active checkpoint without importing daemon types.
 func (s State) VaultSnapshot() (any, []storage.ArchiveRecord, error) {
+	if err := ValidateProtocolState(&s); err != nil {
+		return nil, nil, err
+	}
 	if len(s.Archive) == 0 {
+		if err := ValidateCompleteFillState(&s); err != nil {
+			return nil, nil, err
+		}
 		return s, nil, nil
 	}
 	if _, err := CompleteState(s); err != nil {
 		return nil, nil, err
 	}
-	if s.Version != 2 || s.Capacity == nil {
+	if s.Capacity == nil {
 		return nil, nil, errors.New("archive requires a versioned capacity checkpoint")
 	}
 	records := s.Archive
@@ -225,10 +247,13 @@ func LoadCompleteState(vault *storage.Vault) (State, error) {
 	if err != nil {
 		return State{}, err
 	}
+	if err := ValidateStateVersion(&state); err != nil {
+		return State{}, err
+	}
 	if len(state.Archive) != 0 {
 		return State{}, errors.New("vault contains embedded and bucket archive ownership")
 	}
-	if stats.Count > 0 && (state.Version != 2 || state.Capacity == nil) {
+	if stats.Count > 0 && state.Capacity == nil {
 		return State{}, errors.New("archive lacks its active checkpoint")
 	}
 	state.Archive = records
@@ -265,6 +290,9 @@ func (e *Engine) archivedValue(kind, id string, out any) (bool, error) {
 // ownership overlap without assembling lifetime history. The returned partial
 // state carries the wallet/network context for desktop structural validators.
 func ValidateArchiveRecordAgainstState(active State, record storage.ArchiveRecord) (State, error) {
+	if err := ValidateStateVersion(&active); err != nil {
+		return State{}, err
+	}
 	group, err := archiveMap(&active, record.Kind, false)
 	if err != nil {
 		return State{}, err
@@ -274,6 +302,9 @@ func ValidateArchiveRecordAgainstState(active State, record storage.ArchiveRecor
 	}
 	partial := State{Version: active.Version, Network: active.Network, Mnemonic: active.Mnemonic}
 	if err := mergeArchiveRecord(&partial, record); err != nil {
+		return State{}, err
+	}
+	if err := ValidateProtocolState(&partial); err != nil {
 		return State{}, err
 	}
 	return partial, nil

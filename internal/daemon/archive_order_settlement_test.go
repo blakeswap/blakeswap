@@ -3,7 +3,6 @@ package daemon
 import (
 	"context"
 	"encoding/json"
-	"fiatjaf.com/nostr"
 	"github.com/blakeswap/blakeswap/internal/chain"
 	"github.com/blakeswap/blakeswap/internal/contract"
 	"github.com/blakeswap/blakeswap/internal/protocol"
@@ -16,24 +15,7 @@ func TestArchiveActualRefundOrderSurvivesCoreArchival(t *testing.T) {
 	e.Config.Name = "funded-order"
 	e.Config.Mode = "trader"
 	offer := swap.Terms.Offer()
-	offer.Maker = e.identity.Public().Hex()
-	open, err := e.signOffer(offer, nostr.Now())
-	if err != nil {
-		t.Fatal(err)
-	}
-	swap.Request.OfferEvent = open
-	terms, err := protocol.NewTerms(swap.Request, swap.Terms.MakerKeys, swap.Terms.StartHeights)
-	if err != nil {
-		t.Fatal(err)
-	}
-	swap.Terms = &terms
-	offer.Status = "reserved"
-	offer.Reservation = swap.ID
-	reserved, err := e.signOffer(offer, nostr.Now())
-	if err != nil {
-		t.Fatal(err)
-	}
-	e.stageOffer(offer, reserved)
+	reserved := stageArchiveParent(t, e, swap)
 	e.s.Outbox = map[string]*Delivery{}
 	swap.Stage = "waiting for refunds"
 	all := map[chain.ID]map[string]chain.Observation{chain.BTC: {}, chain.Blake: {}}
@@ -154,24 +136,7 @@ func TestArchiveNormalCompletedOrderStillArchivesAndRecreates(t *testing.T) {
 	e.Config.Name = "funded-order"
 	e.Config.Mode = "trader"
 	offer := swap.Terms.Offer()
-	offer.Maker = e.identity.Public().Hex()
-	open, err := e.signOffer(offer, nostr.Now())
-	if err != nil {
-		t.Fatal(err)
-	}
-	swap.Request.OfferEvent = open
-	terms, err := protocol.NewTerms(swap.Request, swap.Terms.MakerKeys, swap.Terms.StartHeights)
-	if err != nil {
-		t.Fatal(err)
-	}
-	swap.Terms = &terms
-	offer.Status = "reserved"
-	offer.Reservation = swap.ID
-	reserved, err := e.signOffer(offer, nostr.Now())
-	if err != nil {
-		t.Fatal(err)
-	}
-	e.stageOffer(offer, reserved)
+	stageArchiveParent(t, e, swap)
 	e.s.Outbox = map[string]*Delivery{}
 	swap.Stage = "waiting for refunds"
 	all := map[chain.ID]map[string]chain.Observation{chain.BTC: {}, chain.Blake: {}}

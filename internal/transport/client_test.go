@@ -73,7 +73,7 @@ func TestPullRelayAuthentication(t *testing.T) {
 					return
 				}
 				if tc.partial {
-					event, err := Wrap(nostr.Generate(), key.Public(), Message{Version: 1, ID: RandomID(), Type: "test"})
+					event, err := Wrap(nostr.Generate(), key.Public(), Message{Version: MessageVersion, ID: RandomID(), Type: "test"})
 					if err != nil {
 						t.Error(err)
 						return

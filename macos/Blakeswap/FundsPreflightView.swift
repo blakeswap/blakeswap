@@ -18,7 +18,7 @@ struct FundsPreflightView: View {
     let chain: String
     let amount: Int64
     let fee: Int64
-    var inputs: [Blakeswap_V1_Outpoint] = []
+    var inputs: [Blakeswap_V2_Outpoint] = []
     @Binding var ready: FundsCheckKey?
     @State private var message = "Checking candidate funds…"
     @State private var retry = 0
@@ -38,11 +38,11 @@ struct FundsPreflightView: View {
             guard amount >= 600, fee > 0 else { message = "Enter an amount and fee to check funds."; return }
             message = chain == "btc" ? "Checking BTC candidate inputs and replay ancestry…" : "Checking unlocked confirmed candidate inputs…"
             do {
-                var request = Blakeswap_V1_FundsPreflightRequest()
+                var request = Blakeswap_V2_FundsPreflightRequest()
                 request.chain = chain; request.amount = amount; request.fee = fee
                 request.inputs = inputs; request.expectedNetwork = checked.network
                 let raw = try await DaemonRPC.call(root: model.root, profile: checked.profile, method: "wallet.preflight", payload: request.jsonUTF8Data())
-                let result = try Blakeswap_V1_FundsPreflight(serializedBytes: raw)
+                let result = try Blakeswap_V2_FundsPreflight(serializedBytes: raw)
                 guard !Task.isCancelled, checked == key, result.wallet == checked.profile, result.network == checked.network else { return }
                 message = result.message
                 ready = result.sufficient && ["proven", "not_applicable"].contains(result.state) ? checked : nil

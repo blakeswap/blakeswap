@@ -13,32 +13,77 @@ import (
 	"golang.org/x/crypto/scrypt"
 	"os"
 	"path/filepath"
+	"sync"
 	"time"
 )
 
 var bucket = []byte("vault-v1")
 
 type Vault struct {
-	path       string
-	db         *bolt.DB
-	aead       cipher.AEAD
-	archiveKey []byte
+	privateMu      sync.Mutex
+	privateClosed  bool
+	privateIndexes []*PrivateIndex
+	closeOnce      sync.Once
+	closeErr       error
+	path           string
+	db             *bolt.DB
+	aead           cipher.AEAD
+	archiveKey     []byte
 }
 
 func Open(path string, password []byte) (*Vault, error) {
+	return openVault(path, password, false, true)
+}
+
+// OpenReadOnly authenticates an existing vault without creating directories,
+// buckets, salts or empty state. It is suitable for source-preserving format
+// preflight and offline projections; callers must revalidate after acquiring a
+// writer before activating a profile that could have changed in between.
+func OpenReadOnly(path string, password []byte) (*Vault, error) {
+	return openVault(path, password, true, false)
+}
+
+// OpenExisting acquires exclusive ownership of an authenticated existing vault
+// without initializing or writing it. The caller can reject its decoded format
+// without changing source bytes, including after a separate read-only preflight.
+func OpenExisting(path string, password []byte) (*Vault, error) {
+	return openVault(path, password, false, false)
+}
+
+func openVault(path string, password []byte, readOnly, initializeMissing bool) (*Vault, error) {
 	if len(password) < 16 {
 		return nil, errors.New("vault password must be at least 16 bytes")
 	}
-	if e := os.MkdirAll(filepath.Dir(path), 0700); e != nil {
-		return nil, e
+	if initializeMissing {
+		if e := os.MkdirAll(filepath.Dir(path), 0700); e != nil {
+			return nil, e
+		}
 	}
-	db, e := bolt.Open(path, 0600, &bolt.Options{Timeout: time.Second})
+	options := &bolt.Options{Timeout: time.Second, ReadOnly: readOnly}
+	openingSource := true
+	if !readOnly && !initializeMissing {
+		// bbolt otherwise creates an absent/empty file and may commit a freelist
+		// conversion while opening. Both precede the caller's format validation.
+		options.OpenFile = func(name string, flag int, mode os.FileMode) (*os.File, error) {
+			if openingSource {
+				return openExistingLocked(name, flag, mode)
+			}
+			// bbolt retains this hook for CopyFile's destination and WriteTo's
+			// separate source reader. Neither is another writer acquisition.
+			return os.OpenFile(name, flag, mode)
+		}
+		options.NoFreelistSync = true
+	}
+	db, e := bolt.Open(path, 0600, options)
+	// The hook cannot be called by a published Vault until after this point.
+	// Its initial existing-file lock remains owned by db for its full lifetime.
+	openingSource = false
 	if e != nil {
 		return nil, e
 	}
 	fail := func(err error) (*Vault, error) { db.Close(); return nil, err }
 	var salt []byte
-	e = db.Update(func(tx *bolt.Tx) error {
+	initialize := func(tx *bolt.Tx) error {
 		b, e := tx.CreateBucketIfNotExists(bucket)
 		if e != nil {
 			return e
@@ -55,7 +100,22 @@ func Open(path string, password []byte) (*Vault, error) {
 			return errors.New("corrupt salt")
 		}
 		return nil
-	})
+	}
+	if !initializeMissing {
+		e = db.View(func(tx *bolt.Tx) error {
+			b := tx.Bucket(bucket)
+			if b == nil {
+				return errors.New("existing file has no encrypted vault")
+			}
+			salt = append([]byte(nil), b.Get([]byte("salt"))...)
+			if len(salt) != 32 {
+				return errors.New("existing vault has no valid salt")
+			}
+			return nil
+		})
+	} else {
+		e = db.Update(initialize)
+	}
 	if e != nil {
 		return fail(e)
 	}
@@ -81,10 +141,16 @@ func Open(path string, password []byte) (*Vault, error) {
 		return fail(errors.New("vault password incorrect or state corrupted"))
 	}
 	if !exists {
+		if !initializeMissing {
+			return fail(errors.New("existing vault has no authenticated state"))
+		}
 		if e = v.Save(map[string]any{}); e != nil {
 			return fail(e)
 		}
 	}
+	// Authentication is complete. This only controls future caller-requested
+	// commits; rejecting the decoded format and closing still performs no write.
+	db.NoFreelistSync = false
 	return v, nil
 }
 func (v *Vault) Load(out any) (bool, error) {
@@ -120,7 +186,20 @@ func (v *Vault) Save(state any) error {
 	_, err := v.CommitArchive(state, ArchiveBatch{Put: records}, 0)
 	return err
 }
-func (v *Vault) Close() error { return v.db.Close() }
+func (v *Vault) Close() error {
+	v.closeOnce.Do(func() {
+		v.privateMu.Lock()
+		v.privateClosed = true
+		indexes := v.privateIndexes
+		v.privateIndexes = nil
+		v.privateMu.Unlock()
+		for _, index := range indexes {
+			v.closeErr = errors.Join(v.closeErr, index.Close())
+		}
+		v.closeErr = errors.Join(v.closeErr, v.db.Close())
+	})
+	return v.closeErr
+}
 func (v *Vault) Backup(path string) error {
 	return v.db.View(func(tx *bolt.Tx) error { return tx.CopyFile(path, 0600) })
 }

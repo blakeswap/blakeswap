@@ -94,6 +94,22 @@ func (e *Engine) putActivity(next Activity, backfill bool) bool {
 	next.Version = 1
 	next.Wallet = e.Config.Name
 	next.Network = e.Config.Network
+	// Initial projection and replay use the same canonical set and amount order.
+	// Template order alone must not create a new outcome on the next save.
+	next.Variants = mergeActivityIDs(previous.Variants, next.Variants)
+	values := map[string]ActivityVariant{}
+	for _, v := range previous.VariantAmounts {
+		values[v.TxID] = v
+	}
+	for _, v := range next.VariantAmounts {
+		values[v.TxID] = v
+	}
+	next.VariantAmounts = nil
+	for _, id := range next.Variants {
+		if v, ok := values[id]; ok {
+			next.VariantAmounts = append(next.VariantAmounts, v)
+		}
+	}
 	if exists {
 		// Retain the recorded origin after a portable import assigns a new local
 		// profile. API/CSV copies bind their wallet field to the current view.
@@ -101,23 +117,9 @@ func (e *Engine) putActivity(next Activity, backfill bool) bool {
 			next.Wallet = previous.Wallet
 		}
 		next.CreatedAt, next.CreatedSource, next.RecordedAt = previous.CreatedAt, previous.CreatedSource, previous.RecordedAt
-		next.Variants = mergeActivityIDs(previous.Variants, next.Variants)
 		next.History = previous.History
 		if next.Observations == nil {
 			next.Observations = previous.Observations
-		}
-		values := map[string]ActivityVariant{}
-		for _, v := range previous.VariantAmounts {
-			values[v.TxID] = v
-		}
-		for _, v := range next.VariantAmounts {
-			values[v.TxID] = v
-		}
-		next.VariantAmounts = nil
-		for _, id := range next.Variants {
-			if v, ok := values[id]; ok {
-				next.VariantAmounts = append(next.VariantAmounts, v)
-			}
 		}
 	} else {
 		next.RecordedAt = now
@@ -249,25 +251,29 @@ func (e *Engine) syncActivity() {
 		if json.Unmarshal([]byte(s.Request.OfferEvent.Content), &o) != nil {
 			continue
 		}
-		paid, principal, received, receive := o.Sell, o.SellAmount, o.Sell.Other(), o.BuyAmount
+		buy, err := protocol.RoundedBuy(o.SellAmount, o.BuyAmount, s.Request.Quantity)
+		if err != nil {
+			continue
+		}
+		paid, principal, received, receive := o.Sell, s.Request.Quantity, o.Sell.Other(), buy
 		if s.Role == "taker" {
 			paid, principal, received, receive = received, receive, paid, principal
 		}
 		group := activityID("swap", id)
 		e.putActivity(Activity{ID: group, GroupID: group, Kind: "swap", Chain: paid, Direction: "info", Principal: principal, CounterChain: received, CounterAmount: receive, OrderID: o.ID, SwapID: id, LocalStatus: s.Stage, Status: s.Stage, Label: "Swap " + s.Role}, backfill)
 		own, incoming, ownRaw, ownSent, ownSpend, incomingSpend := s.Short, s.Long, s.ShortFunding, s.ShortSent, s.ShortSpend, s.LongSpend
-		owner := "offer/" + o.ID
+		owner := "swap/" + id
 		if s.Role == "taker" {
 			own, incoming, ownRaw, ownSent, ownSpend, incomingSpend = s.Long, s.Short, s.LongFunding, s.LongSent, s.LongSpend, s.ShortSpend
-			owner = "swap/" + id
 		}
 		if ownRaw != "" {
 			status := "prepared"
 			if ownSent {
 				status = "broadcast"
 			}
-			fee := e.fundingFee(owner)
-			e.putActivity(Activity{ID: group + "/funding", GroupID: group, Kind: "swap_funding", Chain: own.Chain, Direction: "outgoing", Movement: true, Amount: own.Amount + fee, Principal: own.Amount, Fee: fee, FeeKnown: true, FeePayer: "wallet", OrderID: o.ID, SwapID: id, TxID: own.TxID, Variants: []string{own.TxID}, Outpoints: []CoinOutpoint{{TxID: own.TxID, Vout: own.Vout}}, LocalStatus: status, Status: status, Label: "Swap funding"}, backfill)
+			selection, known := e.s.FundingFees[owner]
+			fee := selection.FundingFee
+			e.putActivity(Activity{ID: group + "/funding", GroupID: group, Kind: "swap_funding", Chain: own.Chain, Direction: "outgoing", Movement: true, Amount: own.Amount + fee, Principal: own.Amount, Fee: fee, FeeKnown: known && fee > 0, FeePayer: "wallet", OrderID: o.ID, SwapID: id, TxID: own.TxID, Variants: []string{own.TxID}, Outpoints: []CoinOutpoint{{TxID: own.TxID, Vout: own.Vout}}, LocalStatus: status, Status: status, Label: "Swap funding"}, backfill)
 		}
 		claimRaw := append([]string{}, s.SelfClaims...)
 		if s.SelfClaim != "" {

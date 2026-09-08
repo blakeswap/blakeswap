@@ -10,7 +10,7 @@ import (
 	"time"
 
 	"fiatjaf.com/nostr"
-	pb "github.com/blakeswap/blakeswap/api/gen/blakeswap/v1"
+	pb "github.com/blakeswap/blakeswap/api/gen/blakeswap/v2"
 	"github.com/blakeswap/blakeswap/internal/chain"
 	"github.com/blakeswap/blakeswap/internal/daemon"
 	"github.com/blakeswap/blakeswap/internal/protocol"
@@ -25,7 +25,7 @@ func TestImportedAutomationNeverResumesOldSpendingAuthority(t *testing.T) {
 	for _, format := range []string{"legacy", "portable"} {
 		t.Run(format, func(t *testing.T) {
 			m := setupManager(t)
-			state := daemon.State{Version: 1, Network: chain.Regtest, Mnemonic: "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about"}
+			state := daemon.State{Version: daemon.StateVersion, Network: chain.Regtest, Mnemonic: "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about"}
 			id := strings.Repeat("ab", 32)
 			keys, err := wallet.FromMnemonic(state.Mnemonic)
 			if err != nil {
@@ -91,7 +91,7 @@ func TestAutomationMalformedBackupRejectedBeforeInstallation(t *testing.T) {
 		for _, mode := range []string{"nil-policy", "nil-charge-map", "nil-charge", "strategy-empty-reference"} {
 			t.Run(format+"/"+mode, func(t *testing.T) {
 				m := setupManager(t)
-				state := daemon.State{Version: 1, Network: chain.Regtest, Mnemonic: "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about", Automations: map[string]*daemon.AutomationPolicy{"policy": {Config: daemon.AutomationConfig{ID: "policy"}, Charges: map[string]*daemon.AutomationCharge{}}}}
+				state := daemon.State{Version: daemon.StateVersion, Network: chain.Regtest, Mnemonic: "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about", Automations: map[string]*daemon.AutomationPolicy{"policy": {Config: daemon.AutomationConfig{ID: "policy"}, Charges: map[string]*daemon.AutomationCharge{}}}}
 				switch mode {
 				case "nil-policy":
 					state.Automations["policy"] = nil

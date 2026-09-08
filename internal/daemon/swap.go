@@ -20,7 +20,7 @@ func (e *Engine) makeJob(s *Swap, c contract.HTLC, kind string, observe *contrac
 	if err != nil {
 		return protocol.Job{}, err
 	}
-	job := protocol.Job{Network: e.Config.Network, SwapID: s.ID, Owner: e.identity.Public().Hex(), TermsHash: protocol.Digest(s.Terms), Kind: kind, Target: c, Observe: observe, ScanFrom: 1, Lock: lock, BPS: s.protection().BPS, Payout: hex.EncodeToString(e.scripts[c.Chain]), TowerScript: hex.EncodeToString(towerScript)}
+	job := protocol.Job{Version: protocol.Version, Network: e.Config.Network, SwapID: s.ID, Owner: e.identity.Public().Hex(), TermsHash: protocol.Digest(s.Terms), Kind: kind, Target: c, Observe: observe, ScanFrom: 1, Lock: lock, BPS: s.protection().BPS, Payout: hex.EncodeToString(e.scripts[c.Chain]), TowerScript: hex.EncodeToString(towerScript)}
 	if e.Config.Network != chain.Regtest {
 		job.ScanFrom = s.Terms.StartHeights[c.Chain]
 		if observe != nil {
@@ -38,6 +38,9 @@ func (e *Engine) makeJob(s *Swap, c contract.HTLC, kind string, observe *contrac
 	return job, job.Validate(s.protection().Scripts, job.BPS)
 }
 func (e *Engine) prepare(s *Swap, own contract.HTLC) error {
+	if err := e.retainFundingParents(s); err != nil {
+		return err
+	}
 	key, err := e.swapKey(own.Chain, s.ID)
 	if err != nil {
 		return err
@@ -73,7 +76,7 @@ func (e *Engine) prepare(s *Swap, own contract.HTLC) error {
 }
 func towerReady(s *Swap) bool {
 	for _, job := range s.Jobs {
-		if receipt, ok := s.Receipts[job.ID]; !ok || receipt.Digest != protocol.Digest(job) {
+		if receipt, ok := s.Receipts[job.ID]; !ok || receipt.Validate() != nil || receipt.Digest != protocol.Digest(job) {
 			return false
 		}
 	}
@@ -84,6 +87,9 @@ func observation(all map[chain.ID]map[string]chain.Observation, c contract.HTLC)
 	return o, ok
 }
 func (e *Engine) advanceSwap(ctx context.Context, s *Swap, all map[chain.ID]map[string]chain.Observation) error {
+	if e.fatal != nil {
+		return e.fatal
+	}
 	if e.restoredSwap(s.ID) {
 		return e.advanceRestoredSwap(ctx, s, all)
 	}
@@ -98,10 +104,29 @@ func (e *Engine) advanceSwap(ctx context.Context, s *Swap, all map[chain.ID]map[
 	if err := s.Terms.Validate(); err != nil {
 		return err
 	}
+	if s.Role == "maker" {
+		if child := e.s.FillRecords[s.ID]; child != nil && child.FundingDisabled && !child.Allocation.EverCommitted {
+			e.prepareObservedSpends(ctx, s, all)
+			return e.observeRetiredMaker(s, all)
+		}
+	}
+	// Retain any already-proven settlement contradiction before ancestry IO.
+	if err := e.reconcileFillContradiction(s, all); err != nil {
+		if _, proofOnly := err.(observationEvidenceError); !proofOnly {
+			return err
+		}
+	}
+	ancestryErr := e.refreshFundingAncestry(ctx, s)
+	if ancestryErr != nil && (!errors.Is(ancestryErr, errFundingAncestry) || !pendingAncestryPublication(s, all) || !e.fresh(chain.BTC) || !e.fresh(chain.Blake) || all[chain.BTC] == nil || all[chain.Blake] == nil) {
+		return e.holdFundingAncestry(ctx, s, all, ancestryErr)
+	}
+	if err := e.reconcileObservedSwap(ctx, s, all); err != nil {
+		return e.holdObservedSpend(ctx, s, all, err)
+	}
 	if (s.Stage == "expired before maker funding" && s.ShortFunding == "") || (s.Stage == "expired before funding" && s.LongFunding == "") {
 		return nil // Safe expiry is final even if a reorg moves the clock back.
 	}
-	if !e.fresh(chain.BTC) || !e.fresh(chain.Blake) {
+	if !e.fresh(chain.BTC) || !e.fresh(chain.Blake) || all[chain.BTC] == nil || all[chain.Blake] == nil {
 		return e.advanceIsolatedSwap(ctx, s, all)
 	}
 	// Reconcile prepared transactions even in older snapshots whose broadcast
@@ -135,6 +160,9 @@ func (e *Engine) advanceSwap(ctx context.Context, s *Swap, all map[chain.ID]map[
 				return err
 			}
 		}
+	}
+	if ancestryErr != nil && !pendingAncestryPublication(s, all) {
+		return e.holdFundingAncestry(ctx, s, all, ancestryErr)
 	}
 	longObs, longSpent := observation(all, s.Long)
 	shortObs, shortSpent := observation(all, s.Short)
@@ -172,25 +200,17 @@ func (e *Engine) advanceSwap(ctx context.Context, s *Swap, all map[chain.ID]map[
 		_, lc := contract.ExtractSecret(s.Long, longObs.Tx)
 		_, sc := contract.ExtractSecret(s.Short, shortObs.Tx)
 		if lc && sc {
+			if err := e.settleMakerFill(s, FillFilled); err != nil {
+				return err
+			}
 			s.Stage = "completed"
 			e.recordStrategyExposure(s)
-			if s.Role == "maker" {
-				event := e.s.Offers[s.Terms.Offer().ID]
-				o := s.Terms.Offer()
-				if event.Content != "" {
-					current, err := protocol.DecodeOffer(event, int64(event.CreatedAt))
-					if err == nil && current.Status != "filled" {
-						o.Status = "filled"
-						o.Reservation = s.ID
-						if err = e.publishOffer(o); err != nil {
-							return err
-						}
-					}
-				}
-			}
 			return nil
 		}
 		if !lc && !sc {
+			if err := e.settleMakerFill(s, FillReleased); err != nil {
+				return err
+			}
 			s.Stage = "refunded"
 			e.recordStrategyExposure(s)
 			return nil
@@ -208,6 +228,9 @@ func (e *Engine) advanceSwap(ctx context.Context, s *Swap, all map[chain.ID]map[
 	}
 	if ownSpent && ownObs.Confirmations >= e.Config.Network.Confirmations() {
 		if _, claimed := contract.ExtractSecret(own, ownObs.Tx); !claimed && (incoming.TxID == "" || !incomingSpent) {
+			if err := e.settleMakerFill(s, FillReleased); err != nil {
+				return err
+			}
 			s.Stage = "refunded"
 			return nil
 		}
@@ -222,7 +245,9 @@ func (e *Engine) advanceSwap(ctx context.Context, s *Swap, all map[chain.ID]map[
 	// Construct and durably store funding/refunds before publishing any spend.
 	if s.Role == "taker" && s.LongFunding == "" {
 		if err := e.gate(s.Terms, "fund-long"); err != nil {
-			s.Stage = "expired before funding"
+			if protocol.FundingWindowClosed(err) {
+				s.Stage = "expired before funding"
+			}
 			return err
 		}
 		tx, err := e.fundReserved(ctx, s.Long, "swap/"+s.ID)
@@ -238,14 +263,8 @@ func (e *Engine) advanceSwap(ctx context.Context, s *Swap, all map[chain.ID]map[
 	}
 	if s.Role == "maker" && s.ShortFunding == "" {
 		if err := e.gate(s.Terms, "fund-short"); err != nil {
-			s.Stage = "expired before maker funding"
-			offer := s.Terms.Offer()
-			delete(e.s.CoinReservations, "offer/"+offer.ID)
-			if _, ok := e.s.Offers[offer.ID]; ok {
-				offer.Status, offer.Reservation = "cancelled", s.ID
-				if err := e.publishOffer(offer); err != nil {
-					return err
-				}
+			if protocol.FundingWindowClosed(err) {
+				return e.retireUnfundedMaker(s, err)
 			}
 			return err
 		}
@@ -257,8 +276,11 @@ func (e *Engine) advanceSwap(ctx context.Context, s *Swap, all map[chain.ID]map[
 			s.Stage = "awaiting taker funding"
 			return nil
 		}
-		tx, err := e.fundReserved(ctx, s.Short, "offer/"+s.Terms.Offer().ID)
+		tx, err := e.fundReserved(ctx, s.Short, "swap/"+s.ID)
 		if err != nil {
+			return err
+		}
+		if err := e.commitMakerFill(s, tx); err != nil {
 			return err
 		}
 		s.ShortFunding = contract.Hex(tx)

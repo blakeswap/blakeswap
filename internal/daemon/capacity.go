@@ -39,6 +39,12 @@ func (e *Engine) activeWork(kind string) int {
 	count := 0
 	if kind == "" || kind == "offer" {
 		for id, event := range e.s.Offers {
+			if parent := e.s.ParentOrders[id]; parent != nil {
+				if !parent.RestoreHold && !parent.Quantities.Closed && parent.Quantities.Available > 0 && parent.Offer.Expires > time.Now().Unix() {
+					count++
+				}
+				continue
+			}
 			var offer protocol.Offer
 			if json.Unmarshal([]byte(event.Content), &offer) != nil || (offer.Status == "reserved" && (len(e.s.OrderRecords[id].Settlements) == 0 || e.finishedOrderRecord(id, e.s.OrderRecords[id]) == "")) || (offer.Status == "open" && offer.Expires > time.Now().Unix()) {
 				count++
@@ -162,5 +168,10 @@ func ArchiveMonitoring(state State) ArchiveMonitoringState {
 	return result
 }
 func (e *Engine) archivedObligationHeld(id string) bool {
+	if len(id) > 5 && id[:5] == "swap/" {
+		if s := e.s.Swaps[id[5:]]; s != nil && s.FundingAncestryHeld {
+			return true
+		}
+	}
 	return e.s.Capacity != nil && (e.s.Capacity.Reactivating || e.s.Capacity.Invalidated[id]) || e.s.Recovery != nil && e.s.Recovery.InvalidatedSettlements[id]
 }

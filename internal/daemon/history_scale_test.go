@@ -15,9 +15,7 @@ import (
 	"testing"
 	"time"
 
-	"fiatjaf.com/nostr"
 	"github.com/blakeswap/blakeswap/internal/chain"
-	"github.com/blakeswap/blakeswap/internal/protocol"
 	"github.com/blakeswap/blakeswap/internal/storage"
 )
 
@@ -37,109 +35,8 @@ func TestHistoryPhysicalQueriesAndSettlementProgress(t *testing.T) {
 		records = n
 	}
 	ctx := context.Background()
-	e, b, request := sendFixture(t)
-	e.Config.Name = "physical-query"
-	e.s.Network = chain.Regtest
-	var broadcasts atomic.Uint64
-	var expectedRaw string
-	b.broadcast = func(raw string) (string, error) {
-		if expectedRaw != "" && raw != expectedRaw {
-			return "", fmt.Errorf("saved settlement bytes changed")
-		}
-		var saved State
-		if _, err := e.vault.Load(&saved); err != nil {
-			return "", err
-		}
-		if saved.Sends[request.ID] == nil || saved.Sends[request.ID].Raw != raw {
-			return "", fmt.Errorf("settlement retry was not durably retained")
-		}
-		broadcasts.Add(1)
-		return "", nil
-	}
-	raw, _ := json.Marshal(request)
-	if _, err := e.Command(ctx, Request{Method: "wallet.send", Params: raw}); err != nil {
-		t.Fatal(err)
-	}
-	expectedRaw = e.s.Sends[request.ID].Raw
-	// Completed own orders include signed sources and query metadata. They remain
-	// cold during the workload, unlike the one deliberately active saved payment.
-	var orders []storage.ArchiveRecord
-	now := time.Now().Unix()
-	for i := 0; i < 1001; i++ {
-		o := protocol.Offer{ID: fmt.Sprintf("%064x", i+1), Network: chain.Regtest, Maker: e.identity.Public().Hex(), Sell: chain.BTC, SellAmount: 100000, BuyAmount: 200000, Status: "filled", Expires: now + 3600}
-		event, err := e.signOffer(o, nostr.Timestamp(now))
-		if err != nil {
-			t.Fatal(err)
-		}
-		for kind, value := range map[string]any{"offers": event, "order_records": OrderRecord{Offer: o, EventID: event.ID.Hex()}} {
-			data, err := json.Marshal(value)
-			if err != nil {
-				t.Fatal(err)
-			}
-			orders = append(orders, storage.ArchiveRecord{Kind: kind, ID: o.ID, Data: data})
-		}
-	}
-	produce := func(write func(storage.ArchiveRecord) error) error {
-		for i := 0; i < records; i++ {
-			txid := fmt.Sprintf("%064x", i+1)
-			id := "receive/" + txid + "/0"
-			a := Activity{Version: 1, ID: id, Wallet: e.Config.Name, Network: chain.Regtest, Kind: "receive", Chain: chain.BTC, Direction: "incoming", Movement: true, TxID: txid, Variants: []string{txid}, Status: "confirmed", Principal: 100000, Amount: 100000, CreatedAt: 100 + int64(i/3), Observations: []ActivityObservation{{TxID: txid, Status: "confirmed", Height: 100, BlockHash: txid, Source: "configured-endpoint", Generation: 1}}}
-			for j := 0; j < 4; j++ {
-				a.History = append(a.History, ActivityOutcome{Status: "unknown", TxID: txid, Amount: 100000, BlockHash: txid, Source: "configured-endpoint", Generation: 1})
-			}
-			data, err := json.Marshal(a)
-			if err != nil {
-				return err
-			}
-			err = write(storage.ArchiveRecord{Kind: "activities", ID: id, Data: data})
-			clear(data)
-			if err != nil {
-				return err
-			}
-		}
-		for i := 0; i < records*2; i++ {
-			data, _ := json.Marshal(fmt.Sprintf("%064x", i+1))
-			if err := write(storage.ArchiveRecord{Kind: "seen", ID: e.identity.Public().Hex() + ":" + fmt.Sprintf("%064x", i+1), Data: data}); err != nil {
-				return err
-			}
-		}
-		for _, r := range orders {
-			if err := write(r); err != nil {
-				return err
-			}
-		}
-		return nil
-	}
-	stats := storage.ArchiveStats{Kinds: map[string]uint64{}}
-	if err := produce(func(r storage.ArchiveRecord) error {
-		raw, err := json.Marshal(r)
-		if err != nil {
-			return err
-		}
-		stats.Count++
-		stats.Bytes += uint64(len(raw) + 1)
-		stats.Kinds[r.Kind]++
-		return nil
-	}); err != nil {
-		t.Fatal(err)
-	}
-	e.s.Version = 2
-	e.s.Capacity = &CapacityRecord{Archived: stats}
-	v, err := storage.Open(filepath.Join(t.TempDir(), "large-history.db"), []byte("private-history-scale-credential"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { v.Close() })
-	historyScalePhase(t, v.PrivateDirectory(), "write_real_archive", func() {
-		if err := v.ImportArchive(ctx, e.s, stats, produce); err != nil {
-			t.Fatal(err)
-		}
-	})
-	e.vault = v
-	orders = nil
-	if err := e.save(); err != nil {
-		t.Fatal(err)
-	}
+	e, request, broadcasts, expectedRaw, stats := historyScaleFixture(t, records, 1001)
+	v := e.vault
 	active, _ := json.Marshal(e.s)
 	t.Logf("physical_archive_records=%d physical_archive_bytes=%d active_checkpoint_bytes=%d activity_rows=%d unrelated_seen_rows=%d closed_orders=1001", stats.Count, stats.Bytes, len(active), records, records*2)
 	if records >= 95000 && stats.Bytes+uint64(len(active)) <= 256<<20 {
@@ -290,7 +187,7 @@ func TestHistoryPhysicalQueriesAndSettlementProgress(t *testing.T) {
 		t.Fatal("canceled physical result retained files")
 	}
 	close(stop)
-	err = <-done
+	err := <-done
 	joined = true
 	if err != nil {
 		t.Fatal(err)
@@ -313,6 +210,160 @@ func TestHistoryPhysicalQueriesAndSettlementProgress(t *testing.T) {
 	}
 	if historyScratch(t, e) != 0 {
 		t.Fatal("close retained physical query results")
+	}
+}
+
+func historyScaleFixture(t *testing.T, records, closedOrders int) (*Engine, SendRequest, *atomic.Uint64, string, storage.ArchiveStats) {
+	t.Helper()
+	ctx := context.Background()
+	e, b, request := sendFixture(t)
+	e.Config.Name = "physical-query"
+	e.s.Network = chain.Regtest
+	broadcasts := &atomic.Uint64{}
+	var expectedRaw string
+	b.broadcast = func(raw string) (string, error) {
+		if expectedRaw != "" && raw != expectedRaw {
+			return "", fmt.Errorf("saved settlement bytes changed")
+		}
+		var saved State
+		if _, err := e.vault.Load(&saved); err != nil {
+			return "", err
+		}
+		if saved.Sends[request.ID] == nil || saved.Sends[request.ID].Raw != raw {
+			return "", fmt.Errorf("settlement retry was not durably retained")
+		}
+		broadcasts.Add(1)
+		return "", nil
+	}
+	raw, _ := json.Marshal(request)
+	if _, err := e.Command(ctx, Request{Method: "wallet.send", Params: raw}); err != nil {
+		t.Fatal(err)
+	}
+	expectedRaw = e.s.Sends[request.ID].Raw
+	// Retain complete already-settled query custody. This explicit placement
+	// does not manufacture chain observations or exercise hot-swap compaction.
+	for i := 0; i < closedOrders; i++ {
+		o := scaleCompletedOrder(t, e, chain.BTC, 100000, 200000)
+		event := e.s.Offers[o.ID]
+		for _, key := range []storage.ArchiveKey{{Kind: "offers", ID: o.ID}, {Kind: "order_records", ID: o.ID}, {Kind: "parent_orders", ID: o.ID}, {Kind: "funding_fees", ID: "offer/" + o.ID}} {
+			if err := e.stageArchive(key.Kind, key.ID); err != nil {
+				t.Fatal(err)
+			}
+		}
+		if err := e.archiveOwnOfferView(o.ID, event); err != nil {
+			t.Fatal(err)
+		}
+	}
+	orders := e.pendingArchive().Put
+	produce := func(write func(storage.ArchiveRecord) error) error {
+		for i := 0; i < records; i++ {
+			txid := fmt.Sprintf("%064x", i+1)
+			id := "receive/" + txid + "/0"
+			a := Activity{Version: 1, ID: id, Wallet: e.Config.Name, Network: chain.Regtest, Kind: "receive", Chain: chain.BTC, Direction: "incoming", Movement: true, TxID: txid, Variants: []string{txid}, Status: "confirmed", Principal: 100000, Amount: 100000, CreatedAt: 100 + int64(i/3), Observations: []ActivityObservation{{TxID: txid, Status: "confirmed", Height: 100, BlockHash: txid, Source: "configured-endpoint", Generation: 1}}}
+			for j := 0; j < 4; j++ {
+				a.History = append(a.History, ActivityOutcome{Status: "unknown", TxID: txid, Amount: 100000, BlockHash: txid, Source: "configured-endpoint", Generation: 1})
+			}
+			data, err := json.Marshal(a)
+			if err != nil {
+				return err
+			}
+			err = write(storage.ArchiveRecord{Kind: "activities", ID: id, Data: data})
+			clear(data)
+			if err != nil {
+				return err
+			}
+		}
+		for i := 0; i < records*2; i++ {
+			data, _ := json.Marshal(fmt.Sprintf("%064x", i+1))
+			if err := write(storage.ArchiveRecord{Kind: "seen", ID: e.identity.Public().Hex() + ":" + fmt.Sprintf("%064x", i+1), Data: data}); err != nil {
+				return err
+			}
+		}
+		for _, r := range orders {
+			if err := write(r); err != nil {
+				return err
+			}
+		}
+		return nil
+	}
+	stats := storage.ArchiveStats{Kinds: map[string]uint64{}}
+	if err := produce(func(r storage.ArchiveRecord) error {
+		raw, err := json.Marshal(r)
+		if err != nil {
+			return err
+		}
+		stats.Count++
+		stats.Bytes += uint64(len(raw) + 1)
+		stats.Kinds[r.Kind]++
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	staged := e.s
+	staged.Version = StateVersion
+	staged.Capacity = &CapacityRecord{Archived: stats}
+	v, err := storage.Open(filepath.Join(t.TempDir(), "large-history.db"), []byte("private-history-scale-credential"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { v.Close() })
+	historyScalePhase(t, v.PrivateDirectory(), "write_real_archive", func() {
+		if err := v.ImportArchive(ctx, staged, stats, produce); err != nil {
+			t.Fatal(err)
+		}
+	})
+	var saved State
+	if found, err := v.Load(&saved); err != nil || !found {
+		t.Fatal("staged physical vault checkpoint unavailable", err)
+	}
+	// A different vault needs a newly validated engine and private custody
+	// index; never attach it to the initialized source engine's old checkpoint.
+	e = reopenedFixtureEngine(t, e, v, saved)
+	t.Cleanup(func() {
+		e.nodes = nil // In-memory backends have no transport Close implementation.
+		if err := e.Close(); err != nil {
+			t.Error(err)
+		}
+	})
+	orders = nil
+	return e, request, broadcasts, expectedRaw, stats
+}
+
+func TestHistoryScaleCurrentFixture(t *testing.T) {
+	e, request, broadcasts, expectedRaw, stats := historyScaleFixture(t, 100, 3)
+	if err := ValidateVaultProtocolState(e.vault, &e.s); err != nil {
+		t.Fatal(err)
+	}
+	page := durableActivityQuery(t, e, ActivityQuery{ExpectedWallet: e.Config.Name, ExpectedNetwork: "regtest", Kind: "receive", Chain: chain.BTC, Limit: 37})
+	if page.Total != 100 || len(page.Records) != 37 || page.Records[0].ID != fmt.Sprintf("receive/%064x/0", 100) {
+		t.Fatal("physical fixture lost exact selected history")
+	}
+	market := scaleFilledMarket(t, e)
+	if market.Total != 3 || len(market.Records) != 1 || stats.Kinds["parent_orders"] != 3 || stats.Kinds["fill_records"] != 3 || stats.Kinds["swaps"] != 3 {
+		t.Fatal("physical fixture lost cold filled-parent custody", stats, market.Total)
+	}
+	if len(e.s.Swaps) != 0 || len(e.s.ParentOrders) != 0 || len(e.s.FillRecords) != 0 || len(e.s.Sends) != 1 {
+		t.Fatal("query setup reactivated lifetime custody")
+	}
+	e.relayCancel = func() {}
+	e.scanners = map[chain.ID]chain.SpendScanner{chain.BTC: &recordingScanner{}, chain.Blake: &recordingScanner{}}
+	e.towerScanners = map[chain.ID]chain.SpendScanner{chain.BTC: &recordingScanner{}, chain.Blake: &recordingScanner{}}
+	e.s.Sends[request.ID].LastAttempt = 0
+	before := broadcasts.Load()
+	if err := e.Tick(context.Background()); err != nil || broadcasts.Load() != before+1 {
+		t.Fatal("eligible exact saved payment did not progress", err)
+	}
+	var saved State
+	if _, err := e.vault.Load(&saved); err != nil || saved.Sends[request.ID] == nil || saved.Sends[request.ID].Raw != expectedRaw {
+		t.Fatal("physical setup lost saved signed payment", err)
+	}
+	got, err := e.vault.ArchiveStats()
+	if err != nil || got.Count != stats.Count || got.Bytes != stats.Bytes {
+		t.Fatal("ordinary query/payment changed cold custody", err)
+	}
+	e.nodes = nil
+	if err := e.Close(); err != nil || historyScratch(t, e) != 0 {
+		t.Fatal("ordinary physical setup leaked query resources", err)
 	}
 }
 

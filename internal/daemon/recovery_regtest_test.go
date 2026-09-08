@@ -51,7 +51,7 @@ func snapshotRecoveryArchive(t *testing.T, h *harness, name string) string {
 	identity := sha256.Sum256(key.PubKey().SerializeCompressed())
 	entry := recoveryArchiveWallet{ID: name, Name: name, Identity: hex.EncodeToString(identity[:]), Mnemonic: state.Mnemonic, Networks: map[chain.Network]*State{}}
 	for _, network := range []chain.Network{chain.Regtest, chain.Testnet, chain.Mainnet} {
-		entry.Networks[network] = &State{Version: 1, Network: network, Mnemonic: state.Mnemonic}
+		entry.Networks[network] = &State{Version: StateVersion, Network: network, Mnemonic: state.Mnemonic}
 	}
 	entry.Networks[chain.Regtest] = &state
 	archive := recoveryArchive{FormatVersion: 1, CreatedAt: time.Now().Unix(), Wallets: []recoveryArchiveWallet{entry}}
@@ -81,16 +81,26 @@ func restoreRecoveryArchive(t *testing.T, h *harness, name, path string) {
 		t.Fatal(err)
 	}
 	defer clear(password)
+	// A portable import installs a separate vault. Replacing only the active
+	// state in the source vault would retain that installation's cold records.
+	cfg.DataDir = t.TempDir()
+	cfg.PasswordFile = filepath.Join(cfg.DataDir, "pass")
+	cfg.Socket = filepath.Join(cfg.DataDir, "daemon.sock")
+	if err := os.WriteFile(cfg.PasswordFile, password, 0600); err != nil {
+		t.Fatal(err)
+	}
 	vault, err := storage.Open(filepath.Join(cfg.DataDir, "state.db"), bytes.TrimSpace(password))
 	if err != nil {
 		t.Fatal(err)
 	}
 	if err = vault.Save(state); err != nil {
+		_ = vault.Close()
 		t.Fatal(err)
 	}
 	if err = vault.Close(); err != nil {
 		t.Fatal(err)
 	}
+	h.configs[name] = cfg
 	h.online(name)
 	if h.engines[name].Status().Recovery.State != "recovering" {
 		t.Fatal("restored engine opened ready before live reconciliation")
@@ -108,8 +118,10 @@ func TestRealPortableRestoreWitnessAndReorg(t *testing.T) {
 			archive := snapshotRecoveryArchive(t, h, "maker")
 			h.offline("maker")
 			h.online("taker")
-			h.tick("taker")
-			h.minePending()
+			partialWaitMailbox(h, "peer's confirmed first claim", func() bool {
+				taker := h.swap("taker", id)
+				return taker.SelfClaim != "" && taker.IncomingClaimSeen && taker.ShortConfirmations >= protocol.Confirmations
+			}, func() { h.tick("taker"); h.minePending() })
 			faults[incoming.Chain].setDown(true)
 			restoreRecoveryArchive(t, h, "maker", archive)
 			tickDegraded(t, h.engines["maker"])
@@ -126,7 +138,7 @@ func TestRealPortableRestoreWitnessAndReorg(t *testing.T) {
 			if maker.SelfClaim == "" || !maker.SecretObserved {
 				t.Fatal("restored witness failed target-only claim", maker.Error)
 			}
-			tx, err := contract.Parse(maker.SelfClaim)
+			tx, err := ancestrySelectedClaim(maker)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -193,14 +205,16 @@ func TestRealPortableRestorePreservesRefunds(t *testing.T) {
 			crashed := false
 			e := h.engines["taker"]
 			e.nodes[taker.Short.Chain] = &fundingCrashBackend{Backend: e.nodes[taker.Short.Chain], before: func(string) { crashed = true }}
-			func() {
+			// Keep the interceptor installed while the restarted mailbox catches
+			// up. No preliminary tick may publish this deliberately private claim.
+			partialWaitMailbox(h, "private claim crash boundary", func() bool { return crashed }, func() {
 				defer func() {
-					if r := recover(); r != "simulated funding crash" {
+					if r := recover(); r != nil && r != "simulated funding crash" {
 						t.Fatalf("unexpected private claim crash: %v", r)
 					}
 				}()
 				_ = e.Tick(h.ctx)
-			}()
+			})
 			taker = h.swap("taker", id)
 			if !crashed || taker.SelfClaim == "" || taker.SecretObserved {
 				t.Fatal("private claim crash boundary was not reached")
@@ -262,9 +276,9 @@ func TestRealPortableRestoreBeforeFundingPublication(t *testing.T) {
 	for _, role := range []string{"maker", "taker"} {
 		t.Run(role, func(t *testing.T) {
 			h := newHarness(t, 0)
-			offer := h.command("maker", "offer.create", map[string]any{"sell": chain.BTC, "sell_amount": 1000000, "buy_amount": 2000000, "tower_bps": 0}).(protocol.Offer)
+			offer := h.command("maker", "offer.create", walletWholeParams(chain.BTC, 1000000, 2000000, 2000, 0, 0)).(protocol.Offer)
 			h.tick("maker", "taker")
-			id := h.command("taker", "swap.take", map[string]string{"maker": offer.Maker, "id": offer.ID}).(map[string]string)["id"]
+			id := h.command("taker", "swap.take", map[string]any{"maker": offer.Maker, "id": offer.ID, "quantity": offer.SellAmount, "parent_revision": offer.Revision}).(map[string]string)["id"]
 			h.tick("taker", "maker")
 			if role == "maker" {
 				h.tick("taker")
@@ -329,8 +343,10 @@ func TestRealPortableTowerRecovery(t *testing.T) {
 			h.offline("tower")
 			h.offline("maker")
 			h.online("taker")
-			h.tick("taker")
-			h.minePending()
+			partialWaitMailbox(h, "peer's confirmed tower-observed claim", func() bool {
+				taker := h.swap("taker", id)
+				return taker.SelfClaim != "" && taker.IncomingClaimSeen && taker.ShortConfirmations >= protocol.Confirmations
+			}, func() { h.tick("taker"); h.minePending() })
 			claimID, _ := settlementVariant(h.swap("taker", id).SelfClaims, h.swap("taker", id).ClaimVariant, maker.Long, maker.Short, false)
 			claimRecord, err := h.nodes[observe.Chain].Transaction(h.ctx, claimID)
 			if err != nil || claimRecord.BlockHash == "" {
@@ -632,10 +648,11 @@ func TestRealPortableTowerRefundObservesConfirmedOutcome(t *testing.T) {
 					t.Error(err)
 				}
 			}()
-			_ = tick(context.Background())
-			// A bounded scan may still display the prior confirmed outcome. The
-			// known checkpoint contradiction must nevertheless hold monitoring
-			// immediately, before target catch-up can reconcile that display.
+			tickUntilConnected(t, tower)
+			// Require a fresh wallet observation of the changed chain: an RPC
+			// outage alone does not establish a checkpoint contradiction. A
+			// bounded target scan may still display the prior confirmed outcome,
+			// but the observed reorg must already hold monitoring.
 			if state.LastAttempt != 0 || state.Attempt != 0 || tower.CanChangeNetwork() == nil || tower.Status().Recovery.State == "ready" {
 				t.Fatal("tower refund reorg failed to immediately hold monitoring", state.Error, tower.Status().Recovery)
 			}

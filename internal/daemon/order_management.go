@@ -3,6 +3,7 @@ package daemon
 import (
 	"encoding/json"
 	"errors"
+	"maps"
 	"time"
 
 	"github.com/blakeswap/blakeswap/internal/chain"
@@ -18,7 +19,7 @@ type OrderActionFields struct {
 func (e *Engine) activeOrderSwap(id string) bool {
 	for _, s := range e.s.Swaps {
 		var o protocol.Offer
-		if s.Role == "maker" && !terminalSwap(s) && json.Unmarshal([]byte(s.Request.OfferEvent.Content), &o) == nil && o.ID == id && o.Maker == e.identity.Public().Hex() {
+		if s != nil && s.Role == "maker" && !terminalSwap(s) && json.Unmarshal([]byte(s.Request.OfferEvent.Content), &o) == nil && o.ID == id && o.Maker == e.identity.Public().Hex() {
 			return true
 		}
 	}
@@ -39,34 +40,90 @@ func orderSettlementStatus(stage string) string {
 	return ""
 }
 
+func (e *Engine) finishedParentOrder(parent *ParentOrder) string {
+	if parent == nil || parent.Quantities.Available != 0 || parent.Quantities.Reserved != 0 || parent.Quantities.Committed != 0 || e.activeOrderSwap(parent.Offer.ID) {
+		return ""
+	}
+	q := parent.Quantities
+	if q.Filled == q.Total {
+		return "filled"
+	}
+	return "cancelled"
+}
+
 func (e *Engine) finishedOrderRecord(id string, record OrderRecord) string {
-	// Live state always overrides retained settlement evidence, including a
-	// reactivated obligation which has lost its previous terminal observation.
-	stages := make(map[string]string, len(record.Settlements))
-	for key, stage := range record.Settlements {
-		stages[key] = stage
+	return e.finishedParentOrder(e.s.ParentOrders[id])
+}
+
+// The bounded convenience link is historical evidence, not current execution
+// authority. Validate its exact active/cold child identity before preserving or
+// classifying it; live nonterminal state still overrides a retained outcome.
+func (e *Engine) validateWholeOrderLink(parent *ParentOrder, record OrderRecord) error {
+	if len(record.Settlements) > 1 {
+		return errors.New("whole parent has multiple terminal links")
 	}
-	for key, swap := range e.s.Swaps {
-		if swap == nil {
+	for id := range record.Settlements {
+		core := e.s.Swaps[id]
+		var cold Swap
+		if core == nil {
+			found, err := e.archivedValue("swaps", id, &cold)
+			if err != nil {
+				return err
+			}
+			if !found {
+				return errors.New("terminal whole child core is unavailable")
+			}
+			core = &cold
+		}
+		row, err := e.fillSummary(core, e.s.Swaps[id] == nil)
+		if err != nil {
+			return err
+		}
+		offer, err := historicalOffer(core.Request.OfferEvent)
+		if err != nil {
+			return err
+		}
+		if core.ID != id || core.Role != "maker" || row.ParentID != parent.Offer.ID || row.ParentMaker != parent.Offer.Maker || row.AllocatedQuantity != parent.Quantities.Total || offer.EconomicsDigest() != parent.Economics {
+			return errors.New("terminal whole child does not match parent allocation")
+		}
+	}
+	return nil
+}
+
+// The terminal convenience link is written during deep archival. Until then,
+// current hot evidence can identify the same whole refund without creating or
+// promoting history metadata. Returned zero-allocation children cannot supply
+// the outcome of a later allocation of the parent's quantity.
+func (e *Engine) hotWholeOrderRefund(parent *ParentOrder) (bool, error) {
+	matched := false
+	for id, core := range e.s.Swaps {
+		if core == nil || core.Role != "maker" || core.Stage != "refunded" {
 			continue
 		}
-		var o protocol.Offer
-		if swap.Role != "maker" || json.Unmarshal([]byte(swap.Request.OfferEvent.Content), &o) != nil || o.ID != id || o.Maker != e.identity.Public().Hex() {
+		var offer protocol.Offer
+		if json.Unmarshal([]byte(core.Request.OfferEvent.Content), &offer) != nil || offer.ID != parent.Offer.ID || offer.Maker != parent.Offer.Maker {
 			continue
 		}
-		if !terminalSwap(swap) {
-			return ""
+		row, err := e.fillSummary(core, false)
+		if err != nil {
+			return false, err
 		}
-		stages[key] = swap.Stage
-	}
-	result := ""
-	for _, stage := range stages {
-		status := orderSettlementStatus(stage)
-		if status == "filled" || status == "refunded" && result != "filled" || status == "cancelled" && result == "" {
-			result = status
+		if row.AllocatedQuantity == 0 {
+			continue
 		}
+		child, err := e.retainedFillRecord(id)
+		if err != nil {
+			return false, err
+		}
+		if row.Disposition != FillReleased || !child.Allocation.EverCommitted || matched {
+			return false, errors.New("whole refund conflicts with retained child allocation")
+		}
+		if err := e.validateWholeOrderLink(parent, OrderRecord{Settlements: map[string]string{id: core.Stage}}); err != nil {
+			return false, err
+		}
+		matched = true
 	}
-	return result
+	return matched, nil
 }
 
 func (e *Engine) finishedOrderChecked(id string) (string, error) {
@@ -79,7 +136,36 @@ func (e *Engine) finishedOrderChecked(id string) (string, error) {
 	if err := validateOrderSettlement(id, record, e.s.Network); err != nil {
 		return "", err
 	}
-	return e.finishedOrderRecord(id, record), nil
+	parent, err := e.retainedParentOrder(id)
+	if err != nil {
+		return "", err
+	}
+	if parent.Offer.Mode == protocol.FillWhole {
+		if err := e.validateWholeOrderLink(parent, record); err != nil {
+			return "", err
+		}
+	}
+	status := e.finishedParentOrder(parent)
+	if status == "cancelled" && parent.Offer.Mode == protocol.FillWhole && parent.Quantities.Released == parent.Quantities.Total && parent.Quantities.Withdrawn == 0 {
+		if len(record.Settlements) == 0 {
+			refunded, err := e.hotWholeOrderRefund(parent)
+			if err != nil {
+				return "", err
+			}
+			if refunded {
+				return "refunded", nil
+			}
+		}
+		for childID, stage := range record.Settlements {
+			if live := e.s.Swaps[childID]; live != nil {
+				stage = live.Stage
+			}
+			if stage == "refunded" {
+				return "refunded", nil
+			}
+		}
+	}
+	return status, nil
 }
 
 func (e *Engine) finishedOrder(id string) string {
@@ -98,15 +184,25 @@ func (e *Engine) retainOrderSettlement(swap *Swap) error {
 	if err != nil || offer.Maker != e.identity.Public().Hex() || offer.Network.Normalized() != e.Config.Network {
 		return nil
 	}
-	if _, exists := e.s.OrderRecords[offer.ID]; !exists {
-		if _, err := e.activateArchived("order_records", offer.ID); err != nil {
-			return err
-		}
+	if _, err := e.fillSummary(swap, false); err != nil {
+		return err
 	}
-	if e.s.OrderRecords == nil {
-		e.s.OrderRecords = map[string]OrderRecord{}
+	parent, err := e.retainedParentOrder(offer.ID)
+	if err != nil {
+		return err
+	}
+	if parent.Economics != offer.EconomicsDigest() {
+		return errors.New("settled child does not match retained parent economics")
 	}
 	record, exists := e.s.OrderRecords[offer.ID]
+	cold := false
+	if !exists {
+		cold, err = e.archivedValue("order_records", offer.ID, &record)
+		if err != nil {
+			return err
+		}
+		exists = cold
+	}
 	if !exists {
 		event := swap.Request.OfferEvent
 		if own, ok := e.s.Offers[offer.ID]; ok {
@@ -118,13 +214,53 @@ func (e *Engine) retainOrderSettlement(swap *Swap) error {
 		}
 		record = OrderRecord{Offer: source, EventID: event.ID.Hex(), Publication: "unknown"}
 	}
-	if record.Settlements == nil {
-		record.Settlements = map[string]string{}
+	// Partial history is the paged child index, never a lifetime array embedded
+	// in one hot parent. A whole parent can retain its one final allocated link.
+	fill, err := e.retainedFillRecord(swap.ID)
+	if err != nil {
+		return err
 	}
-	record.Settlements[swap.ID] = swap.Stage
+	if offer.Mode != protocol.FillWhole {
+		record.Settlements = nil
+	} else if fill.Allocation.currentQuantity() > 0 {
+		for previous := range record.Settlements {
+			if previous == swap.ID {
+				continue
+			}
+			other, err := e.retainedFillRecord(previous)
+			if err != nil {
+				return err
+			}
+			if other.ParentID != offer.ID || other.ParentMaker != offer.Maker || other.Allocation.currentQuantity() != 0 {
+				return errors.New("whole parent has conflicting allocated terminal links")
+			}
+		}
+		record.Settlements = map[string]string{swap.ID: swap.Stage}
+	} else if _, exists := record.Settlements[swap.ID]; exists {
+		// Retiring this identity can remove only its own obsolete link. A later
+		// allocated child may already be cold and remains the parent terminal link.
+		record.Settlements = maps.Clone(record.Settlements)
+		delete(record.Settlements, swap.ID)
+	}
+	if offer.Mode == protocol.FillWhole {
+		if err := e.validateWholeOrderLink(parent, record); err != nil {
+			return err
+		}
+	}
 	if tower, ok := e.s.OfferTowers[offer.ID]; ok {
 		copy := tower
 		record.Protection = &copy
+	}
+	if err := validateOrderSettlement(offer.ID, record, e.Config.Network); err != nil {
+		return err
+	}
+	if cold {
+		if _, err := e.activateArchived("order_records", offer.ID); err != nil {
+			return err
+		}
+	}
+	if e.s.OrderRecords == nil {
+		e.s.OrderRecords = map[string]OrderRecord{}
 	}
 	e.s.OrderRecords[offer.ID] = record
 	return nil
@@ -170,20 +306,28 @@ func (e *Engine) orderSource(p OrderActionFields, now int64) (protocol.Offer, er
 	if err != nil || o.Maker != e.identity.Public().Hex() || o.Network.Normalized() != e.Config.Network || o.ID != p.SourceOfferID {
 		return empty, errors.New("source order does not belong to this wallet and network")
 	}
-	if e.activeOrderSwap(o.ID) {
+	if p.OrderAction != "replace" && e.activeOrderSwap(o.ID) {
 		return empty, errors.New("reserved orders must settle or refund before recreation")
 	}
 	switch p.OrderAction {
 	case "replace":
-		if o.Status != "open" || o.Expires <= now {
-			return empty, errors.New("only a current unreserved order can be replaced")
+		parent := e.s.ParentOrders[o.ID]
+		if parent == nil || parent.RestoreHold || parent.Quantities.Closed || parent.Quantities.Available == 0 || parent.SignedRevision != parent.Quantities.Revision || o.Status != "open" || o.Expires <= now {
+			return empty, errors.New("only currently available parent quantity can be replaced")
 		}
 	case "recreate":
 		finished, err := e.finishedOrderChecked(o.ID)
 		if err != nil {
 			return empty, err
 		}
-		if o.Status != "cancelled" && o.Status != "filled" && !(o.Status == "open" && o.Expires <= now) && !(o.Status == "reserved" && finished != "") {
+		parent, err := e.retainedParentOrder(o.ID)
+		if err != nil {
+			return empty, err
+		}
+		if parent.Quantities.Reserved != 0 || parent.Quantities.Committed != 0 {
+			return empty, errors.New("retained child obligations must settle before recreation")
+		}
+		if !parent.Quantities.Closed && finished == "" && !(o.Status == "open" && o.Expires <= now) {
 			return empty, errors.New("only a finished, cancelled or expired order can be recreated")
 		}
 	default:
@@ -236,24 +380,24 @@ func (e *Engine) cancelOffer(raw json.RawMessage) (any, error) {
 	if o.ID != p.ID || o.Maker != e.identity.Public().Hex() || o.Network.Normalized() != e.Config.Network {
 		return nil, errors.New("order does not belong to this wallet and network")
 	}
-	if o.Status == "cancelled" && (p.ExpectedEventID == "" || p.ExpectedEventID == event.ID.Hex() || e.s.OrderRecords[p.ID].CancelledEventID == p.ExpectedEventID) {
-		return e.ownOffer(o), nil
+	parent := e.s.ParentOrders[p.ID]
+	if parent == nil {
+		return nil, errors.New("parent authorization unavailable")
+	}
+	if parent.Quantities.Closed && (p.ExpectedEventID == "" || p.ExpectedEventID == event.ID.Hex() || e.s.OrderRecords[p.ID].CancelledEventID == p.ExpectedEventID) {
+		return e.ownOffer(parentPublicOffer(*parent)), nil
 	}
 	if p.ExpectedEventID != "" && p.ExpectedEventID != event.ID.Hex() {
 		return nil, errors.New("order changed; refresh before cancelling")
 	}
-	if o.Status != "open" || e.activeOrderSwap(o.ID) {
-		return nil, errors.New("only unreserved offers can be cancelled; committed swaps settle or refund")
-	}
-	o.Status = "cancelled"
-	if err = e.publishOffer(o); err != nil {
+	if err = e.withdrawParentAvailable(o.ID, time.Now().Unix()); err != nil {
 		return nil, err
 	}
 	record := e.s.OrderRecords[o.ID]
 	record.CancelledEventID = event.ID.Hex()
 	e.s.OrderRecords[o.ID] = record
 	delete(e.s.CoinReservations, "offer/"+o.ID)
-	return e.ownOffer(o), e.save()
+	return e.ownOffer(parentPublicOffer(*parent)), e.save()
 }
 
 // ValidateOrderSettlements leaves older records without this optional companion

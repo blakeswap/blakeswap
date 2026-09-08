@@ -60,6 +60,21 @@ func sendFixture(t *testing.T) (*Engine, *sendBackend, SendRequest) {
 	request := SendRequest{ID: transport.RandomID(), Chain: id, Destination: e.addresses[chain.BTC], Amount: 900000, Fee: 1500, Inputs: []CoinOutpoint{{b.coins[0].TxID, 0}}, ExpectedNetwork: "regtest"}
 	return e, b, request
 }
+
+// walletWholeParams makes every positive manual order's reviewed limits explicit.
+// The funding amount, owner ladder consent and private protection are caller inputs.
+func walletWholeParams(sell chain.ID, amount, buy, fee, ownerCap, bps int64) map[string]any {
+	paidCap, receivedCap := max(ownerCap, int64(20000)), max(ownerCap, int64(2000))
+	if bps > 0 {
+		receivedCap = max(receivedCap, int64(20000))
+	}
+	return map[string]any{"sell": sell, "sell_amount": amount, "buy_amount": buy,
+		"fill_mode": protocol.FillWhole, "min_fill": amount, "max_fill": amount,
+		"funding_fee": fee, "owner_fee_cap": ownerCap, "tower_bps": bps,
+		"fee_budgets":    map[chain.ID]int64{sell: fee + paidCap, sell.Other(): receivedCap},
+		"bounty_budgets": map[chain.ID]int64{sell: protocol.Bounty(amount, bps), sell.Other(): protocol.Bounty(buy, bps)}}
+}
+
 func TestSendPersistsBeforeBroadcastAndRetriesIdenticalTransaction(t *testing.T) {
 	e, b, p := sendFixture(t)
 	var original string
@@ -119,8 +134,8 @@ func TestSendRejectsLockedSpentWrongNetworkAndInvalidFee(t *testing.T) {
 				if err := e.refresh(context.Background()); err != nil {
 					t.Fatal(err)
 				}
-				o := protocol.Offer{ID: transport.RandomID(), Maker: e.identity.Public().Hex(), Sell: chain.Blake, SellAmount: 100000, BuyAmount: 200000, Expires: time.Now().Unix() + 3600, Status: "open", Network: chain.Regtest}
-				if err := e.publishOffer(o); err != nil {
+				raw, _ := json.Marshal(walletWholeParams(chain.Blake, 100000, 200000, 2000, 0, 0))
+				if _, err := e.Command(context.Background(), Request{Method: "offer.create", Params: raw}); err != nil {
 					t.Fatal(err)
 				}
 			case "spent":
@@ -153,7 +168,7 @@ func TestOpenOrderLocksPersistUntilCancellation(t *testing.T) {
 		}
 		return tx.TxHash().String(), nil
 	}
-	offerRaw, _ := json.Marshal(map[string]any{"sell": "blake", "sell_amount": 100000, "buy_amount": 200000})
+	offerRaw, _ := json.Marshal(walletWholeParams(chain.Blake, 100000, 200000, 2000, 0, 0))
 	result, err := e.Command(context.Background(), Request{Method: "offer.create", Params: offerRaw})
 	if err != nil {
 		t.Fatal(err)
@@ -202,7 +217,7 @@ func TestRealSendsHonorCoinControlFeesAndOrderLocks(t *testing.T) {
 		if err != nil || !preflight.Sufficient || (id == chain.BTC && preflight.State != "proven") {
 			t.Fatal("real preflight", preflight, err)
 		}
-		offer := h.command("maker", "offer.create", map[string]any{"sell": id, "sell_amount": 1000000, "buy_amount": 2000000}).(protocol.Offer)
+		offer := h.command("maker", "offer.create", walletWholeParams(id, 1000000, 2000000, 2000, 0, 0)).(protocol.Offer)
 		held := e.Status().Funds[id]
 		if held.TotalConfirmed != before.TotalConfirmed || held.UnlockedConfirmed >= before.UnlockedConfirmed || held.ReservedConfirmed == 0 {
 			t.Fatal("offer partition", before, held)
@@ -267,13 +282,13 @@ func TestPendingSendsRotateAfterTimeout(t *testing.T) {
 func TestPendingTakeExpiryUnlocksCoinsAndRefusesLateAcceptance(t *testing.T) {
 	e, _, _ := sendFixture(t)
 	maker, _, _ := sendFixture(t)
-	offer := protocol.Offer{ID: transport.RandomID(), Maker: maker.identity.Public().Hex(), Sell: chain.BTC, SellAmount: 100000, BuyAmount: 200000, Expires: time.Now().Unix() + 3600, Status: "open"}
+	offer := protocol.Offer{Version: protocol.Version, Network: chain.Regtest, Revision: 1, Available: 100000, FillPolicy: protocol.FillPolicy{Mode: protocol.FillWhole, Min: 100000, Max: 100000}, ID: transport.RandomID(), Maker: maker.identity.Public().Hex(), Sell: chain.BTC, SellAmount: 100000, BuyAmount: 200000, Expires: time.Now().Unix() + 3600, Status: "open"}
 	if err := maker.publishOffer(offer); err != nil {
 		t.Fatal(err)
 	}
 	event := maker.s.Offers[offer.ID]
 	e.s.Book[offer.Maker+":"+offer.ID] = event
-	raw, _ := json.Marshal(map[string]string{"maker": offer.Maker, "id": offer.ID})
+	raw, _ := json.Marshal(map[string]any{"maker": offer.Maker, "id": offer.ID, "quantity": offer.SellAmount, "parent_revision": offer.Revision, "funding_fee": 2000, "owner_fee_cap": 0})
 	result, err := e.Command(context.Background(), Request{Method: "swap.take", Params: raw})
 	if err != nil {
 		t.Fatal(err)
@@ -306,7 +321,7 @@ func TestPendingTakeExpiryUnlocksCoinsAndRefusesLateAcceptance(t *testing.T) {
 		t.Fatal(err)
 	}
 	body, _ := json.Marshal(terms)
-	if err := e.handle(offer.Maker, transport.Message{Type: "accepted", SwapID: id, Body: body}); err != nil {
+	if err := e.handle(offer.Maker, transport.Message{Version: transport.MessageVersion, ID: transport.RandomID(), Type: "accepted", SwapID: id, Body: body}); err != nil {
 		t.Fatal(err)
 	}
 	e.reconcileReservations()
@@ -320,34 +335,80 @@ func TestPendingTakeExpiryUnlocksCoinsAndRefusesLateAcceptance(t *testing.T) {
 
 func TestMakerReservationExpiresWhenTakerNeverFunds(t *testing.T) {
 	e, _, _ := sendFixture(t)
-	raw, _ := json.Marshal(map[string]any{"sell": "blake", "sell_amount": 100000, "buy_amount": 200000})
+	raw, _ := json.Marshal(walletWholeParams(chain.Blake, 100000, 200000, 2000, 0, 0))
 	result, err := e.Command(context.Background(), Request{Method: "offer.create", Params: raw})
 	if err != nil {
 		t.Fatal(err)
 	}
 	offer := result.(protocol.Offer)
-	taker := nostr.Generate()
-	id := transport.RandomID()
-	keys, _ := e.swapKeys(id)
-	request := protocol.Request{ID: id, OfferEvent: e.s.Offers[offer.ID], Taker: taker.Public().Hex(), Hash: strings.Repeat("12", 32), Keys: keys}
+	request := automationChildRequest(t, e, e.s.Offers[offer.ID])
+	id := request.ID
 	raw, _ = json.Marshal(request)
-	if err := e.handle(taker.Public().Hex(), transport.Message{Type: "request", SwapID: id, Body: raw}); err != nil {
+	if err := e.handle(request.Taker, transport.Message{Version: transport.MessageVersion, ID: transport.RandomID(), Type: "request", SwapID: id, Body: raw}); err != nil {
 		t.Fatal(err)
 	}
 	swap := e.s.Swaps[id]
 	if !e.publicCoins()[0].Reserved {
 		t.Fatal("accepted maker funds unlocked")
 	}
+	// Close the parent before the child expires. Retirement of an open parent
+	// returns quantity to its still-authorized available remainder instead.
+	cancel, _ := json.Marshal(map[string]string{"id": offer.ID, "expected_event_id": e.s.Offers[offer.ID].ID.Hex()})
+	if _, err := e.cancelOffer(cancel); err != nil {
+		t.Fatal(err)
+	}
+	if !e.publicCoins()[0].Reserved || e.s.FillRecords[id].Allocation.Disposition != FillReserved {
+		t.Fatal("parent cancellation released accepted child inputs")
+	}
 	for _, c := range []chain.ID{chain.BTC, chain.Blake} {
 		e.heights[c] = swap.Long.RefundHeight + 100
 		e.clocks[c] = e.heights[c]
 	}
-	if err := e.advanceSwap(context.Background(), swap, nil); err == nil {
-		t.Fatal("expired funding gate not reached")
+	if err := e.advanceSwap(context.Background(), swap, map[chain.ID]map[string]chain.Observation{chain.BTC: {}, chain.Blake: {}}); err != nil {
+		t.Fatal("unfunded child retirement failed", err)
+	}
+	child, parent := e.s.FillRecords[id], e.s.ParentOrders[offer.ID]
+	if !child.FundingDisabled || child.Allocation.EverCommitted || child.Allocation.Disposition != FillReleased || parent.Quantities.Released != offer.SellAmount || parent.Quantities.Available != 0 {
+		t.Fatal("expired closed-parent child lost its permanent funding refusal or exact allocation")
 	}
 	e.reconcileReservations()
 	if swap.Stage != "expired before maker funding" || e.publicCoins()[0].Reserved || swap.ShortFunding != "" {
 		t.Fatal("abandoned maker reservation kept funds locked")
+	}
+	// The closed ledger stops admission immediately. The pending revision may
+	// publish the cancellation, or only the child's final released counters if
+	// cancellation was already signed in an earlier wall-clock second. Network
+	// switching follows the retained signed status, not that revision gap.
+	published, err := protocol.DecodeOffer(e.s.Offers[offer.ID], time.Now().Unix())
+	if err != nil || published.Revision != parent.SignedRevision {
+		t.Fatalf("retained parent publication differs from its signed revision: %v", err)
+	}
+	switch published.Status {
+	case "open", "reserved":
+		if err := e.CanChangeNetwork(); err == nil {
+			t.Fatal("unpublished cancellation was treated as settled publication")
+		}
+	case "cancelled":
+		if err := e.CanChangeNetwork(); err != nil {
+			t.Fatal("signed cancellation with a retired unfunded child blocks network change", err)
+		}
+	default:
+		t.Fatalf("unexpected signed parent status after cancellation: %s", published.Status)
+	}
+	if parent.SignedRevision != parent.Quantities.Revision {
+		wait := time.Until(time.Unix(parent.LastSignedAt+1, 0))
+		if wait > 5*time.Second {
+			t.Fatal("unexpected future parent publication timestamp")
+		}
+		if wait > 0 {
+			time.Sleep(wait)
+		}
+		if err := e.publishPendingParents(); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if parent.SignedRevision != parent.Quantities.Revision {
+		t.Fatal("closed parent was not published at the next eligible timestamp")
 	}
 	if err := e.save(); err != nil {
 		t.Fatal(err)

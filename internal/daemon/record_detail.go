@@ -49,20 +49,18 @@ func (e *Engine) recordDetail(raw json.RawMessage) (RecordDetail, error) {
 			result.Archived = true
 		}
 		p := e.publicSwap(value)
-		owner := "swap/" + value.ID
-		if value.Role == "maker" && value.Terms != nil {
-			owner = "offer/" + value.Terms.Offer().ID
+		fill, err := e.fillSummary(value, result.Archived)
+		if err != nil {
+			return result, err
 		}
-		if _, active := e.s.FundingFees[owner]; !active {
-			var selection FeeSelection
-			found, err := e.archivedValue("funding_fees", owner, &selection)
-			if err != nil {
-				return result, err
-			}
-			if found {
-				p.FundingFee = selection.FundingFee
-			}
+		p.ParentID, p.ParentMaker, p.ParentRevision, p.Quantity = fill.ParentID, fill.ParentMaker, fill.ParentRevision, fill.Quantity
+		p.Allocation, p.AllocatedQuantity, p.AllocationKnown = fill.Disposition, fill.AllocatedQuantity, fill.AllocationKnown
+		result.MonitoringRequired = result.MonitoringRequired || fill.MonitoringRequired
+		selection, err := e.retainedSwapFee(value)
+		if err != nil {
+			return result, err
 		}
+		p.FundingFee, p.Error = selection.FundingFee, swapPublicError(value)
 		result.Swap = &p
 	case "send":
 		value := e.s.Sends[q.ID]

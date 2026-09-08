@@ -39,7 +39,7 @@ func canChangeNetwork(s State) error {
 		}
 	}
 	for _, swap := range s.Swaps {
-		if !terminalSwapStage(swap.Stage) {
+		if swap.FundingAncestryHeld || !terminalSwapStage(swap.Stage) {
 			return fmt.Errorf("swap %s must finish before changing networks", swap.ID)
 		}
 	}
@@ -72,7 +72,7 @@ func CheckStoredNetwork(c Config) error {
 		return err
 	}
 	defer clear(password)
-	vault, err := storage.Open(path, password)
+	vault, err := storage.OpenReadOnly(path, password)
 	if err != nil {
 		return err
 	}
@@ -80,6 +80,12 @@ func CheckStoredNetwork(c Config) error {
 	var s State
 	if _, err = vault.Load(&s); err != nil {
 		return err
+	}
+	if err := ValidateVaultProtocolState(vault, &s); err != nil {
+		return err
+	}
+	if s.Network.Normalized() != c.Network.Normalized() {
+		return errors.New("stored obligation state belongs to a different network")
 	}
 	return canChangeNetwork(s)
 }

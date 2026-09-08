@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"fiatjaf.com/nostr"
 	"github.com/blakeswap/blakeswap/internal/chain"
 	"github.com/blakeswap/blakeswap/internal/contract"
 	"github.com/blakeswap/blakeswap/internal/protocol"
@@ -169,7 +170,8 @@ func TestFeeQuoteManualFallbackSizeDustAndFundingPersistence(t *testing.T) {
 	if err != nil || q.Fee != 6500 {
 		t.Fatal(q, err)
 	}
-	result, err := e.Command(context.Background(), Request{Method: "offer.create", Params: []byte(`{"sell":"blake","sell_amount":100000,"buy_amount":200000,"funding_fee":6500,"owner_fee_cap":20000}`)})
+	order, _ := json.Marshal(walletWholeParams(chain.Blake, 100000, 200000, 6500, 20000, 0))
+	result, err := e.Command(context.Background(), Request{Method: "offer.create", Params: order})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -192,19 +194,83 @@ func TestFeeQuoteManualFallbackSizeDustAndFundingPersistence(t *testing.T) {
 	}
 }
 
+// feeSettlementFixture retains current exact child identity and, for a maker,
+// the matching committed parent allocation. Both original test principals stay
+// at 1,000,000 sats; supplied deadlines belong to their respective chain clocks.
+func feeSettlementFixture(t *testing.T, e *Engine, role string, sell chain.ID, cap int64, secret []byte, deadlines map[chain.ID]uint32) *Swap {
+	t.Helper()
+	maker, taker := e.identity, nostr.Generate()
+	if role == "taker" {
+		maker, taker = taker, maker
+	}
+	o := protocol.Offer{Version: protocol.Version, Network: chain.Regtest, ID: transport.RandomID(), Maker: maker.Public().Hex(), Sell: sell, SellAmount: 1000000, BuyAmount: 1000000, Expires: time.Now().Unix() + 3600, Status: "open", Revision: 1, Available: 1000000, FillPolicy: protocol.FillPolicy{Mode: protocol.FillWhole, Min: 1000000, Max: 1000000}}
+	content, _ := o.PublicJSON()
+	event := nostr.Event{Kind: transport.OfferKind, CreatedAt: nostr.Now(), Tags: nostr.Tags{{"d", o.ID}, {"t", o.Network.Namespace()}}, Content: string(content)}
+	if err := transport.Sign(&event, maker); err != nil {
+		t.Fatal(err)
+	}
+	id := transport.RandomID()
+	local, err := e.swapKeys(id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	peer, err := e.swapKeys(isolatedPeerID(id))
+	if err != nil {
+		t.Fatal(err)
+	}
+	makerKeys, takerKeys := local, peer
+	if role == "taker" {
+		makerKeys, takerKeys = peer, local
+	}
+	hash := sha256.Sum256(secret)
+	r := protocol.Request{Version: protocol.Version, ID: id, Revision: o.Revision, Quantity: o.SellAmount, OfferEvent: event, Taker: taker.Public().Hex(), Hash: hex.EncodeToString(hash[:]), Keys: takerKeys}
+	heights := map[chain.ID]uint32{sell: deadlines[sell] - protocol.ShortBlocks, sell.Other(): deadlines[sell.Other()] - protocol.LongBlocks}
+	terms, err := protocol.NewTerms(r, makerKeys, heights)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := &Swap{ID: id, Role: role, Request: r, Terms: &terms, Long: terms.Long, Short: terms.Short, OwnerFeeCap: cap, Secret: hex.EncodeToString(secret)}
+	s.Long.TxID, s.Short.TxID = transport.RandomID(), transport.RandomID()
+	e.s.Swaps[id] = s
+	policy := FeeSelection{FundingFee: 2000, OwnerFeeCap: cap}
+	e.s.FundingFees = map[string]FeeSelection{"swap/" + id: policy}
+	if role == "maker" {
+		fields := FillOrderFields{FillPolicy: o.FillPolicy, FeeBudgets: map[chain.ID]int64{sell: 22000, sell.Other(): max(cap, int64(2000))}, BountyBudgets: map[chain.ID]int64{chain.BTC: 0, chain.Blake: 0}}
+		parent, err := newParentOrder(o, policy, fields, time.Now().Unix())
+		if err != nil {
+			t.Fatal(err)
+		}
+		reserved, child, err := parent.reserveFill(r)
+		if err != nil {
+			t.Fatal(err)
+		}
+		child.Inputs = []CoinOutpoint{{TxID: transport.RandomID()}}
+		committed, allocation, err := reserved.transitionFill(*child, FillCommitted, false)
+		if err != nil {
+			t.Fatal(err)
+		}
+		e.s.ParentOrders = map[string]*ParentOrder{o.ID: &committed}
+		e.s.FillRecords = map[string]*FillRecord{id: &allocation}
+		e.s.Offers[o.ID] = event
+		e.s.FundingFees["offer/"+o.ID] = policy
+	}
+	if err := e.retainSwapIdentity(s); err != nil {
+		t.Fatal(err)
+	}
+	if err := e.save(); err != nil {
+		t.Fatal("invalid fee settlement fixture", err)
+	}
+	return s
+}
+
 func TestOwnerLadderRequiresConsentAndPersistsBeforeEscalation(t *testing.T) {
 	for _, cap := range []int64{0, 20000} {
 		t.Run(fmt.Sprint(cap), func(t *testing.T) {
 			e, b, _ := sendFixture(t)
-			id := transport.RandomID()
-			key, err := e.swapKey(chain.Blake, id)
-			if err != nil {
-				t.Fatal(err)
-			}
 			secret := bytes.Repeat([]byte{1}, 32)
-			hash := sha256.Sum256(secret)
-			pub := hex.EncodeToString(key.PubKey().SerializeCompressed())
-			target := contract.HTLC{Chain: chain.Blake, Hash: hex.EncodeToString(hash[:]), ClaimKey: pub, RefundKey: pub, RefundHeight: 1, Amount: 1000000, TxID: strings.Repeat("34", 32)}
+			s := feeSettlementFixture(t, e, "taker", chain.Blake, cap, secret, map[chain.ID]uint32{chain.BTC: 300, chain.Blake: 200})
+			id, target := s.ID, s.Short
+			key := isolatedSpendKey(t, e, s, target, false)
 			claim, err := contract.Spend(target, key, e.scripts[chain.Blake], 2000, false, 0, nil, 0, secret)
 			if err != nil {
 				t.Fatal(err)
@@ -212,16 +278,19 @@ func TestOwnerLadderRequiresConsentAndPersistsBeforeEscalation(t *testing.T) {
 			if refundReplaceable(target, true, chain.Observation{Tx: claim}) {
 				t.Fatal("pending peer claim allowed refund race")
 			}
-			refundTx, err := contract.Spend(target, key, e.scripts[chain.Blake], 2000, true, target.RefundHeight, nil, 0, nil)
+			refundTx, err := contract.Spend(target, isolatedSpendKey(t, e, s, target, true), e.scripts[chain.Blake], 2000, true, target.RefundHeight, nil, 0, nil)
 			if err != nil {
 				t.Fatal(err)
 			}
 			if !refundReplaceable(target, true, chain.Observation{Tx: refundTx}) || refundReplaceable(target, true, chain.Observation{Tx: refundTx, Confirmations: 1}) {
 				t.Fatal("refund replacement eligibility incorrect")
 			}
-			s := &Swap{ID: id, Role: "taker", Short: target, Long: target, OwnerFeeCap: cap, SelfClaim: contract.Hex(claim), Secret: hex.EncodeToString(secret)}
-			e.s.Swaps[id] = s
+			s.SelfClaim = contract.Hex(claim)
+			broadcasts := 0
+			var lastBroadcast string
 			b.broadcast = func(raw string) (string, error) {
+				broadcasts++
+				lastBroadcast = raw
 				var saved State
 				if _, err := e.vault.Load(&saved); err != nil {
 					t.Fatal(err)
@@ -239,7 +308,12 @@ func TestOwnerLadderRequiresConsentAndPersistsBeforeEscalation(t *testing.T) {
 			}
 			for i := 0; i < 12; i++ {
 				s.ClaimLastAttempt = 0
-				_ = e.broadcastOwner(context.Background(), s, chain.Blake, false)
+				if err := e.broadcastOwner(context.Background(), s, chain.Blake, false); err != context.DeadlineExceeded {
+					t.Fatal("owner ladder did not reach the injected ambiguous broadcast", err)
+				}
+			}
+			if broadcasts != 12 {
+				t.Fatal("owner persistence/broadcast assertion was not exercised", broadcasts)
 			}
 			want := 1
 			if cap > 0 {
@@ -253,6 +327,10 @@ func TestOwnerLadderRequiresConsentAndPersistsBeforeEscalation(t *testing.T) {
 			}
 			if cap > 0 && s.ClaimVariant != 2 {
 				t.Fatal("new claim failed to reach its cap")
+			}
+			selected, err := ancestrySelectedClaim(s)
+			if err != nil || contract.Hex(selected) != lastBroadcast {
+				t.Fatal("ancestry fixture looked up a different claim than the owner selected", err)
 			}
 			for _, raw := range s.SelfClaims {
 				tx, _ := contract.Parse(raw)
@@ -349,25 +427,22 @@ func TestManualRefundAccelerationRechecksBothSettlements(t *testing.T) {
 		for _, condition := range []string{"peer_claim", "incoming_claim", "confirmed_refund", "unknown", "reorg_clock", "pending_refund"} {
 			t.Run(role+"/"+condition, func(t *testing.T) {
 				e, b, _ := sendFixture(t)
-				id := transport.RandomID()
-				key, err := e.swapKey(chain.Blake, id)
-				if err != nil {
-					t.Fatal(err)
-				}
 				secret := bytes.Repeat([]byte{2}, 32)
-				hash := sha256.Sum256(secret)
-				pub := hex.EncodeToString(key.PubKey().SerializeCompressed())
-				own := contract.HTLC{Chain: chain.Blake, Hash: hex.EncodeToString(hash[:]), ClaimKey: pub, RefundKey: pub, RefundHeight: 200, Amount: 1000000, TxID: transport.RandomID()}
-				incoming := own
-				incoming.Chain = chain.BTC
-				incoming.TxID = transport.RandomID()
-				if condition == "reorg_clock" {
-					own.RefundHeight = 201
-				}
-				s := &Swap{ID: id, Role: role, Terms: &protocol.Terms{}, Stage: "refunding", Long: own, Short: incoming}
+				sell := chain.BTC
 				if role == "maker" {
-					s.Long, s.Short = incoming, own
+					sell = chain.Blake
 				}
+				deadlines := map[chain.ID]uint32{chain.BTC: 200, chain.Blake: 200}
+				if condition == "reorg_clock" {
+					deadlines[chain.Blake] = 201
+				}
+				s := feeSettlementFixture(t, e, role, sell, 0, secret, deadlines)
+				s.Stage = "refunding"
+				id, own, incoming := s.ID, s.Long, s.Short
+				if role == "maker" {
+					own, incoming = s.Short, s.Long
+				}
+				key := isolatedSpendKey(t, e, s, own, true)
 				for _, fee := range protocol.RescueFees {
 					tx, err := contract.Spend(own, key, e.scripts[own.Chain], fee, true, own.RefundHeight, nil, 0, nil)
 					if err != nil {
@@ -386,15 +461,15 @@ func TestManualRefundAccelerationRechecksBothSettlements(t *testing.T) {
 					if condition == "incoming_claim" {
 						target, scanner = incoming, incomingScan
 					}
-					claim, err := contract.Spend(target, key, e.scripts[target.Chain], 2000, false, 0, nil, 0, secret)
+					claim, err := contract.Spend(target, isolatedSpendKey(t, e, s, target, false), e.scripts[target.Chain], 2000, false, 0, nil, 0, secret)
 					if err != nil {
 						t.Fatal(err)
 					}
-					scanner.observations[chain.OutpointKey(target.TxID, target.Vout)] = chain.Observation{Tx: claim}
+					scanner.observations[chain.OutpointKey(target.TxID, target.Vout)] = chain.Observation{Tx: claim, TxID: claim.TxHash().String()}
 				case "confirmed_refund":
-					ownScan.observations[chain.OutpointKey(own.TxID, own.Vout)] = chain.Observation{Tx: base, Confirmations: 1}
+					ownScan.observations[chain.OutpointKey(own.TxID, own.Vout)] = chain.Observation{Tx: base, TxID: base.TxHash().String(), Confirmations: 1}
 				case "pending_refund":
-					ownScan.observations[chain.OutpointKey(own.TxID, own.Vout)] = chain.Observation{Tx: base}
+					ownScan.observations[chain.OutpointKey(own.TxID, own.Vout)] = chain.Observation{Tx: base, TxID: base.TxHash().String()}
 				case "unknown":
 					incomingScan.err = context.DeadlineExceeded
 				}
@@ -405,7 +480,7 @@ func TestManualRefundAccelerationRechecksBothSettlements(t *testing.T) {
 					return tx.TxHash().String(), nil
 				}
 				params, _ := json.Marshal(BumpRequest{ID: id, Kind: "refund", Fee: 6000, ExpectedTxID: base.TxHash().String()})
-				_, err = e.bumpTransaction(context.Background(), params)
+				_, err := e.bumpTransaction(context.Background(), params)
 				if condition == "pending_refund" {
 					if err != nil || broadcasts != 1 || s.RefundVariant != 1 || ownScan.calls == 0 || incomingScan.calls == 0 {
 						t.Fatal("safe pending refund was not freshly checked", err, broadcasts)

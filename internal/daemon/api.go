@@ -110,7 +110,7 @@ func (e *Engine) status() Status {
 		s.TowerJobs = append(s.TowerJobs, map[string]any{"id": state.Job.ID, "swap_id": state.Job.SwapID, "kind": state.Job.Kind, "chain": state.Job.Target.Chain, "eligible_height": state.Job.Lock, "broadcast": state.Broadcast, "confirmations": state.Confirmed, "secret_observed": state.Secret != "", "error": state.Error, "variants": state.Variants})
 	}
 	for _, d := range e.s.Outbox {
-		if !d.IsAck {
+		if !d.IsAck && !d.Retired {
 			s.PendingMessages++
 		}
 	}
@@ -137,12 +137,31 @@ func (e *Engine) status() Status {
 	sort.Slice(s.Sends, func(i, j int) bool { return s.Sends[i].ID < s.Sends[j].ID })
 	return s
 }
+
+// Fee lookup failures are separate from the child's retained error and current
+// ancestry hold. A successful cold fee lookup can reuse this exact composition.
+func swapPublicError(swap *Swap) string {
+	if swap.FundingAncestryHeld {
+		return errFundingAncestry.Error() + ". " + swap.Error
+	}
+	return swap.Error
+}
+
 func (e *Engine) publicSwap(swap *Swap) PublicSwap {
-	p := PublicSwap{ID: swap.ID, Role: swap.Role, Stage: swap.Stage, Error: swap.Error, Long: swap.Long, Short: swap.Short, LongSpend: swap.LongSpend, ShortSpend: swap.ShortSpend, LongConfirmations: swap.LongConfirmations, ShortConfirmations: swap.ShortConfirmations, TowerPaid: swap.TowerPaid, TowerReady: towerReady(swap), SecretRevealed: swap.SecretExposed}
+	p := PublicSwap{ID: swap.ID, Role: swap.Role, Stage: swap.Stage, Error: swapPublicError(swap), Long: swap.Long, Short: swap.Short, LongSpend: swap.LongSpend, ShortSpend: swap.ShortSpend, LongConfirmations: swap.LongConfirmations, ShortConfirmations: swap.ShortConfirmations, TowerPaid: swap.TowerPaid, TowerReady: towerReady(swap), SecretRevealed: swap.SecretExposed}
 	p.OwnerFeeCap = swap.OwnerFeeCap
-	p.FundingFee = e.fundingFee("swap/" + swap.ID)
-	if swap.Role == "maker" && swap.Terms != nil {
-		p.FundingFee = e.fundingFee("offer/" + swap.Terms.Offer().ID)
+	if selection, found := e.s.FundingFees["swap/"+swap.ID]; found {
+		p.FundingFee = selection.FundingFee
+	} else {
+		p.Error = "Exact child funding fee is unavailable. " + p.Error
+	}
+	var parent protocol.Offer
+	if json.Unmarshal([]byte(swap.Request.OfferEvent.Content), &parent) == nil {
+		p.ParentID, p.ParentMaker = parent.ID, parent.Maker
+		p.ParentRevision, p.Quantity = swap.Request.Revision, swap.Request.Quantity
+	}
+	if child := e.s.FillRecords[swap.ID]; swap.Role == "maker" && child != nil {
+		p.Allocation, p.AllocatedQuantity, p.AllocationKnown = child.Allocation.Disposition, child.Allocation.currentQuantity(), true
 	}
 	p.ClaimVariants = transactionIDs(swap.SelfClaims)
 	p.ClaimTxID, p.ClaimFee = settlementVariant(swap.SelfClaims, swap.ClaimVariant, swap.Long, swap.Short, swap.Role == "maker")
@@ -191,7 +210,7 @@ func (e *Engine) Command(ctx context.Context, req Request) (any, error) {
 		}
 		return e.Status(), nil
 	}
-	if req.Method == "market.list" || req.Method == "activity.list" || req.Method == "activity.export" {
+	if req.Method == "market.list" || req.Method == "activity.list" || req.Method == "activity.export" || req.Method == "fills.list" {
 		return e.historyCommand(ctx, req)
 	}
 	e.mu.Lock()

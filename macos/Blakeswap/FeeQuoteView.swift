@@ -3,7 +3,7 @@ import SwiftProtobuf
 
 struct FeeReview {
     let key: String
-    let quote: Blakeswap_V1_FeeQuote
+    let quote: Blakeswap_V2_FeeQuote
     let automatic: Bool
     var fundingParams: [String: Any] {
         ["funding_fee": quote.fee, "rate_sat_kvb": automatic ? quote.estimate.rateSatKvb : 0,
@@ -12,7 +12,7 @@ struct FeeReview {
 }
 
 func feeReviewKey(profile: String, network: String, kind: String, chain: String, amount: String,
-                  destination: String = "", fee: String, automatic: Bool, generation: UInt64 = 0, inputs: [Blakeswap_V1_Outpoint] = [], sourceOfferID: String = "", sourceEventID: String = "") -> String {
+                  destination: String = "", fee: String, automatic: Bool, generation: UInt64 = 0, inputs: [Blakeswap_V2_Outpoint] = [], sourceOfferID: String = "", sourceEventID: String = "") -> String {
     [profile, network, String(generation), kind, chain, amount, destination, fee, String(automatic),
      inputs.map { "\($0.txid):\($0.vout)" }.sorted().joined(separator: ","), sourceOfferID, sourceEventID].joined(separator: "|")
 }
@@ -23,7 +23,7 @@ struct FeeQuoteControl: View {
     let chain: String
     let amount: String
     var destination = ""
-    var inputs: [Blakeswap_V1_Outpoint] = []
+    var inputs: [Blakeswap_V2_Outpoint] = []
     var sourceOfferID = ""
     var sourceEventID = ""
     @Binding var fee: String
@@ -58,14 +58,14 @@ struct FeeQuoteControl: View {
         review = nil; error = nil
         guard let amountValue = Int64(amount), amountValue >= 600,
               automatic || (Int64(fee) ?? 0) > 0 else { return }
-        var request = Blakeswap_V1_FeeQuoteRequest()
+        var request = Blakeswap_V2_FeeQuoteRequest()
         request.kind = kind; request.chain = chain; request.amount = amountValue
         request.destination = destination; request.inputs = inputs
         request.fee = automatic ? 0 : (Int64(fee) ?? 0); request.target = 6; request.expectedNetwork = network
         request.expectedWallet = profile; request.sourceOfferID = sourceOfferID; request.sourceEventID = sourceEventID
         do {
             let raw = try await DaemonRPC.call(root: model.root, profile: profile, method: "fee.quote", payload: request.jsonUTF8Data())
-            let quote = try Blakeswap_V1_FeeQuote(serializedBytes: raw)
+            let quote = try Blakeswap_V2_FeeQuote(serializedBytes: raw)
             guard !Task.isCancelled, model.profile == profile, model.network == network, key == boundKey else { return }
             guard quote.error.isEmpty, quote.fee > 0 else { error = quote.error.isEmpty ? "Fee unavailable. Select a manual total fee." : quote.error; return }
             review = FeeReview(key: boundKey, quote: quote, automatic: automatic)
@@ -78,7 +78,7 @@ struct FeeQuoteControl: View {
 
 struct AccelerateSendControl: View {
     @EnvironmentObject private var model: AppModel
-    let send: Blakeswap_V1_WalletSend
+    let send: Blakeswap_V2_WalletSend
     @State private var fee = ""
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {

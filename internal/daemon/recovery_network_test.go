@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"maps"
 	"os"
 	"path/filepath"
 	"testing"
@@ -12,6 +13,7 @@ import (
 	"github.com/blakeswap/blakeswap/internal/chain"
 	"github.com/blakeswap/blakeswap/internal/contract"
 	"github.com/blakeswap/blakeswap/internal/protocol"
+	"github.com/blakeswap/blakeswap/internal/storage"
 )
 
 type settlementCheckpointBackend struct {
@@ -30,7 +32,7 @@ func TestRestoredTowerNetworkGuardAfterKnownReorg(t *testing.T) {
 				label = string(sell) + "/known-reorg"
 			}
 			t.Run(label, func(t *testing.T) {
-				e, s, b, _ := isolatedFixtureSell(t, "maker", sell)
+				e, s, b, _ := isolatedTowerFixtureSell(t, sell)
 				tower := e.ownTower()
 				s.Protection = &tower
 				target := s.Short
@@ -39,7 +41,6 @@ func TestRestoredTowerNetworkGuardAfterKnownReorg(t *testing.T) {
 					t.Fatal(err)
 				}
 				state := &TowerJob{Job: job, FundingSeen: true}
-				e.s.Swaps = map[string]*Swap{}
 				e.s.TowerJobs = map[string]*TowerJob{job.ID: state}
 				markRestored(t, e)
 				cb := &settlementCheckpointBackend{Backend: b, hash: "prior-history"}
@@ -74,7 +75,7 @@ func TestRestoredTowerNetworkGuardAfterKnownReorg(t *testing.T) {
 					t.Fatal(err)
 				}
 				e.reconcileRecovery(map[chain.ID]map[string]chain.Observation{chain.BTC: {}, chain.Blake: {}}, all)
-				live, offline := settlementNetworkGuards(t, e)
+				live, offline := settlementNetworkGuards(t, e, "independent conservation restore")
 				t.Logf("reorg=%v checkpoint=%s confirmed=%d state=%s liveGuard=%v storedGuard=%v targetError=%s", reorg, e.recoveryCheckpoints[target.Chain].Hash, state.Confirmed, e.s.Recovery.Status.State, live, offline, state.Error)
 				if reorg && (live == nil || offline == nil) {
 					t.Error("known reorg with unfinished target scan allowed disabling monitoring")
@@ -103,7 +104,7 @@ func TestRestoredTowerNetworkGuardAfterKnownReorg(t *testing.T) {
 				if err := e.save(); err != nil {
 					t.Fatal(err)
 				}
-				live, offline = settlementNetworkGuards(t, e)
+				live, offline = settlementNetworkGuards(t, e, "independent conservation restore")
 				if live != nil || offline != nil || e.s.Recovery.Status.State == "ready" {
 					t.Fatal("positive target evidence did not independently clear hold during peer outage", live, offline, e.s.Recovery.Status)
 				}
@@ -112,13 +113,17 @@ func TestRestoredTowerNetworkGuardAfterKnownReorg(t *testing.T) {
 	}
 }
 
-func settlementNetworkGuards(t *testing.T, e *Engine) (error, error) {
+func settlementNetworkGuards(t *testing.T, e *Engine, passwords ...string) (error, error) {
 	t.Helper()
 	// No save here: a later failing Tick must not erase the checkpoint hold.
 	live := e.CanChangeNetwork()
 	dir := t.TempDir()
 	password := filepath.Join(dir, "vault.password")
-	if err := os.WriteFile(password, []byte("receive-test-password"), 0600); err != nil {
+	fixturePassword := "receive-test-password"
+	if len(passwords) > 0 {
+		fixturePassword = passwords[0]
+	}
+	if err := os.WriteFile(password, []byte(fixturePassword), 0600); err != nil {
 		t.Fatal(err)
 	}
 	if err := e.vault.Backup(filepath.Join(dir, "state.db")); err != nil {
@@ -344,15 +349,18 @@ func (*failedSettlementCheckpoint) BlockHash(context.Context, uint32) (string, e
 func TestRestoredSettlementInvalidationPreservesUnfundedFinalDecisions(t *testing.T) {
 	for _, stage := range []string{"rejected", "expired before acceptance", "expired before funding", "expired before maker funding"} {
 		t.Run(stage, func(t *testing.T) {
-			e, b, _ := sendFixture(t)
 			role := "taker"
 			if stage == "expired before maker funding" {
 				role = "maker"
 			}
-			s := &Swap{ID: "never-funded", Role: role, Stage: stage}
-			e.s.Swaps[s.ID] = s
-			markRestored(t, e)
-			e.nodes[chain.BTC] = &checkpointSendBackend{sendBackend: b, hash: "competing-history"}
+			source, original := recoveryUnfundedFixture(t, role, stage, 0)
+			sourceDigest := protocol.Digest(source.s)
+			e := installUnfundedNetworkRecovery(t, source)
+			s := e.s.Swaps[original.ID]
+			if s == nil || !e.recoverySwapOwnInactive(s) {
+				t.Fatal("import lacks the original current-format irreversible decision")
+			}
+			e.nodes[chain.BTC] = &settlementCheckpointBackend{Backend: e.nodes[chain.BTC], hash: "competing-history"}
 			if err := e.refreshRecoveryCheckpoint(context.Background(), chain.BTC); err != nil {
 				t.Fatal(err)
 			}
@@ -360,8 +368,56 @@ func TestRestoredSettlementInvalidationPreservesUnfundedFinalDecisions(t *testin
 			if live != nil || offline != nil || s.Stage != stage {
 				t.Fatal("reorg revoked irreversible unfunded decision", live, offline, s.Stage)
 			}
+			if protocol.Digest(source.s) != sourceDigest {
+				t.Fatal("import/reorg mutated the original wallet checkpoint")
+			}
 		})
 	}
+}
+
+// Install an exported current checkpoint in a separate encrypted destination.
+// In particular, do not overwrite a live engine's prior conservation snapshot
+// to model an old import, or clear its already consumed authorization history.
+func installUnfundedNetworkRecovery(t *testing.T, source *Engine) *Engine {
+	t.Helper()
+	raw, err := json.Marshal(source.s)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var imported State
+	if err := json.Unmarshal(raw, &imported); err != nil {
+		t.Fatal(err)
+	}
+	if err := PrepareRecovery(&imported, 100, false); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(t.TempDir(), "state.db")
+	password := []byte("receive-test-password")
+	if err := storage.Initialize(path, password, imported); err != nil {
+		t.Fatal(err)
+	}
+	v, saved, err := openCurrentStateVault(path, password)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { v.Close() })
+	e := &Engine{Config: source.Config, s: saved, vault: v, keys: source.keys, identity: source.identity,
+		nodes: maps.Clone(source.nodes), watch: maps.Clone(source.watch), addresses: maps.Clone(source.addresses), scripts: maps.Clone(source.scripts),
+		heights: maps.Clone(source.heights), clocks: maps.Clone(source.clocks), balances: map[chain.ID]int64{},
+		chainFresh: map[chain.ID]bool{chain.BTC: true, chain.Blake: true}, chainObserved: maps.Clone(source.chainObserved), chainGeneration: maps.Clone(source.chainGeneration), chainErrors: map[chain.ID]string{},
+		recoveryCheckpoints: map[chain.ID]recoveryCheckpoint{}}
+	for _, id := range []chain.ID{chain.BTC, chain.Blake} {
+		if e.heights[id] == 0 {
+			e.heights[id] = 200
+		}
+		e.recoveryCheckpoints[id] = recoveryCheckpoint{Height: e.heights[id], Hash: "test-canonical-tip", Generation: e.chainGeneration[id]}
+	}
+	// Establish this installation's original complete checkpoint before the
+	// test changes chain evidence; future previous-checkpoint guards stay active.
+	if err := e.save(); err != nil {
+		t.Fatal(err)
+	}
+	return e
 }
 
 func TestRestoredSettlementHoldDurabilityFailureStopsExecution(t *testing.T) {

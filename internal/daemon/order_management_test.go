@@ -6,42 +6,39 @@ import (
 	"encoding/json"
 	"path/filepath"
 	"reflect"
-	"strings"
 	"sync"
 	"testing"
 	"time"
 
 	"fiatjaf.com/nostr"
 	"github.com/blakeswap/blakeswap/internal/chain"
-	"github.com/blakeswap/blakeswap/internal/protocol"
 	"github.com/blakeswap/blakeswap/internal/storage"
 	"github.com/blakeswap/blakeswap/internal/transport"
 )
 
 func managedSource(t *testing.T) (*Engine, TradeQuoteRequest, nostr.Event) {
 	t.Helper()
+	return managedSourceExpiry(t, 0)
+}
+func managedSourceExpiry(t *testing.T, expires int64) (*Engine, TradeQuoteRequest, nostr.Event) {
+	t.Helper()
 	e, p := tradeFixture(t, "maker")
+	p.Expires = expires
 	created := confirmQuote(t, e, confirmation(requestQuote(t, e, p)))
 	if created.State != "accepted" {
 		t.Fatal(created)
 	}
 	event := e.s.Offers[created.ID]
 	p.OrderActionFields = OrderActionFields{OrderAction: "replace", SourceOfferID: created.ID, SourceEventID: event.ID.Hex()}
-	p.SellAmount = 150000
+	p.BuyAmount = 300000 // Reprice exactly the unassigned remainder; its quantity is unchanged.
 	return e, p, event
 }
 
 func orderRequest(t *testing.T, e *Engine, event nostr.Event) (string, transport.Message) {
 	t.Helper()
-	taker := nostr.Generate()
-	id := transport.RandomID()
-	keys, err := e.swapKeys(id)
-	if err != nil {
-		t.Fatal(err)
-	}
-	request := protocol.Request{ID: id, OfferEvent: event, Taker: taker.Public().Hex(), Hash: strings.Repeat("12", 32), Keys: keys}
+	request := automationChildRequest(t, e, event)
 	raw, _ := json.Marshal(request)
-	return request.Taker, transport.Message{Version: 1, ID: transport.RandomID(), Type: "request", SwapID: id, Body: raw}
+	return request.Taker, transport.Message{Version: transport.MessageVersion, ID: transport.RandomID(), Type: "request", SwapID: request.ID, Body: raw}
 }
 
 func TestOrderReplacementTransfersReservationAndRetriesAfterRestart(t *testing.T) {
@@ -71,7 +68,7 @@ func TestOrderReplacementTransfersReservationAndRetriesAfterRestart(t *testing.T
 	if len(saved.Offers) != 2 || len(saved.CoinReservations) != 1 || !reflect.DeepEqual(saved.CoinReservations["offer/"+result.ID], oldReservation) {
 		t.Fatal("replacement reservation was not transferred atomically", saved.CoinReservations)
 	}
-	if saved.OrderRecords[p.SourceOfferID].Offer.Status != "cancelled" || saved.OrderRecords[p.SourceOfferID].ReplacedBy != result.ID || saved.OrderRecords[result.ID].Replaces != p.SourceOfferID || saved.OrderRecords[result.ID].Publication != "local_committed" {
+	if !saved.ParentOrders[p.SourceOfferID].Quantities.Closed || saved.ParentOrders[p.SourceOfferID].Quantities.Available != 0 || saved.ParentOrders[p.SourceOfferID].Quantities.Released != p.SellAmount || saved.OrderRecords[p.SourceOfferID].ReplacedBy != result.ID || saved.OrderRecords[result.ID].Replaces != p.SourceOfferID || saved.OrderRecords[result.ID].Publication != "local_committed" {
 		t.Fatal("durable replacement lineage missing")
 	}
 	if saved.TradeReceipts[request.RequestID].Result != result {
@@ -113,7 +110,7 @@ func TestOrderReplacementRejectsChangedSourceAndInsufficientCoins(t *testing.T) 
 			e, p, old := managedSource(t)
 			switch mode {
 			case "coins":
-				p.SellAmount = 2000000
+				e.walletCoins[chain.Blake] = map[string][]chain.UTXO{}
 			case "event":
 				p.SourceEventID = transport.RandomID()
 			case "wallet":
@@ -139,13 +136,9 @@ func TestOrderReplacementRejectsChangedSourceAndInsufficientCoins(t *testing.T) 
 }
 
 func TestOrderReplacementQuoteExpiresWithSource(t *testing.T) {
-	e, p, _ := managedSource(t)
 	now := time.Now().Unix()
+	e, p, _ := managedSourceExpiry(t, now+20)
 	o := e.s.OrderRecords[p.SourceOfferID].Offer
-	o.Expires = now + 20
-	if err := e.publishOffer(o); err != nil {
-		t.Fatal(err)
-	}
 	p.SourceEventID = e.s.Offers[o.ID].ID.Hex()
 	p.Expires = now + 600
 	snapshot, err := e.tradeSnapshot(p, now)
@@ -195,7 +188,9 @@ func TestOrderReplacementAndAcceptanceRace(t *testing.T) {
 			t.Fatal("replace winner left two spendable offers")
 		}
 	} else if result.State == "rejected" {
-		if len(e.s.Swaps) != 1 || len(e.s.Offers) != 1 || e.s.OrderRecords[p.SourceOfferID].Offer.Status != "reserved" || len(e.s.CoinReservations) != 1 {
+		parent := e.s.ParentOrders[p.SourceOfferID]
+		child := e.s.FillRecords[message.SwapID]
+		if len(e.s.Swaps) != 1 || len(e.s.Offers) != 1 || parent.Quantities.Available != 0 || parent.Quantities.Reserved != p.SellAmount || child == nil || child.Allocation.Disposition != FillReserved || len(child.Inputs) != 1 || !reflect.DeepEqual(e.s.CoinReservations["swap/"+message.SwapID].Inputs, child.Inputs) || len(e.s.CoinReservations["offer/"+p.SourceOfferID].Inputs) != 0 {
 			t.Fatal("acceptance winner lost its durable reservation")
 		}
 	} else {
@@ -217,16 +212,7 @@ func (b *replacementCrashBackend) Output(ctx context.Context, id string, vout ui
 func TestOrderReplacementInterruptedBeforeAtomicCommit(t *testing.T) {
 	e, p, _ := managedSource(t)
 	request := confirmation(requestQuote(t, e, p))
-	path := filepath.Join(t.TempDir(), "restart.db")
-	if err := e.vault.Backup(path); err != nil {
-		t.Fatal(err)
-	}
-	e.vault.Close()
-	vault, err := storage.Open(path, []byte("receive-test-password"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	e.vault = vault
+	path := filepath.Join(e.vault.PrivateDirectory(), "state.db")
 	backend := e.nodes[chain.Blake]
 	e.nodes[chain.Blake] = &replacementCrashBackend{Backend: backend, before: func() {
 		if err := e.vault.Close(); err != nil {
@@ -252,7 +238,7 @@ func TestOrderReplacementInterruptedBeforeAtomicCommit(t *testing.T) {
 	if len(saved.Offers) != 1 || saved.OrderRecords[p.SourceOfferID].Offer.Status != "open" || len(saved.CoinReservations) != 1 || saved.TradeReceipts[request.RequestID].Result.State != "pending" {
 		t.Fatal("interrupted replacement persisted half a transfer")
 	}
-	e.vault, e.s, e.fatal = reopened, saved, nil
+	e = reopenedFixtureEngine(t, e, reopened, saved)
 	e.nodes[chain.Blake] = backend
 	e.tradeQuotes, e.tradeConfirming = nil, nil
 	if result := confirmQuote(t, e, request); result.State != "accepted" || len(e.s.Offers) != 2 || len(e.s.CoinReservations) != 1 {
@@ -261,12 +247,10 @@ func TestOrderReplacementInterruptedBeforeAtomicCommit(t *testing.T) {
 }
 
 func TestOrderExpiredHistoryCancellationAndRecreation(t *testing.T) {
-	e, p, _ := managedSource(t)
+	e, p, _ := managedSourceExpiry(t, time.Now().Unix()+5)
 	o := e.s.OrderRecords[p.SourceOfferID].Offer
-	o.Expires = time.Now().Unix() - 1
-	if err := e.publishOffer(o); err != nil {
-		t.Fatal(err)
-	}
+	// Reach the configured expiry without rewriting any immutable parent field.
+	time.Sleep(time.Until(time.Unix(o.Expires, 0)))
 	if err := e.save(); err != nil {
 		t.Fatal(err)
 	}

@@ -13,9 +13,10 @@ import (
 	"testing"
 	"time"
 
-	pb "github.com/blakeswap/blakeswap/api/gen/blakeswap/v1"
+	pb "github.com/blakeswap/blakeswap/api/gen/blakeswap/v2"
 	"github.com/blakeswap/blakeswap/internal/chain"
 	"github.com/blakeswap/blakeswap/internal/daemon"
+	"github.com/blakeswap/blakeswap/internal/protocol"
 )
 
 type workerFixture struct {
@@ -78,16 +79,28 @@ func TestWalletWorkersRefreshIndependentlyOfSelectedAndSlowWallets(t *testing.T)
 	}
 	previous := alice.ticks.Load()
 	limit := time.After(3 * time.Second)
-	for alice.ticks.Load() <= previous {
+	// Tick increments the fixture counter before the worker serializes and
+	// publishes its snapshot. Wait for the user-visible publication, not that
+	// earlier counter update; status reads do not trigger a worker refresh.
+	for {
+		latest, err := m.command(ctx, "alice", daemon.Request{Method: "status"})
+		if err != nil {
+			t.Fatal("automatic status unavailable", err)
+		}
+		if err := json.Unmarshal(latest.(json.RawMessage), &got); err != nil || got.Name != "alice" {
+			t.Fatal("automatic status returned invalid or wrong-wallet data", err)
+		}
+		if got.Heights[chain.BTC] > uint32(previous) {
+			if alice.ticks.Load() <= previous {
+				t.Fatal("automatic status advanced without a background tick")
+			}
+			break
+		}
 		select {
 		case <-limit:
-			t.Fatal("background wallet waits for slow wallet or UI selection")
+			t.Fatal("background wallet did not publish fresh status independently of the slow wallet or UI selection")
 		case <-time.After(10 * time.Millisecond):
 		}
-	}
-	latest, _ := m.command(ctx, "alice", daemon.Request{Method: "status"})
-	if err := json.Unmarshal(latest.(json.RawMessage), &got); err != nil || got.Heights[chain.BTC] <= uint32(previous) {
-		t.Fatal("automatic status snapshot is stale", err)
 	}
 	if _, err := m.command(ctx, "alice", daemon.Request{Method: "status.refresh", Params: json.RawMessage(`{"expected_network":"mainnet"}`)}); err == nil {
 		t.Fatal("stale network refreshed")
@@ -157,7 +170,7 @@ func TestNetworkSwitchJoinsWorkersBeforeCheckingNewObligations(t *testing.T) {
 			return err
 		}
 		defer v.Close()
-		return v.Save(daemon.State{TowerJobs: map[string]*daemon.TowerJob{"job": {}}})
+		return v.Save(daemon.State{Version: daemon.StateVersion, Network: chain.Regtest, TowerJobs: map[string]*daemon.TowerJob{"job": {Job: protocol.Job{Version: protocol.Version}}}})
 	}}
 	w := startWalletWorker(context.Background(), f)
 	defer stopWorker(w)

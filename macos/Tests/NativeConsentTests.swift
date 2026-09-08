@@ -60,6 +60,28 @@ private func nativeConsentFixture(_ t: XCTestCase, owner: OwnerAuthenticator) th
 
 final class NativeConsentTests: XCTestCase {
     @MainActor
+    func testPartialFillConsentFreezesExactQuantityRevisionAndProviderAcrossPrompt() async throws {
+        let owner = PendingOwner(), began = expectation(description: "partial fill prompt")
+        owner.onBegin = { began.fulfill() }
+        let (security, probe, helper, endpoint) = try nativeConsentFixture(self, owner: owner)
+        defer { security.closeConnection(); helper.close() }
+        var request = Blakeswap_V2_TakeOfferRequest()
+        request.maker = "maker"; request.id = "parent"; request.quantity = 9007199254740993
+        request.parentRevision = UInt64.max; request.expectedNetwork = "regtest"; request.towerPubkey = "reviewed-provider"
+        let frozen = try request.jsonUTF8Data()
+        let task = Task { try await security.authorize(endpoint: endpoint, profile: "alice", method: "swap.take", payload: frozen) }
+        await fulfillment(of: [began], timeout: 2)
+        request.quantity += 1; request.parentRevision -= 1; request.towerPubkey = "changed-provider"
+        owner.allow(); let approved = try await task.value; XCTAssertNotNil(approved)
+        let preparation = await probe.lastPreparation
+        let object = try JSONSerialization.jsonObject(with: preparation) as! [String: Any]
+        let normalized = try JSONSerialization.data(withJSONObject: object["params"]!)
+        let reviewed = try Blakeswap_V2_TakeOfferRequest(jsonUTF8Data: normalized)
+        XCTAssertEqual(reviewed.quantity, 9007199254740993); XCTAssertEqual(reviewed.parentRevision, UInt64.max)
+        XCTAssertEqual(reviewed.towerPubkey, "reviewed-provider"); XCTAssertNotEqual(reviewed, request)
+    }
+
+    @MainActor
     func testRemoteEOFRejectsReplyBeforeMainActorLossNotification() async throws {
         let (security, _, helper, endpoint) = try nativeConsentFixture(self, owner: IsolatedOwnerAuthenticator())
         defer { security.closeConnection(); helper.close() }
@@ -93,7 +115,7 @@ final class NativeConsentTests: XCTestCase {
         var settings = AppSettings(); settings.activeNetwork = "regtest"; settings.revision = 1
         var status = DaemonStatus(); status.name = "alice"; status.network = "regtest"
         XCTAssertTrue(model.acceptSnapshot(status, settings: settings, profile: "alice", generation: model.generation))
-        model.recovery = "synthetic recovery display"; model.setupWallet = Blakeswap_V1_FirstWallet()
+        model.recovery = "synthetic recovery display"; model.setupWallet = Blakeswap_V2_FirstWallet()
         let before = model.generation
         let pending = Task {
             do { _ = try await security.authorize(endpoint: endpoint, profile: "alice", method: "onboarding.get", payload: Data("{}".utf8)); XCTFail("Disconnected prompt approved") }

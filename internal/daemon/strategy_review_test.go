@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/blakeswap/blakeswap/internal/chain"
+	"github.com/blakeswap/blakeswap/internal/protocol"
 	"github.com/blakeswap/blakeswap/internal/storage"
 	"github.com/blakeswap/blakeswap/internal/transport"
 )
@@ -268,7 +269,7 @@ func TestStrategyFreshEstimatedReceiptRejectionCountsOnceAndSurvivesRestart(t *t
 	}
 }
 
-func TestStrategyFreshEstimatedReplacementRejectionWithdrawsQuoteOnce(t *testing.T) {
+func TestStrategyReplacementFeeIncreaseRefusesParentAuthorizationOnce(t *testing.T) {
 	e, p := strategyFixture(t)
 	backend := &strategyEstimatedFeeBackend{sendBackend: e.nodes[chain.Blake].(*sendBackend), rate: 1}
 	e.nodes[chain.Blake] = backend
@@ -287,12 +288,16 @@ func TestStrategyFreshEstimatedReplacementRejectionWithdrawsQuoteOnce(t *testing
 	if id == "" {
 		t.Fatal("initial low fee quote", child.Decision, p.Decision)
 	}
+	assertAutomaticWholeParent(t, e, child) // The fresh estimator also freezes exact one-child caps.
 	record := e.s.OrderRecords[id]
 	record.Publication = "relay_acknowledged"
 	e.s.OrderRecords[id] = record
 	beforeReceipt, _ := json.Marshal(e.s.TradeReceipts[id])
-	// More confirmed inventory changes the quote size; the new actual fee is
-	// within its cap but no longer fits the remaining shared allowance.
+	beforeQuotes, revision := len(e.tradeQuotes), p.Revision
+	// More inventory changes the price and the preferred size of a NEW quote.
+	// Replacement keeps the existing exact quantity. Its increased fresh fee
+	// remains below the strategy cap, but exceeds this parent's unused grant,
+	// so it must fail before quote or confirmation-receipt admission.
 	backend.coins = append(backend.coins, chain.UTXO{TxID: strings.Repeat("f", 64), Amount: 500000, Script: hex.EncodeToString(e.scripts[chain.Blake]), Confirmations: 2})
 	if err := e.refreshChain(context.Background(), chain.Blake); err != nil {
 		t.Fatal(err)
@@ -302,27 +307,122 @@ func TestStrategyFreshEstimatedReplacementRejectionWithdrawsQuoteOnce(t *testing
 		child.NextAction = 0
 		e.runAutomations(context.Background())
 	}
-	if !p.Tripped || p.Enabled || p.ConsecutiveFailures != 1 || p.ReplacementFailures != 1 || len(p.Outcomes) != 2 || !p.Outcomes[1] {
+	if !p.Tripped || p.Enabled || p.Revision != revision+1 || p.ConsecutiveFailures != 1 || p.ReplacementFailures != 1 || len(p.Outcomes) != 2 || !p.Outcomes[1] {
 		t.Fatal("replacement rejection not counted once", p, child.Decision)
 	}
-	rejected := 0
-	for _, r := range e.s.TradeReceipts {
-		if r.Result.State == "rejected" && strings.Contains(r.Result.Error, "shared per-chain fee/rescue budget exhausted") {
-			rejected++
-			if r.Snapshot.Request.OrderAction != "replace" || r.Snapshot.Request.SourceOfferID != id {
-				t.Fatal("wrong source provenance", r.Snapshot.Request)
-			}
-		}
+	if !strings.Contains(child.Decision, "replacement exceeds unassigned parent authorization") {
+		t.Fatal("replacement crossed the wrong authorization boundary", child.Decision)
 	}
-	if rejected != 1 || child.Pending != nil || len(e.s.Offers) != 1 {
-		t.Fatal("rejection produced new or retry authority", rejected)
+	if len(e.s.TradeReceipts) != 1 || len(e.tradeQuotes) != beforeQuotes || child.Pending != nil || len(e.s.Offers) != 1 || e.fatal != nil {
+		t.Fatal("refused parent transfer produced new or retry authority", child.Pending, e.fatal)
 	}
 	old, err := historicalOffer(e.s.Offers[id])
-	if err != nil || old.Status != "cancelled" || child.Charges[id].State != "released" {
+	if err != nil || !e.s.ParentOrders[id].Quantities.Closed || child.Charges[id].State != "released" {
 		t.Fatal("eligible unfunded quote remained open", old, err)
 	}
 	afterReceipt, _ := json.Marshal(e.s.TradeReceipts[id])
 	if !bytes.Equal(beforeReceipt, afterReceipt) {
 		t.Fatal("replacement failure altered accepted source receipt")
+	}
+	// Reopen the same committed checkpoint in a fresh process. A breaker
+	// refusal cannot grow receipts or resume the rejected replacement.
+	path := filepath.Join(t.TempDir(), "parent-fee-rejection.db")
+	if err := e.vault.Backup(path); err != nil {
+		t.Fatal(err)
+	}
+	if err := e.vault.Close(); err != nil {
+		t.Fatal(err)
+	}
+	e = reopenAutomationFixture(t, e, path)
+	e.runAutomations(context.Background())
+	p = e.s.MakerStrategies[p.Config.ID]
+	child = e.s.Automations[child.Config.ID]
+	afterReceipt, _ = json.Marshal(e.s.TradeReceipts[id])
+	if !p.Tripped || p.Enabled || p.Revision != revision+1 || p.ConsecutiveFailures != 1 || p.ReplacementFailures != 1 || len(p.Outcomes) != 2 || len(e.s.TradeReceipts) != 1 || len(e.s.Offers) != 1 || child.Pending != nil || child.Charges[id].State != "released" || !bytes.Equal(beforeReceipt, afterReceipt) {
+		t.Fatal("restart lost exact parent refusal or revived authority", p, child)
+	}
+}
+
+func TestStrategyReplacementKeepsExactQuantityWithFreshInventory(t *testing.T) {
+	e, p := strategyFixture(t)
+	q := StrategyEdit{Config: p.Config, ExpectedRevision: p.Revision, Enabled: true}
+	q.Config.Blake.Target = 4000000
+	saveStrategyTest(t, e, q)
+	child := e.s.Automations[strategyPolicyID(p.Config.ID, chain.Blake)]
+	e.s.Automations[strategyPolicyID(p.Config.ID, chain.BTC)].NextAction = time.Now().Unix() + 3600
+	child.NextAction = 0
+	e.runAutomations(context.Background())
+	id := child.CurrentOfferID
+	if id == "" {
+		t.Fatal(child.Decision)
+	}
+	parent := e.s.ParentOrders[id]
+	if parent.Quantities.Available != 100000 {
+		t.Fatal("wrong initial inventory-sized quote", parent.Quantities)
+	}
+	record := e.s.OrderRecords[id]
+	record.Publication = "relay_acknowledged"
+	e.s.OrderRecords[id] = record
+	originalReceipt, _ := json.Marshal(e.s.TradeReceipts[id])
+	originalParent, _ := json.Marshal(parent)
+	backend := e.nodes[chain.Blake].(*sendBackend)
+	backend.coins = append(backend.coins, chain.UTXO{TxID: strings.Repeat("f", 64), Amount: 500000, Script: hex.EncodeToString(e.scripts[chain.Blake]), Confirmations: 2})
+	if err := e.refreshChain(context.Background(), chain.Blake); err != nil {
+		t.Fatal(err)
+	}
+	before := protocol.Digest(e.s)
+	config, planned, source, err := e.strategyPlan(p, chain.Blake, time.Now().Unix())
+	if err != nil || !planned.Ready || config.SellAmount != 100000 || planned.SellAmount != 100000 || planned.BuyAmount == parent.Offer.BuyAmount || source.OrderAction != "replace" || source.SourceOfferID != id {
+		t.Fatal("replacement resized existing quantity instead of repricing it", config.SellAmount, planned, source, err)
+	}
+	if protocol.Digest(e.s) != before {
+		t.Fatal("planning changed custody")
+	}
+	// A new reviewed size interval cannot silently resize an existing parent.
+	for _, limits := range [][2]int64{{150000, 200000}, {50000, 90000}} {
+		candidate := *p
+		candidate.Config.Blake.MinOffer, candidate.Config.Blake.MaxOffer = limits[0], limits[1]
+		if _, planned, _, err := e.strategyPlan(&candidate, chain.Blake, time.Now().Unix()); err == nil || planned.Ready {
+			t.Fatal("replacement quantity escaped current strategy bounds", limits, planned)
+		}
+	}
+	unchangedParent, _ := json.Marshal(parent)
+	if !bytes.Equal(originalParent, unchangedParent) {
+		t.Fatal("refused planning rewrote existing parent")
+	}
+	child.NextAction = 0
+	e.runAutomations(context.Background())
+	next := child.CurrentOfferID
+	if next == id || next == "" || len(e.s.Offers) != 2 || child.Pending != nil || e.fatal != nil {
+		t.Fatal("legal replacement did not commit exactly once", child.Decision, e.fatal)
+	}
+	newParent := e.s.ParentOrders[next]
+	if newParent.Offer.Sell != chain.Blake || newParent.Quantities.Available != 100000 || newParent.Offer.BuyAmount != planned.BuyAmount || child.Charges[id].State != "released" || child.Charges[id].Successor != next || child.Charges[next].State != "reserved" {
+		t.Fatal("replacement changed exact quantity, price or transferred accounting", newParent, child.Charges)
+	}
+	assertAutomaticWholeParent(t, e, child)
+	afterReceipt, _ := json.Marshal(e.s.TradeReceipts[id])
+	if !bytes.Equal(originalReceipt, afterReceipt) {
+		t.Fatal("replacement changed accepted source receipt")
+	}
+}
+
+func TestStrategyNewQuoteStillScalesWithConfirmedInventory(t *testing.T) {
+	e, p := strategyFixture(t)
+	q := StrategyEdit{Config: p.Config, ExpectedRevision: p.Revision, Enabled: true}
+	q.Config.Blake.Target = 4000000
+	saveStrategyTest(t, e, q)
+	backend := e.nodes[chain.Blake].(*sendBackend)
+	backend.coins = append(backend.coins, chain.UTXO{TxID: strings.Repeat("f", 64), Amount: 500000, Script: hex.EncodeToString(e.scripts[chain.Blake]), Confirmations: 2})
+	if err := e.refreshChain(context.Background(), chain.Blake); err != nil {
+		t.Fatal(err)
+	}
+	before := protocol.Digest(e.s)
+	config, planned, source, err := e.strategyPlan(p, chain.Blake, time.Now().Unix())
+	if err != nil || !planned.Ready || config.SellAmount != 125000 || planned.SellAmount != 125000 || source.OrderAction != "" {
+		t.Fatal("new whole offer lost inventory sizing", config, planned, source, err)
+	}
+	if protocol.Digest(e.s) != before {
+		t.Fatal("new quote planning changed custody")
 	}
 }

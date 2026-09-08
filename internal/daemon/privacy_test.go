@@ -8,14 +8,16 @@ import (
 	"testing"
 	"time"
 
+	"fiatjaf.com/nostr"
 	"github.com/blakeswap/blakeswap/internal/chain"
+	"github.com/blakeswap/blakeswap/internal/contract"
 	"github.com/blakeswap/blakeswap/internal/protocol"
 	"github.com/blakeswap/blakeswap/internal/transport"
 )
 
 func privacyOffer(t *testing.T, maker *Engine, bps int64) protocol.Offer {
 	t.Helper()
-	raw, _ := json.Marshal(map[string]any{"sell": "blake", "sell_amount": 500000, "buy_amount": 600000, "tower_bps": bps})
+	raw, _ := json.Marshal(walletWholeParams(chain.Blake, 500000, 600000, 2000, 0, bps))
 	result, err := maker.Command(context.Background(), Request{Method: "offer.create", Params: raw})
 	if err != nil {
 		t.Fatal(err)
@@ -51,10 +53,11 @@ func TestOfferProtectionStaysLocalAcrossPublicationAndRestart(t *testing.T) {
 		}
 		// The same public offer has identical content with protection toggled.
 		o.Tower, o.TowerBPS = nil, 0
-		if err := maker.publishOffer(o); err != nil {
+		public, err := o.PublicJSON()
+		if err != nil {
 			t.Fatal(err)
 		}
-		if maker.s.Offers[o.ID].Content != event.Content {
+		if string(public) != event.Content {
 			t.Fatal("public offer varies with protection")
 		}
 		if err := maker.save(); err != nil {
@@ -68,12 +71,20 @@ func TestOfferProtectionStaysLocalAcrossPublicationAndRestart(t *testing.T) {
 		if got := maker.Status().Orders[0]; got.TowerBPS != bps {
 			t.Fatal("restart lost pinned protection")
 		}
+		// Exercise the notification serializer directly for each terminal/reserved
+		// projection; publishing a parent no longer accepts an arbitrary Status edit.
 		for _, status := range []string{"reserved", "cancelled", "filled"} {
-			o.Status = status
-			if err := maker.publishOffer(o); err != nil {
+			o.Status, o.Available, o.TowerBPS = status, 0, bps
+			notification, err := maker.signOffer(o, nostr.Now())
+			if err != nil {
 				t.Fatal(err)
 			}
-			assertNoProtection(t, maker.s.Offers[o.ID].Content)
+			decoded, err := protocol.DecodeOffer(notification, time.Now().Unix())
+			if err != nil || decoded.Status != status {
+				t.Fatal("invalid notification projection", status, err)
+			}
+			maker.queueEvent(notification)
+			assertNoProtection(t, notification.Content)
 			for _, d := range maker.s.Outbox {
 				if d.Event.Kind == transport.OfferKind {
 					assertNoProtection(t, d.Event.Content)
@@ -94,7 +105,8 @@ func TestPrivateProtectionDoesNotReachCounterparty(t *testing.T) {
 			taker.ingestOffer(maker.s.Offers[o.ID])
 			btc := taker.nodes[chain.BTC].(*receiveBackend)
 			btc.coins = []chain.UTXO{{TxID: strings.Repeat("34", 32), Amount: 1000000, Script: hex.EncodeToString(taker.scripts[chain.BTC]), Confirmations: 2}}
-			raw, _ := json.Marshal(map[string]any{"maker": o.Maker, "id": o.ID, "tower_bps": takerBPS})
+			taker.nodes[chain.BTC] = &sendBackend{receiveBackend: btc}
+			raw, _ := json.Marshal(map[string]any{"maker": o.Maker, "id": o.ID, "quantity": o.SellAmount, "parent_revision": o.Revision, "tower_bps": takerBPS, "funding_fee": 2000, "owner_fee_cap": 0})
 			result, err := taker.Command(context.Background(), Request{Method: "swap.take", Params: raw})
 			if err != nil {
 				t.Fatal(err)
@@ -147,7 +159,17 @@ func TestPrivateProtectionDoesNotReachCounterparty(t *testing.T) {
 			}
 			// Jobs travel only to the selected provider; the peer cannot decrypt them.
 			ms = maker.s.Swaps[id]
-			ms.Long.TxID, ms.Short.TxID = transport.RandomID(), transport.RandomID()
+			ms.Long.TxID = transport.RandomID()
+			// The local refund/job bundle belongs to actual signed funding of
+			// the accepted child and its permanently charged exact inputs.
+			funding, err := maker.fundReserved(context.Background(), ms.Short, "swap/"+ms.ID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := maker.commitMakerFill(ms, funding); err != nil {
+				t.Fatal(err)
+			}
+			ms.ShortFunding, ms.Short.TxID = contract.Hex(funding), funding.TxHash().String()
 			if err := maker.prepare(ms, ms.Short); err != nil {
 				t.Fatal(err)
 			}
@@ -176,7 +198,7 @@ func TestPrivateProtectionDoesNotReachCounterparty(t *testing.T) {
 	}
 }
 
-func TestRetiredOfferCacheIsWithdrawnWithoutProviderConfig(t *testing.T) {
+func TestRetiredOfferCacheIsRefusedWithoutProviderConfig(t *testing.T) {
 	maker, _, _ := sendFixture(t)
 	maker.Config.Tower = discoveryEngine(t).ownTower()
 	o := privacyOffer(t, maker, 50)
@@ -190,34 +212,28 @@ func TestRetiredOfferCacheIsWithdrawnWithoutProviderConfig(t *testing.T) {
 	maker.s.Offers[o.ID], maker.s.Book[o.Maker+":"+o.ID] = old, old
 	maker.queueEvent(old)
 	maker.Config.Tower = protocol.Tower{}
-	maker.s.OfferTowers = nil
-	if err := maker.scrubOfferCache(); err != nil {
-		t.Fatal("cache cleanup blocked wallet startup", err)
+	maker.s.OfferTowers = map[string]protocol.Tower{}
+	before := protocol.Digest(maker.s)
+	if err := maker.scrubOfferCache(); err == nil || !strings.Contains(err.Error(), "incompatible saved offer") {
+		t.Fatal("retired owned schema was not refused", err)
 	}
-	current, err := protocol.DecodeOffer(maker.s.Offers[o.ID], time.Now().Unix())
-	if err != nil || current.Status != "cancelled" {
-		t.Fatal("retired offer not withdrawn", err)
-	}
-	for _, d := range maker.s.Outbox {
-		if d.Event.Kind == transport.OfferKind {
-			assertNoProtection(t, d.Event.Content)
-		}
+	if protocol.Digest(maker.s) != before {
+		t.Fatal("refusal rewrote the owned offer, parent, outbox or private commitments")
 	}
 	observer, _, _ := sendFixture(t)
 	observer.ingestOffer(old)
 	if len(observer.Status().Orders) != 0 {
 		t.Fatal("retired public offer accepted")
 	}
-	before := maker.s.Offers[o.ID].ID
-	if err := maker.scrubOfferCache(); err != nil || maker.s.Offers[o.ID].ID != before {
-		t.Fatal("cache cleanup is not idempotent", err)
+	if err := maker.scrubOfferCache(); err == nil || protocol.Digest(maker.s) != before {
+		t.Fatal("repeated refusal changed the preserved source", err)
 	}
 }
 
 func TestTakerProtectionRequiresOnlyItsRefundToMeetEconomicMinimum(t *testing.T) {
 	e, _, _ := sendFixture(t)
 	e.Config.Tower = discoveryEngine(t).ownTower()
-	o := protocol.Offer{ID: transport.RandomID(), Maker: discoveryEngine(t).identity.Public().Hex(), Network: chain.Regtest, Sell: chain.Blake, SellAmount: 100000, BuyAmount: 1000000, Expires: time.Now().Unix() + 3600, Status: "open"}
+	o := protocol.Offer{Version: protocol.Version, Revision: 1, Available: 100000, FillPolicy: protocol.FillPolicy{Mode: protocol.FillWhole, Min: 100000, Max: 100000}, ID: transport.RandomID(), Maker: discoveryEngine(t).identity.Public().Hex(), Network: chain.Regtest, Sell: chain.Blake, SellAmount: 100000, BuyAmount: 1000000, Expires: time.Now().Unix() + 3600, Status: "open"}
 	if tower, err := e.selectProtection(o, 50, "", false); err != nil || tower.BPS != 50 {
 		t.Fatal("valid taker refund rejected because of peer leg", err)
 	}
@@ -225,6 +241,7 @@ func TestTakerProtectionRequiresOnlyItsRefundToMeetEconomicMinimum(t *testing.T)
 		t.Fatal("maker's dust rescue accepted")
 	}
 	o.SellAmount, o.BuyAmount = o.BuyAmount, o.SellAmount
+	o.Available, o.FillPolicy.Min, o.FillPolicy.Max = o.SellAmount, o.SellAmount, o.SellAmount
 	if _, err := e.selectProtection(o, 50, "", false); err == nil {
 		t.Fatal("taker's dust refund accepted")
 	}
@@ -232,6 +249,7 @@ func TestTakerProtectionRequiresOnlyItsRefundToMeetEconomicMinimum(t *testing.T)
 		t.Fatal("negative protection fee accepted")
 	}
 	o.SellAmount, o.BuyAmount = 1000000, 1000000
+	o.Available, o.FillPolicy.Min, o.FillPolicy.Max = o.SellAmount, o.SellAmount, o.SellAmount
 	e.Config.Tower.Scripts[chain.BTC] = "0014"
 	if _, err := e.selectProtection(o, 50, "", true); err == nil {
 		t.Fatal("invalid payout accepted")

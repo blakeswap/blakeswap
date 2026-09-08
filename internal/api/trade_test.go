@@ -5,7 +5,7 @@ import (
 	"encoding/json"
 	"testing"
 
-	pb "github.com/blakeswap/blakeswap/api/gen/blakeswap/v1"
+	pb "github.com/blakeswap/blakeswap/api/gen/blakeswap/v2"
 	"github.com/blakeswap/blakeswap/internal/chain"
 	"github.com/blakeswap/blakeswap/internal/daemon"
 	"github.com/blakeswap/blakeswap/internal/protocol"
@@ -19,10 +19,10 @@ func TestTradeAPIPreservesBindingAndSeparateAssetEconomics(t *testing.T) {
 			if err := json.Unmarshal(r.Params, &p); err != nil {
 				t.Fatal(err)
 			}
-			if p.Kind != "taker" || p.ExpectedWallet != "alice" || p.ExpectedNetwork != "testnet" || p.FundingFee != 6500 || p.Rate != 2500 || p.Timestamp != 123 || p.OwnerFeeCap != 20000 || p.TowerPubKey != "provider" || p.SellAmount != 9007199254740993 {
+			if p.Kind != "taker" || p.ExpectedWallet != "alice" || p.ExpectedNetwork != "testnet" || p.FundingFee != 6500 || p.Rate != 2500 || p.Timestamp != 123 || p.OwnerFeeCap != 20000 || p.TowerPubKey != "provider" || p.Quantity != 9007199254740993 || p.ParentRevision != 9007199254740995 || p.SellAmount != 0 || p.BuyAmount != 0 {
 				t.Fatal("request lost precision or binding", p)
 			}
-			return daemon.TradeQuote{Token: "token", Revision: "revision", Kind: p.Kind, Wallet: p.ExpectedWallet, WalletKey: "key", Network: chain.Testnet, OfferEventID: "event", ProviderRevision: "proof", PaidChain: chain.BTC, PaidPrincipal: 9007199254740993, PaidTotal: 9007199254747493, ReceivedChain: chain.Blake, ReceivedPrincipal: 123456789, Fees: p.FeeSelection, Provider: protocol.Tower{PubKey: p.TowerPubKey, BPS: p.TowerBPS}, Outcomes: []daemon.TradeOutcome{{Kind: "owner_claim", Chain: chain.Blake, Principal: 123456789, FeeMin: 2000, FeeMax: 20000, NetMin: 123436789, NetMax: 123454789}}, Timing: daemon.TradeTiming{Unit: "seconds", Confirmations: 6, FirstRevealer: "taker"}, Funds: daemon.FundsPreflight{State: "proven", Sufficient: true}, Ready: true}, nil
+			return daemon.TradeQuote{FillTakeFields: p.FillTakeFields, Token: "token", Revision: "revision", Kind: p.Kind, Wallet: p.ExpectedWallet, WalletKey: "key", Network: chain.Testnet, OfferEventID: "event", ProviderRevision: "proof", PaidChain: chain.BTC, PaidPrincipal: 9007199254740993, PaidTotal: 9007199254747493, ReceivedChain: chain.Blake, ReceivedPrincipal: 123456789, Fees: p.FeeSelection, Provider: protocol.Tower{PubKey: p.TowerPubKey, BPS: p.TowerBPS}, Outcomes: []daemon.TradeOutcome{{Kind: "owner_claim", Chain: chain.Blake, Principal: 123456789, FeeMin: 2000, FeeMax: 20000, NetMin: 123436789, NetMax: 123454789}}, Timing: daemon.TradeTiming{Unit: "seconds", Confirmations: 6, FirstRevealer: "taker"}, Funds: daemon.FundsPreflight{State: "proven", Sufficient: true}, Ready: true}, nil
 		case "trade.confirm":
 			var p daemon.ConfirmTradeRequest
 			if err := json.Unmarshal(r.Params, &p); err != nil {
@@ -37,8 +37,8 @@ func TestTradeAPIPreservesBindingAndSeparateAssetEconomics(t *testing.T) {
 			return nil, nil
 		}
 	}}
-	q, err := service.QuoteTrade(context.Background(), &pb.TradeQuoteRequest{Kind: "taker", ExpectedWallet: "alice", ExpectedNetwork: "testnet", SellAmount: 9007199254740993, FundingFee: 6500, RateSatKvb: 2500, FeeTimestamp: 123, OwnerFeeCap: 20000, TowerPubkey: "provider", TowerBps: 50})
-	if err != nil || q.GetPaidPrincipal() != 9007199254740993 || q.PaidTotal != 9007199254747493 || q.ReceivedChain != "blake" || q.Fees.RateSatKvb != 2500 || q.ProviderRevision != "proof" || q.Outcomes[0].NetMin != 123436789 || q.Timing.FirstRevealer != "taker" {
+	q, err := service.QuoteTrade(context.Background(), &pb.TradeQuoteRequest{Kind: "taker", ExpectedWallet: "alice", ExpectedNetwork: "testnet", Quantity: 9007199254740993, ParentRevision: 9007199254740995, FundingFee: 6500, RateSatKvb: 2500, FeeTimestamp: 123, OwnerFeeCap: 20000, TowerPubkey: "provider", TowerBps: 50})
+	if err != nil || q.GetPaidPrincipal() != 9007199254740993 || q.Quantity != 9007199254740993 || q.ParentRevision != 9007199254740995 || q.PaidTotal != 9007199254747493 || q.ReceivedChain != "blake" || q.Fees.RateSatKvb != 2500 || q.ProviderRevision != "proof" || q.Outcomes[0].NetMin != 123436789 || q.Timing.FirstRevealer != "taker" {
 		t.Fatal(q, err)
 	}
 	got, err := service.ConfirmTrade(context.Background(), &pb.ConfirmTradeRequest{Token: q.Token, Revision: q.Revision, RequestId: "request", ExpectedWallet: q.Wallet, ExpectedNetwork: q.Network})

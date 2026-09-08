@@ -12,7 +12,7 @@ import (
 	"time"
 
 	"fiatjaf.com/nostr"
-	pb "github.com/blakeswap/blakeswap/api/gen/blakeswap/v1"
+	pb "github.com/blakeswap/blakeswap/api/gen/blakeswap/v2"
 	"github.com/blakeswap/blakeswap/internal/chain"
 	"github.com/blakeswap/blakeswap/internal/credential"
 	"github.com/blakeswap/blakeswap/internal/daemon"
@@ -247,8 +247,8 @@ func readLegacyStateVault(vault *storage.Vault) (*daemon.State, error) {
 	if err != nil {
 		return nil, errors.New("invalid wallet backup")
 	}
-	if (state.Version != 1 && state.Version != 2) || !state.Network.Valid() {
-		return nil, errors.New("unsupported wallet backup")
+	if err := daemon.ValidateStateVersion(&state); err != nil {
+		return nil, err
 	}
 	if _, err := wallet.FromMnemonic(state.Mnemonic); err != nil {
 		return nil, errors.New("backup does not contain a valid wallet")

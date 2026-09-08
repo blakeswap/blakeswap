@@ -8,7 +8,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	pb "github.com/blakeswap/blakeswap/api/gen/blakeswap/v1"
+	pb "github.com/blakeswap/blakeswap/api/gen/blakeswap/v2"
 	"github.com/blakeswap/blakeswap/internal/chain"
 	"github.com/blakeswap/blakeswap/internal/storage"
 	"google.golang.org/protobuf/proto"
@@ -63,7 +63,7 @@ func TestPortableImportIsolatedProfilePreservesExistingWallet(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if state.Recovery == nil || state.Recovery.Status.State != "recovering" || state.ReceiveIndexes[chain.Blake] != 37 || state.Swaps["swap"].SelfRefunds[0] != "saved refund" {
+		if state.Recovery == nil || state.Recovery.Status.State != "recovering" || state.ReceiveIndexes[chain.Blake] != 37 || state.Swaps[fixtureChildID].SelfRefunds[0] != "saved refund" {
 			t.Fatal("import lost gate or recovery state")
 		}
 		activity := state.Activities["receive/known"]

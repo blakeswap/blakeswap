@@ -132,7 +132,7 @@ func (m *Manager) captureBackupLocked(ctx context.Context, selected string, all 
 				}
 				path := filepath.Join(root, string(network), "state.db")
 				if _, statErr := os.Stat(path); errors.Is(statErr, os.ErrNotExist) {
-					source.empty = &daemon.State{Version: 1, Network: network, Mnemonic: seed}
+					source.empty = &daemon.State{Version: daemon.StateVersion, Network: network, Mnemonic: seed}
 					normalizeState(source.empty)
 					continue
 				} else if statErr != nil {

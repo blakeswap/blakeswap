@@ -54,7 +54,7 @@ func receiveEngine(t *testing.T) (*Engine, map[chain.ID]*receiveBackend) {
 	}
 	t.Cleanup(func() { v.Close() })
 	e := &Engine{chainFresh: map[chain.ID]bool{chain.BTC: true, chain.Blake: true}, chainErrors: map[chain.ID]string{}, chainObserved: map[chain.ID]int64{}, chainGeneration: map[chain.ID]uint64{}, Config: Config{Network: chain.Regtest}, keys: keys, identity: nostr.Generate(), vault: v,
-		s: State{Version: 1, Mnemonic: mnemonic}, nodes: map[chain.ID]chain.Backend{}, watch: map[chain.ID]chain.Backend{},
+		s: State{Version: StateVersion, Network: chain.Regtest, Mnemonic: mnemonic}, nodes: map[chain.ID]chain.Backend{}, watch: map[chain.ID]chain.Backend{},
 		addresses: map[chain.ID]string{}, scripts: map[chain.ID][]byte{}, heights: map[chain.ID]uint32{}, clocks: map[chain.ID]uint32{}, balances: map[chain.ID]int64{}}
 	backends := map[chain.ID]*receiveBackend{}
 	for _, id := range []chain.ID{chain.BTC, chain.Blake} {

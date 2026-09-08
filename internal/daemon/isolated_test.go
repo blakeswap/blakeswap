@@ -16,6 +16,7 @@ import (
 	"github.com/blakeswap/blakeswap/internal/contract"
 	"github.com/blakeswap/blakeswap/internal/protocol"
 	"github.com/blakeswap/blakeswap/internal/transport"
+	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/btcsuite/btcd/wire"
 )
 
@@ -50,8 +51,29 @@ func (s *liveTowerScanner) Scan(ctx context.Context, _ uint32, _ []string) (map[
 	return map[string]chain.Observation{}, nil
 }
 
+// These tower-only fixtures contain jobs from both participants. The peer's
+// refund must be signed by its distinct contract key, not the local claim key.
+func isolatedPeerRefundJob(t *testing.T, e *Engine, s *Swap, c contract.HTLC) (protocol.Job, error) {
+	t.Helper()
+	key := isolatedSpendKey(t, e, s, c, true)
+	towerScript, err := hex.DecodeString(s.protection().Scripts[c.Chain])
+	if err != nil {
+		return protocol.Job{}, err
+	}
+	job := protocol.Job{Version: protocol.Version, Network: e.Config.Network, SwapID: s.ID, Owner: s.Request.Taker, TermsHash: protocol.Digest(s.Terms), Kind: "refund", Target: c, ScanFrom: 1, Lock: c.RefundHeight + protocol.RefundDelay(e.Config.Network), BPS: s.protection().BPS, Payout: hex.EncodeToString(e.scripts[c.Chain]), TowerScript: hex.EncodeToString(towerScript)}
+	job.ID = protocol.Digest([]string{s.ID, job.Owner, job.Kind, string(c.Chain), c.TxID})
+	for _, fee := range protocol.RescueFees {
+		tx, err := contract.Spend(c, key, e.scripts[c.Chain], fee, true, job.Lock, towerScript, protocol.Bounty(c.Amount, job.BPS), nil)
+		if err != nil {
+			return job, err
+		}
+		job.Templates = append(job.Templates, contract.Hex(tx))
+	}
+	return job, job.Validate(s.protection().Scripts, job.BPS)
+}
+
 func TestIsolatedTowerWorkBudgetsKeepHealthyChainProgressing(t *testing.T) {
-	e, s, b, secret := isolatedFixture(t, "maker")
+	e, s, b, secret := isolatedTowerFixture(t)
 	target, observe := s.Long, s.Short
 	if target.Chain != chain.Blake || observe.Chain != chain.BTC {
 		t.Fatal("fixture ordering changed")
@@ -62,9 +84,8 @@ func TestIsolatedTowerWorkBudgetsKeepHealthyChainProgressing(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	e.s.Swaps = map[string]*Swap{}
 	state := &TowerJob{Job: job, Secret: hex.EncodeToString(secret), FundingSeen: true}
-	refund, err := e.makeJob(s, target, "refund", nil, target.RefundHeight+protocol.RefundDelay(chain.Regtest))
+	refund, err := isolatedPeerRefundJob(t, e, s, target)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -114,7 +135,7 @@ func TestIsolatedTowerScanRejectsChangedSourceBeforeRefund(t *testing.T) {
 	e, s, b, _ := isolatedFixture(t, "maker")
 	tower := e.ownTower()
 	s.Protection = &tower
-	refund, err := e.makeJob(s, s.Long, "refund", nil, s.Long.RefundHeight+protocol.RefundDelay(chain.Regtest))
+	refund, err := isolatedPeerRefundJob(t, e, s, s.Long)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -218,7 +239,7 @@ func TestIsolatedAcceptedScanKeepsWitnessAcrossLaterSourceChange(t *testing.T) {
 				if incoming.Chain != chain.BTC {
 					t.Fatal("fixture must scan incoming first")
 				}
-				key, _ := e.swapKey(incoming.Chain, s.ID)
+				key := isolatedSpendKey(t, e, s, incoming, false)
 				claim, err := contract.Spend(incoming, key, e.scripts[incoming.Chain], 2000, false, 0, nil, 0, secret)
 				if err != nil {
 					t.Fatal(err)
@@ -274,7 +295,7 @@ func TestIsolatedTowerRemembersObserveOnlyWitnessBeforeTargetReturns(t *testing.
 	if err := e.save(); err != nil {
 		t.Fatal(err)
 	}
-	key, _ := e.swapKey(observe.Chain, s.ID)
+	key := isolatedSpendKey(t, e, s, observe, false)
 	claim, err := contract.Spend(observe, key, e.scripts[observe.Chain], 2000, false, 0, nil, 0, secret)
 	if err != nil {
 		t.Fatal(err)
@@ -326,7 +347,7 @@ func TestIsolatedTerminalHistorySurvivesOutageButReopensOnReorg(t *testing.T) {
 					if role == "maker" {
 						target = s.Long
 					}
-					key, _ := e.swapKey(target.Chain, s.ID)
+					key := isolatedSpendKey(t, e, s, target, stage == "refunded")
 					lock := uint32(0)
 					if stage == "refunded" {
 						lock = target.RefundHeight
@@ -341,6 +362,19 @@ func TestIsolatedTerminalHistorySurvivesOutageButReopensOnReorg(t *testing.T) {
 						s.LongSpend = tx.TxHash().String()
 					} else {
 						s.ShortSpend = tx.TxHash().String()
+					}
+					if role == "maker" {
+						child := e.s.FillRecords[s.ID]
+						if err := e.withdrawParentAvailable(child.ParentID, time.Now().Unix()+1); err != nil {
+							t.Fatal(err)
+						}
+						disposition := FillFilled
+						if stage == "refunded" {
+							disposition = FillReleased
+						}
+						if err := e.settleMakerFill(s, disposition); err != nil {
+							t.Fatal(err)
+						}
 					}
 					if err := e.CanChangeNetwork(); err != nil {
 						t.Fatal("fixture is not terminal", err)
@@ -376,10 +410,7 @@ func TestIsolatedWitnessPersistsBeforeUnrelatedRecoveryFailure(t *testing.T) {
 				e.chainFresh[chain.BTC], e.chainFresh[chain.Blake] = true, true
 				all := map[chain.ID]map[string]chain.Observation{chain.BTC: {}, chain.Blake: {}}
 				for _, target := range []contract.HTLC{own, incoming} {
-					key, err := e.swapKey(target.Chain, s.ID)
-					if err != nil {
-						t.Fatal(err)
-					}
+					key := isolatedSpendKey(t, e, s, target, false)
 					tx, err := contract.Spend(target, key, e.scripts[target.Chain], 2000, false, 0, nil, 0, secret)
 					if err != nil {
 						t.Fatal(err)
@@ -451,17 +482,17 @@ func TestIsolatedTowerFeeSelectionCannotReuseChangedSourceEvidence(t *testing.T)
 func TestIsolatedManualAccelerationCannotPublishPrivateClaim(t *testing.T) {
 	for _, role := range []string{"maker", "taker"} {
 		t.Run(role, func(t *testing.T) {
-			e, s, b, secret := isolatedFixture(t, role)
+			e, s, b, secret := isolatedFixture(t, role, FeeSelection{FundingFee: 2000, OwnerFeeCap: 20000})
 			target := s.Short
 			if role == "maker" {
 				target = s.Long
 			}
-			key, _ := e.swapKey(target.Chain, s.ID)
+			key := isolatedSpendKey(t, e, s, target, false)
 			claim, err := contract.Spend(target, key, e.scripts[target.Chain], protocol.RescueFees[0], false, 0, nil, 0, secret)
 			if err != nil {
 				t.Fatal(err)
 			}
-			s.OwnerFeeCap, s.SelfClaim, s.SecretExposed = 20000, contract.Hex(claim), true
+			s.SelfClaim, s.SecretExposed = contract.Hex(claim), true
 			if err := e.save(); err != nil {
 				t.Fatal(err)
 			}
@@ -490,17 +521,17 @@ func TestIsolatedMempoolClaimKeepsAuthorizedVariantsAndDestination(t *testing.T)
 	for _, role := range []string{"maker", "taker"} {
 		for _, cap := range []int64{0, 20000} {
 			t.Run(role+"/"+map[int64]string{0: "legacy", 20000: "authorized"}[cap], func(t *testing.T) {
-				e, s, b, secret := isolatedFixture(t, role)
+				e, s, b, secret := isolatedFixture(t, role, FeeSelection{FundingFee: 2000, OwnerFeeCap: cap})
 				target := s.Short
 				if role == "maker" {
 					target = s.Long
 				}
-				key, _ := e.swapKey(target.Chain, s.ID)
+				key := isolatedSpendKey(t, e, s, target, false)
 				claim, err := contract.Spend(target, key, e.scripts[target.Chain], 2000, false, 0, nil, 0, secret)
 				if err != nil {
 					t.Fatal(err)
 				}
-				s.OwnerFeeCap, s.SelfClaim, s.SecretExposed, s.SecretObserved, s.ClaimAttempt = cap, contract.Hex(claim), true, true, 3
+				s.SelfClaim, s.SecretExposed, s.SecretObserved, s.ClaimAttempt = contract.Hex(claim), true, true, 3
 				original := s.SelfClaim
 				e.scripts[target.Chain] = []byte{0x51} // A rotated receive address must not redirect saved variants.
 				b.spent = true
@@ -540,14 +571,60 @@ func TestIsolatedMempoolClaimKeepsAuthorizedVariantsAndDestination(t *testing.T)
 	}
 }
 
-func isolatedFixture(t *testing.T, role string) (*Engine, *Swap, *sendBackend, []byte) {
-	return isolatedFixtureSell(t, role, chain.BTC)
+func isolatedFixture(t *testing.T, role string, policies ...FeeSelection) (*Engine, *Swap, *sendBackend, []byte) {
+	return isolatedFixtureSell(t, role, chain.BTC, policies...)
 }
-func isolatedFixtureSell(t *testing.T, role string, sell chain.ID) (*Engine, *Swap, *sendBackend, []byte) {
+
+// A tower receives signed jobs without owning the participants' child ledger.
+// Keep the participant fixture intact and install separate empty tower custody;
+// never erase a previously accepted maker from a running wallet to model it.
+func isolatedTowerFixture(t *testing.T) (*Engine, *Swap, *sendBackend, []byte) {
+	t.Helper()
+	return isolatedTowerFixtureSell(t, chain.BTC)
+}
+
+func isolatedTowerFixtureSell(t *testing.T, sell chain.ID) (*Engine, *Swap, *sendBackend, []byte) {
+	t.Helper()
+	participant, s, backend, secret := isolatedFixtureSell(t, "maker", sell)
+	state := State{Version: StateVersion, Network: participant.s.Network, Mnemonic: participant.s.Mnemonic, ReceiveIndexes: map[chain.ID]uint32{chain.BTC: participant.s.ReceiveIndexes[chain.BTC], chain.Blake: participant.s.ReceiveIndexes[chain.Blake]}}
+	e := conservationRestoredEngine(t, participant, state)
+	e.receiveBook = participant.receiveBook
+	e.receiveReady = map[chain.ID]bool{}
+	e.scanners = participant.scanners
+	return e, s, backend, secret
+}
+
+func isolatedPeerID(id string) string { return protocol.Digest("isolated fixture peer/" + id) }
+
+// Each participant has distinct keys. Tests constructing a peer observation
+// must sign with that peer's key, rather than give the local wallet both roles.
+func isolatedSpendKey(t *testing.T, e *Engine, s *Swap, c contract.HTLC, refund bool) *btcec.PrivateKey {
+	t.Helper()
+	want := c.ClaimKey
+	if refund {
+		want = c.RefundKey
+	}
+	for _, id := range []string{s.ID, isolatedPeerID(s.ID)} {
+		key, err := e.swapKey(c.Chain, id)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if hex.EncodeToString(key.PubKey().SerializeCompressed()) == want {
+			return key
+		}
+	}
+	t.Fatal("fixture has no key for the requested contract branch")
+	return nil
+}
+
+func isolatedFixtureSell(t *testing.T, role string, sell chain.ID, policies ...FeeSelection) (*Engine, *Swap, *sendBackend, []byte) {
 	t.Helper()
 	e, b, _ := sendFixture(t)
-	maker, taker := nostr.Generate(), nostr.Generate()
-	offer := protocol.Offer{ID: transport.RandomID(), Maker: maker.Public().Hex(), Sell: sell, SellAmount: 1000000, BuyAmount: 2000000, Expires: time.Now().Unix() + 3600, Status: "open"}
+	maker, taker := e.identity, nostr.Generate()
+	if role == "taker" {
+		maker, taker = taker, maker
+	}
+	offer := protocol.Offer{Version: protocol.Version, Network: chain.Regtest, FillPolicy: protocol.FillPolicy{Mode: protocol.FillWhole, Min: 1000000, Max: 1000000}, Revision: 1, Available: 1000000, ID: transport.RandomID(), Maker: maker.Public().Hex(), Sell: sell, SellAmount: 1000000, BuyAmount: 2000000, Expires: time.Now().Unix() + 3600, Status: "open"}
 	raw, _ := offer.PublicJSON()
 	event := nostr.Event{Kind: transport.OfferKind, CreatedAt: nostr.Now(), Tags: nostr.Tags{{"d", offer.ID}, {"t", transport.Namespace}}, Content: string(raw)}
 	if err := transport.Sign(&event, maker); err != nil {
@@ -558,10 +635,19 @@ func isolatedFixtureSell(t *testing.T, role string, sell chain.ID) (*Engine, *Sw
 	if err != nil {
 		t.Fatal(err)
 	}
-	secret := []byte(strings.Repeat("s", 32))
+	peerKeys, err := e.swapKeys(isolatedPeerID(id))
+	if err != nil {
+		t.Fatal(err)
+	}
+	makerKeys, takerKeys := keys, peerKeys
+	if role == "taker" {
+		makerKeys, takerKeys = peerKeys, keys
+	}
+	secretBytes := sha256.Sum256([]byte(transport.RandomID()))
+	secret := secretBytes[:]
 	hash := sha256.Sum256(secret)
-	req := protocol.Request{ID: id, OfferEvent: event, Taker: taker.Public().Hex(), Hash: hex.EncodeToString(hash[:]), Keys: keys}
-	terms, err := protocol.NewTerms(req, keys, map[chain.ID]uint32{chain.BTC: 100, chain.Blake: 100})
+	req := protocol.Request{Version: protocol.Version, Revision: offer.Revision, Quantity: offer.SellAmount, ID: id, OfferEvent: event, Taker: taker.Public().Hex(), Hash: hex.EncodeToString(hash[:]), Keys: takerKeys}
+	terms, err := protocol.NewTerms(req, makerKeys, map[chain.ID]uint32{chain.BTC: 100, chain.Blake: 100})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -590,6 +676,38 @@ func isolatedFixtureSell(t *testing.T, role string, sell chain.ID) (*Engine, *Sw
 	e.heights = map[chain.ID]uint32{chain.BTC: 500, chain.Blake: 500}
 	e.clocks = e.heights
 	e.s.Swaps = map[string]*Swap{id: s}
+	policy := FeeSelection{FundingFee: 2000}
+	if len(policies) > 1 {
+		t.Fatal("fixture has more than one initial fee authorization")
+	}
+	if len(policies) == 1 {
+		policy = policies[0]
+	}
+	s.OwnerFeeCap = policy.OwnerFeeCap
+	e.s.FundingFees = map[string]FeeSelection{"swap/" + id: policy}
+	if role == "maker" {
+		fields := FillOrderFields{FillPolicy: offer.FillPolicy, FeeBudgets: map[chain.ID]int64{sell: policy.FundingFee + max(policy.OwnerFeeCap, int64(20000)), sell.Other(): max(policy.OwnerFeeCap, int64(2000))}, BountyBudgets: map[chain.ID]int64{chain.BTC: 0, chain.Blake: 0}}
+		parent, err := newParentOrder(offer, policy, fields, time.Now().Unix())
+		if err != nil {
+			t.Fatal(err)
+		}
+		reserved, child, err := parent.reserveFill(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		child.Inputs = []CoinOutpoint{{TxID: strings.Repeat("0", 64)}}
+		committed, allocation, err := reserved.transitionFill(*child, FillCommitted, false)
+		if err != nil {
+			t.Fatal(err)
+		}
+		e.s.ParentOrders = map[string]*ParentOrder{offer.ID: &committed}
+		e.s.FillRecords = map[string]*FillRecord{id: &allocation}
+		e.s.CoinReservations = map[string]CoinReservation{"swap/" + id: {Chain: own.Chain, Inputs: append([]CoinOutpoint{}, child.Inputs...)}}
+		e.s.Offers[offer.ID] = event
+	}
+	if err := e.retainSwapIdentity(s); err != nil {
+		t.Fatal(err)
+	}
 	if err := e.prepare(s, own); err != nil {
 		t.Fatal(err)
 	}
@@ -605,7 +723,7 @@ func TestIsolatedNeverRevealsPrivateOrPreparedSecretAndNeverRefunds(t *testing.T
 					incoming = s.Long
 				}
 				if prepared {
-					key, _ := e.swapKey(incoming.Chain, s.ID)
+					key := isolatedSpendKey(t, e, s, incoming, false)
 					tx, err := contract.Spend(incoming, key, e.scripts[incoming.Chain], protocol.RescueFees[0], false, 0, nil, 0, secret)
 					if err != nil {
 						t.Fatal(err)
@@ -645,7 +763,7 @@ func TestIsolatedClaimsWithObservedWitnessAndPersistsIncomingClaimGuard(t *testi
 			}
 			e.chainFresh[own.Chain] = true
 			e.chainFresh[incoming.Chain] = false
-			key, _ := e.swapKey(own.Chain, s.ID)
+			key := isolatedSpendKey(t, e, s, own, false)
 			witness, err := contract.Spend(own, key, e.scripts[own.Chain], protocol.RescueFees[0], false, 0, nil, 0, secret)
 			if err != nil {
 				t.Fatal(err)

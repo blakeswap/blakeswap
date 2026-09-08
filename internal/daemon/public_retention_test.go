@@ -12,14 +12,66 @@ import (
 
 func publicRetentionEvent(t *testing.T, key nostr.SecretKey, id, status string, at nostr.Timestamp) nostr.Event {
 	t.Helper()
-	offer := protocol.Offer{Network: chain.Regtest, ID: id, Maker: key.Public().Hex(), Sell: chain.BTC, SellAmount: 100000, BuyAmount: 200000, Status: status, Expires: time.Now().Unix() + 3600}
-	raw, _ := offer.PublicJSON()
+	offer := protocol.Offer{Version: protocol.Version, Revision: 1, FillPolicy: protocol.FillPolicy{Mode: protocol.FillWhole, Min: 100000, Max: 100000}, Available: 100000, Network: chain.Regtest, ID: id, Maker: key.Public().Hex(), Sell: chain.BTC, SellAmount: 100000, BuyAmount: 200000, Status: status, Expires: time.Now().Unix() + 3600}
+	if offer.Status != "open" {
+		offer.Available = 0
+		offer.Revision = 2
+	}
+	raw, err := offer.PublicJSON()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := offer.Validate(offer.Expires - 1); err != nil {
+		t.Fatal("invalid retained public fixture", err)
+	}
 	event := nostr.Event{Kind: transport.OfferKind, CreatedAt: at, Tags: nostr.Tags{{"d", id}, {"t", chain.Regtest.Namespace()}}, Content: string(raw)}
 	if err := transport.Sign(&event, key); err != nil {
 		t.Fatal(err)
 	}
 	return event
 }
+
+// These are owned publication/retention fixtures, with the exact accounting
+// companion that must survive when the signed source moves to cold history.
+func publicRetentionOwnSource(t *testing.T, e *Engine, event nostr.Event) {
+	t.Helper()
+	offer, err := protocol.DecodeOffer(event, int64(event.CreatedAt))
+	if err != nil {
+		t.Fatal(err)
+	}
+	initial := offer
+	initial.Status, initial.Available, initial.Revision = "open", initial.SellAmount, 1
+	policy := FeeSelection{FundingFee: 2000}
+	parent, err := newParentOrder(initial, policy, FillOrderFields{FillPolicy: initial.FillPolicy,
+		FeeBudgets:    map[chain.ID]int64{chain.BTC: 22000, chain.Blake: 2000},
+		BountyBudgets: map[chain.ID]int64{chain.BTC: 0, chain.Blake: 0}}, int64(event.CreatedAt))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if offer.Status == "cancelled" {
+		parent.Quantities, err = parent.Quantities.withdrawAvailable()
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	parent.SignedRevision, parent.LastSignedAt = offer.Revision, int64(event.CreatedAt)
+	if parent.Quantities.Revision != offer.Revision || parent.Quantities.Available != offer.Available {
+		t.Fatal("signed own source disagrees with retained accounting")
+	}
+	if e.s.ParentOrders == nil {
+		e.s.ParentOrders = map[string]*ParentOrder{}
+	}
+	if e.s.FundingFees == nil {
+		e.s.FundingFees = map[string]FeeSelection{}
+	}
+	if e.s.Offers == nil {
+		e.s.Offers = map[string]nostr.Event{}
+	}
+	e.s.ParentOrders[offer.ID] = parent
+	e.s.FundingFees["offer/"+offer.ID] = policy
+	e.s.Offers[offer.ID] = event
+}
+
 func TestPublicCancellationSurvivesPruneRestartAndOverlappingTies(t *testing.T) {
 	e, _ := receiveEngine(t)
 	key := nostr.Generate()
@@ -88,11 +140,11 @@ func TestOwnPublicOrderingArchivesWithHistoryAndSurvivesRestart(t *testing.T) {
 	at := nostr.Now()
 	open := publicRetentionEvent(t, e.identity, id, "open", at-1)
 	cancelled := publicRetentionEvent(t, e.identity, id, "cancelled", at)
-	e.s.Offers = map[string]nostr.Event{id: open}
+	publicRetentionOwnSource(t, e, open)
 	if err := e.ingestOffer(open); err != nil {
 		t.Fatal(err)
 	}
-	e.s.Offers[id] = cancelled
+	publicRetentionOwnSource(t, e, cancelled)
 	if err := e.ingestOffer(cancelled); err != nil {
 		t.Fatal(err)
 	}
@@ -172,7 +224,7 @@ func TestOwnRemoteOpenExpiryLeavesNoActiveOrdering(t *testing.T) {
 	id := transport.RandomID()
 	key := e.identity.Public().Hex() + ":" + id
 	old := publicRetentionEvent(t, e.identity, id, "cancelled", nostr.Now()-1)
-	e.s.Offers = map[string]nostr.Event{id: old}
+	publicRetentionOwnSource(t, e, old)
 	if err := e.ingestOffer(old); err != nil {
 		t.Fatal(err)
 	}
@@ -185,8 +237,18 @@ func TestOwnRemoteOpenExpiryLeavesNoActiveOrdering(t *testing.T) {
 	if err := e.save(); err != nil {
 		t.Fatal(err)
 	}
-	offer := protocol.Offer{Network: chain.Regtest, ID: id, Maker: e.identity.Public().Hex(), Sell: chain.BTC, SellAmount: 100000, BuyAmount: 200000, Status: "open", Expires: time.Now().Unix() + 2}
-	raw, _ := offer.PublicJSON()
+	offer := protocol.Offer{Version: protocol.Version, Revision: 1, FillPolicy: protocol.FillPolicy{Mode: protocol.FillWhole, Min: 100000, Max: 100000}, Available: 100000, Network: chain.Regtest, ID: id, Maker: e.identity.Public().Hex(), Sell: chain.BTC, SellAmount: 100000, BuyAmount: 200000, Status: "open", Expires: time.Now().Unix() + 2}
+	if offer.Status != "open" {
+		offer.Available = 0
+		offer.Revision = 2
+	}
+	raw, err := offer.PublicJSON()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := offer.Validate(offer.Expires - 1); err != nil {
+		t.Fatal("invalid retained public fixture", err)
+	}
 	event := nostr.Event{Kind: transport.OfferKind, CreatedAt: nostr.Now(), Tags: nostr.Tags{{"d", id}, {"t", chain.Regtest.Namespace()}}, Content: string(raw)}
 	if err := transport.Sign(&event, e.identity); err != nil {
 		t.Fatal(err)
@@ -224,8 +286,18 @@ func TestExpiredOfferResweepDoesNotInvalidateHealthyMarket(t *testing.T) {
 	e, _ := receiveEngine(t)
 	key := nostr.Generate()
 	id := transport.RandomID()
-	offer := protocol.Offer{Network: chain.Regtest, ID: id, Maker: key.Public().Hex(), Sell: chain.BTC, SellAmount: 100000, BuyAmount: 200000, Status: "open", Expires: time.Now().Unix() - 1}
-	raw, _ := offer.PublicJSON()
+	offer := protocol.Offer{Version: protocol.Version, Revision: 1, FillPolicy: protocol.FillPolicy{Mode: protocol.FillWhole, Min: 100000, Max: 100000}, Available: 100000, Network: chain.Regtest, ID: id, Maker: key.Public().Hex(), Sell: chain.BTC, SellAmount: 100000, BuyAmount: 200000, Status: "open", Expires: time.Now().Unix() - 1}
+	if offer.Status != "open" {
+		offer.Available = 0
+		offer.Revision = 2
+	}
+	raw, err := offer.PublicJSON()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := offer.Validate(offer.Expires - 1); err != nil {
+		t.Fatal("invalid retained public fixture", err)
+	}
 	event := nostr.Event{Kind: transport.OfferKind, CreatedAt: nostr.Now() - 3600, Tags: nostr.Tags{{"d", id}, {"t", chain.Regtest.Namespace()}}, Content: string(raw)}
 	if err := transport.Sign(&event, key); err != nil {
 		t.Fatal(err)
@@ -330,7 +402,7 @@ func TestNewerOwnViewSurvivesOlderSourceCompaction(t *testing.T) {
 			at := nostr.Now()
 			closed := publicRetentionEvent(t, e.identity, id, "cancelled", at-1)
 			newer := publicRetentionEvent(t, e.identity, id, "open", at)
-			e.s.Offers = map[string]nostr.Event{id: closed}
+			publicRetentionOwnSource(t, e, closed)
 			if err := e.ingestOffer(closed); err != nil {
 				t.Fatal(err)
 			}

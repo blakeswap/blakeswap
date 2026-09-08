@@ -2,6 +2,7 @@
 """Build/start the local desktop stack and drive its real daemon API."""
 import argparse, json, os, pathlib, secrets, signal, subprocess, sys, time
 from local import ROOT, NODES, start
+from demo_trade import whole_offer, whole_take, matching_parent
 
 LOCAL = ROOT / ".local"
 BIN = ROOT / "bin" / "blakeswap"
@@ -77,9 +78,9 @@ def down():
     print("Stopped application processes; regtest nodes remain available.")
 
 def trade():
-    offer=call("alice","offer.create",{"sell":"btc","sell_amount":1000000,"buy_amount":2000000,"tower_bps":50})
-    wait_for(lambda:any(o["id"]==offer["id"] for o in call("bob")["orders"]))
-    result=call("bob","swap.take",{"maker":offer["maker"],"id":offer["id"]});swapid=result["id"]
+    offer=call("alice","offer.create",whole_offer(tower_bps=50))
+    delivered = wait_for(lambda:next((o for o in call("bob")["orders"] if matching_parent(offer, o)), None))
+    result=call("bob","swap.take",whole_take(offer, delivered));swapid=result["id"]
     print("Swap",swapid,flush=True);deadline=time.monotonic()+180;last=""
     while time.monotonic()<deadline:
         states={name:next((s for s in call(name)["swaps"] if s["id"]==swapid),{}) for name in ["alice","bob"]}

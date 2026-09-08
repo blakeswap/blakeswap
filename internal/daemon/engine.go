@@ -15,8 +15,8 @@ import (
 	"github.com/blakeswap/blakeswap/internal/wallet"
 	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/btcsuite/btcd/wire"
+	"os"
 	"path/filepath"
-	"sort"
 	"strconv"
 	"sync"
 	"sync/atomic"
@@ -26,6 +26,15 @@ import (
 var errEngineClosed = errors.New("engine closed")
 
 type Engine struct {
+	fundingAncestryProofs    map[string]fundingAncestryProof
+	fundingAncestryLastTurn  map[chain.ID]string
+	observedSpendPriority    *observedSpendTurn
+	observedSpendNext        *observedSpendTurn
+	observedSpendBefore      *observedSpendTurn
+	observedSpendProofs      map[contract.HTLC]observedSpendProof
+	observedSpendReads       int
+	observedSpendBytes       int
+	fillValidation           *fillValidationCheckpoint
 	authorizationEpoch       string
 	strategyVerifiedSwaps    map[string]bool
 	strategyReporting        atomic.Bool
@@ -125,39 +134,44 @@ func Open(ctx context.Context, c Config) (*Engine, error) {
 		return nil, e
 	}
 	defer clear(password)
-	v, e := storage.Open(filepath.Join(c.DataDir, "state.db"), password)
-	if e != nil {
-		return nil, e
+	statePath := filepath.Join(c.DataDir, "state.db")
+	_, statErr := os.Stat(statePath)
+	newVault := errors.Is(statErr, os.ErrNotExist)
+	if statErr != nil && !newVault {
+		return nil, statErr
 	}
-	en := &Engine{chainFresh: map[chain.ID]bool{}, chainObserved: map[chain.ID]int64{}, chainErrors: map[chain.ID]string{}, chainGeneration: map[chain.ID]uint64{}, Config: c, vault: v, nodes: map[chain.ID]chain.Backend{}, watch: map[chain.ID]chain.Backend{}, scanners: map[chain.ID]chain.SpendScanner{}, addresses: map[chain.ID]string{}, scripts: map[chain.ID][]byte{}, heights: map[chain.ID]uint32{}, clocks: map[chain.ID]uint32{}, balances: map[chain.ID]int64{}}
-	fail := func(err error) (*Engine, error) { en.Close(); return nil, err }
-	if err := storage.CleanupSortedRows(v.PrivateDirectory()); err != nil {
-		return fail(err)
-	}
-	if _, e = v.Load(&en.s); e != nil {
-		return fail(e)
-	}
-	if en.s.Version == 0 {
+	if !newVault {
+		if err := PreflightStateVersion(statePath, password); err != nil {
+			return nil, err
+		}
+	} else {
 		m := c.InitialMnemonic
-		var e error
 		if m == "" {
 			m, e = wallet.NewMnemonic()
 		} else {
 			_, e = wallet.FromMnemonic(m)
 		}
 		if e != nil {
-			return fail(e)
+			return nil, e
 		}
-		en.s = State{Version: 1, Network: c.Network, Mnemonic: m, Offers: map[string]nostr.Event{}, Book: map[string]nostr.Event{}, Swaps: map[string]*Swap{}, Outbox: map[string]*Delivery{}, Seen: map[string]string{}, TowerJobs: map[string]*TowerJob{}}
-		if e = v.Save(en.s); e != nil {
-			return fail(e)
+		initial := State{Version: StateVersion, Network: c.Network, Mnemonic: m, Offers: map[string]nostr.Event{}, Book: map[string]nostr.Event{}, Swaps: map[string]*Swap{}, Outbox: map[string]*Delivery{}, Seen: map[string]string{}, TowerJobs: map[string]*TowerJob{}}
+		if err := storage.Initialize(statePath, password, initial); err != nil {
+			return nil, err
 		}
 	}
+	v, state, e := openCurrentStateVault(statePath, password)
+	if e != nil {
+		return nil, e
+	}
+	en := &Engine{chainFresh: map[chain.ID]bool{}, chainObserved: map[chain.ID]int64{}, chainErrors: map[chain.ID]string{}, chainGeneration: map[chain.ID]uint64{}, Config: c, vault: v, nodes: map[chain.ID]chain.Backend{}, watch: map[chain.ID]chain.Backend{}, scanners: map[chain.ID]chain.SpendScanner{}, addresses: map[chain.ID]string{}, scripts: map[chain.ID][]byte{}, heights: map[chain.ID]uint32{}, clocks: map[chain.ID]uint32{}, balances: map[chain.ID]int64{}}
+	fail := func(err error) (*Engine, error) { en.Close(); return nil, err }
+	en.s = state
+	en.fillValidation = captureFillValidation(&state, nil)
 	if c.InitialMnemonic != "" && c.InitialMnemonic != en.s.Mnemonic {
 		return fail(errors.New("wallet seed differs from this profile"))
 	}
-	if en.s.Version != 1 && en.s.Version != 2 {
-		return fail(errors.New("unsupported state version"))
+	if err := storage.CleanupSortedRows(v.PrivateDirectory()); err != nil {
+		return fail(err)
 	}
 	if en.s.Network.Normalized() != c.Network {
 		return fail(errors.New("state belongs to a different network; use its own data directory"))
@@ -237,6 +251,11 @@ func Open(ctx context.Context, c Config) (*Engine, error) {
 	if err := en.scrubOfferCache(); err != nil {
 		return fail(err)
 	}
+	for _, swap := range en.s.Swaps {
+		if swap != nil && len(swap.FundingParents) > 0 {
+			swap.FundingAncestryHeld = true
+		}
+	}
 	en.reconcileReservations()
 	if err := en.save(); err != nil {
 		return fail(err)
@@ -276,6 +295,9 @@ func (e *Engine) Close() error {
 		}
 	}
 	e.activitySnapshots = nil
+	if e.fillValidation != nil && e.fillValidation.inputs != nil {
+		_ = e.fillValidation.inputs.Close()
+	}
 	e.mu.Unlock()
 	for _, r := range e.nodes {
 		_ = r.Close()
@@ -292,6 +314,9 @@ func (e *Engine) save() error {
 // persistState is also used by already registered immutable-witness readers
 // while Close joins them. Protocol execution remains blocked by errEngineClosed.
 func (e *Engine) persistState() error {
+	if err := e.retainActiveSwapIdentities(); err != nil {
+		return err
+	}
 	e.reconcileAutomations()
 	e.reconcileStrategyExposure()
 	e.syncOrderRecords()
@@ -299,6 +324,12 @@ func (e *Engine) persistState() error {
 	if e.fatal != nil && !errors.Is(e.fatal, errEngineClosed) {
 		return e.fatal
 	}
+	fillCheckpoint, err := e.prepareFillValidation()
+	if err != nil {
+		e.fatal = fmt.Errorf("fill custody validation failed; execution stopped: %w", err)
+		return e.fatal
+	}
+	defer fillCheckpoint.abort()
 	parts, err := stateSemanticParts(e.s)
 	if err != nil {
 		return err
@@ -325,6 +356,11 @@ func (e *Engine) persistState() error {
 		e.fatal = fmt.Errorf("durability failure; execution stopped: %w", err)
 		return e.fatal
 	}
+	if err := fillCheckpoint.commit(); err != nil {
+		e.fatal = fmt.Errorf("fill validation index failed; execution stopped: %w", err)
+		return e.fatal
+	}
+	e.fillValidation = fillCheckpoint
 	e.archivePuts, e.archiveDeletes, e.archiveOrigins = nil, nil, nil
 	e.semanticParts = &parts
 	e.backupFingerprint, e.stateBytes = parts.Complete, stateBytes
@@ -471,6 +507,9 @@ func (e *Engine) tickProtocol(ctx context.Context) error {
 	e.strategyVerifiedSwaps = map[string]bool{}
 	e.recoveryRefunds = map[string]bool{}
 	e.archiveSends = map[string]bool{}
+	if err := e.expireParents(time.Now().Unix()); err != nil {
+		return err
+	}
 	refreshErr := e.refresh(ctx)
 	e.advanceSends(ctx)
 	// Payment lookups must not extend evidence beyond a checkpoint that reorged
@@ -504,12 +543,7 @@ func (e *Engine) tickProtocol(ctx context.Context) error {
 	}
 	var err error
 	if e.Config.Mode == "trader" {
-		ids := make([]string, 0, len(e.s.Swaps))
-		for id := range e.s.Swaps {
-			ids = append(ids, id)
-		}
-		sort.Strings(ids)
-		for _, id := range ids {
+		for _, id := range e.swapTickIDs() {
 			swap := e.s.Swaps[id]
 			if swap.Stage != "rejected" {
 				swap.Error = ""
@@ -539,6 +573,9 @@ func (e *Engine) tickProtocol(ctx context.Context) error {
 		e.lastError = "archive: " + archiveErr.Error()
 	}
 	e.reconcileArchiveHolds(observations, towerObservations)
+	if err := e.publishPendingParents(); err != nil {
+		return err
+	}
 	if err = e.save(); err != nil {
 		return err
 	}
@@ -571,7 +608,7 @@ func (e *Engine) queue(to, typ, swapID string, body any) error {
 		if previous.To != to || previous.Type != typ {
 			return errors.New("archived delivery identity mismatch")
 		}
-		if previous.Acknowledged {
+		if previous.Acknowledged || previous.Retired {
 			return nil
 		}
 		if previous.IsAck {
@@ -583,11 +620,26 @@ func (e *Engine) queue(to, typ, swapID string, body any) error {
 		}
 		return errors.New("archived delivery has no acknowledgment evidence")
 	}
-	pub, err := nostr.PubKeyFromHex(to)
+	delivery, err := e.prepareDelivery(to, typ, swapID, raw)
 	if err != nil {
 		return err
 	}
-	m := transport.Message{Version: 1, ID: id, Type: typ, SwapID: swapID, Body: raw}
+	if e.s.Outbox == nil {
+		e.s.Outbox = map[string]*Delivery{}
+	}
+	e.s.Outbox[id] = delivery
+	return nil
+}
+
+// prepareDelivery signs and encrypts without granting or publishing authority.
+// Callers can commit this exact event with its allocation in one transaction.
+func (e *Engine) prepareDelivery(to, typ, swapID string, raw json.RawMessage) (*Delivery, error) {
+	id := protocol.Digest([]string{to, typ, swapID, string(raw)})
+	pub, err := nostr.PubKeyFromHex(to)
+	if err != nil {
+		return nil, err
+	}
+	m := transport.Message{Version: transport.MessageVersion, ID: id, Type: typ, SwapID: swapID, Body: raw}
 	var event nostr.Event
 	var expires int64
 	if discoveryMessage(typ) {
@@ -598,7 +650,7 @@ func (e *Engine) queue(to, typ, swapID string, body any) error {
 			}
 		}
 		if pending >= 256 {
-			return errors.New("discovery queue capacity reached")
+			return nil, errors.New("discovery queue capacity reached")
 		}
 		expires = time.Now().Unix() + 900
 		event, err = transport.WrapExpiringFor(e.Config.Network.Namespace(), e.identity, pub, m, expires)
@@ -606,18 +658,20 @@ func (e *Engine) queue(to, typ, swapID string, body any) error {
 		event, err = transport.WrapFor(e.Config.Network.Namespace(), e.identity, pub, m)
 	}
 	if err != nil {
-		return err
+		return nil, err
 	}
-	e.s.Outbox[id] = &Delivery{Expires: expires, Type: typ, Event: event, To: to, MessageID: id, Digest: protocol.Digest(m), IsAck: typ == "ack"}
-	return nil
+	return &Delivery{Version: transport.MessageVersion, Network: e.Config.Network, SwapID: swapID, Expires: expires, Type: typ, Event: event, To: to, MessageID: id, Digest: protocol.Digest(m), IsAck: typ == "ack"}, nil
 }
 func (e *Engine) queueEvent(event nostr.Event) {
 	id := event.ID.Hex()
-	e.s.Outbox[id] = &Delivery{Event: event, MessageID: id, IsAck: true}
+	e.s.Outbox[id] = &Delivery{Version: transport.MessageVersion, Network: e.Config.Network, Event: event, MessageID: id, IsAck: true}
 }
 func (e *Engine) flush(ctx context.Context) error {
 	now := time.Now().Unix()
 	for id, d := range e.s.Outbox {
+		if d.Retired {
+			continue
+		}
 		if d.Expires > 0 && d.Expires <= now {
 			delete(e.s.Outbox, id)
 			continue
@@ -748,6 +802,9 @@ func (e *Engine) receive(event nostr.Event) error {
 	return e.save()
 }
 func (e *Engine) publishOffer(o protocol.Offer) error {
+	if e.s.ParentOrders[o.ID] != nil {
+		return e.publishParent(o.ID)
+	}
 	at := nostr.Now()
 	if at <= e.s.EventTime {
 		at = e.s.EventTime + 1
@@ -773,6 +830,14 @@ func (e *Engine) signOffer(o protocol.Offer, at nostr.Timestamp) (nostr.Event, e
 }
 
 func (e *Engine) stageOffer(o protocol.Offer, event nostr.Event) {
+	e.stageOfferRecords(o, event)
+	e.ingestOffer(event)
+	e.queueEvent(event)
+}
+
+// Parent revisions validate public ordering privately before committing these
+// local records. Keep the shared record update free of archive reads.
+func (e *Engine) stageOfferRecords(o protocol.Offer, event nostr.Event) {
 	e.syncOrderRecords()
 	record, exists := e.s.OrderRecords[o.ID]
 	if !exists {
@@ -787,8 +852,6 @@ func (e *Engine) stageOffer(o protocol.Offer, event nostr.Event) {
 		}
 	}
 	e.s.Offers[o.ID] = event
-	e.ingestOffer(event)
-	e.queueEvent(event)
 }
 func (e *Engine) swapKey(id chain.ID, swapID string) (*btcec.PrivateKey, error) {
 	return e.keys.Spending(id, "swap/"+swapID)
@@ -808,12 +871,18 @@ func (e *Engine) fund(ctx context.Context, c contract.HTLC) (*wire.MsgTx, error)
 	return e.fundReserved(ctx, c, "")
 }
 func (e *Engine) fundReserved(ctx context.Context, c contract.HTLC, owner string) (*wire.MsgTx, error) {
-	coins := e.knownCoins(c.Chain)
+	coins, err := e.assignedFundingCoins(c.Chain, owner)
+	if err != nil {
+		return nil, err
+	}
 	reserved := e.reservedCoins(c.Chain, owner)
 	var selected []chain.UTXO
 	var total int64
 	for _, coin := range coins {
 		if coin.Confirmations < e.Config.Network.Confirmations() || reserved[chain.OutpointKey(coin.TxID, coin.Vout)] {
+			if owner != "" {
+				return nil, errors.New("assigned funding input is unavailable; ownership remains held")
+			}
 			continue
 		}
 		out, err := e.nodes[c.Chain].Output(ctx, coin.TxID, coin.Vout)
@@ -821,6 +890,9 @@ func (e *Engine) fundReserved(ctx context.Context, c contract.HTLC, owner string
 			return nil, err
 		}
 		if out == nil || out.Value != coin.Amount || out.Script.Hex != coin.Script || out.Confirmations < e.Config.Network.Confirmations() {
+			if owner != "" {
+				return nil, errors.New("assigned funding input lost positive confirmation; ownership remains held")
+			}
 			continue
 		}
 		selected = append(selected, coin)
@@ -946,6 +1018,8 @@ func (e *Engine) funded(ctx context.Context, c contract.HTLC) (bool, error) {
 	return true, nil
 }
 func (e *Engine) scan(ctx context.Context) (map[chain.ID]map[string]chain.Observation, error) {
+	e.resetObservedSpendWork()
+	e.fundingAncestryProofs = nil
 	points := map[chain.ID][]string{}
 	starts := map[chain.ID]uint32{chain.BTC: e.heights[chain.BTC], chain.Blake: e.heights[chain.Blake]}
 	add := func(c contract.HTLC, start uint32) {

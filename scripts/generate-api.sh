@@ -11,5 +11,8 @@ protoc -I api/proto -I api/third_party \
  --go-grpc_out=api/gen --go-grpc_opt=paths=source_relative \
  --grpc-gateway_out=api/gen --grpc-gateway_opt=paths=source_relative \
  --openapiv2_out=api --openapiv2_opt=allow_merge=true,merge_file_name=blakeswap,json_names_for_fields=false \
- api/proto/blakeswap/v1/daemon.proto
+ api/proto/blakeswap/v2/daemon.proto
 cp api/blakeswap.swagger.json internal/api/openapi.json
+
+# Remove the retired package only after the complete v2 generation succeeds.
+rm -f api/gen/blakeswap/v1/daemon.pb.go api/gen/blakeswap/v1/daemon_grpc.pb.go api/gen/blakeswap/v1/daemon.pb.gw.go

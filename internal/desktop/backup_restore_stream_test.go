@@ -11,6 +11,7 @@ import (
 	"github.com/blakeswap/blakeswap/internal/chain"
 	"github.com/blakeswap/blakeswap/internal/daemon"
 	"github.com/blakeswap/blakeswap/internal/storage"
+	"github.com/blakeswap/blakeswap/internal/transport"
 )
 
 func appendPortableRecord(t *testing.T, state *daemon.State, kind, id string, value any) {
@@ -27,7 +28,7 @@ func appendPortableRecord(t *testing.T, state *daemon.State, kind, id string, va
 	if state.Capacity == nil {
 		state.Capacity = &daemon.CapacityRecord{Archived: storage.ArchiveStats{Kinds: map[string]uint64{}}}
 	}
-	state.Version = 2
+	state.Version = daemon.StateVersion
 	state.Archive = append(state.Archive, record)
 	state.Capacity.Archived.Count++
 	state.Capacity.Archived.Bytes += uint64(len(encoded) + 1)
@@ -40,24 +41,28 @@ func TestStreamedRestorePromotesCoreAndKeepsAutomationHistoryCold(t *testing.T) 
 	entry := &manifest.Wallets[0]
 	state := entry.Networks[chain.Regtest]
 	entry.Networks = map[chain.Network]*daemon.State{chain.Regtest: state}
-	appendPortableRecord(t, state, "swaps", "swap", state.Swaps["swap"])
-	delete(state.Swaps, "swap")
-	appendPortableRecord(t, state, "funding_fees", "swap", daemon.FeeSelection{FundingFee: 3456})
-	appendPortableRecord(t, state, "recovery_swaps", "swap", true)
+	appendPortableRecord(t, state, "swaps", fixtureChildID, state.Swaps[fixtureChildID])
+	delete(state.Swaps, fixtureChildID)
+	appendPortableRecord(t, state, "funding_fees", fixtureChildID, daemon.FeeSelection{FundingFee: 3456})
+	appendPortableRecord(t, state, "recovery_swaps", fixtureChildID, true)
 	appendPortableRecord(t, state, "activities", "receive/known", state.Activities["receive/known"])
 	delete(state.Activities, "receive/known")
 	appendPortableRecord(t, state, "activity_receipts", "transaction", state.ActivityReceipts["transaction"])
 	delete(state.ActivityReceipts, "transaction")
-	appendPortableRecord(t, state, "order_records", "old", daemon.OrderRecord{Publication: "acknowledged", CancelledEventID: "cancel-exact", ReplacedBy: "source"})
-	appendPortableRecord(t, state, "offers", "old", nostr.Event{Content: "saved signed source"})
-	appendPortableRecord(t, state, "outbox", "message", &daemon.Delivery{Acknowledged: true})
+	maker := fixtureIdentity(t, chain.Regtest, state.Mnemonic)
+	oldOffer, oldEvent := fixtureOffer(t, chain.Regtest, fixtureParentID, maker)
+	_, sourceEvent := fixtureOffer(t, chain.Regtest, fixtureSuccessorID, maker)
+	appendPortableRecord(t, state, "order_records", fixtureParentID, daemon.OrderRecord{Offer: oldOffer, Publication: "acknowledged", CancelledEventID: "cancel-exact", ReplacedBy: fixtureSuccessorID})
+	appendPortableRecord(t, state, "offers", fixtureParentID, oldEvent)
+	messageID := oldEvent.ID.Hex()
+	appendPortableRecord(t, state, "outbox", messageID, &daemon.Delivery{Version: transport.MessageVersion, Network: chain.Regtest, MessageID: messageID, IsAck: true, Event: oldEvent, Acknowledged: true})
 	appendPortableRecord(t, state, "seen", "sender/message", "exact-digest")
 	appendPortableRecord(t, state, "seen_semantics", "canonical-evidence", true)
 	appendPortableRecord(t, state, "trade_receipts", "accepted", &daemon.TradeReceipt{Digest: "accepted-exact", Result: daemon.ConfirmTradeResult{ID: "accepted", State: "accepted"}})
-	state.Offers = map[string]nostr.Event{"source": {Content: "current signed source"}}
-	state.Automations = map[string]*daemon.AutomationPolicy{"policy": {Config: daemon.AutomationConfig{ID: "policy"}, Enabled: true, Revision: 5, CurrentOfferID: "source", Charges: map[string]*daemon.AutomationCharge{
-		"old":    {OfferID: "old", Volume: 100, State: "committed", Successor: "source"},
-		"source": {OfferID: "source", Volume: 100, State: "reserved"},
+	state.Offers = map[string]nostr.Event{fixtureSuccessorID: sourceEvent}
+	state.Automations = map[string]*daemon.AutomationPolicy{"policy": {Config: daemon.AutomationConfig{ID: "policy"}, Enabled: true, Revision: 5, CurrentOfferID: fixtureSuccessorID, Charges: map[string]*daemon.AutomationCharge{
+		fixtureParentID:    {OfferID: fixtureParentID, Volume: 100, State: "committed", Successor: fixtureSuccessorID},
+		fixtureSuccessorID: {OfferID: fixtureSuccessorID, Volume: 100, State: "reserved"},
 	}, Pending: &daemon.ConfirmTradeRequest{RequestID: "pending"}}}
 	state.TradeReceipts = map[string]*daemon.TradeReceipt{"pending": {Digest: "pending-exact", Result: daemon.ConfirmTradeResult{ID: "pending", State: "pending"}}}
 	source := filepath.Join(t.TempDir(), "complete.backup")
@@ -85,25 +90,25 @@ func TestStreamedRestorePromotesCoreAndKeepsAutomationHistoryCold(t *testing.T) 
 	if _, err = vault.Load(&got); err != nil {
 		t.Fatal(err)
 	}
-	if got.Swaps["swap"] == nil || got.Swaps["swap"].SelfRefunds[0] != "saved refund" || got.FundingFees["swap"].FundingFee != 3456 || !got.Recovery.Swaps["swap"] || got.Recovery.Status.State != "recovering" {
+	if got.Swaps[fixtureChildID] == nil || got.Swaps[fixtureChildID].SelfRefunds[0] != "saved refund" || got.FundingFees[fixtureChildID].FundingFee != 3456 || !got.Recovery.Swaps[fixtureChildID] || got.Recovery.Status.State != "recovering" {
 		t.Fatal("promoted core lost signed evidence/fees/recovery gate")
 	}
 	if len(got.Activities) != 0 || len(got.ActivityReceipts) != 0 || len(got.OrderRecords) != 0 || len(got.Seen) != 0 || got.TradeReceipts["accepted"] != nil {
 		t.Fatal("cold history was accumulated into active checkpoint")
 	}
-	if len(got.Offers) != 0 || len(got.Outbox) != 0 || got.Recovery.Offers["source"].Content != "current signed source" || got.Recovery.Status.QuarantinedOffers != 2 || got.Recovery.Status.QuarantinedMessages != 1 {
+	if len(got.Offers) != 0 || len(got.Outbox) != 0 || got.Recovery.Offers[fixtureSuccessorID].ID != sourceEvent.ID || got.Recovery.Status.QuarantinedOffers != 2 || got.Recovery.Status.QuarantinedMessages != 1 {
 		t.Fatal("old/current publications regained authority or quarantine count lost")
 	}
 	policy := got.Automations["policy"]
-	if policy.Enabled || !policy.RestoreHold || policy.Revision <= 5 || policy.Pending != nil || policy.Charges["old"].State != "committed" || policy.Charges["old"].Successor != "source" || !policy.Charges["source"].Uncertain || got.TradeReceipts["pending"].Digest != "pending-exact" {
+	if policy.Enabled || !policy.RestoreHold || policy.Revision <= 5 || policy.Pending != nil || policy.Charges[fixtureParentID].State != "committed" || policy.Charges[fixtureParentID].Successor != fixtureSuccessorID || !policy.Charges[fixtureSuccessorID].Uncertain || got.TradeReceipts["pending"].Digest != "pending-exact" {
 		t.Fatal("import resumed automation or reset charged authorization")
 	}
-	for _, key := range [][2]string{{"activities", "receive/known"}, {"activity_receipts", "transaction"}, {"order_records", "old"}, {"quarantined_offers", "old"}, {"quarantined_outbox", "message"}, {"seen", "sender/message"}, {"seen_semantics", "canonical-evidence"}, {"trade_receipts", "accepted"}} {
+	for _, key := range [][2]string{{"activities", "receive/known"}, {"activity_receipts", "transaction"}, {"order_records", fixtureParentID}, {"quarantined_offers", fixtureParentID}, {"quarantined_outbox", messageID}, {"seen", "sender/message"}, {"seen_semantics", "canonical-evidence"}, {"trade_receipts", "accepted"}} {
 		if _, ok, err := vault.ReadArchive(key[0], key[1]); err != nil || !ok {
 			t.Fatal("cold evidence missing", key, err)
 		}
 	}
-	for _, key := range [][2]string{{"swaps", "swap"}, {"funding_fees", "swap"}, {"recovery_swaps", "swap"}, {"offers", "old"}, {"outbox", "message"}} {
+	for _, key := range [][2]string{{"swaps", fixtureChildID}, {"funding_fees", fixtureChildID}, {"recovery_swaps", fixtureChildID}, {"offers", fixtureParentID}, {"outbox", messageID}} {
 		if _, ok, err := vault.ReadArchive(key[0], key[1]); err != nil || ok {
 			t.Fatal("duplicate core or live archived authority", key, err)
 		}

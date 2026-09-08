@@ -17,7 +17,7 @@ import (
 func TestAutomationInvalidDurableStateRejectedBeforeOpenOrRecovery(t *testing.T) {
 	for _, mode := range []string{"nil-policy", "nil-charge-map", "nil-charge", "mismatched-policy", "mismatched-charge", "negative-charge", "unknown-charge", "overflow"} {
 		t.Run(mode, func(t *testing.T) {
-			s := State{Version: 1, Network: chain.Regtest, Mnemonic: "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about", Automations: map[string]*AutomationPolicy{"policy": {Config: AutomationConfig{ID: "policy"}, Charges: map[string]*AutomationCharge{"offer": {OfferID: "offer", State: "reserved", Volume: 100000, BTCFees: 20000, BlakeFees: 22000}}}}}
+			s := State{Version: StateVersion, Network: chain.Regtest, Mnemonic: "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about", Automations: map[string]*AutomationPolicy{"policy": {Config: AutomationConfig{ID: "policy"}, Charges: map[string]*AutomationCharge{"offer": {OfferID: "offer", State: "reserved", Volume: 100000, BTCFees: 20000, BlakeFees: 22000}}}}}
 			p := s.Automations["policy"]
 			switch mode {
 			case "nil-policy":

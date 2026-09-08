@@ -22,6 +22,9 @@ type CoinReservation struct {
 
 func pointKey(p CoinOutpoint) string { return chain.OutpointKey(p.TxID, p.Vout) }
 func terminalSwap(s *Swap) bool {
+	if s.FundingAncestryHeld {
+		return false
+	}
 	switch s.Stage {
 	case "completed", "refunded", "rejected", "expired before acceptance", "expired before funding", "expired before maker funding", "aborted; counterparty refunded":
 		return true
@@ -76,6 +79,10 @@ func (e *Engine) reserveCoins(owner string, id chain.ID, target int64) error {
 }
 
 func (e *Engine) reservationCandidate(owner string, id chain.ID, target int64) (CoinReservation, error) {
+	return e.reservationCandidateFromCoins(owner, id, target, e.knownCoins(id))
+}
+
+func (e *Engine) reservationCandidateFromCoins(owner string, id chain.ID, target int64, coins []chain.UTXO) (CoinReservation, error) {
 	reserved := e.reservedCoins(id, owner)
 	var selected []CoinOutpoint
 	var total int64
@@ -84,7 +91,6 @@ func (e *Engine) reservationCandidate(owner string, id chain.ID, target int64) (
 	for _, p := range e.s.CoinReservations[owner].Inputs {
 		previous[pointKey(p)] = true
 	}
-	coins := e.knownCoins(id)
 	sort.SliceStable(coins, func(i, j int) bool {
 		return previous[chain.OutpointKey(coins[i].TxID, coins[i].Vout)] && !previous[chain.OutpointKey(coins[j].TxID, coins[j].Vout)]
 	})
@@ -106,35 +112,49 @@ func (e *Engine) reservationCandidate(owner string, id chain.ID, target int64) (
 	return CoinReservation{id, selected}, errors.New("insufficient unlocked confirmed coins; cancel an open order to release its coins")
 }
 
-// Reconcile persisted reservations for legacy wallets and newly confirmed coins.
+// Reconcile only unassigned parent availability. A saved child input assignment
+// is immutable until funding or a separately proven irreversible retirement;
+// parent cancellation, missing observations and sibling progress cannot move it.
 func (e *Engine) reconcileReservations() {
 	type need struct {
 		id     chain.ID
 		amount int64
+		fixed  bool
 	}
 	active := map[string]need{}
-	for id, event := range e.s.Offers {
-		var o protocol.Offer
-		if json.Unmarshal([]byte(event.Content), &o) != nil {
+	for id, p := range e.s.ParentOrders {
+		if p == nil || p.RestoreHold || p.Quantities.Closed || p.Quantities.Available == 0 || p.Offer.Expires <= time.Now().Unix() {
 			continue
 		}
-		if o.Status == "open" && o.Expires > time.Now().Unix() {
-			active["offer/"+id] = need{o.Sell, o.SellAmount + e.fundingFee("offer/"+id)}
+		reserve, err := p.fundingReserve(p.Quantities.Available)
+		if err != nil {
+			e.fatal = err
+			return
 		}
-		if o.Status == "reserved" {
-			if s := e.s.Swaps[o.Reservation]; s != nil && !terminalSwap(s) && s.ShortFunding == "" {
-				active["offer/"+id] = need{o.Sell, o.SellAmount + e.fundingFee("offer/"+id)}
-			}
-		}
+		active["offer/"+id] = need{p.Offer.Sell, p.Quantities.Available + reserve, false}
 	}
 	for id, s := range e.s.Swaps {
+		if s == nil {
+			continue
+		}
 		e.expirePendingRequest(s, time.Now().Unix())
+		if s.Role == "maker" {
+			child := e.s.FillRecords[id]
+			if child != nil && !child.FundingDisabled && s.ShortFunding == "" {
+				active["swap/"+id] = need{s.Short.Chain, child.Allocation.Quantity + child.FundingPolicy.FundingFee, true}
+			}
+			continue
+		}
 		if s.Role != "taker" || terminalSwap(s) || s.LongFunding != "" {
+			continue
+		}
+		amounts, err := s.Request.Amounts()
+		if err != nil {
 			continue
 		}
 		var o protocol.Offer
 		if json.Unmarshal([]byte(s.Request.OfferEvent.Content), &o) == nil {
-			active["swap/"+id] = need{o.Sell.Other(), o.BuyAmount + e.fundingFee("swap/"+id)}
+			active["swap/"+id] = need{o.Sell.Other(), amounts.Buy + e.fundingFee("swap/"+id), true}
 		}
 	}
 	for owner := range e.s.CoinReservations {
@@ -149,7 +169,9 @@ func (e *Engine) reconcileReservations() {
 	sort.Strings(owners)
 	for _, owner := range owners {
 		n := active[owner]
-		_ = e.reserveCoins(owner, n.id, n.amount)
+		if !n.fixed {
+			_ = e.reserveCoins(owner, n.id, n.amount)
+		}
 	}
 }
 

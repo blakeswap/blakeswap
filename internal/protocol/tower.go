@@ -10,6 +10,7 @@ import (
 )
 
 type Job struct {
+	Version         int            `json:"version"`
 	Network         chain.Network  `json:"network,omitempty"`
 	ObserveScanFrom uint32         `json:"observe_scan_from,omitempty"`
 	ID              string         `json:"id"`
@@ -27,12 +28,20 @@ type Job struct {
 	Templates       []string       `json:"templates"`
 }
 type Receipt struct {
-	JobID  string `json:"job_id"`
-	Digest string `json:"digest"`
+	Version int    `json:"version"`
+	JobID   string `json:"job_id"`
+	Digest  string `json:"digest"`
+}
+
+func (r Receipt) Validate() error {
+	if r.Version != Version || !Hex32(r.JobID) || !Hex32(r.Digest) {
+		return errors.New("invalid protocol-2 tower receipt")
+	}
+	return nil
 }
 
 func (j Job) Validate(towerScripts map[chain.ID]string, bps int64) error {
-	if !j.Network.Valid() || !Hex32(j.ID) || !Hex32(j.SwapID) || !Hex32(j.Owner) || !Hex32(j.TermsHash) || !Hex32(j.Target.TxID) || j.Target.Vout != 0 || j.ScanFrom < 1 || j.BPS != bps || bps <= 0 || bps > 1000 || j.TowerScript != towerScripts[j.Target.Chain] {
+	if j.Version != Version || j.Network == "" || !j.Network.Valid() || !Hex32(j.ID) || !Hex32(j.SwapID) || !Hex32(j.Owner) || !Hex32(j.TermsHash) || !Hex32(j.Target.TxID) || j.Target.Vout != 0 || j.ScanFrom < 1 || j.BPS != bps || bps <= 0 || bps > 1000 || j.TowerScript != towerScripts[j.Target.Chain] {
 		return errors.New("invalid tower job identity/quote")
 	}
 	if j.Network.Normalized() != chain.Regtest {

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"maps"
 	"math/big"
 	"time"
 
@@ -18,6 +19,8 @@ const tradeQuoteCapacity = 64
 type TradeQuoteRequest struct {
 	FeeSelection
 	OrderActionFields
+	FillOrderFields
+	FillTakeFields
 	Kind            string   `json:"kind"`
 	ExpectedWallet  string   `json:"expected_wallet"`
 	ExpectedNetwork string   `json:"expected_network"`
@@ -52,6 +55,12 @@ type TradeOutcome struct {
 }
 type TradeQuote struct {
 	OrderActionFields
+	FillOrderFields
+	FillTakeFields
+	Available         int64          `json:"available"`
+	TotalSellAmount   int64          `json:"total_sell_amount"`
+	FundingReserve    int64          `json:"funding_reserve"`
+	ExampleFill       *FillPreview   `json:"example_fill,omitempty"`
 	Token             string         `json:"token"`
 	Revision          string         `json:"revision"`
 	Kind              string         `json:"kind"`
@@ -130,6 +139,7 @@ func (e *Engine) tradeBinding(wallet, network string) error {
 // mutation occurs while constructing or refreshing a quote.
 func (e *Engine) tradeSnapshot(p TradeQuoteRequest, now int64) (TradeQuoteSnapshot, error) {
 	var s TradeQuoteSnapshot
+	p.FeeBudgets, p.BountyBudgets = maps.Clone(p.FeeBudgets), maps.Clone(p.BountyBudgets)
 	if err := e.recoveryTradingReady(); err != nil {
 		return s, err
 	}
@@ -149,7 +159,7 @@ func (e *Engine) tradeSnapshot(p TradeQuoteRequest, now int64) (TradeQuoteSnapsh
 	if p.FundingFee < 1 || (p.OwnerFeeCap != 0 && p.OwnerFeeCap != 20000) || p.Rate < 0 {
 		return s, errors.New("review an explicit bounded funding and owner fee policy")
 	}
-	o := protocol.Offer{Network: e.Config.Network, ID: transport.RandomID(), Maker: e.identity.Public().Hex(), Sell: p.Sell, SellAmount: p.SellAmount, BuyAmount: p.BuyAmount, Expires: p.Expires, Status: "open"}
+	o := protocol.Offer{Version: protocol.Version, Revision: 1, Available: p.SellAmount, FillPolicy: p.FillPolicy, Network: e.Config.Network, ID: transport.RandomID(), Maker: e.identity.Public().Hex(), Sell: p.Sell, SellAmount: p.SellAmount, BuyAmount: p.BuyAmount, Expires: p.Expires, Status: "open"}
 	eventID := ""
 	if p.Kind == "taker" {
 		event, ok := e.s.Book[p.Maker+":"+p.ID]
@@ -164,15 +174,34 @@ func (e *Engine) tradeSnapshot(p TradeQuoteRequest, now int64) (TradeQuoteSnapsh
 		if o.Status != "open" || o.Maker == e.identity.Public().Hex() {
 			return s, errors.New("offer is no longer available to take")
 		}
-		if p.Sell != o.Sell || p.SellAmount != o.SellAmount || p.BuyAmount != o.BuyAmount {
+		// The exact signed parent and revision bind economics. Public take
+		// callers may omit these redundant maker fields; a supplied view must
+		// still match exactly and cannot substitute a second price or asset.
+		if p.Sell != "" && p.Sell != o.Sell || p.SellAmount != 0 && p.SellAmount != o.SellAmount || p.BuyAmount != 0 && p.BuyAmount != o.BuyAmount {
 			return s, errors.New("order amounts changed; refresh the market before reviewing")
 		}
+		if p.ParentRevision != o.Revision {
+			return s, errors.New("parent revision changed; review the exact current fill")
+		}
+		if _, err := o.FillPolicy.Quote(o.SellAmount, o.BuyAmount, o.Available, p.Quantity); err != nil {
+			return s, err
+		}
+		if len(p.FeeBudgets) != 0 || len(p.BountyBudgets) != 0 {
+			return s, errors.New("parent authorization budgets belong only to maker reviews")
+		}
+		if p.FillPolicy.Mode != "" && p.FillPolicy != o.FillPolicy {
+			return s, errors.New("parent fill bounds changed")
+		}
+		p.FillPolicy = o.FillPolicy
 		eventID = event.ID.Hex()
 	} else if o.Expires == 0 {
 		o.Expires = now + 24*3600
 	}
 	if err := o.Validate(now); err != nil {
 		return s, err
+	}
+	if p.Kind == "maker" && (p.Quantity != 0 || p.ParentRevision != 0) {
+		return s, errors.New("parent creation cannot include an existing child quantity or revision")
 	}
 	p.Expires = o.Expires
 	if p.TowerBPS > 0 && p.TowerPubKey == "" {
@@ -186,6 +215,9 @@ func (e *Engine) tradeSnapshot(p TradeQuoteRequest, now int64) (TradeQuoteSnapsh
 		return s, errors.New("watchtower proof expired; refresh before reviewing")
 	}
 	q := TradeQuote{Kind: p.Kind, Wallet: e.Config.Name, WalletKey: e.identity.Public().Hex(), Network: e.Config.Network, Created: now, Expires: now + tradeQuoteLifetime, OfferEventID: eventID, OfferID: o.ID, OfferMaker: o.Maker, OfferExpires: o.Expires, Fees: p.FeeSelection, Provider: tower, ProviderRevision: protocol.Digest(tower), TowerCoverage: "none", Outcomes: []TradeOutcome{}}
+	q.FillOrderFields = FillOrderFields{FillPolicy: o.FillPolicy, FeeBudgets: maps.Clone(p.FeeBudgets), BountyBudgets: maps.Clone(p.BountyBudgets)}
+	q.FillTakeFields = p.FillTakeFields
+	q.Available, q.TotalSellAmount = o.Available, o.SellAmount
 	q.OrderActionFields = p.OrderActionFields
 	q.Expires = min(q.Expires, o.Expires)
 	if p.OrderAction == "replace" {
@@ -202,24 +234,65 @@ func (e *Engine) tradeSnapshot(p TradeQuoteRequest, now int64) (TradeQuoteSnapsh
 	}
 	q.PaidChain, q.PaidPrincipal, q.ReceivedChain, q.ReceivedPrincipal = o.Sell, o.SellAmount, o.Sell.Other(), o.BuyAmount
 	if p.Kind == "taker" {
-		q.PaidChain, q.PaidPrincipal, q.ReceivedChain, q.ReceivedPrincipal = o.Sell.Other(), o.BuyAmount, o.Sell, o.SellAmount
+		amounts, err := o.FillPolicy.Quote(o.SellAmount, o.BuyAmount, o.Available, p.Quantity)
+		if err != nil {
+			return s, err
+		}
+		if err := protocol.ValidateRescueAmounts(tower.BPS, amounts.Buy); err != nil {
+			return s, err
+		}
+		q.PaidChain, q.PaidPrincipal, q.ReceivedChain, q.ReceivedPrincipal = o.Sell.Other(), amounts.Buy, o.Sell, amounts.Sell
 	}
 	if p.FundingFee > feeLimits(q.PaidChain).Funding {
 		return s, errors.New("funding fee exceeds the selected chain cap")
 	}
-	q.PaidTotal = q.PaidPrincipal + p.FundingFee
+	q.FundingReserve = p.FundingFee
+	if p.Kind == "maker" {
+		protected := o
+		protected.TowerBPS = tower.BPS
+		if tower.BPS > 0 {
+			protected.Tower = &tower
+		}
+		parent, err := newParentOrder(protected, p.FeeSelection, p.FillOrderFields, now)
+		if err != nil {
+			return s, err
+		}
+		if p.OrderAction == "replace" {
+			current := e.s.ParentOrders[source.ID]
+			if current == nil {
+				return s, errors.New("source parent authorization unavailable")
+			}
+			if _, err := current.planReplacement(parent); err != nil {
+				return s, err
+			}
+		}
+		q.FundingReserve, err = parent.fundingReserve(o.Available)
+		if err != nil {
+			return s, err
+		}
+	}
+	q.PaidTotal = q.PaidPrincipal + q.FundingReserve
 	ratio := new(big.Rat).SetFrac64(q.ReceivedPrincipal, q.PaidPrincipal)
 	q.RateNumerator, q.RateDenominator, q.RateDisplay = ratio.Num().Int64(), ratio.Denom().Int64(), ratio.FloatString(8)
 	ownerMax := int64(2000)
 	if p.OwnerFeeCap > 0 {
 		ownerMax = p.OwnerFeeCap
 	}
+	refundMax := max(ownerMax, protocol.RescueFees[len(protocol.RescueFees)-1])
+	if p.Kind == "taker" {
+		// These are this taker's exact one-child authorizations, derived from
+		// local policy rather than copied from the remote parent's private caps.
+		// The taker tower can refund its paid leg but cannot make its first
+		// revelation or claim its incoming leg.
+		q.FeeBudgets = map[chain.ID]int64{q.PaidChain: p.FundingFee + refundMax, q.ReceivedChain: ownerMax}
+		q.BountyBudgets = map[chain.ID]int64{q.PaidChain: protocol.Bounty(q.PaidPrincipal, tower.BPS), q.ReceivedChain: 0}
+	}
 	add := func(kind string, id chain.ID, principal, maximum, bps int64) {
 		bounty := protocol.Bounty(principal, bps)
 		q.Outcomes = append(q.Outcomes, TradeOutcome{Kind: kind, Chain: id, Principal: principal, FeeMin: 2000, FeeMax: maximum, Bounty: bounty, NetMin: principal - maximum - bounty, NetMax: principal - 2000 - bounty})
 	}
 	add("owner_claim", q.ReceivedChain, q.ReceivedPrincipal, ownerMax, 0)
-	add("owner_refund", q.PaidChain, q.PaidPrincipal, ownerMax, 0)
+	add("owner_refund", q.PaidChain, q.PaidPrincipal, refundMax, 0)
 	if tower.BPS > 0 {
 		q.TowerCoverage = "refund only; owner must reveal first"
 		if p.Kind == "maker" {
@@ -227,6 +300,29 @@ func (e *Engine) tradeSnapshot(p TradeQuoteRequest, now int64) (TradeQuoteSnapsh
 			add("tower_claim", q.ReceivedChain, q.ReceivedPrincipal, 20000, tower.BPS)
 		}
 		add("tower_refund", q.PaidChain, q.PaidPrincipal, 20000, tower.BPS)
+	}
+	if p.Kind == "maker" && o.Mode == protocol.FillPartial {
+		example, err := o.FillPolicy.Suggested(o.SellAmount, o.BuyAmount, o.Available)
+		if err != nil {
+			return s, err
+		}
+		outcomes := make([]TradeOutcome, 0, len(q.Outcomes))
+		for _, outcome := range q.Outcomes {
+			principal := example.Sell
+			if outcome.Chain == o.Sell.Other() {
+				principal = example.Buy
+			}
+			bps := int64(0)
+			if outcome.Kind == "tower_claim" || outcome.Kind == "tower_refund" {
+				bps = tower.BPS
+			}
+			bounty := protocol.Bounty(principal, bps)
+			outcome.Principal, outcome.Bounty = principal, bounty
+			outcome.NetMin, outcome.NetMax = principal-outcome.FeeMax-bounty, principal-outcome.FeeMin-bounty
+			outcomes = append(outcomes, outcome)
+		}
+		q.ExampleFill = &FillPreview{Quantity: example.Sell, BuyAmount: example.Buy, FundingFee: p.FundingFee, OwnerFeeCap: p.OwnerFeeCap, Outcomes: outcomes}
+		q.Outcomes = nil
 	}
 	timing := TradeTiming{Unit: "seconds", Confirmations: e.Config.Network.Confirmations(), OwnRefund: protocol.ShortSeconds, IncomingRefund: protocol.LongSeconds, RevealBefore: protocol.RevealSeconds, TowerTakeover: protocol.TakeoverSeconds, RefundGrace: protocol.RefundDelay(e.Config.Network), FirstRevealer: "taker"}
 	if e.Config.Network.Normalized() == chain.Regtest {
@@ -269,6 +365,12 @@ func (e *Engine) validateTradeSource(s TradeQuoteSnapshot, now int64) error {
 		if err != nil {
 			return err
 		}
+		if o.Revision != p.ParentRevision || o.FillPolicy != p.FillPolicy {
+			return errors.New("reviewed parent revision or fill bounds changed")
+		}
+		if amounts, err := o.FillPolicy.Quote(o.SellAmount, o.BuyAmount, o.Available, p.Quantity); err != nil || amounts.Sell != q.ReceivedPrincipal || amounts.Buy != q.PaidPrincipal {
+			return errors.New("reviewed child quantity or rounded amount changed")
+		}
 		if o.Status != "open" {
 			return errors.New("offer is no longer open")
 		}
@@ -299,14 +401,14 @@ func (e *Engine) quoteTrade(ctx context.Context, raw json.RawMessage) (TradeQuot
 		return TradeQuote{}, err
 	}
 	allow := replacementFields(p)
-	feeRaw, _ := json.Marshal(FeeQuoteRequest{Kind: "funding", Chain: s.Quote.PaidChain, Amount: s.Quote.PaidPrincipal, Fee: p.FundingFee, ExpectedWallet: p.ExpectedWallet, SourceOfferID: allow.SourceOfferID, SourceEventID: allow.SourceEventID})
+	feeRaw, _ := json.Marshal(FeeQuoteRequest{Kind: "funding", Chain: s.Quote.PaidChain, Amount: s.Quote.PaidTotal - p.FundingFee, Fee: p.FundingFee, ExpectedWallet: p.ExpectedWallet, SourceOfferID: allow.SourceOfferID, SourceEventID: allow.SourceEventID})
 	fee, err := e.quoteFee(ctx, feeRaw)
 	if err != nil {
 		s.Quote.Error = err.Error()
 		return s.Quote, nil
 	}
 	s.Quote.FundingSize = fee.VSize
-	fundsRaw, _ := json.Marshal(FundsPreflightRequest{Chain: s.Quote.PaidChain, Amount: s.Quote.PaidPrincipal, Fee: p.FundingFee, Inputs: fee.Inputs})
+	fundsRaw, _ := json.Marshal(FundsPreflightRequest{Chain: s.Quote.PaidChain, Amount: s.Quote.PaidTotal - p.FundingFee, Fee: p.FundingFee, Inputs: fee.Inputs})
 	funds, err := e.preflightFundsForOrder(ctx, Request{Method: "wallet.preflight", Params: fundsRaw}, allow)
 	if err != nil {
 		return s.Quote, err
@@ -340,7 +442,10 @@ func (e *Engine) quoteTrade(ctx context.Context, raw json.RawMessage) (TradeQuot
 	s.Quote.Token = transport.RandomID()
 	s.Quote.Revision = protocol.Digest(s)
 	e.tradeQuotes[s.Quote.Token] = s
-	return s.Quote, nil
+	result := s.Quote
+	result.FeeBudgets = maps.Clone(s.Quote.FeeBudgets)
+	result.BountyBudgets = maps.Clone(s.Quote.BountyBudgets)
+	return result, nil
 }
 
 func (e *Engine) confirmTrade(ctx context.Context, raw json.RawMessage) (ConfirmTradeResult, error) {
@@ -462,7 +567,7 @@ func (e *Engine) confirmTrade(ctx context.Context, raw json.RawMessage) (Confirm
 	e.tradeConfirming[p.RequestID] = true
 	s := receipt.Snapshot
 	e.mu.Unlock()
-	fundsRaw, _ := json.Marshal(FundsPreflightRequest{Chain: s.Quote.PaidChain, Amount: s.Quote.PaidPrincipal, Fee: s.Quote.Fees.FundingFee, Inputs: s.Quote.Funds.Inputs})
+	fundsRaw, _ := json.Marshal(FundsPreflightRequest{Chain: s.Quote.PaidChain, Amount: s.Quote.PaidTotal - s.Quote.Fees.FundingFee, Fee: s.Quote.Fees.FundingFee, Inputs: s.Quote.Funds.Inputs})
 	funds, readErr := e.preflightFundsForOrder(ctx, Request{Method: "wallet.preflight", Params: fundsRaw}, replacementFields(s.Request))
 	e.mu.Lock()
 	defer e.mu.Unlock()
@@ -519,8 +624,27 @@ func (e *Engine) validateTradeInputs(owner string, receipt *TradeReceipt) error 
 	if receipt == nil {
 		return nil
 	}
-	if protocol.Digest(e.s.CoinReservations[owner].Inputs) != protocol.Digest(receipt.Snapshot.Quote.Funds.Inputs) {
-		return errors.New("funding inputs changed; review the economics and replay readiness again")
+	reservation := e.s.CoinReservations[owner]
+	reviewed := receipt.Snapshot.Quote.Funds.Inputs
+	changed := errors.New("funding inputs changed; review the economics and replay readiness again")
+	if reservation.Chain != receipt.Snapshot.Quote.PaidChain || len(reviewed) == 0 || len(reservation.Inputs) != len(reviewed) {
+		return changed
+	}
+	// Backends may reorder unchanged UTXOs during the confirmation refresh.
+	// Authorization binds the exact set, without substituting, adding, dropping
+	// or duplicating an input. Preserve both stored orders and all later proofs.
+	remaining := make(map[CoinOutpoint]bool, len(reviewed))
+	for _, point := range reviewed {
+		if remaining[point] {
+			return changed
+		}
+		remaining[point] = true
+	}
+	for _, point := range reservation.Inputs {
+		if !remaining[point] {
+			return changed
+		}
+		delete(remaining, point)
 	}
 	return nil
 }

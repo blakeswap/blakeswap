@@ -25,6 +25,12 @@ func (e *Engine) recoveryTradingReady() error {
 	return nil
 }
 func (e *Engine) recoveryOwnerPolicy(s *Swap, refund bool) error {
+	// This guard is repeated at the publication boundary, including after a
+	// backend changes. Only a claim reusing a public secret is independent of
+	// the local funding proof; refunds and first revelation remain held.
+	if (refund || !s.SecretObserved) && !e.fundingAncestryReady(s) {
+		return errFundingAncestry
+	}
 	if !e.restoredSwap(s.ID) {
 		return nil
 	}
@@ -53,7 +59,7 @@ func (e *Engine) acceptRecoveryRefund(s *Swap, all map[chain.ID]map[string]chain
 		incoming = s.Long
 	}
 	obs, ok := observation(all, incoming)
-	if !ok || obs.Tx == nil || obs.Confirmations < e.Config.Network.Confirmations() {
+	if !ok || obs.Tx == nil || obs.Confirmations < e.Config.Network.Confirmations() || e.validateContractObservation(incoming, obs) != nil {
 		return false
 	}
 	if _, claimed := contract.ExtractSecret(incoming, obs.Tx); claimed {
@@ -68,10 +74,13 @@ func (e *Engine) acceptRecoveryRefund(s *Swap, all map[chain.ID]map[string]chain
 // target-only recovery claim. Absence cannot establish that an old snapshot never
 // learned or published something later.
 func (e *Engine) advanceRestoredSwap(ctx context.Context, s *Swap, all map[chain.ID]map[string]chain.Observation) error {
+	if e.fatal != nil {
+		return e.fatal
+	}
 	if err := e.rememberSwapWitnesses(s, all); err != nil {
 		return err
 	}
-	if recoverySwapInactive(s) {
+	if e.recoverySwapInactive(s) {
 		return nil
 	}
 	if s.Terms == nil {
@@ -80,9 +89,21 @@ func (e *Engine) advanceRestoredSwap(ctx context.Context, s *Swap, all map[chain
 	if err := s.Terms.Validate(); err != nil {
 		return err
 	}
+	// Retain any already-proven settlement contradiction before ancestry IO.
+	if err := e.reconcileFillContradiction(s, all); err != nil {
+		if _, proofOnly := err.(observationEvidenceError); !proofOnly {
+			return err
+		}
+	}
+	if err := e.refreshFundingAncestry(ctx, s); err != nil {
+		return e.holdFundingAncestry(ctx, s, all, err)
+	}
+	if err := e.reconcileObservedSwap(ctx, s, all); err != nil {
+		return e.holdObservedSpend(ctx, s, all, err)
+	}
 	terminalStable := e.observeSwapSpends(s, all)
 	if e.recoverySwapResolved(s, all) {
-		if recoverySwapOwnInactive(s) {
+		if e.recoverySwapOwnInactive(s) {
 			return nil
 		} // Preserve the irreversible nonfunding decision.
 		long, _ := observation(all, s.Long)
@@ -95,8 +116,14 @@ func (e *Engine) advanceRestoredSwap(ctx context.Context, s *Swap, all map[chain
 			_, sc = contract.ExtractSecret(s.Short, short.Tx)
 		}
 		if lc && sc {
+			if err := e.settleRestoredMakerFill(s, FillFilled, all); err != nil {
+				return err
+			}
 			s.Stage = "completed"
 		} else if !lc && !sc {
+			if err := e.settleRestoredMakerFill(s, FillReleased, all); err != nil {
+				return err
+			}
 			s.Stage = "refunded"
 		} else {
 			s.Stage = "contested outcome"
@@ -108,7 +135,7 @@ func (e *Engine) advanceRestoredSwap(ctx context.Context, s *Swap, all map[chain
 		}
 		return nil
 	}
-	if recoverySwapOwnInactive(s) {
+	if e.recoverySwapOwnInactive(s) {
 		return errors.New("own funding is durably canceled; waiting for positive refund of the known peer contract")
 	}
 	if terminalStable {
@@ -148,10 +175,10 @@ func (e *Engine) advanceRestoredSwap(ctx context.Context, s *Swap, all map[chain
 }
 
 func (e *Engine) recoverySwapResolved(s *Swap, all map[chain.ID]map[string]chain.Observation) bool {
-	if recoverySwapInactive(s) {
+	if e.recoverySwapInactive(s) {
 		return true
 	}
-	if s == nil || s.Terms == nil || !e.fresh(chain.BTC) || !e.fresh(chain.Blake) || all[chain.BTC] == nil || all[chain.Blake] == nil {
+	if s == nil || !e.fundingAncestryReady(s) || s.Terms == nil || !e.fresh(chain.BTC) || !e.fresh(chain.Blake) || all[chain.BTC] == nil || all[chain.Blake] == nil {
 		return false
 	}
 	own, incoming := s.Long, s.Short
@@ -162,13 +189,13 @@ func (e *Engine) recoverySwapResolved(s *Swap, all map[chain.ID]map[string]chain
 	}
 	refunded := func(c contract.HTLC) bool {
 		obs, ok := observation(all, c)
-		if c.TxID == "" || !ok || obs.Tx == nil || obs.Confirmations < e.Config.Network.Confirmations() {
+		if c.TxID == "" || !ok || obs.Tx == nil || obs.Tx.TxHash().String() != obs.TxID || obs.Confirmations < e.Config.Network.Confirmations() {
 			return false
 		}
 		_, claimed := contract.ExtractSecret(c, obs.Tx)
-		return !claimed
+		return !claimed && e.validateContractObservation(c, obs) == nil
 	}
-	if recoverySwapOwnInactive(s) {
+	if e.recoverySwapOwnInactive(s) {
 		return refunded(incoming)
 	}
 	if incoming.TxID == "" && incomingRaw == "" && !incomingSent {
@@ -176,7 +203,7 @@ func (e *Engine) recoverySwapResolved(s *Swap, all map[chain.ID]map[string]chain
 	}
 	for _, c := range []contract.HTLC{s.Long, s.Short} {
 		obs, ok := observation(all, c)
-		if c.TxID == "" || !ok || obs.Tx == nil || obs.Confirmations < e.Config.Network.Confirmations() {
+		if c.TxID == "" || !ok || obs.Confirmations < e.Config.Network.Confirmations() || e.validateContractObservation(c, obs) != nil {
 			return false
 		}
 	}

@@ -5,7 +5,7 @@ import (
 	"encoding/json"
 	"fiatjaf.com/nostr"
 	"fiatjaf.com/nostr/nip19"
-	pb "github.com/blakeswap/blakeswap/api/gen/blakeswap/v1"
+	pb "github.com/blakeswap/blakeswap/api/gen/blakeswap/v2"
 	"github.com/blakeswap/blakeswap/internal/chain"
 	"github.com/blakeswap/blakeswap/internal/daemon"
 	"github.com/blakeswap/blakeswap/internal/storage"
@@ -78,7 +78,11 @@ func TestOfflineActiveSwapCannotBeHiddenByNetworkChange(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err = v.Save(daemon.State{Version: 1, Network: chain.Mainnet, Mnemonic: seed, Swaps: map[string]*daemon.Swap{"pending": {ID: "pending", Stage: "funding broadcast"}}}); err != nil {
+	child := fixtureSwap(t, chain.Mainnet, seed, "taker")
+	child.Stage = "funding broadcast"
+	state := daemon.State{Version: daemon.StateVersion, Network: chain.Mainnet, Mnemonic: seed, Swaps: map[string]*daemon.Swap{child.ID: child}}
+	fixtureIndexSwaps(t, &state)
+	if err = v.Save(state); err != nil {
 		t.Fatal(err)
 	}
 	v.Close()
@@ -158,7 +162,11 @@ func TestSettingsCancelsBootstrapBeforeInspectingStoredObligations(t *testing.T)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err = vault.Save(daemon.State{Version: 1, Network: chain.Mainnet, Mnemonic: seed, Swaps: map[string]*daemon.Swap{"pending": {ID: "pending", Stage: "funding broadcast"}}}); err != nil {
+	child := fixtureSwap(t, chain.Mainnet, seed, "taker")
+	child.Stage = "funding broadcast"
+	state := daemon.State{Version: daemon.StateVersion, Network: chain.Mainnet, Mnemonic: seed, Swaps: map[string]*daemon.Swap{child.ID: child}}
+	fixtureIndexSwaps(t, &state)
+	if err = vault.Save(state); err != nil {
 		t.Fatal(err)
 	}
 	ctx, cancel := context.WithCancel(context.Background())

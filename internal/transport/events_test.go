@@ -9,7 +9,7 @@ import (
 
 func TestGiftWrapAuthenticationAndPrivacy(t *testing.T) {
 	alice, bob, eve := nostr.Generate(), nostr.Generate(), nostr.Generate()
-	m := Message{Version: 1, ID: RandomID(), Type: "test", SwapID: RandomID(), Body: json.RawMessage(`{"sensitive":"test-only secret"}`)}
+	m := Message{Version: MessageVersion, ID: RandomID(), Type: "test", SwapID: RandomID(), Body: json.RawMessage(`{"sensitive":"test-only secret"}`)}
 	event, e := Wrap(alice, bob.Public(), m)
 	if e != nil {
 		t.Fatal(e)
@@ -52,28 +52,62 @@ func TestGiftWrapAuthenticationAndPrivacy(t *testing.T) {
 		t.Fatal("application message identity unstable")
 	}
 }
+
+func TestGiftWrapHardCutoverRefusesLegacyEnvelopeAndNamespace(t *testing.T) {
+	sender, recipient := nostr.Generate(), nostr.Generate()
+	for _, version := range []int{0, 1, 3} {
+		message := Message{Version: version, ID: RandomID(), Type: "request", SwapID: RandomID(), Body: json.RawMessage(`{}`)}
+		event, err := Wrap(sender, recipient.Public(), message)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, _, err := Unwrap(recipient, event); err == nil {
+			t.Fatal("incompatible private envelope accepted")
+		}
+	}
+	message := Message{Version: MessageVersion, ID: RandomID(), Type: "request", SwapID: RandomID(), Body: json.RawMessage(`{}`)}
+	event, err := WrapFor("blakeswap-regtest-v1", sender, recipient.Public(), message)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := Unwrap(recipient, event); err == nil {
+		t.Fatal("retired namespace accepted")
+	}
+}
 func TestRejectMismatchedRumorAuthor(t *testing.T) {
 	alice, bob, eve := nostr.Generate(), nostr.Generate(), nostr.Generate()
-	rumor := nostr.Event{PubKey: eve.Public(), Kind: RumorKind, CreatedAt: nostr.Now(), Tags: nostr.Tags{{"p", bob.Public().Hex()}, {"t", Namespace}}, Content: `{"version":1}`}
-	rumor.ID = EventID(rumor)
-	content, e := encrypt(alice, bob.Public(), rumor.String())
-	if e != nil {
-		t.Fatal(e)
+	message := Message{Version: MessageVersion, ID: RandomID(), Type: "test", Body: json.RawMessage(`{}`)}
+	raw, err := json.Marshal(message)
+	if err != nil {
+		t.Fatal(err)
 	}
-	seal := nostr.Event{Kind: 13, CreatedAt: nostr.Now(), Content: content, Tags: nostr.Tags{}}
-	if e = Sign(&seal, alice); e != nil {
-		t.Fatal(e)
+	wrapRumor := func(author nostr.PubKey) nostr.Event {
+		t.Helper()
+		rumor := nostr.Event{PubKey: author, Kind: RumorKind, CreatedAt: nostr.Now(), Tags: nostr.Tags{{"p", bob.Public().Hex()}, {"t", Namespace}}, Content: string(raw)}
+		rumor.ID = EventID(rumor)
+		content, err := encrypt(alice, bob.Public(), rumor.String())
+		if err != nil {
+			t.Fatal(err)
+		}
+		seal := nostr.Event{Kind: 13, CreatedAt: nostr.Now(), Content: content, Tags: nostr.Tags{}}
+		if err = Sign(&seal, alice); err != nil {
+			t.Fatal(err)
+		}
+		ephemeral := nostr.Generate()
+		content, err = encrypt(ephemeral, bob.Public(), seal.String())
+		if err != nil {
+			t.Fatal(err)
+		}
+		outer := nostr.Event{Kind: 1059, CreatedAt: nostr.Now(), Content: content, Tags: nostr.Tags{{"p", bob.Public().Hex()}}}
+		if err = Sign(&outer, ephemeral); err != nil {
+			t.Fatal(err)
+		}
+		return outer
 	}
-	ephemeral := nostr.Generate()
-	content, e = encrypt(ephemeral, bob.Public(), seal.String())
-	if e != nil {
-		t.Fatal(e)
+	if from, got, err := Unwrap(bob, wrapRumor(alice.Public())); err != nil || from != alice.Public() || got.ID != message.ID {
+		t.Fatal("valid current-format control failed", err)
 	}
-	outer := nostr.Event{Kind: 1059, CreatedAt: nostr.Now(), Content: content, Tags: nostr.Tags{{"p", bob.Public().Hex()}}}
-	if e = Sign(&outer, ephemeral); e != nil {
-		t.Fatal(e)
-	}
-	if _, _, e = Unwrap(bob, outer); e == nil {
+	if _, _, err := Unwrap(bob, wrapRumor(eve.Public())); err == nil {
 		t.Fatal("seal author silently replaced forged rumor author")
 	}
 }
@@ -94,15 +128,15 @@ func FuzzUnwrap(f *testing.F) {
 
 func TestMailboxesRejectForeignNetworkBindings(t *testing.T) {
 	sender, recipient := nostr.Generate(), nostr.Generate()
-	message := Message{Version: 1, ID: RandomID(), Type: "request", Body: json.RawMessage(`{}`)}
-	event, err := WrapFor("blakeswap-mainnet-v1", sender, recipient.Public(), message)
+	message := Message{Version: MessageVersion, ID: RandomID(), Type: "request", Body: json.RawMessage(`{}`)}
+	event, err := WrapFor("blakeswap-mainnet-v2", sender, recipient.Public(), message)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, _, err = UnwrapFor("blakeswap-testnet-v1", recipient, event); err == nil {
+	if _, _, err = UnwrapFor("blakeswap-testnet-v2", recipient, event); err == nil {
 		t.Fatal("foreign network message accepted")
 	}
-	if _, _, err = UnwrapFor("blakeswap-mainnet-v1", recipient, event); err != nil {
+	if _, _, err = UnwrapFor("blakeswap-mainnet-v2", recipient, event); err != nil {
 		t.Fatal(err)
 	}
 }

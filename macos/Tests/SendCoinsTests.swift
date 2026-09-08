@@ -2,8 +2,8 @@ import XCTest
 @testable import Blakeswap
 
 final class SendCoinsTests: XCTestCase {
-    private func coin(reserved: Bool = false, confirmations: Int32 = 6) -> Blakeswap_V1_WalletCoin {
-        var coin = Blakeswap_V1_WalletCoin()
+    private func coin(reserved: Bool = false, confirmations: Int32 = 6) -> Blakeswap_V2_WalletCoin {
+        var coin = Blakeswap_V2_WalletCoin()
         coin.chain = "btc"; coin.txid = String(repeating: "ab", count: 32)
         coin.amount = 100_000; coin.confirmations = confirmations; coin.reserved = reserved
         return coin
@@ -19,13 +19,13 @@ final class SendCoinsTests: XCTestCase {
         XCTAssertEqual(plan.request.expectedNetwork, "mainnet")
     }
     func testFeeReviewBindsWalletNetworkAmountsAndSelectedInputs() {
-        var point = Blakeswap_V1_Outpoint(); point.txid = "original"; point.vout = 0
+        var point = Blakeswap_V2_Outpoint(); point.txid = "original"; point.vout = 0
         let original = feeReviewKey(profile: "alice", network: "mainnet", kind: "send", chain: "btc", amount: "90000", destination: "recipient", fee: "1000", automatic: true, inputs: [point])
         let changed = feeReviewKey(profile: "bob", network: "mainnet", kind: "send", chain: "btc", amount: "90000", destination: "recipient", fee: "1000", automatic: true, inputs: [point])
         XCTAssertNotEqual(original, changed)
         point.vout = 1
         XCTAssertNotEqual(original, feeReviewKey(profile: "alice", network: "mainnet", kind: "send", chain: "btc", amount: "90000", destination: "recipient", fee: "1000", automatic: true, inputs: [point]))
-        var q = Blakeswap_V1_FeeQuote(); q.fee = 1234; q.estimate.rateSatKvb = 6539; q.estimate.timestamp = 123
+        var q = Blakeswap_V2_FeeQuote(); q.fee = 1234; q.estimate.rateSatKvb = 6539; q.estimate.timestamp = 123
         let review = FeeReview(key: original, quote: q, automatic: true)
         XCTAssertEqual(review.fundingParams["funding_fee"] as? Int64, 1234)
         XCTAssertEqual(review.fundingParams["rate_sat_kvb"] as? Int64, 6539)

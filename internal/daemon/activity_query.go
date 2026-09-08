@@ -71,7 +71,7 @@ func (e *Engine) activityPage(raw json.RawMessage) (ActivityPage, error) {
 		if q.Cursor != 0 {
 			return ActivityPage{}, errors.New("an activity cursor requires its original snapshot")
 		}
-		if len(e.activitySnapshots) >= 4 {
+		if e.historyContext == nil && len(e.activitySnapshots) >= 4 {
 			oldest := ""
 			for id, s := range e.activitySnapshots {
 				if oldest == "" || s.Sequence < e.activitySnapshots[oldest].Sequence {

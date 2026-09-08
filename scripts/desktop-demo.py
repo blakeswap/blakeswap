@@ -8,6 +8,7 @@ trade uses an explicitly launched file-mode helper's gRPC API and regtest coins.
 """
 import argparse, json, os, pathlib, subprocess, time
 import local
+from demo_trade import whole_offer, whole_take, matching_parent
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 DATA = pathlib.Path(os.environ.get("BLAKESWAP_DESKTOP_DATA_DIR", str(ROOT / ".local/desktop-demo"))).resolve()
@@ -63,14 +64,15 @@ def trade():
         if status.get("network") != "regtest" or len(status.get("addresses",{})) != 2: raise RuntimeError("Demo wallets must be connected to regtest")
         for chain in local.NODES: call(profile,"regtest.faucet",{"chain":chain,"amount":100000000})
     call("alice","regtest.mine",{"blocks":2})
-    offer = call("alice","offer.create",{"sell":"btc","sell_amount":1000000,"buy_amount":2000000})
+    offer = call("alice","offer.create",whole_offer())
     deadline=time.monotonic()+120
     while time.monotonic()<deadline:
         book=call("bob","status").get("orders",[])
-        if any(o["id"]==offer["id"] for o in book): break
+        delivered = next((o for o in book if matching_parent(offer, o)), None)
+        if delivered is not None: break
         time.sleep(.5)
     else: raise RuntimeError("Offer delivery timed out")
-    swap=call("bob","swap.take",{"maker":offer["maker"],"id":offer["id"]})["id"]
+    swap=call("bob","swap.take",whole_take(offer, delivered))["id"]
     while time.monotonic()<deadline:
         states=[call(p,"status") for p in ("alice","bob")]
         legs=[next((s for s in state.get("swaps",[]) if s["id"]==swap),{}) for state in states]

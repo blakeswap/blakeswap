@@ -211,6 +211,13 @@ func (e *Engine) preflightFundsForOrder(ctx context.Context, req Request, allowa
 		e.mu.Unlock()
 		return result, ownerErr
 	}
+	if owner != "" {
+		coins, ownerErr = e.replacementCoins(owner, p.Chain)
+		if ownerErr != nil {
+			e.mu.Unlock()
+			return result, ownerErr
+		}
+	}
 	reserved := e.reservedCoins(p.Chain, owner)
 	network, btc, blake, node := e.Config.Network, e.nodes[chain.BTC], e.nodes[chain.Blake], e.nodes[p.Chain]
 	e.mu.Unlock()

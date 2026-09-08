@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	pb "github.com/blakeswap/blakeswap/api/gen/blakeswap/v1"
+	pb "github.com/blakeswap/blakeswap/api/gen/blakeswap/v2"
 	"github.com/blakeswap/blakeswap/internal/chain"
 	"github.com/blakeswap/blakeswap/internal/transport"
 )
@@ -126,7 +126,8 @@ func TestRealActivityHistoryThroughTypedAPI(t *testing.T) {
 					t.Error(err)
 				}
 			}()
-			h.tick()
+			h.waitReady("maker")
+			h.waitReady("taker")
 			demoted := h.activity("maker", &pb.ActivityQuery{Chain: string(id), Kind: "send"}).Records[0]
 			if demoted.Status == "confirmed" || len(demoted.History) == 0 {
 				t.Fatal("reorg did not demote activity", demoted)
@@ -134,7 +135,8 @@ func TestRealActivityHistoryThroughTypedAPI(t *testing.T) {
 			if err = h.nodes[id].Call(h.ctx, "reconsiderblock", nil, confirmed.BlockHash); err != nil {
 				t.Fatal(err)
 			}
-			h.tick()
+			h.waitReady("maker")
+			h.waitReady("taker")
 			current := h.activity("maker", &pb.ActivityQuery{Chain: string(id)})
 			exported, err := h.clients["maker"].ExportActivity(h.contexts["maker"], &pb.ActivityQuery{ExpectedWallet: "maker", ExpectedNetwork: "regtest", Chain: string(id), Snapshot: current.Snapshot, Limit: 500})
 			if err != nil {

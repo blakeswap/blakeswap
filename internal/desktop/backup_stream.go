@@ -218,7 +218,7 @@ func readStreamManifest(ctx context.Context, root, path string, password []byte)
 					return errors.New("duplicate portable network identity")
 				}
 				// Placeholders let the same manifest identity validator run before states.
-				wallet.Networks[network] = &daemon.State{Version: 1, Network: network, Mnemonic: item.Mnemonic}
+				wallet.Networks[network] = &daemon.State{Version: daemon.StateVersion, Network: network, Mnemonic: item.Mnemonic}
 			}
 			result.Wallets = append(result.Wallets, wallet)
 		}
@@ -234,7 +234,7 @@ func readStreamManifest(ctx context.Context, root, path string, password []byte)
 				if record.Wallet != item.ID || record.Network != network || record.State == nil {
 					return errors.New("portable network ordering or completeness mismatch")
 				}
-				if record.State.Mnemonic != item.Mnemonic || record.State.Network.Normalized() != network || (record.State.Version != 1 && record.State.Version != 2) {
+				if record.State.Mnemonic != item.Mnemonic || record.State.Network.Normalized() != network || (record.State.Version != daemon.StateVersion) {
 					return errors.New("portable network state does not match inventory")
 				}
 				source, err := staging.saveStream(ctx, *record.State, record.Archive, func(write func(storage.ArchiveRecord) error) error {
@@ -271,7 +271,7 @@ func validateBackupInventory(manifest backupManifest) error {
 	for _, wallet := range manifest.Wallets {
 		entry := backupWallet{ID: wallet.ID, Name: wallet.Name, Identity: wallet.Identity, Mnemonic: wallet.Mnemonic, Networks: map[chain.Network]*daemon.State{}}
 		for network := range wallet.Networks {
-			entry.Networks[network] = &daemon.State{Version: 1, Network: network, Mnemonic: wallet.Mnemonic}
+			entry.Networks[network] = &daemon.State{Version: daemon.StateVersion, Network: network, Mnemonic: wallet.Mnemonic}
 		}
 		metadata.Wallets = append(metadata.Wallets, entry)
 	}

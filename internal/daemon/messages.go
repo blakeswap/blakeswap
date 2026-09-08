@@ -37,6 +37,9 @@ func bindFunding(c contract.HTLC, raw string) (contract.HTLC, error) {
 	return c, nil
 }
 func (e *Engine) handle(from string, m transport.Message) error {
+	if m.Version != transport.MessageVersion {
+		return errors.New("incompatible private protocol message")
+	}
 	if m.Type == "tower-query" {
 		if err := e.recoveryTradingReady(); err != nil {
 			return err
@@ -80,7 +83,7 @@ func (e *Engine) handle(from string, m transport.Message) error {
 				if archived.Job.Owner != from || protocol.Digest(archived.Job) != protocol.Digest(job) {
 					return errors.New("job ID collision")
 				}
-				return e.queue(from, "tower-receipt", m.SwapID, protocol.Receipt{JobID: job.ID, Digest: protocol.Digest(job)})
+				return e.queue(from, "tower-receipt", m.SwapID, protocol.Receipt{Version: protocol.Version, JobID: job.ID, Digest: protocol.Digest(job)})
 			}
 		}
 		bps := e.ownTower().BPS
@@ -113,82 +116,13 @@ func (e *Engine) handle(from string, m transport.Message) error {
 				return err
 			}
 		}
-		return e.queue(from, "tower-receipt", m.SwapID, protocol.Receipt{JobID: job.ID, Digest: protocol.Digest(job)})
+		return e.queue(from, "tower-receipt", m.SwapID, protocol.Receipt{Version: protocol.Version, JobID: job.ID, Digest: protocol.Digest(job)})
 	}
 	if e.Config.Mode != "trader" {
 		return errors.New("tower does not trade")
 	}
 	if m.Type == "request" {
-		if e.restoredSwap(m.SwapID) {
-			return errors.New("restored negotiations are quarantined; waiting for positive recovery evidence")
-		}
-		if err := e.recoveryTradingReady(); err != nil {
-			return err
-		}
-		var request protocol.Request
-		if err := json.Unmarshal(m.Body, &request); err != nil {
-			return err
-		}
-		o, err := request.Validate(time.Now().Unix())
-		if err != nil {
-			return err
-		}
-		if o.Network.Normalized() != e.Config.Network {
-			return errors.New("request network mismatch")
-		}
-		if from != request.Taker || request.ID != m.SwapID || o.Maker != e.identity.Public().Hex() {
-			return errors.New("request party mismatch")
-		}
-		if existing := e.s.Swaps[request.ID]; existing != nil {
-			if existing.Role != "maker" || protocol.Digest(existing.Request) != protocol.Digest(request) {
-				return errors.New("swap ID collision")
-			}
-			return e.queue(from, "accepted", m.SwapID, existing.Terms)
-		}
-		owned, ok := e.s.Offers[o.ID]
-		var current protocol.Offer
-		currentErr := json.Unmarshal([]byte(owned.Content), &current)
-		// Maker-authoritative check-and-reserve under Engine.mu, analogous to
-		// Bisq's AVAILABLE -> RESERVED transition. A stale relay copy is never
-		// sufficient authorization for another trade.
-		if !ok || currentErr != nil || current.Status != "open" || owned.ID != request.OfferEvent.ID || e.automationOfferHeld(o.ID) || e.strategyOfferHeld(o) {
-			return e.queue(from, "rejected", request.ID, map[string]string{"reason": "order is unavailable or changed"})
-		}
-		if e.balances[o.Sell] < o.SellAmount+e.fundingFee("offer/"+o.ID) {
-			return e.queue(from, "rejected", request.ID, map[string]string{"reason": "maker lacks confirmed balance"})
-		}
-		tower, ok := e.s.OfferTowers[o.ID]
-		if !ok {
-			return errors.New("local offer protection policy is missing")
-		}
-		if err := e.admitWork("swap"); err != nil {
-			return err
-		}
-		keys, err := e.swapKeys(request.ID)
-		if err != nil {
-			return err
-		}
-		if !e.fresh(chain.BTC) || !e.fresh(chain.Blake) {
-			return errors.New("both chains require fresh observations before accepting a new request")
-		}
-		terms, err := protocol.NewTermsWithClocks(request, keys, e.heights, e.clocks)
-		if err != nil {
-			return err
-		}
-		s := &Swap{ID: request.ID, Role: "maker", Protection: &tower, Request: request, Terms: &terms, Long: terms.Long, Short: terms.Short, Receipts: map[string]protocol.Receipt{}, Stage: "awaiting taker funding"}
-		if policy, ok := e.s.FundingFees["offer/"+o.ID]; ok {
-			s.OwnerFeeCap = policy.OwnerFeeCap
-		}
-		e.s.Swaps[s.ID] = s
-		o.Status = "reserved"
-		o.Reservation = s.ID
-		if err = e.publishOffer(o); err != nil {
-			return err
-		}
-		if err := e.save(); err != nil {
-			return err
-		} // Reservation is durable before acceptance can be sent.
-		return e.queue(from, "accepted", s.ID, terms)
+		return e.acceptFillRequest(from, m)
 	}
 	s := e.s.Swaps[m.SwapID]
 	if s == nil {
@@ -238,6 +172,11 @@ func (e *Engine) handle(from string, m transport.Message) error {
 			}
 			return nil
 		}
+		withTerms := *s
+		withTerms.Terms = &terms
+		if err := e.retainSwapIdentity(&withTerms); err != nil {
+			return err
+		}
 		s.Terms = &terms
 		s.Long = terms.Long
 		s.Short = terms.Short
@@ -253,6 +192,9 @@ func (e *Engine) handle(from string, m transport.Message) error {
 		}
 		var receipt protocol.Receipt
 		if err := json.Unmarshal(m.Body, &receipt); err != nil {
+			return err
+		}
+		if err := receipt.Validate(); err != nil {
 			return err
 		}
 		for _, job := range s.Jobs {

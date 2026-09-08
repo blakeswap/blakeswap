@@ -11,7 +11,7 @@ import (
 	"testing"
 	"time"
 
-	pb "github.com/blakeswap/blakeswap/api/gen/blakeswap/v1"
+	pb "github.com/blakeswap/blakeswap/api/gen/blakeswap/v2"
 	"github.com/blakeswap/blakeswap/internal/chain"
 	"github.com/blakeswap/blakeswap/internal/contract"
 	"github.com/blakeswap/blakeswap/internal/daemon"
@@ -250,7 +250,7 @@ func TestRealReviewedSwapThroughTypedAPI(t *testing.T) {
 	for _, sell := range []chain.ID{chain.BTC, chain.Blake} {
 		t.Run(string(sell), func(t *testing.T) {
 			before := h.status("maker")
-			mq := h.quote("maker", &pb.TradeQuoteRequest{Kind: "maker", Sell: string(sell), SellAmount: 1000000, BuyAmount: 2000000, FundingFee: 6500, OwnerFeeCap: 20000})
+			mq := h.quote("maker", &pb.TradeQuoteRequest{Kind: "maker", FillMode: "whole", MinFill: 1000000, MaxFill: 1000000, FeeBudgets: map[string]int64{string(sell): 26500, string(sell.Other()): 20000}, BountyBudgets: map[string]int64{"btc": 0, "blake": 0}, Sell: string(sell), SellAmount: 1000000, BuyAmount: 2000000, FundingFee: 6500, OwnerFeeCap: 20000})
 			if !proto.Equal(quoteComparableStatus(before), quoteComparableStatus(h.status("maker"))) {
 				t.Fatal("quote/cancel mutated public wallet state")
 			}
@@ -258,17 +258,26 @@ func TestRealReviewedSwapThroughTypedAPI(t *testing.T) {
 				t.Fatal("maker economics", mq)
 			}
 			offerID, mrequest := h.confirm("maker", mq)
-			h.tick()
 			var order *pb.Offer
-			for _, o := range h.status("taker").Orders {
-				if o.Id == offerID {
-					order = o
+			// Publication is asynchronous; allow the normal history resweep
+			// before using the taker's authenticated offer for its own review.
+			deadline := time.Now().Add(50 * time.Second)
+			for order == nil && time.Now().Before(deadline) {
+				h.tick()
+				for _, o := range h.status("taker").Orders {
+					if o.Id == offerID {
+						order = o
+					}
+				}
+				if order == nil {
+					time.Sleep(100 * time.Millisecond)
 				}
 			}
 			if order == nil {
 				t.Fatal("confirmed maker offer not relayed")
 			}
-			tq := h.quote("taker", &pb.TradeQuoteRequest{Kind: "taker", Maker: order.Maker, Id: order.Id, Sell: order.Sell, SellAmount: order.SellAmount, BuyAmount: order.BuyAmount, FundingFee: 6500, OwnerFeeCap: 20000})
+			requireWholeReviewedParent(t, order, h.status("maker").Pubkey, 1000000, 2000000)
+			tq := h.quote("taker", &pb.TradeQuoteRequest{Kind: "taker", Maker: order.Maker, Id: order.Id, Sell: order.Sell, Quantity: 1000000, ParentRevision: order.Revision, FundingFee: 6500, OwnerFeeCap: 20000})
 			if tq.PaidChain != string(sell.Other()) || tq.ReceivedChain != string(sell) || tq.PaidTotal != 2006500 || tq.OfferEventId == "" {
 				t.Fatal("taker orientation/binding", tq)
 			}

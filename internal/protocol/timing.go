@@ -13,6 +13,17 @@ const TakeoverSeconds uint32 = 24 * 3600
 const RevealSeconds uint32 = 12 * 3600
 const MaxClockSkew uint32 = 2 * 3600
 
+// FundingWindowClosed distinguishes a positive deadline observation from an
+// unavailable, stale or inconsistent clock. Only the former may support a
+// durable never-fund decision; callers must separately establish local custody.
+type fundingWindowError string
+
+func (e fundingWindowError) Error() string { return string(e) }
+func FundingWindowClosed(err error) bool {
+	var closed fundingWindowError
+	return errors.As(err, &closed)
+}
+
 func RefundDelay(n chain.Network) uint32 {
 	if n.Normalized() == chain.Regtest {
 		return RefundGrace
@@ -50,17 +61,17 @@ func (t Terms) timeGateAt(phase string, clocks map[chain.ID]uint32, now int64) e
 		return errors.New("swap deadlines start too far in the future")
 	}
 	if l >= t.Long.RefundHeight || s >= t.Short.RefundHeight {
-		return errors.New("refund deadline reached")
+		return fundingWindowError("refund deadline reached")
 	}
 	longLeft, shortLeft := t.Long.RefundHeight-l, t.Short.RefundHeight-s
 	switch phase {
 	case "fund-long":
 		if longLeft < LongSeconds-2*3600 || shortLeft < ShortSeconds-2*3600 {
-			return errors.New("acceptance too old to fund")
+			return fundingWindowError("acceptance too old to fund")
 		}
 	case "fund-short":
 		if longLeft < 3*24*3600 || shortLeft < 24*3600 || uint64(l)+2*3600 > uint64(t.RevealBefore) {
-			return errors.New("insufficient funding safety margin")
+			return fundingWindowError("insufficient funding safety margin")
 		}
 	case "reveal":
 		if longLeft < 2*24*3600 || shortLeft < 12*3600 || l >= t.RevealBefore {

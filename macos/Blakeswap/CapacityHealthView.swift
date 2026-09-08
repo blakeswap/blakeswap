@@ -1,7 +1,7 @@
 import SwiftUI
 
 struct CapacityHealthView: View {
-    let health: Blakeswap_V1_CapacityHealth
+    let health: Blakeswap_V2_CapacityHealth
     private func bytes(_ value: UInt64) -> String { ByteCountFormatter.string(fromByteCount: Int64(clamping: value), countStyle: .binary) }
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -28,11 +28,12 @@ struct CapacityHealthView: View {
 }
 
 struct RetainedRecordPresentation: Identifiable {
-    let detail: Blakeswap_V1_RecordDetail
+    let detail: Blakeswap_V2_RecordDetail
     let context: TradeContext
     var id: String { detail.kind + "/" + detail.id }
 }
 struct RetainedRecordView: View {
+    @EnvironmentObject private var app: AppModel
     let record: RetainedRecordPresentation
     @Environment(\.dismiss) private var dismiss
     var body: some View {
@@ -49,6 +50,14 @@ struct RetainedRecordView: View {
                         Text("Long leg: \(swap.long.amount) \(symbol(swap.long.chain)) sats · \(swap.longConfirmations) confirmations")
                         Text("Short leg: \(swap.short.amount) \(symbol(swap.short.chain)) sats · \(swap.shortConfirmations) confirmations")
                         Text("Long funding: \(swap.long.txid)\nLong spend: \(swap.longSpend)\nShort funding: \(swap.short.txid)\nShort spend: \(swap.shortSpend)").font(.caption.monospaced())
+                        if !swap.parentID.isEmpty, !swap.parentMaker.isEmpty {
+                            Text("Fill \(swap.quantity) sell sats · Parent revision \(swap.parentRevision)")
+                            Text(swap.allocationKnown ? "\(swap.allocation.capitalized): \(swap.allocatedQuantity) sell sats currently allocated" : "Current maker allocation unknown")
+                            Button("Show parent fills") {
+                                guard record.context.matches(app.tradeContext) else { return }
+                                app.activityDestination = .order(swap.parentID, maker: swap.parentMaker); app.page = "Market"; dismiss()
+                            }.disabled(!record.context.matches(app.tradeContext))
+                        }
                         Text("Owner fee cap: \(swap.ownerFeeCap) sats · Tower paid: \(swap.feeLabel)")
                         Text(swap.secretRevealed ? "Preimage release/observation is retained." : "No preimage release recorded.")
                         if !swap.error.isEmpty { Text(swap.error).foregroundStyle(.orange) }

@@ -75,7 +75,7 @@ func validateBackupManifest(manifest *backupManifest) error {
 			if err != nil {
 				return err
 			}
-			if network == "" || !network.Valid() || state == nil || (state.Version != 1 && state.Version != 2) || state.Network.Normalized() != network || state.Mnemonic != profile.Mnemonic {
+			if network == "" || !network.Valid() || state == nil || (state.Version != daemon.StateVersion) || state.Network.Normalized() != network || state.Mnemonic != profile.Mnemonic {
 				return errors.New("backup network state does not match its wallet manifest")
 			}
 			if err := validateBackupState(state); err != nil {
@@ -101,6 +101,9 @@ func validateBackupState(state *daemon.State) error {
 // Validate an already separated active checkpoint or one typed archive record.
 // Archive completeness and overlap are verified by the streaming owner.
 func validateActiveBackupState(state *daemon.State) error {
+	if err := daemon.ValidateProtocolState(state); err != nil {
+		return err
+	}
 	if err := daemon.ValidateHistoryCoverage(state); err != nil {
 		return err
 	}

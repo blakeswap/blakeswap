@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"testing"
+	"time"
 
 	"github.com/blakeswap/blakeswap/internal/chain"
 	"github.com/blakeswap/blakeswap/internal/contract"
@@ -60,8 +61,8 @@ func TestCapacityPaymentContinuationEncoding(t *testing.T) {
 func TestCapacitySwapContinuationEncoding(t *testing.T) {
 	for _, sell := range []chain.ID{chain.BTC, chain.Blake} {
 		t.Run(string(sell), func(t *testing.T) {
-			e, s, _, secret := isolatedFixtureSell(t, "maker", sell)
-			s.Protection = &protocol.Tower{PubKey: e.identity.Public().Hex(), BPS: 100, Scripts: map[chain.ID]string{chain.BTC: hex.EncodeToString(e.scripts[chain.BTC]), chain.Blake: hex.EncodeToString(e.scripts[chain.Blake])}}
+			e, s, _, secret := isolatedFixtureSell(t, "maker", sell, FeeSelection{FundingFee: 2000, OwnerFeeCap: 20000})
+			s.Protection = &protocol.Tower{Version: protocol.Version, Network: chain.Regtest, PubKey: e.identity.Public().Hex(), BPS: 100, Scripts: map[chain.ID]string{chain.BTC: hex.EncodeToString(e.scripts[chain.BTC]), chain.Blake: hex.EncodeToString(e.scripts[chain.Blake])}}
 			for _, c := range []*contract.HTLC{&s.Long, &s.Short} {
 				entry := e.receiveBook[c.Chain][0]
 				coins := make([]chain.UTXO, 50)
@@ -73,6 +74,14 @@ func TestCapacitySwapContinuationEncoding(t *testing.T) {
 					t.Fatal(err)
 				}
 				c.TxID = tx.TxHash().String()
+				if c == &s.Short {
+					inputs := make([]CoinOutpoint, len(coins))
+					for i, coin := range coins {
+						inputs[i] = CoinOutpoint{TxID: coin.TxID, Vout: coin.Vout}
+					}
+					e.s.FillRecords[s.ID].Inputs = inputs
+					e.s.CoinReservations["swap/"+s.ID] = CoinReservation{Chain: c.Chain, Inputs: append([]CoinOutpoint{}, inputs...)}
+				}
 				if c == &s.Long {
 					s.LongFunding = contract.Hex(tx)
 				} else {
@@ -81,6 +90,32 @@ func TestCapacitySwapContinuationEncoding(t *testing.T) {
 			}
 			s.SelfRefunds = nil
 			s.Jobs = nil
+			// This maximal-input model is a separate initial checkpoint. Its
+			// exact input set and protection cannot replace saved child custody.
+			offer := s.Terms.Offer()
+			offer.TowerBPS, offer.Tower = s.Protection.BPS, s.Protection
+			policy := e.s.FundingFees["swap/"+s.ID]
+			parent, err := newParentOrder(offer, policy, FillOrderFields{FillPolicy: offer.FillPolicy, FeeBudgets: map[chain.ID]int64{sell: 22000, sell.Other(): 20000}, BountyBudgets: map[chain.ID]int64{sell: protocol.Bounty(s.Short.Amount, offer.TowerBPS), sell.Other(): protocol.Bounty(s.Long.Amount, offer.TowerBPS)}}, time.Now().Unix())
+			if err != nil {
+				t.Fatal(err)
+			}
+			reserved, allocation, err := parent.reserveFill(s.Request)
+			if err != nil {
+				t.Fatal(err)
+			}
+			allocation.Inputs = append([]CoinOutpoint{}, e.s.FillRecords[s.ID].Inputs...)
+			committed, allocationValue, err := reserved.transitionFill(*allocation, FillCommitted, false)
+			if err != nil {
+				t.Fatal(err)
+			}
+			e.s.ParentOrders[offer.ID], e.s.FillRecords[s.ID] = &committed, &allocationValue
+			e.s.FillKeys = map[string]string{}
+			if err := e.retainSwapIdentity(s); err != nil {
+				t.Fatal(err)
+			}
+			source := e
+			e = conservationRestoredEngine(t, source, source.s)
+			s = e.s.Swaps[s.ID]
 			if err := e.prepare(s, s.Short); err != nil {
 				t.Fatal(err)
 			}
@@ -92,7 +127,7 @@ func TestCapacitySwapContinuationEncoding(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			s.SelfClaim, s.OwnerFeeCap = contract.Hex(claim), 20000
+			s.SelfClaim = contract.Hex(claim)
 			if err := e.prepareClaimVariants(s); err != nil {
 				t.Fatal(err)
 			}
@@ -102,7 +137,7 @@ func TestCapacitySwapContinuationEncoding(t *testing.T) {
 			s.Receipts = map[string]protocol.Receipt{}
 			e.s.TowerJobs = map[string]*TowerJob{}
 			for _, job := range s.Jobs {
-				s.Receipts[job.ID] = protocol.Receipt{JobID: job.ID, Digest: protocol.Digest(job)}
+				s.Receipts[job.ID] = protocol.Receipt{Version: protocol.Version, JobID: job.ID, Digest: protocol.Digest(job)}
 				e.s.TowerJobs[job.ID] = &TowerJob{Job: job, Secret: s.Secret, Variants: transactionIDs(job.Templates)}
 			}
 			for _, message := range []struct {

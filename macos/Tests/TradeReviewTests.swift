@@ -11,8 +11,8 @@ final class TradeReviewTests: XCTestCase {
         addTeardownBlock { try? FileManager.default.removeItem(at: url) }
         return url.path
     }
-    private func quote(kind: String = "maker") -> Blakeswap_V1_TradeQuote {
-        var q = Blakeswap_V1_TradeQuote()
+    private func quote(kind: String = "maker") -> Blakeswap_V2_TradeQuote {
+        var q = Blakeswap_V2_TradeQuote()
         q.wallet = context.profile; q.walletKey = context.walletKey; q.network = context.network; q.kind = kind
         q.token = String(repeating: "a", count: 64); q.revision = String(repeating: "b", count: 64)
         q.ready = true; q.expires = Int64(Date().timeIntervalSince1970) + 120
@@ -26,12 +26,12 @@ final class TradeReviewTests: XCTestCase {
             var calls: [String] = []
             let model = TradeReviewModel(context: context, root: directory) { method, data in
                 calls.append(method)
-                let request = try Blakeswap_V1_TradeQuoteRequest(jsonUTF8Data: data)
+                let request = try Blakeswap_V2_TradeQuoteRequest(jsonUTF8Data: data)
                 XCTAssertEqual(request.expectedWallet, self.context.profile)
                 XCTAssertEqual(request.expectedNetwork, self.context.network)
                 return try q.serializedData()
             }
-            var draft = Blakeswap_V1_TradeQuoteRequest(); draft.kind = kind
+            var draft = Blakeswap_V2_TradeQuoteRequest(); draft.kind = kind
             await model.review(draft, current: { self.context })
             XCTAssertEqual(model.quote?.paidChain, q.paidChain)
             XCTAssertEqual(model.quote?.receivedChain, q.receivedChain)
@@ -45,7 +45,7 @@ final class TradeReviewTests: XCTestCase {
             var current = context
             let q = quote()
             let model = TradeReviewModel(context: context, root: try root()) { _, _ in current = replacement; return try q.serializedData() }
-            var draft = Blakeswap_V1_TradeQuoteRequest(); draft.kind = "maker"
+            var draft = Blakeswap_V2_TradeQuoteRequest(); draft.kind = "maker"
             await model.review(draft, current: { current })
             XCTAssertNil(model.quote); XCTAssertNil(model.error)
         }
@@ -53,10 +53,10 @@ final class TradeReviewTests: XCTestCase {
     func testDoubleClickAndAmbiguousRetryKeepOneDurableIdentityAfterRestartAndExpiry() async throws {
         let directory = try root(), q = quote(kind: "taker")
         var calls = 0
-        var original: Blakeswap_V1_ConfirmTradeRequest?
+        var original: Blakeswap_V2_ConfirmTradeRequest?
         var resume: CheckedContinuation<Data, Error>?
         let model = TradeReviewModel(context: context, root: directory) { _, data in
-            calls += 1; original = try Blakeswap_V1_ConfirmTradeRequest(jsonUTF8Data: data)
+            calls += 1; original = try Blakeswap_V2_ConfirmTradeRequest(jsonUTF8Data: data)
             XCTAssertNotNil(try TradeConfirmationJournal(root: directory).load(profile: self.context.profile, network: self.context.network))
             return try await withCheckedThrowingContinuation { resume = $0 }
         }
@@ -68,13 +68,12 @@ final class TradeReviewTests: XCTestCase {
         resume?.resume(throwing: RPCError.message("Response lost")); await first.value
         XCTAssertNotNil(model.pending); XCTAssertNil(model.acceptedID)
         var expired = q; expired.expires = 1
-        let restored = TradeReviewModel(context: context, root: directory) { method, data in
-            XCTAssertEqual(method, "trade.confirm")
-            let request = try Blakeswap_V1_ConfirmTradeRequest(jsonUTF8Data: data)
+        let restored = TradeReviewModel(context: context, root: directory, readConfirmation: { saved in
+            let request = saved.request
             XCTAssertEqual(request, original)
-            var result = Blakeswap_V1_ConfirmTradeResult(); result.id = request.requestID; result.kind = "taker"; result.state = "accepted"
+            var result = Blakeswap_V2_ConfirmTradeResult(); result.id = request.requestID; result.kind = "taker"; result.state = "accepted"
             return try result.serializedData()
-        }
+        })
         restored.quote = expired
         await restored.confirm(current: { self.context })
         XCTAssertEqual(restored.acceptedID, original?.requestID); XCTAssertEqual(restored.acceptedKind, "taker")
@@ -86,9 +85,9 @@ final class TradeReviewTests: XCTestCase {
         let directory = try root()
         var current = context
         let model = TradeReviewModel(context: context, root: directory) { _, data in
-            let request = try Blakeswap_V1_ConfirmTradeRequest(jsonUTF8Data: data)
+            let request = try Blakeswap_V2_ConfirmTradeRequest(jsonUTF8Data: data)
             current = TradeContext(profile: "bob", network: "regtest", generation: 2, walletKey: "other")
-            var result = Blakeswap_V1_ConfirmTradeResult(); result.id = request.requestID; result.kind = "maker"; result.state = "accepted"
+            var result = Blakeswap_V2_ConfirmTradeResult(); result.id = request.requestID; result.kind = "maker"; result.state = "accepted"
             return try result.serializedData()
         }
         model.quote = quote()
@@ -99,8 +98,8 @@ final class TradeReviewTests: XCTestCase {
     func testDefinitiveRejectionClearsIdentityAndRequiresFreshReview() async throws {
         let directory = try root()
         let model = TradeReviewModel(context: context, root: directory) { _, data in
-            let request = try Blakeswap_V1_ConfirmTradeRequest(jsonUTF8Data: data)
-            var result = Blakeswap_V1_ConfirmTradeResult(); result.id = request.requestID; result.kind = "maker"; result.state = "rejected"; result.error = "Provider changed"
+            let request = try Blakeswap_V2_ConfirmTradeRequest(jsonUTF8Data: data)
+            var result = Blakeswap_V2_ConfirmTradeResult(); result.id = request.requestID; result.kind = "maker"; result.state = "rejected"; result.error = "Provider changed"
             return try result.serializedData()
         }
         model.quote = quote(); await model.confirm(current: { self.context })

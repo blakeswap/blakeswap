@@ -42,6 +42,22 @@ func archiveStatsEqual(a, b ArchiveStats) bool {
 	return true
 }
 
+// ReadArchive returns one owned authenticated companion from this same pinned
+// snapshot; callers clear Data after use. It never opens a second transaction.
+func (s *ReadSnapshot) ReadArchive(kind, id string) (ArchiveRecord, bool, error) {
+	b := s.tx.Bucket(archiveBucket)
+	if b == nil {
+		return ArchiveRecord{}, false, nil
+	}
+	index := s.vault.archiveIndex(kind, id)
+	sealed := b.Get(index)
+	if sealed == nil {
+		return ArchiveRecord{}, false, nil
+	}
+	record, _, err := s.vault.decodeArchive(index, sealed)
+	return record, err == nil, err
+}
+
 // VisitArchive borrows each decrypted record only for the callback duration.
 // It verifies all records and the complete count/byte/category checkpoint before
 // success. Callers retaining a record beyond the callback must copy its Data.

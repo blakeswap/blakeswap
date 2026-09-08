@@ -30,15 +30,14 @@ func openProfileCredentials(ctx context.Context, root string, store credential.S
 	}
 	path := filepath.Join(root, "installation.json")
 	var id string
+	newInstallation := false
 	if info, err := os.Lstat(path); errors.Is(err, os.ErrNotExist) {
 		var random [32]byte
 		if _, err = rand.Read(random[:]); err != nil {
 			return nil, err
 		}
 		id = hex.EncodeToString(random[:])
-		if err = writePrivate(path, []byte(id)); err != nil {
-			return nil, err
-		}
+		newInstallation = true
 	} else if err != nil {
 		return nil, err
 	} else {
@@ -56,6 +55,17 @@ func openProfileCredentials(ctx context.Context, root string, store credential.S
 			return nil, errors.New("invalid installation identity")
 		}
 		id = string(raw)
+	}
+	// Authenticate every existing profile before creating an installation
+	// reference, migration journal, or native item. A later incompatible wallet
+	// cannot leave an earlier wallet half-migrated as a side effect of refusal.
+	if err := preflightCredentialProfiles(ctx, root, id, store); err != nil {
+		return nil, err
+	}
+	if newInstallation {
+		if err := writePrivate(path, []byte(id)); err != nil {
+			return nil, err
+		}
 	}
 	c := &profileCredentials{installation: id, profiles: credential.Profiles{Store: store}}
 	entries, err := os.ReadDir(filepath.Join(root, "wallets"))
@@ -119,7 +129,7 @@ func readMasterPassword(root string, password []byte) (string, error) {
 	if !info.Mode().IsRegular() || info.Mode().Perm()&0077 != 0 || info.Size() == 0 {
 		return "", errors.New("invalid private master vault")
 	}
-	vault, err := storage.Open(path, password)
+	vault, err := storage.OpenReadOnly(path, password)
 	if err != nil {
 		return "", errors.New("cannot open the wallet with its native credential")
 	}
@@ -156,25 +166,17 @@ func verifyProfile(root string, password []byte) (string, error) {
 		if !info.Mode().IsRegular() || info.Mode().Perm()&0077 != 0 || info.Size() == 0 {
 			return "", errors.New("invalid private network vault")
 		}
-		vault, err := storage.Open(path, password)
+		vault, err := storage.OpenReadOnly(path, password)
 		if err != nil {
 			return "", errors.New("cannot verify an existing network vault")
 		}
 		var state daemon.State
-		err = func() error {
-			view, err := vault.Freeze()
-			if err != nil {
-				return err
-			}
-			defer view.Close()
-			stats, _, err := view.LoadState(&state)
-			if err != nil {
-				return err
-			}
-			// Authenticate active identity and its cold-record ownership in one
-			// bounded view before credential activation or plaintext removal.
-			return state.ValidateArchiveCheckpoint(stats)
-		}()
+		_, err = vault.Load(&state)
+		if err == nil {
+			// The readonly vault retains its shared ownership while active and
+			// bounded cold protocol/index validation runs. No lifetime State clone.
+			err = daemon.ValidateVaultProtocolState(vault, &state)
+		}
 		closeErr := vault.Close()
 		if err != nil {
 			return "", err

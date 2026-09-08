@@ -35,53 +35,60 @@ type Config struct {
 	Tower               TowerConfig              `json:"tower"`
 }
 type Delivery struct {
-	Acknowledged bool        `json:"acknowledged,omitempty"`
-	Expires      int64       `json:"expires,omitempty"`
-	Type         string      `json:"type,omitempty"`
-	Event        nostr.Event `json:"event"`
-	To           string      `json:"to"`
-	MessageID    string      `json:"message_id"`
-	Digest       string      `json:"digest"`
-	IsAck        bool        `json:"is_ack"`
-	LastAttempt  int64       `json:"last_attempt"`
-	Published    bool        `json:"published"`
+	Version      int           `json:"version"`
+	Network      chain.Network `json:"network"`
+	SwapID       string        `json:"swap_id,omitempty"`
+	Acknowledged bool          `json:"acknowledged,omitempty"`
+	Retired      bool          `json:"retired,omitempty"`
+	Expires      int64         `json:"expires,omitempty"`
+	Type         string        `json:"type,omitempty"`
+	Event        nostr.Event   `json:"event"`
+	To           string        `json:"to"`
+	MessageID    string        `json:"message_id"`
+	Digest       string        `json:"digest"`
+	IsAck        bool          `json:"is_ack"`
+	LastAttempt  int64         `json:"last_attempt"`
+	Published    bool          `json:"published"`
 }
 type Swap struct {
-	ClaimVariant       int                         `json:"claim_variant,omitempty"`
-	RefundVariant      int                         `json:"refund_variant,omitempty"`
-	OwnerFeeCap        int64                       `json:"owner_fee_cap,omitempty"`
-	SelfClaims         []string                    `json:"self_claims,omitempty"`
-	ClaimAttempt       int                         `json:"claim_attempt,omitempty"`
-	RefundAttempt      int                         `json:"refund_attempt,omitempty"`
-	ClaimLastAttempt   int64                       `json:"claim_last_attempt,omitempty"`
-	RefundLastAttempt  int64                       `json:"refund_last_attempt,omitempty"`
-	Protection         *protocol.Tower             `json:"protection,omitempty"`
-	ID                 string                      `json:"id"`
-	Role               string                      `json:"role"`
-	Request            protocol.Request            `json:"request"`
-	Terms              *protocol.Terms             `json:"terms,omitempty"`
-	Secret             string                      `json:"secret,omitempty"`
-	SecretObserved     bool                        `json:"secret_observed"`
-	IncomingClaimSeen  bool                        `json:"incoming_claim_seen"`
-	SecretExposed      bool                        `json:"secret_exposed"`
-	Long               contract.HTLC               `json:"long"`
-	Short              contract.HTLC               `json:"short"`
-	LongFunding        string                      `json:"long_funding,omitempty"`
-	ShortFunding       string                      `json:"short_funding,omitempty"`
-	LongSent           bool                        `json:"long_sent"`
-	ShortSent          bool                        `json:"short_sent"`
-	SelfRefunds        []string                    `json:"self_refunds,omitempty"`
-	SelfClaim          string                      `json:"self_claim,omitempty"`
-	Jobs               []protocol.Job              `json:"jobs,omitempty"`
-	Receipts           map[string]protocol.Receipt `json:"receipts"`
-	Stage              string                      `json:"stage"`
-	Error              string                      `json:"error,omitempty"`
-	LongSpend          string                      `json:"long_spend,omitempty"`
-	ShortSpend         string                      `json:"short_spend,omitempty"`
-	LongConfirmations  int                         `json:"long_confirmations"`
-	ShortConfirmations int                         `json:"short_confirmations"`
-	TowerPaid          int64                       `json:"tower_paid"`
-	TowerPayments      map[chain.ID]int64          `json:"tower_payments"`
+	FundingParents        []FundingParent             `json:"funding_parents,omitempty"`
+	FundingAncestryHeld   bool                        `json:"funding_ancestry_held,omitempty"`
+	FundingAncestryAnchor *FundingAnchor              `json:"funding_ancestry_anchor,omitempty"`
+	ClaimVariant          int                         `json:"claim_variant,omitempty"`
+	RefundVariant         int                         `json:"refund_variant,omitempty"`
+	OwnerFeeCap           int64                       `json:"owner_fee_cap,omitempty"`
+	SelfClaims            []string                    `json:"self_claims,omitempty"`
+	ClaimAttempt          int                         `json:"claim_attempt,omitempty"`
+	RefundAttempt         int                         `json:"refund_attempt,omitempty"`
+	ClaimLastAttempt      int64                       `json:"claim_last_attempt,omitempty"`
+	RefundLastAttempt     int64                       `json:"refund_last_attempt,omitempty"`
+	Protection            *protocol.Tower             `json:"protection,omitempty"`
+	ID                    string                      `json:"id"`
+	Role                  string                      `json:"role"`
+	Request               protocol.Request            `json:"request"`
+	Terms                 *protocol.Terms             `json:"terms,omitempty"`
+	Secret                string                      `json:"secret,omitempty"`
+	SecretObserved        bool                        `json:"secret_observed"`
+	IncomingClaimSeen     bool                        `json:"incoming_claim_seen"`
+	SecretExposed         bool                        `json:"secret_exposed"`
+	Long                  contract.HTLC               `json:"long"`
+	Short                 contract.HTLC               `json:"short"`
+	LongFunding           string                      `json:"long_funding,omitempty"`
+	ShortFunding          string                      `json:"short_funding,omitempty"`
+	LongSent              bool                        `json:"long_sent"`
+	ShortSent             bool                        `json:"short_sent"`
+	SelfRefunds           []string                    `json:"self_refunds,omitempty"`
+	SelfClaim             string                      `json:"self_claim,omitempty"`
+	Jobs                  []protocol.Job              `json:"jobs,omitempty"`
+	Receipts              map[string]protocol.Receipt `json:"receipts"`
+	Stage                 string                      `json:"stage"`
+	Error                 string                      `json:"error,omitempty"`
+	LongSpend             string                      `json:"long_spend,omitempty"`
+	ShortSpend            string                      `json:"short_spend,omitempty"`
+	LongConfirmations     int                         `json:"long_confirmations"`
+	ShortConfirmations    int                         `json:"short_confirmations"`
+	TowerPaid             int64                       `json:"tower_paid"`
+	TowerPayments         map[chain.ID]int64          `json:"tower_payments"`
 }
 type TowerJob struct {
 	Variants    []string     `json:"variants,omitempty"`
@@ -96,6 +103,9 @@ type TowerJob struct {
 	Error       string       `json:"error,omitempty"`
 }
 type State struct {
+	ParentOrders                map[string]*ParentOrder      `json:"parent_orders,omitempty"`
+	FillRecords                 map[string]*FillRecord       `json:"fill_records,omitempty"`
+	FillKeys                    map[string]string            `json:"fill_keys,omitempty"`
 	MakerStrategies             map[string]*MakerStrategy    `json:"maker_strategies,omitempty"`
 	OwnPublicVersions           map[string]PublicVersion     `json:"own_public_versions,omitempty"`
 	PublicVersions              map[string]PublicVersion     `json:"public_versions,omitempty"`
@@ -140,6 +150,13 @@ type State struct {
 	EventTime                   nostr.Timestamp              `json:"event_time"`
 }
 type PublicSwap struct {
+	ParentID           string             `json:"parent_id"`
+	ParentMaker        string             `json:"parent_maker"`
+	ParentRevision     uint64             `json:"parent_revision"`
+	Quantity           int64              `json:"quantity"`
+	Allocation         FillDisposition    `json:"allocation"`
+	AllocatedQuantity  int64              `json:"allocated_quantity"`
+	AllocationKnown    bool               `json:"allocation_known"`
 	ClaimFee           int64              `json:"claim_fee"`
 	RefundFee          int64              `json:"refund_fee"`
 	ClaimTxID          string             `json:"claim_txid"`

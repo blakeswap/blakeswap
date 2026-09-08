@@ -38,8 +38,11 @@ func (e *Engine) historyCommand(ctx context.Context, request Request) (result an
 	sourceGenerations := e.historySourceGenerations()
 	var query ActivityQuery
 	var market MarketQuery
+	var fills FillQuery
 	if request.Method == "market.list" {
 		market, err = view.parseMarketQuery(request.Params)
+	} else if request.Method == "fills.list" {
+		fills, err = view.parseFillQuery(request.Params)
 	} else {
 		query, err = view.parseActivityQuery(request.Params)
 	}
@@ -48,7 +51,8 @@ func (e *Engine) historyCommand(ctx context.Context, request Request) (result an
 		return nil, err
 	}
 	var source *storage.PageSnapshot
-	if query.Snapshot == "" || request.Method == "market.list" {
+	freshQuery := query.Snapshot == "" && fills.Revision == ""
+	if freshQuery || request.Method == "market.list" {
 		if e.vault != nil {
 			_, source, err = e.vault.CaptureArchive("", false)
 		} else {
@@ -105,6 +109,12 @@ func (e *Engine) historyCommand(ctx context.Context, request Request) (result an
 			}
 			e.activitySnapshots = nil
 		} else {
+			if resultErr == nil {
+				// Keep the one unpublished result alongside existing revisions
+				// until every source/context fence has succeeded. A failed fifth
+				// query must not destroy any still-valid published result.
+				view.trimHistorySnapshots(4)
+			}
 			e.activitySnapshots = view.activitySnapshots
 			e.activitySnapshotSequence = view.activitySnapshotSequence
 		}
@@ -112,7 +122,9 @@ func (e *Engine) historyCommand(ctx context.Context, request Request) (result an
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
-	if e.vault == nil {
+	if request.Method == "fills.list" {
+		result, err = view.fillPage(ctx, source, fills)
+	} else if e.vault == nil {
 		switch request.Method {
 		case "market.list":
 			result, err = view.marketPage(request.Params)
@@ -164,7 +176,25 @@ func (e *Engine) historyCommand(ctx context.Context, request Request) (result an
 	if !maps.Equal(sourceGenerations, e.historySourceGenerations()) {
 		return nil, errors.New("history chain source changed; refresh the result")
 	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	return result, nil
+}
+
+func (e *Engine) trimHistorySnapshots(limit int) {
+	for len(e.activitySnapshots) > limit {
+		oldest := ""
+		for id, snapshot := range e.activitySnapshots {
+			if oldest == "" || snapshot.Sequence < e.activitySnapshots[oldest].Sequence {
+				oldest = id
+			}
+		}
+		if rows := e.activitySnapshots[oldest].Rows; rows != nil {
+			_ = rows.Close()
+		}
+		delete(e.activitySnapshots, oldest)
+	}
 }
 
 // A canceled query need not wait for an unrelated full-history sort/report.

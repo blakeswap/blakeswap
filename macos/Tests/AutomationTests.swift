@@ -14,16 +14,16 @@ final class AutomationTests: XCTestCase {
         var calls: [String] = []
         let model = AutomationModel(context: context, root: "/unused") { method, data in
             calls.append(method)
-            let p = try Blakeswap_V1_AutomationEdit(jsonUTF8Data: data)
+            let p = try Blakeswap_V2_AutomationEdit(jsonUTF8Data: data)
             XCTAssertEqual(p.config.wallet, self.context.profile); XCTAssertEqual(p.config.network, self.context.network)
             XCTAssertEqual(p.config.sellAmount, 9_999_999_999); XCTAssertEqual(p.config.volumeLimit, 2_100_000_000_000_000)
             XCTAssertEqual(p.config.rate.denominator, 2_099_999_999_999_999); XCTAssertEqual(p.config.referenceMakers.count, 3)
             if method == "automation.review" {
-                var r = Blakeswap_V1_AutomationReview(); r.config = p.config; r.enabled = p.enabled; r.expectedRevision = p.expectedRevision; r.reviewDigest = "exact"
+                var r = Blakeswap_V2_AutomationReview(); r.config = p.config; r.enabled = p.enabled; r.expectedRevision = p.expectedRevision; r.reviewDigest = "exact"
                 return try r.serializedData()
             }
             XCTAssertEqual(p.reviewDigest, "exact")
-            var v = Blakeswap_V1_AutomationView(); v.config = p.config; v.enabled = p.enabled; v.revision = p.expectedRevision + 1
+            var v = Blakeswap_V2_AutomationView(); v.config = p.config; v.enabled = p.enabled; v.revision = p.expectedRevision + 1
             return try v.serializedData()
         }
         let beforeReview = await model.save(current: { self.context }); XCTAssertFalse(beforeReview)
@@ -40,30 +40,30 @@ final class AutomationTests: XCTestCase {
     func testLatePolicyReviewCannotAuthorizeAnotherWalletOrGeneration() async throws {
         var current = context
         var resume: CheckedContinuation<Data, Error>?
-        var request: Blakeswap_V1_AutomationEdit?
+        var request: Blakeswap_V2_AutomationEdit?
         let model = AutomationModel(context: context, root: "/unused") { _, data in
-            request = try Blakeswap_V1_AutomationEdit(jsonUTF8Data: data)
+            request = try Blakeswap_V2_AutomationEdit(jsonUTF8Data: data)
             return try await withCheckedThrowingContinuation { resume = $0 }
         }
         let task = Task { await model.review(AutomationDraft(), current: { current }) }
         while resume == nil { await Task.yield() }
         current = TradeContext(profile: "alice", network: "regtest", generation: 2, walletKey: "key")
-        var result = Blakeswap_V1_AutomationReview(); result.config = request!.config; result.reviewDigest = "old"
+        var result = Blakeswap_V2_AutomationReview(); result.config = request!.config; result.reviewDigest = "old"
         resume?.resume(returning: try result.serializedData()); await task.value
         XCTAssertNil(model.review)
         let saved = await model.save(current: { current }); XCTAssertFalse(saved)
     }
     func testDisableBindingsAndVisibleRestoredBudget() async throws {
-        var policy = Blakeswap_V1_AutomationView(); policy.config.id = "id"; policy.config.wallet = context.profile; policy.config.network = context.network
+        var policy = Blakeswap_V2_AutomationView(); policy.config.id = "id"; policy.config.wallet = context.profile; policy.config.network = context.network
         policy.revision = 8; policy.restoreHold = true; policy.usage.committedVolume = 1000000
         var disabled = false
         let model = AutomationModel(context: context, root: "/unused") { method, data in
             if method == "automation.disable" {
-                let p = try Blakeswap_V1_DisableAutomationRequest(jsonUTF8Data: data)
+                let p = try Blakeswap_V2_DisableAutomationRequest(jsonUTF8Data: data)
                 XCTAssertEqual(p.expectedRevision, 8); XCTAssertEqual(p.expectedWallet, self.context.profile); XCTAssertEqual(p.expectedNetwork, self.context.network); XCTAssertTrue(p.cancelOpen)
                 disabled = true; return Data()
             }
-            var page = Blakeswap_V1_AutomationList(); page.wallet = self.context.profile; page.network = self.context.network; page.policies = [policy]
+            var page = Blakeswap_V2_AutomationList(); page.wallet = self.context.profile; page.network = self.context.network; page.policies = [policy]
             return try page.serializedData()
         }
         await model.disable(policy, cancelOpen: true, current: { self.context })

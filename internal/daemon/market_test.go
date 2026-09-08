@@ -22,16 +22,100 @@ func marketOffer(t *testing.T, e *Engine, own bool, sell chain.ID, btc, blake in
 	if own {
 		key = e.identity
 	}
-	o := protocol.Offer{ID: transport.RandomID(), Network: e.Config.Network, Maker: key.Public().Hex(), Sell: sell, SellAmount: btc, BuyAmount: blake, Status: status, Expires: expires}
+	o := protocol.Offer{Version: protocol.Version, ID: transport.RandomID(), Network: e.Config.Network, Maker: key.Public().Hex(), Sell: sell, SellAmount: btc, BuyAmount: blake, Status: "open", Expires: expires, Revision: 1}
 	if sell == chain.Blake {
 		o.SellAmount, o.BuyAmount = blake, btc
 	}
+	o.FillPolicy = protocol.FillPolicy{Mode: protocol.FillWhole, Min: o.SellAmount, Max: o.SellAmount}
+	o.Available = o.SellAmount
 	if own {
-		if err := e.publishOffer(o); err != nil {
+		policy := FeeSelection{FundingFee: 2000, OwnerFeeCap: 20000}
+		parent, err := newParentOrder(o, policy, FillOrderFields{FillPolicy: o.FillPolicy, FeeBudgets: map[chain.ID]int64{sell: 22000, sell.Other(): 20000}, BountyBudgets: map[chain.ID]int64{chain.BTC: 0, chain.Blake: 0}}, min(time.Now().Unix(), expires-1))
+		if err != nil {
 			t.Fatal(err)
 		}
+		if e.s.ParentOrders == nil {
+			e.s.ParentOrders = map[string]*ParentOrder{}
+		}
+		if e.s.FillRecords == nil {
+			e.s.FillRecords = map[string]*FillRecord{}
+		}
+		if e.s.FundingFees == nil {
+			e.s.FundingFees = map[string]FeeSelection{}
+		}
+		e.s.ParentOrders[o.ID] = parent
+		e.s.FundingFees["offer/"+o.ID] = policy
+		var child *Swap
+		switch status {
+		case "open":
+		case "cancelled":
+			parent.Quantities, err = parent.Quantities.withdrawAvailable()
+		case "reserved", "filled", "refunded":
+			// Projection fixture only: create consistent signed child identity and
+			// use the pure accounting transitions, not simulated chain evidence.
+			request := fillRequestFixture(t, *parent, key, o.SellAmount)
+			var allocation *FillRecord
+			*parent, allocation, err = parent.reserveFill(request)
+			if err != nil {
+				t.Fatal(err)
+			}
+			allocation.Inputs = []CoinOutpoint{{TxID: transport.RandomID()}}
+			keys, keyErr := e.swapKeys(request.ID)
+			if keyErr != nil {
+				t.Fatal(keyErr)
+			}
+			terms, termsErr := protocol.NewTerms(request, keys, e.heights)
+			if termsErr != nil {
+				t.Fatal(termsErr)
+			}
+			child = &Swap{ID: request.ID, Role: "maker", Request: request, Terms: &terms, Long: terms.Long, Short: terms.Short, OwnerFeeCap: policy.OwnerFeeCap, Stage: "awaiting taker funding"}
+			if status != "reserved" {
+				var next FillRecord
+				*parent, next, err = parent.transitionFill(*allocation, FillCommitted, false)
+				if err != nil {
+					t.Fatal(err)
+				}
+				disposition := FillFilled
+				child.Stage = "completed"
+				if status == "refunded" {
+					disposition, child.Stage = FillReleased, "refunded"
+				}
+				*parent, next, err = parent.transitionFill(next, disposition, false)
+				*allocation = next
+			}
+			e.s.FillRecords[request.ID] = allocation
+			e.s.Swaps[request.ID] = child
+			e.s.FundingFees["swap/"+request.ID] = policy
+		default:
+			t.Fatal("unsupported market fixture status", status)
+		}
+		if err != nil {
+			t.Fatal(err)
+		}
+		o = parentPublicOffer(*parent)
+		event, err := e.signOffer(o, nostr.Timestamp(min(time.Now().Unix(), expires-1)))
+		if err != nil {
+			t.Fatal(err)
+		}
+		parent.SignedRevision, parent.LastSignedAt = o.Revision, int64(event.CreatedAt)
+		e.stageOffer(o, event)
+		if err := validateParentOrder(o.ID, parent); err != nil {
+			t.Fatal(err)
+		}
+		if child != nil {
+			if err := e.retainOrderSettlement(child); err != nil {
+				t.Fatal(err)
+			}
+		}
 	} else {
-		content, _ := o.PublicJSON()
+		o.Status = status
+		if status != "open" {
+			o.Available = 0
+		}
+		content, err := o.PublicJSON()
+		if err != nil {
+			t.Fatal(err)
+		}
 		ev := nostr.Event{Kind: transport.OfferKind, CreatedAt: nostr.Now(), Tags: nostr.Tags{{"d", o.ID}, {"t", o.Network.Namespace()}}, Content: string(content)}
 		if err := transport.Sign(&ev, key); err != nil {
 			t.Fatal(err)
@@ -60,7 +144,7 @@ func TestMarketExactSortingBothDirectionsAndStableTies(t *testing.T) {
 	a := marketOffer(t, e, true, chain.Blake, 100_000, 200_000, "open", now+500)
 	b := marketOffer(t, e, false, chain.BTC, 200_000, 400_000, "open", now+400)
 	p := queryMarket(t, e, MarketQuery{Status: "all", Sort: "rate"})
-	if p.Records[0].Offer.ID != low.ID || p.Records[1].Offer.ID != high.ID || p.Records[0].Rate != p.Records[1].Rate {
+	if len(p.Records) != 4 || p.Records[0].Offer.ID != low.ID || p.Records[1].Offer.ID != high.ID || p.Records[0].Rate != p.Records[1].Rate {
 		t.Fatal("exact extreme-rate ordering lost", p.Records)
 	}
 	tied := []string{a.Maker + ":" + a.ID, b.Maker + ":" + b.ID}
@@ -140,10 +224,20 @@ func TestMarketDurableStatusesStaleRequestsAndFinishedRecreation(t *testing.T) {
 		t.Fatal(p)
 	}
 	e.marketObservedAt = now
-	e.s.Swaps["pending"] = &Swap{ID: "pending", Role: "taker", Stage: "request queued", Request: protocol.Request{OfferEvent: e.s.Book[remote.Maker+":"+remote.ID]}}
-	p = queryMarket(t, e, MarketQuery{Owner: "others", Status: "pending"})
-	if len(p.Records) != 1 || p.Records[0].CanTake || !reflect.DeepEqual(p.Records[0].SwapIDs, []string{"pending"}) {
-		t.Fatal(p)
+	pendingID := transport.RandomID()
+	keys, err := e.swapKeys(pendingID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	request := protocol.Request{Version: protocol.Version, ID: pendingID, Taker: e.identity.Public().Hex(), Hash: transport.RandomID(), Keys: keys, Revision: remote.Revision, Quantity: remote.SellAmount, OfferEvent: e.s.Book[remote.Maker+":"+remote.ID]}
+	if _, err := request.Validate(now); err != nil {
+		t.Fatal(err)
+	}
+	e.s.Swaps[pendingID] = &Swap{ID: pendingID, Role: "taker", Stage: "request queued", Request: request}
+	e.s.FundingFees["swap/"+pendingID] = FeeSelection{FundingFee: 2000, OwnerFeeCap: 20000}
+	p = queryMarket(t, e, MarketQuery{Owner: "others", Status: "open"})
+	if len(p.Records) != 1 || !p.Records[0].CanTake || p.Records[0].Quantities != nil || p.Records[0].Offer.Available != remote.Available || p.Records[0].Offer.Revision != remote.Revision || !reflect.DeepEqual(p.Records[0].SwapIDs, []string{pendingID}) {
+		t.Fatal("a local pending child changed the remote signed parent", p)
 	}
 	if err := e.save(); err != nil {
 		t.Fatal(err)
@@ -160,17 +254,31 @@ func TestMarketDurableStatusesStaleRequestsAndFinishedRecreation(t *testing.T) {
 			t.Fatal(status, p)
 		}
 	}
-	old := marketOffer(t, e, true, chain.Blake, 100_000, 200_000, "reserved", now-1)
-	e.s.Swaps["refund"] = &Swap{ID: "refund", Role: "maker", Stage: "refunded", Request: protocol.Request{OfferEvent: e.s.Offers[old.ID]}}
+	old := marketOffer(t, e, true, chain.Blake, 100_000, 200_000, "refunded", now+600)
+	var refunded *Swap
+	for id, child := range e.s.FillRecords {
+		if child.ParentID == old.ID {
+			refunded = e.s.Swaps[id]
+		}
+	}
+	if refunded == nil || e.s.FillRecords[refunded.ID].Allocation.Disposition != FillReleased {
+		t.Fatal("refunded history lost its exact released child")
+	}
 	p = queryMarket(t, e, MarketQuery{Owner: "mine", Status: "refunded"})
-	if p.Total != 1 || !p.Records[0].CanRecreate || p.Records[0].CanReplace || p.Records[0].CanCancel {
+	if p.Total != 1 || !p.Records[0].CanRecreate || p.Records[0].CanReplace || p.Records[0].CanCancel || p.Records[0].Quantities.Released != old.SellAmount || !reflect.DeepEqual(p.Records[0].SwapIDs, []string{refunded.ID}) {
 		t.Fatal(p)
 	}
 	fields := OrderActionFields{OrderAction: "recreate", SourceOfferID: old.ID, SourceEventID: e.s.Offers[old.ID].ID.Hex()}
 	if _, err := e.orderSource(fields, now); err != nil {
 		t.Fatal(err)
 	}
-	e.s.Swaps["refund"].Stage = "refunding"
+	parent := e.s.ParentOrders[old.ID]
+	nextParent, nextChild, err := parent.transitionFill(*e.s.FillRecords[refunded.ID], FillCommitted, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	*parent, *e.s.FillRecords[refunded.ID] = nextParent, nextChild
+	refunded.Stage = "refunding"
 	if _, err := e.orderSource(fields, now); err == nil {
 		t.Fatal("unfinished swap recreated")
 	}
@@ -207,34 +315,69 @@ func TestMarketCustomExpiryAndInvalidFilters(t *testing.T) {
 	}
 }
 func TestOrderCancellationRacesAcceptanceAndRejectsStaleCopies(t *testing.T) {
-	e, p, old := managedSource(t)
-	from, msg := orderRequest(t, e, old)
-	raw, _ := json.Marshal(map[string]string{"id": p.SourceOfferID, "expected_wallet": e.Config.Name, "expected_event_id": old.ID.Hex()})
-	var wg sync.WaitGroup
-	wg.Add(2)
-	start := make(chan struct{})
-	var cancelErr, acceptErr error
-	go func() { defer wg.Done(); <-start; e.mu.Lock(); defer e.mu.Unlock(); _, cancelErr = e.cancelOffer(raw) }()
-	go func() { defer wg.Done(); <-start; e.mu.Lock(); defer e.mu.Unlock(); acceptErr = e.handle(from, msg) }()
-	close(start)
-	wg.Wait()
-	if acceptErr != nil {
-		t.Fatal(acceptErr)
-	}
-	if cancelErr == nil {
-		if len(e.s.Swaps) != 0 || len(e.s.CoinReservations) != 0 {
-			t.Fatal("cancel did not exclude acceptance")
-		}
-	} else if !strings.Contains(cancelErr.Error(), "changed") && !strings.Contains(cancelErr.Error(), "unreserved") {
-		t.Fatal(cancelErr)
-	} else if len(e.s.Swaps) != 1 || len(e.s.CoinReservations) != 1 {
-		t.Fatal("acceptance lost reservation")
-	}
-	count := len(e.s.Swaps)
-	if err := e.handle(from, msg); err != nil {
-		t.Fatal(err)
-	}
-	if len(e.s.Swaps) != count {
-		t.Fatal("duplicate request changed outcome")
+	for _, ordering := range []string{"cancel-first", "accept-first", "race"} {
+		t.Run(ordering, func(t *testing.T) {
+			e, p, old := managedSource(t)
+			from, msg := orderRequest(t, e, old)
+			originalInputs := e.s.CoinReservations["offer/"+p.SourceOfferID].Inputs
+			raw, _ := json.Marshal(map[string]string{"id": p.SourceOfferID, "expected_wallet": e.Config.Name, "expected_event_id": old.ID.Hex()})
+			var cancelErr, acceptErr error
+			cancel := func() { e.mu.Lock(); defer e.mu.Unlock(); _, cancelErr = e.cancelOffer(raw) }
+			accept := func() { e.mu.Lock(); defer e.mu.Unlock(); acceptErr = e.handle(from, msg) }
+			switch ordering {
+			case "cancel-first":
+				cancel()
+				accept()
+			case "accept-first":
+				accept()
+				cancel()
+			default:
+				var wg sync.WaitGroup
+				wg.Add(2)
+				start := make(chan struct{})
+				go func() { defer wg.Done(); <-start; cancel() }()
+				go func() { defer wg.Done(); <-start; accept() }()
+				close(start)
+				wg.Wait()
+			}
+			if acceptErr != nil {
+				t.Fatal(acceptErr)
+			}
+			if cancelErr != nil {
+				// Acceptance can publish a newer revision before cancellation reaches
+				// the lock. Refresh its exact current event, then close the remainder.
+				if !strings.Contains(cancelErr.Error(), "order changed") || e.s.Offers[p.SourceOfferID].ID == old.ID {
+					t.Fatal(cancelErr)
+				}
+				raw, _ = json.Marshal(map[string]string{"id": p.SourceOfferID, "expected_wallet": e.Config.Name, "expected_event_id": e.s.Offers[p.SourceOfferID].ID.Hex()})
+				cancel()
+				if cancelErr != nil {
+					t.Fatal(cancelErr)
+				}
+			}
+			parent := e.s.ParentOrders[p.SourceOfferID]
+			if !parent.Quantities.Closed || parent.Quantities.Available != 0 {
+				t.Fatal("cancellation did not close available authority")
+			}
+			if child := e.s.FillRecords[msg.SwapID]; child != nil {
+				if ordering == "cancel-first" || len(e.s.Swaps) != 1 || child.Allocation.Disposition != FillReserved || child.Allocation.Quantity != p.SellAmount || parent.Quantities.Reserved != p.SellAmount || parent.Quantities.Released != 0 || len(e.s.CoinReservations) != 1 || !reflect.DeepEqual(child.Inputs, originalInputs) || !reflect.DeepEqual(e.s.CoinReservations["swap/"+msg.SwapID].Inputs, child.Inputs) {
+					t.Fatal("closing the parent changed its accepted child or inputs")
+				}
+			} else if ordering == "accept-first" || len(e.s.Swaps) != 0 || len(e.s.CoinReservations) != 0 || parent.Quantities.Released != p.SellAmount || parent.Quantities.Reserved != 0 {
+				t.Fatal("cancelled available quantity became an accepted allocation")
+			}
+			before := protocol.Digest([]any{e.s.ParentOrders, e.s.FillRecords, e.s.CoinReservations})
+			count := len(e.s.Swaps)
+			if err := e.handle(from, msg); err != nil {
+				t.Fatal(err)
+			}
+			other, stale := orderRequest(t, e, old)
+			if err := e.handle(other, stale); err != nil {
+				t.Fatal(err)
+			}
+			if len(e.s.Swaps) != count || e.s.Swaps[stale.SwapID] != nil || protocol.Digest([]any{e.s.ParentOrders, e.s.FillRecords, e.s.CoinReservations}) != before {
+				t.Fatal("retry or stale signed copy changed the retained allocation")
+			}
+		})
 	}
 }

@@ -43,6 +43,7 @@ func (e *Engine) createOffer(ctx context.Context, raw json.RawMessage, receipt *
 		oldOwner = "offer/" + source.ID
 	}
 	o.Network = e.Config.Network
+	o.Version, o.Revision, o.Available = protocol.Version, 1, o.SellAmount
 	o.ID = tradeRequestID(receipt)
 	o.Maker = e.identity.Public().Hex()
 	o.Status = "open"
@@ -88,12 +89,36 @@ func (e *Engine) createOffer(ctx context.Context, raw json.RawMessage, receipt *
 		if _, ok := e.s.Offers[o.ID]; !ok {
 			delete(e.s.FundingFees, "offer/"+o.ID)
 			delete(e.s.CoinReservations, "offer/"+o.ID)
+			delete(e.s.ParentOrders, o.ID)
 		}
 	}()
-	fee := e.fundingFee("offer/" + o.ID)
+	var authorization FillOrderFields
+	if err := json.Unmarshal(raw, &authorization); err != nil {
+		return nil, err
+	}
+	parent, err := newParentOrder(o, e.s.FundingFees["offer/"+o.ID], authorization, time.Now().Unix())
+	if err != nil {
+		return nil, err
+	}
+	var replaced *ParentOrder
+	if oldOwner != "" {
+		current := e.s.ParentOrders[source.ID]
+		if current == nil {
+			return nil, errors.New("source parent authorization unavailable")
+		}
+		copy, err := current.planReplacement(parent)
+		if err != nil {
+			return nil, err
+		}
+		replaced = &copy
+	}
+	reserve, err := parent.fundingReserve(o.SellAmount)
+	if err != nil {
+		return nil, err
+	}
 	available := e.chainBalances(e.publicCoins())[o.Sell].UnlockedConfirmed
-	if oldOwner == "" && available < o.SellAmount+fee {
-		return nil, fmt.Errorf("insufficient unlocked confirmed %s balance: need %d sats including the %d-sat funding fee; available %d sats", o.Sell, o.SellAmount+fee, fee, available)
+	if oldOwner == "" && available < o.SellAmount+reserve {
+		return nil, fmt.Errorf("insufficient unlocked confirmed %s balance: need %d sats including the %d-sat aggregate funding reserve; available %d sats", o.Sell, o.SellAmount+reserve, reserve, available)
 	}
 	if err := e.admitWork("offer"); err != nil {
 		return nil, err
@@ -102,7 +127,14 @@ func (e *Engine) createOffer(ctx context.Context, raw json.RawMessage, receipt *
 	if oldOwner != "" {
 		selectionOwner = oldOwner
 	}
-	candidate, err := e.reservationCandidate(selectionOwner, o.Sell, o.SellAmount+fee)
+	coins := e.knownCoins(o.Sell)
+	if oldOwner != "" {
+		coins, err = e.replacementCoins(oldOwner, o.Sell)
+		if err != nil {
+			return nil, err
+		}
+	}
+	candidate, err := e.reservationCandidateFromCoins(selectionOwner, o.Sell, o.SellAmount+reserve, coins)
 	if err != nil {
 		delete(e.s.CoinReservations, "offer/"+o.ID)
 		return nil, err
@@ -117,37 +149,46 @@ func (e *Engine) createOffer(ctx context.Context, raw json.RawMessage, receipt *
 	if err := e.validateFundingReview("offer/"+o.ID, o.Sell); err != nil {
 		return nil, err
 	}
-	// Sign both events before changing the source offer. The engine lock excludes
-	// acceptance and cancellation until this single durable transition completes.
-	at := nostr.Now()
-	if at <= e.s.EventTime {
-		at = e.s.EventTime + 1
-	}
-	var cancelled nostr.Event
+	// Prepare both parent transitions before assigning their real input pool.
+	// A same-second withdrawal is durable immediately and published on the next
+	// per-parent timestamp; it can no longer accept a stale request meanwhile.
+	var oldParent *ParentOrder
+	var oldEvent *nostr.Event
 	if oldOwner != "" {
-		source.Status = "cancelled"
-		cancelled, err = e.signOffer(source, at)
+		copy := replaced.clone()
+		copy, oldEvent, err = e.prepareParentPublication(copy, time.Now().Unix())
 		if err != nil {
 			return nil, err
 		}
-		at++
+		oldParent = &copy
 	}
-	created, err := e.signOffer(o, at)
+	prepared, newEvent, err := e.prepareParentPublication(*parent, time.Now().Unix())
 	if err != nil {
 		return nil, err
 	}
-	if oldOwner != "" {
-		e.stageOffer(source, cancelled)
+	if newEvent == nil {
+		return nil, errors.New("initial parent publication unavailable")
+	}
+	parent = &prepared
+	if e.s.ParentOrders == nil {
+		e.s.ParentOrders = map[string]*ParentOrder{}
+	}
+	if oldParent != nil {
+		e.s.ParentOrders[source.ID] = oldParent
+		if oldEvent != nil {
+			e.stageOffer(parentPublicOffer(*oldParent), *oldEvent)
+		}
 		old := e.s.OrderRecords[source.ID]
 		old.ReplacedBy, old.CancelledEventID = o.ID, action.SourceEventID
 		e.s.OrderRecords[source.ID] = old
 		delete(e.s.CoinReservations, oldOwner)
 	}
+	e.s.ParentOrders[o.ID] = parent
 	if e.s.OfferTowers == nil {
 		e.s.OfferTowers = map[string]protocol.Tower{}
 	}
 	e.s.OfferTowers[o.ID] = tower
-	e.stageOffer(o, created)
+	e.stageOffer(parentPublicOffer(*parent), *newEvent)
 	record := e.s.OrderRecords[o.ID]
 	if oldOwner != "" {
 		record.Replaces = source.ID
@@ -169,6 +210,7 @@ func (e *Engine) takeOffer(ctx context.Context, raw json.RawMessage, receipt *Tr
 		return nil, errors.New("trader is unavailable")
 	}
 	var p struct {
+		FillTakeFields
 		Maker       string `json:"maker"`
 		ID          string `json:"id"`
 		TowerBPS    int64  `json:"tower_bps"`
@@ -185,14 +227,20 @@ func (e *Engine) takeOffer(ctx context.Context, raw json.RawMessage, receipt *Tr
 	if err != nil {
 		return nil, err
 	}
-	for _, existing := range e.s.Swaps {
-		var requested protocol.Offer
-		if existing.Role == "taker" && !terminalSwap(existing) && json.Unmarshal([]byte(existing.Request.OfferEvent.Content), &requested) == nil && requested.ID == o.ID && requested.Maker == o.Maker {
-			return nil, errors.New("this wallet has already requested or reserved that order")
-		}
-	}
+
 	if o.Status != "open" || o.Maker == e.identity.Public().Hex() {
 		return nil, errors.New("offer not available to take")
+	}
+	if p.ParentRevision != o.Revision {
+		return nil, errors.New("parent revision changed; review the exact current fill")
+	}
+	amounts, err := o.FillPolicy.Quote(o.SellAmount, o.BuyAmount, o.Available, p.Quantity)
+	if err != nil {
+		return nil, err
+	}
+	// Takers authorize a tower refund only on their paid leg.
+	if err := protocol.ValidateRescueAmounts(p.TowerBPS, amounts.Buy); err != nil {
+		return nil, err
 	}
 	tower, err := e.selectProtection(o, p.TowerBPS, p.TowerPubKey, false)
 	if err != nil {
@@ -211,7 +259,7 @@ func (e *Engine) takeOffer(ctx context.Context, raw json.RawMessage, receipt *Tr
 	if err != nil {
 		return nil, err
 	}
-	request := protocol.Request{ID: id, OfferEvent: event, Taker: e.identity.Public().Hex(), Hash: hex.EncodeToString(hash[:]), Keys: keys}
+	request := protocol.Request{Version: protocol.Version, Revision: p.ParentRevision, Quantity: p.Quantity, ID: id, OfferEvent: event, Taker: e.identity.Public().Hex(), Hash: hex.EncodeToString(hash[:]), Keys: keys}
 	s := &Swap{ID: id, Role: "taker", Protection: &tower, Request: request, Secret: hex.EncodeToString(secret), Receipts: map[string]protocol.Receipt{}, Stage: "request queued"}
 	if err := e.refresh(ctx); err != nil {
 		return nil, err
@@ -227,7 +275,7 @@ func (e *Engine) takeOffer(ctx context.Context, raw json.RawMessage, receipt *Tr
 	if err := e.selectFundingFee(raw, "swap/"+id, o.Sell.Other()); err != nil {
 		return nil, err
 	}
-	if err := e.reserveCoins("swap/"+id, o.Sell.Other(), o.BuyAmount+e.fundingFee("swap/"+id)); err != nil {
+	if err := e.reserveCoins("swap/"+id, o.Sell.Other(), amounts.Buy+e.fundingFee("swap/"+id)); err != nil {
 		delete(e.s.CoinReservations, "swap/"+id)
 		delete(e.s.FundingFees, "swap/"+id)
 		return nil, err
@@ -243,6 +291,9 @@ func (e *Engine) takeOffer(ctx context.Context, raw json.RawMessage, receipt *Tr
 		return nil, err
 	}
 	s.OwnerFeeCap = e.s.FundingFees["swap/"+id].OwnerFeeCap
+	if err := e.retainSwapIdentity(s); err != nil {
+		return nil, err
+	}
 	if err = e.queue(o.Maker, "request", id, request); err != nil {
 		return nil, err
 	}

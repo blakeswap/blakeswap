@@ -54,7 +54,7 @@ func (n *backupNetwork) restore(ctx context.Context, path string, password []byt
 			active.Capacity = &daemon.CapacityRecord{}
 		}
 		active.Capacity.Archived = stats
-		if err = daemon.PrepareStreamedRecovery(&active, stats, snapshotAt, legacy); err != nil {
+		if err = daemon.PrepareStreamedRecovery(ctx, &active, stats, view, snapshotAt, legacy); err != nil {
 			return err
 		}
 		if err = validateStreamedActive(&active, stats); err != nil {
@@ -76,6 +76,9 @@ func (n *backupNetwork) restore(ctx context.Context, path string, password []byt
 				return write(cold)
 			})
 		})
+		if err == nil {
+			err = daemon.ValidateVaultProtocolStateContext(ctx, vault, &active)
+		}
 		closeErr := vault.Close()
 		if err == nil {
 			err = closeErr

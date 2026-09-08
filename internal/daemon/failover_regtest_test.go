@@ -198,16 +198,24 @@ func TestRealEndpointFailoverSettlement(t *testing.T) {
 			id := h.fundBothFees(sell, 0, 6500, 20000)
 			maker := h.swap("maker", id)
 			longRaw, shortRaw := maker.LongFunding, maker.ShortFunding
+			shortFunding, err := partialPublications(h.engines["maker"], []string{id}, "short-funded")
+			if err != nil {
+				t.Fatal(err)
+			}
 			for _, fault := range faults {
 				fault.setDown(true)
 			}
 			h.online("taker")
-			tickUntilConnected(t, h.engines["taker"])
-			h.minePending()
-			tickUntilConnected(t, h.engines["maker"])
-			h.minePending()
-			tickUntilConnected(t, h.engines["taker"])
-			tickUntilConnected(t, h.engines["maker"])
+			partialWaitForPublications(h, "taker", shortFunding, func() {
+				tickUntilConnected(t, h.engines["taker"])
+			})
+			partialWait(h, "both failover claims confirmed", func() bool {
+				return h.swap("maker", id).Stage == "completed" && h.swap("taker", id).Stage == "completed"
+			}, func() {
+				tickUntilConnected(t, h.engines["taker"])
+				tickUntilConnected(t, h.engines["maker"])
+				h.minePending()
+			})
 			maker = h.swap("maker", id)
 			if maker.Stage != "completed" || h.swap("taker", id).Stage != "completed" {
 				t.Fatal("failover settlement incomplete", maker.Stage, maker.Error, h.swap("taker", id).Stage)
@@ -233,6 +241,10 @@ func TestRealIsolatedWitnessRecoveryAndFirstRevealHold(t *testing.T) {
 			id := h.fundBothFees(sell, 0, 6500, 20000)
 			maker := h.swap("maker", id)
 			incoming, own := maker.Long, maker.Short
+			shortFunding, err := partialPublications(h.engines["maker"], []string{id}, "short-funded")
+			if err != nil {
+				t.Fatal(err)
+			}
 			// The taker's internally generated secret stays private when either chain
 			// is unreachable, despite both funding transactions already being signed.
 			faults[incoming.Chain].setDown(true)
@@ -241,6 +253,12 @@ func TestRealIsolatedWitnessRecoveryAndFirstRevealHold(t *testing.T) {
 			if h.swap("taker", id).SecretExposed || h.swap("taker", id).SelfClaim != "" {
 				t.Fatal("first revelation escaped partial-readiness gate")
 			}
+			partialWaitForPublications(h, "taker", shortFunding, func() {
+				tickDegraded(t, h.engines["taker"])
+				if h.swap("taker", id).SecretExposed || h.swap("taker", id).SelfClaim != "" {
+					t.Fatal("first revelation escaped while receiving funded outpoint")
+				}
+			})
 			// Inject the precise durable crash boundary: both funded outputs exist,
 			// but a locally prepared claim has never reached a node. Neither reopening
 			// nor manually selecting a higher fee may publish it during the outage.
@@ -257,6 +275,9 @@ func TestRealIsolatedWitnessRecoveryAndFirstRevealHold(t *testing.T) {
 			privateClaim, err := contract.Spend(taker.Short, key, takerEngine.scripts[taker.Short.Chain], 2000, false, 0, nil, 0, secret)
 			if err != nil {
 				t.Fatal(err)
+			}
+			if own.TxID == "" || len(privateClaim.TxIn) != 1 || privateClaim.TxIn[0].PreviousOutPoint.Hash.String() != own.TxID || privateClaim.TxIn[0].PreviousOutPoint.Index != own.Vout {
+				t.Fatal("private crash claim does not spend the actual funded outpoint")
 			}
 			taker.SelfClaim, taker.SecretExposed = contract.Hex(privateClaim), true
 			if err := takerEngine.save(); err != nil {
@@ -276,8 +297,13 @@ func TestRealIsolatedWitnessRecoveryAndFirstRevealHold(t *testing.T) {
 				t.Fatal("private claim was relabeled witnessed")
 			}
 			faults[incoming.Chain].setDown(false)
-			tickUntilConnected(t, h.engines["taker"])
-			h.minePending()
+			partialWaitMailbox(h, "confirmed revealing claim after both chains recover", func() bool {
+				peer := h.swap("taker", id)
+				return peer.IncomingClaimSeen && peer.ShortConfirmations >= 2
+			}, func() {
+				tickUntilConnected(t, h.engines["taker"])
+				h.minePending()
+			})
 			// Maker can learn the actual witness on its outgoing chain while its claim
 			// target is unreachable. Persist that knowledge, then reverse the outage.
 			faults[incoming.Chain].setDown(true)
@@ -295,7 +321,7 @@ func TestRealIsolatedWitnessRecoveryAndFirstRevealHold(t *testing.T) {
 			if maker.SelfClaim == "" {
 				t.Fatal("persisted witnessed secret did not recover isolated claim", maker.Error)
 			}
-			claim, err := contract.Parse(maker.SelfClaim)
+			claim, err := ancestrySelectedClaim(maker)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -397,8 +423,13 @@ func TestRealIsolatedTowerWitnessRecovery(t *testing.T) {
 			target, observe := maker.Long, maker.Short
 			h.offline("maker")
 			h.online("taker")
-			h.tick("taker")
-			h.minePending()
+			partialWaitMailbox(h, "confirmed revealing claim before tower isolation", func() bool {
+				peer := h.swap("taker", id)
+				return peer.SelfClaim != "" && peer.IncomingClaimSeen && peer.ShortConfirmations >= 2
+			}, func() {
+				tickUntilConnected(t, h.engines["taker"])
+				h.minePending()
+			})
 			claimID, _ := settlementVariant(h.swap("taker", id).SelfClaims, h.swap("taker", id).ClaimVariant, maker.Long, maker.Short, false)
 			claimRecord, err := h.nodes[observe.Chain].Transaction(h.ctx, claimID)
 			if err != nil || claimRecord.BlockHash == "" {
@@ -409,14 +440,29 @@ func TestRealIsolatedTowerWitnessRecovery(t *testing.T) {
 			jobID := ""
 			for key, state := range h.engines["tower"].s.TowerJobs {
 				if state.Job.SwapID == id && state.Job.Kind == "claim" {
-					jobID = key
-					if state.Secret == "" {
-						t.Fatal("tower missed actual witness while target unavailable")
+					if jobID != "" || state.Job.Target != target || state.Job.Observe == nil || *state.Job.Observe != observe {
+						t.Fatal("fixture claim job does not uniquely match the observed contracts")
 					}
+					jobID = key
 				}
 			}
 			if jobID == "" {
 				t.Fatal("fixture has no authorized tower claim")
+			}
+			learned := h.engines["tower"].s.TowerJobs[jobID]
+			// Wallet readiness does not imply the bounded historical tower scan
+			// has reached this already-confirmed witness on its first slice.
+			witnessCtx, cancelWitness := context.WithTimeout(context.Background(), 30*time.Second)
+			defer cancelWitness()
+			for cycle := 0; learned.Secret == "" && cycle < 12 && witnessCtx.Err() == nil; cycle++ {
+				if learned.Broadcast != "" {
+					t.Fatal("tower published while target was unavailable")
+				}
+				time.Sleep(100 * time.Millisecond)
+				tickDegradedContext(t, h.engines["tower"], witnessCtx)
+			}
+			if learned.Secret == "" || learned.Broadcast != "" {
+				t.Fatal("tower failed bounded witness recovery while target unavailable", learned.Error)
 			}
 			h.offline("tower")
 			if err := h.nodes[observe.Chain].Call(h.ctx, "invalidateblock", nil, claimRecord.BlockHash); err != nil {
