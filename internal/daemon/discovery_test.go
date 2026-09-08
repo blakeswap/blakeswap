@@ -261,6 +261,11 @@ func TestRealDiscoveredTraderWatchtowerAndOfferBalance(t *testing.T) {
 	h.online("taker")
 	h.tick("taker")
 	if h.swap("taker", id).Stage != "refunded" {
+		provider, owner := h.engines["tower"], h.swap("taker", id)
+		t.Logf("rescue outcome: tower heights=%v error=%q; owner error=%q long spend=%s confirmations=%d", provider.heights, provider.lastError, owner.Error, owner.LongSpend, owner.LongConfirmations)
+		for _, job := range provider.s.TowerJobs {
+			t.Logf("rescue job: kind=%s chain=%s lock=%d funding_seen=%t expired=%t attempts=%d broadcast=%s confirmations=%d error=%q", job.Job.Kind, job.Job.Target.Chain, job.Job.Lock, job.FundingSeen, job.Expired, job.Attempt, job.Broadcast, job.Confirmed, job.Error)
+		}
 		t.Fatal("trading watchtower did not execute delayed rescue", h.swap("taker", id).Stage)
 	}
 	for _, job := range h.engines["tower"].s.TowerJobs {
