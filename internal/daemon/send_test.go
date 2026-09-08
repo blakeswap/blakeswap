@@ -375,12 +375,27 @@ func TestMakerReservationExpiresWhenTakerNeverFunds(t *testing.T) {
 	if swap.Stage != "expired before maker funding" || e.publicCoins()[0].Reserved || swap.ShortFunding != "" {
 		t.Fatal("abandoned maker reservation kept funds locked")
 	}
-	// The closed ledger stops admission immediately, while its signed public
-	// cancellation waits for the next wall-clock second. Preserve that phase.
-	if parent.SignedRevision != parent.Quantities.Revision {
+	// The closed ledger stops admission immediately. The pending revision may
+	// publish the cancellation, or only the child's final released counters if
+	// cancellation was already signed in an earlier wall-clock second. Network
+	// switching follows the retained signed status, not that revision gap.
+	published, err := protocol.DecodeOffer(e.s.Offers[offer.ID], time.Now().Unix())
+	if err != nil || published.Revision != parent.SignedRevision {
+		t.Fatalf("retained parent publication differs from its signed revision: %v", err)
+	}
+	switch published.Status {
+	case "open", "reserved":
 		if err := e.CanChangeNetwork(); err == nil {
 			t.Fatal("unpublished cancellation was treated as settled publication")
 		}
+	case "cancelled":
+		if err := e.CanChangeNetwork(); err != nil {
+			t.Fatal("signed cancellation with a retired unfunded child blocks network change", err)
+		}
+	default:
+		t.Fatalf("unexpected signed parent status after cancellation: %s", published.Status)
+	}
+	if parent.SignedRevision != parent.Quantities.Revision {
 		wait := time.Until(time.Unix(parent.LastSignedAt+1, 0))
 		if wait > 5*time.Second {
 			t.Fatal("unexpected future parent publication timestamp")

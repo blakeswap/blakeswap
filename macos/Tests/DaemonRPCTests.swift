@@ -117,7 +117,7 @@ final class DaemonRPCTests: XCTestCase {
             _ = try await call("alice", "offer.create", wholeOffer(amount: 1, buyAmount: 1))
             XCTFail("Invalid offer accepted")
         } catch {
-            XCTAssertTrue(error.localizedDescription.contains("invalid order bounds"), "Backend error was hidden: \(error.localizedDescription)")
+            XCTAssertTrue(error.localizedDescription.contains("invalid protocol-2 order identity or principal bounds"), "Backend error was hidden: \(error.localizedDescription)")
         }
         let initial = try await status("alice")
         XCTAssertTrue(initial.ownWatchtower.npub.hasPrefix("npub1"))
