@@ -91,27 +91,29 @@ type MarketQuery struct {
 	Revision        string `json:"revision"`
 }
 type MarketOrder struct {
-	Offer          protocol.Offer `json:"offer"`
-	EventID        string         `json:"event_id"`
-	Own            bool           `json:"own"`
-	Side           string         `json:"side"`
-	BTCAmount      int64          `json:"btc_amount"`
-	BlakeAmount    int64          `json:"blake_amount"`
-	Rate           string         `json:"rate"`
-	Status         string         `json:"status"`
-	Availability   string         `json:"availability"`
-	Publication    string         `json:"publication"`
-	AcknowledgedAt int64          `json:"acknowledged_at"`
-	CreatedAt      int64          `json:"created_at"`
-	Replaces       string         `json:"replaces"`
-	ReplacedBy     string         `json:"replaced_by"`
-	RecreatedFrom  string         `json:"recreated_from"`
-	SwapIDs        []string       `json:"swap_ids"`
-	ActivityID     string         `json:"activity_id"`
-	CanTake        bool           `json:"can_take"`
-	CanCancel      bool           `json:"can_cancel"`
-	CanReplace     bool           `json:"can_replace"`
-	CanRecreate    bool           `json:"can_recreate"`
+	SuggestedQuantity int64            `json:"suggested_quantity"`
+	Quantities        *QuantitySummary `json:"quantities,omitempty"`
+	Offer             protocol.Offer   `json:"offer"`
+	EventID           string           `json:"event_id"`
+	Own               bool             `json:"own"`
+	Side              string           `json:"side"`
+	BTCAmount         int64            `json:"btc_amount"`
+	BlakeAmount       int64            `json:"blake_amount"`
+	Rate              string           `json:"rate"`
+	Status            string           `json:"status"`
+	Availability      string           `json:"availability"`
+	Publication       string           `json:"publication"`
+	AcknowledgedAt    int64            `json:"acknowledged_at"`
+	CreatedAt         int64            `json:"created_at"`
+	Replaces          string           `json:"replaces"`
+	ReplacedBy        string           `json:"replaced_by"`
+	RecreatedFrom     string           `json:"recreated_from"`
+	SwapIDs           []string         `json:"swap_ids"`
+	ActivityID        string           `json:"activity_id"`
+	CanTake           bool             `json:"can_take"`
+	CanCancel         bool             `json:"can_cancel"`
+	CanReplace        bool             `json:"can_replace"`
+	CanRecreate       bool             `json:"can_recreate"`
 }
 type MarketPage struct {
 	Wallet     string        `json:"wallet"`

@@ -111,3 +111,37 @@ func TestFillBudgetCheckedWideProducts(t *testing.T) {
 		}
 	}
 }
+
+func TestFillSuggestedQuantityPreservesLegalRemainder(t *testing.T) {
+	policy := FillPolicy{Mode: FillPartial, Min: 400000, Max: 600000}
+	for _, tc := range []struct{ total, suggested, invalid int64 }{{900000, 400000, 600000}, {1100000, 500000, 400000}} {
+		got, err := policy.Suggested(tc.total, tc.total, tc.total)
+		if err != nil || got.Sell != tc.suggested {
+			t.Fatalf("suggest total%d: %+v %v", tc.total, got, err)
+		}
+		if _, err := policy.Quote(tc.total, tc.total, tc.total, tc.invalid); err == nil {
+			t.Fatal("explicit illegal tail was silently adjusted")
+		}
+	}
+	for minimum := int64(100000); minimum <= 150000; minimum += 5000 {
+		for maximum := minimum; maximum <= 200000; maximum += 5000 {
+			p := FillPolicy{Mode: FillPartial, Min: minimum, Max: maximum}
+			for total := maximum; total <= 2000000; total += 10007 {
+				if !Partitionable(total, minimum, maximum) {
+					continue
+				}
+				remaining := total
+				for remaining != 0 {
+					got, err := p.Suggested(total, total, remaining)
+					if err != nil || got.Sell < minimum || got.Sell > maximum || got.Remaining >= remaining {
+						t.Fatalf("legal partition suggestion: %d %d %d: %+v %v", total, minimum, maximum, got, err)
+					}
+					remaining = got.Remaining
+				}
+			}
+		}
+	}
+	if _, err := policy.Suggested(900000, 900000, 0); err == nil {
+		t.Fatal("empty parent suggested a fill")
+	}
+}

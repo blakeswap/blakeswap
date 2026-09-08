@@ -28,6 +28,7 @@ service DaemonService {
  rpc SaveAutomation(AutomationEdit) returns (AutomationView) { option (google.api.http) = { put: "/v1/automations" body: "*" }; }
  rpc DisableAutomation(DisableAutomationRequest) returns (AutomationView) { option (google.api.http) = { post: "/v1/automations/disable" body: "*" }; }
 
+ rpc ListFills(FillQuery) returns (FillPage) { option (google.api.http) = { post: "/v1/orders/fills/query" body: "*" }; }
  rpc ListMarket(MarketQuery) returns (MarketPage) { option (google.api.http) = { post: "/v1/market/query" body: "*" }; }
  rpc ListActivity(ActivityQuery) returns (ActivityPage) { option (google.api.http) = { post: "/v1/activity/query" body: "*" }; }
  rpc ExportActivity(ActivityQuery) returns (ActivityExport) { option (google.api.http) = { post: "/v1/activity/export" body: "*" }; }
@@ -66,6 +67,8 @@ message RefreshStatusRequest { string expected_network = 1; }
 message ResolveWatchtowerRequest { string pubkey = 1; string expected_network = 2; }
 message SetPausedRequest { bool paused = 1; string expected_network = 2; }
 message CreateOfferRequest {
+ string fill_mode = 12; int64 min_fill = 13; int64 max_fill = 14;
+ map<string,int64> fee_budgets = 15; map<string,int64> bounty_budgets = 16;
  int64 funding_fee = 8; int64 rate_sat_kvb = 9; int64 fee_timestamp = 10; int64 owner_fee_cap = 11;
  string tower_pubkey = 7; // Selected discovered provider; ignored when protection is off.
  string sell = 1; // btc or blake.
@@ -77,6 +80,7 @@ message CreateOfferRequest {
 }
 message CancelOfferRequest { string id = 1; string expected_network = 2; string expected_wallet = 3; string expected_event_id = 4; }
 message TakeOfferRequest {
+ int64 quantity = 10; uint64 parent_revision = 11;
  int64 funding_fee = 6; int64 rate_sat_kvb = 7; int64 fee_timestamp = 8; int64 owner_fee_cap = 9;
  string maker = 1; string id = 2; string expected_network = 3;
  int64 tower_bps = 4; // This wallet's private protection; zero disables it.
@@ -133,9 +137,12 @@ message BackupFreshness { int64 last_export_at = 1; bool state_changed = 2; stri
 message RecoveryIssue { string kind = 1; string id = 2; string reason = 3; }
 message RecoveryProgress { string state = 1; int64 imported_at = 2; int64 snapshot_at = 3; bool legacy = 4; int64 checked_at = 5; repeated RecoveryIssue issues = 6; int32 quarantined_offers = 7; int32 quarantined_messages = 8; string coverage = 9; }
 message Offer {
+ reserved 9; reserved "reservation";
+ int32 version = 12; string fill_mode = 13; int64 min_fill = 14; int64 max_fill = 15;
+ uint64 revision = 16; int64 available = 17;
  string id = 1; string maker = 2; string sell = 3;
  int64 sell_amount = 4; int64 buy_amount = 5; int64 tower_bps = 6;
- int64 expires = 7; string status = 8; string reservation = 9; string network = 10; Tower tower = 11;
+ int64 expires = 7; string status = 8; string network = 10; Tower tower = 11;
 }
 message HTLC {
  string chain = 1; string hash = 2; string claim_key = 3; string refund_key = 4;
@@ -144,6 +151,8 @@ message HTLC {
  int64 amount = 6; string txid = 7; uint32 vout = 8;
 }
 message Swap {
+ string parent_id = 26; string parent_maker = 27; uint64 parent_revision = 28; int64 quantity = 29;
+ string allocation = 30; int64 allocated_quantity = 31; bool allocation_known = 32;
  int64 claim_fee = 22; int64 refund_fee = 23; string claim_txid = 24; string refund_txid = 25;
  int64 owner_fee_cap = 18; int64 funding_fee = 19; repeated string claim_variants = 20; repeated string refund_variants = 21;
  string id = 1; string role = 2; string stage = 3; string error = 4;
@@ -154,6 +163,7 @@ message Swap {
  uint32 takeover = 16; uint32 reveal_before = 17;
 }
 message Tower {
+ int32 version = 10;
  string pubkey = 1; map<string,string> scripts = 2; int64 bps = 3;
  string npub = 4; string name = 5; string network = 6; int64 expires = 7;
  bool public = 9; // Opt-in public directory listing.
@@ -257,6 +267,9 @@ message BumpResult { string txid = 1; int64 fee = 2; string state = 3; string er
 // Read-only review. Amounts describe the maker's signed offer/draft; the response
 // orients economics to the selected wallet. Every fee is native to its chain.
 message TradeQuoteRequest {
+ string fill_mode = 19; int64 min_fill = 20; int64 max_fill = 21;
+ int64 quantity = 22; uint64 parent_revision = 23;
+ map<string,int64> fee_budgets = 24; map<string,int64> bounty_budgets = 25;
  string kind = 1; string expected_wallet = 2; string expected_network = 3;
  string maker = 4; string id = 5; string sell = 6;
  int64 sell_amount = 7; int64 buy_amount = 8; int64 expires = 9;
@@ -275,6 +288,9 @@ message TradeOutcome {
  int64 bounty = 6; int64 net_min = 7; int64 net_max = 8;
 }
 message TradeQuote {
+ string fill_mode = 34; int64 min_fill = 35; int64 max_fill = 36; int64 available = 37;
+ int64 quantity = 38; uint64 parent_revision = 39; int64 total_sell_amount = 40; int64 funding_reserve = 41;
+ map<string,int64> fee_budgets = 42; map<string,int64> bounty_budgets = 43; FillPreview example_fill = 44;
  string token = 1; string revision = 2; string kind = 3; string wallet = 4; string wallet_key = 5;
  string network = 6; int64 created = 7; int64 expires = 8;
  string offer_event_id = 9; string offer_id = 10; string offer_maker = 11; int64 offer_expires = 12;
@@ -297,6 +313,7 @@ message MarketQuery {
  bool descending = 9; uint32 offset = 10; uint32 limit = 11; string revision = 12;
 }
 message MarketOrder {
+ int64 suggested_quantity = 22; QuantitySummary quantities = 23;
  Offer offer = 1; string event_id = 2; bool own = 3; string side = 4;
  int64 btc_amount = 5; int64 blake_amount = 6; string rate = 7;
  string status = 8; string availability = 9; string publication = 10;
@@ -539,3 +556,27 @@ message StopStrategyRequest {
 }
 
 message StrategyReportRequest { string id = 1; string expected_wallet = 2; string expected_network = 3; uint64 expected_revision = 4; }
+
+// Partial-fill contract. The API cutover moves this complete service to v2;
+// these fields never enable negotiation or a v1 execution fallback.
+message FillPreview {
+ int64 quantity = 1; int64 buy_amount = 2; int64 funding_fee = 3; int64 owner_fee_cap = 4;
+ repeated TradeOutcome outcomes = 5;
+}
+message QuantitySummary {
+ int64 total = 1; int64 available = 2; int64 reserved = 3; int64 committed = 4;
+ int64 filled = 5; int64 released = 6;
+}
+message FillQuery {
+ string expected_wallet = 1; string expected_network = 2; string parent_maker = 3; string parent_id = 4;
+ uint32 offset = 5; uint32 limit = 6; string revision = 7;
+}
+message FillSummary {
+ string id = 1; string parent_maker = 2; string parent_id = 3; uint64 parent_revision = 4;
+ int64 quantity = 5; int64 buy_amount = 6; string disposition = 7; int64 allocated_quantity = 8;
+ bool allocation_known = 9; string stage = 10; bool archived = 11; bool monitoring_required = 12;
+}
+message FillPage {
+ string wallet = 1; string network = 2; string parent_maker = 3; string parent_id = 4;
+ repeated FillSummary records = 5; string revision = 6; uint32 total = 7; uint32 next_offset = 8; bool more = 9;
+}

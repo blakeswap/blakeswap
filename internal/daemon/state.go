@@ -140,6 +140,13 @@ type State struct {
 	EventTime                   nostr.Timestamp              `json:"event_time"`
 }
 type PublicSwap struct {
+	ParentID           string             `json:"parent_id"`
+	ParentMaker        string             `json:"parent_maker"`
+	ParentRevision     uint64             `json:"parent_revision"`
+	Quantity           int64              `json:"quantity"`
+	Allocation         FillDisposition    `json:"allocation"`
+	AllocatedQuantity  int64              `json:"allocated_quantity"`
+	AllocationKnown    bool               `json:"allocation_known"`
 	ClaimFee           int64              `json:"claim_fee"`
 	RefundFee          int64              `json:"refund_fee"`
 	ClaimTxID          string             `json:"claim_txid"`

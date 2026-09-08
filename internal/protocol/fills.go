@@ -27,6 +27,27 @@ type FillAmounts struct {
 	Remaining int64 `json:"remaining"`
 }
 
+// Suggested chooses a legal first quantity from one complete economic
+// partition of the remaining amount. It is a review suggestion, not an input
+// ownership or fee proof, and never changes a caller's explicit Quote quantity.
+func (p FillPolicy) Suggested(total, buy, available int64) (FillAmounts, error) {
+	minimum, maximum, err := p.Interval(total, buy)
+	if err != nil {
+		return FillAmounts{}, err
+	}
+	if available <= 0 || available > total || !Partitionable(available, minimum, maximum) {
+		return FillAmounts{}, errors.New("no valid available fill partition")
+	}
+	parts := 1 + (available-1)/maximum
+	// Since parts=ceil(available/maximum), this product is strictly below
+	// available (itself bounded by MaxPrincipal), without wide overflow.
+	quantity := available - (parts-1)*maximum
+	if quantity < minimum {
+		quantity = minimum
+	}
+	return p.Quote(total, buy, available, quantity)
+}
+
 // RoundedBuy preserves the maker's minimum B/A rate independently for each
 // child. Products can exceed int64 even for supported parent quantities.
 func RoundedBuy(total, buy, quantity int64) (int64, error) {

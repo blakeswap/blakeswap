@@ -18,6 +18,8 @@ const tradeQuoteCapacity = 64
 type TradeQuoteRequest struct {
 	FeeSelection
 	OrderActionFields
+	FillOrderFields
+	FillTakeFields
 	Kind            string   `json:"kind"`
 	ExpectedWallet  string   `json:"expected_wallet"`
 	ExpectedNetwork string   `json:"expected_network"`
@@ -52,6 +54,12 @@ type TradeOutcome struct {
 }
 type TradeQuote struct {
 	OrderActionFields
+	FillOrderFields
+	FillTakeFields
+	Available         int64          `json:"available"`
+	TotalSellAmount   int64          `json:"total_sell_amount"`
+	FundingReserve    int64          `json:"funding_reserve"`
+	ExampleFill       *FillPreview   `json:"example_fill,omitempty"`
 	Token             string         `json:"token"`
 	Revision          string         `json:"revision"`
 	Kind              string         `json:"kind"`
