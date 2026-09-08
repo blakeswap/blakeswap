@@ -807,12 +807,19 @@ func partialReorgCompletedChild(h *harness, parentID, completed, sibling, taker 
 	if err := archiveFixtureBlockCommand(h.t, node, "invalidateblock", block); err != nil {
 		h.t.Fatal(err)
 	}
-	h.tick("parent", taker)
+	// Electrum can invalidate its source generation while observing the reorg.
+	// Require a complete fresh pass with the existing bounded recovery helper.
+	for _, name := range []string{"parent", taker} {
+		tickUntilConnected(h.t, h.engines[name])
+	}
 	partialBins(h, parentID, 0, 0, 1200000, 0, 600000, 600000)
 	if h.swap("parent", completed).Secret != secretBefore || secretBefore == "" || !h.swap("parent", completed).SecretExposed || protocol.Digest(e.s.FillRecords[sibling]) != childBefore || protocol.Digest(e.s.ParentOrders[parentID].Fees) != feesBefore || protocol.Digest(e.s.ParentOrders[parentID].Bounties) != bountiesBefore {
 		h.t.Fatal("settled-child reorg changed sibling, secret, or permanent charges")
 	}
 	restore()
+	for _, name := range []string{"parent", taker} {
+		tickUntilConnected(h.t, h.engines[name])
+	}
 	partialWait(h, "same confirmed child after exact block restoration", func() bool { return h.swap("parent", completed).Stage == "completed" }, func() { h.tick("parent", taker) })
 	partialBins(h, parentID, 0, 0, 600000, 600000, 600000, 600000)
 	_ = partialConfirmedTransaction(h, s.Long.Chain, s.LongSpend)

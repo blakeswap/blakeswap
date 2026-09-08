@@ -155,7 +155,9 @@ func runRealFundingChangeAncestry(t *testing.T, sell chain.ID, role string) {
 	if err := archiveFixtureBlockCommand(t, h.nodes[paid], "invalidateblock", anchor.BlockHash); err != nil {
 		t.Fatal(err)
 	}
-	h.tick(local)
+	// A deliberate reorg may invalidate an Electrum observation generation.
+	// Finish the existing bounded full refresh before checking the held graph.
+	tickUntilConnected(t, h.engines[local])
 	ancestryAssertHeld(h, local, b, c, d, before, true)
 	assertKnownSecret()
 	// D progresses in this same wallet while B/C remain held. Do not mine the
@@ -188,6 +190,7 @@ func runRealFundingChangeAncestry(t *testing.T, sell chain.ID, role string) {
 	if !restored {
 		t.Fatal("exact ancestor restoration failed")
 	}
+	tickUntilConnected(t, h.engines[local])
 	ancestryWaitProof(h, local, b.id, c.id)
 	ancestryAssertStable(h, local, trades, before)
 	for _, trade := range trades {
