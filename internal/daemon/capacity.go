@@ -38,9 +38,9 @@ type CapacityHealth struct {
 func (e *Engine) activeWork(kind string) int {
 	count := 0
 	if kind == "" || kind == "offer" {
-		for _, event := range e.s.Offers {
+		for id, event := range e.s.Offers {
 			var offer protocol.Offer
-			if json.Unmarshal([]byte(event.Content), &offer) != nil || offer.Status == "reserved" || (offer.Status == "open" && offer.Expires > time.Now().Unix()) {
+			if json.Unmarshal([]byte(event.Content), &offer) != nil || (offer.Status == "reserved" && (len(e.s.OrderRecords[id].Settlements) == 0 || e.finishedOrderRecord(id, e.s.OrderRecords[id]) == "")) || (offer.Status == "open" && offer.Expires > time.Now().Unix()) {
 				count++
 			}
 		}

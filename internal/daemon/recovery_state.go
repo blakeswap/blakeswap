@@ -94,6 +94,9 @@ func prepareRecoveryActive(s *State, snapshotAt int64, legacy bool) error {
 		s.Capacity.Anchors = nil
 		s.Capacity.Reactivating = false
 	}
+	if err := ValidateOrderSettlements(s); err != nil {
+		return err
+	}
 	if err := ValidateAutomationState(s); err != nil {
 		return err
 	}

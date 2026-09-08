@@ -15,15 +15,17 @@ import (
 // OrderRecord retains management evidence alongside T08's linked activity.
 // Publication means acknowledged relay storage, never global availability.
 type OrderRecord struct {
-	Offer            protocol.Offer `json:"offer"`
-	EventID          string         `json:"event_id"`
-	CreatedAt        int64          `json:"created_at"`
-	Publication      string         `json:"publication"`
-	AcknowledgedAt   int64          `json:"acknowledged_at"`
-	CancelledEventID string         `json:"cancelled_event_id,omitempty"`
-	Replaces         string         `json:"replaces,omitempty"`
-	ReplacedBy       string         `json:"replaced_by,omitempty"`
-	RecreatedFrom    string         `json:"recreated_from,omitempty"`
+	Offer            protocol.Offer    `json:"offer"`
+	EventID          string            `json:"event_id"`
+	CreatedAt        int64             `json:"created_at"`
+	Publication      string            `json:"publication"`
+	AcknowledgedAt   int64             `json:"acknowledged_at"`
+	CancelledEventID string            `json:"cancelled_event_id,omitempty"`
+	Replaces         string            `json:"replaces,omitempty"`
+	ReplacedBy       string            `json:"replaced_by,omitempty"`
+	RecreatedFrom    string            `json:"recreated_from,omitempty"`
+	Settlements      map[string]string `json:"settlements,omitempty"`
+	Protection       *protocol.Tower   `json:"protection,omitempty"`
 }
 
 func historicalOffer(event nostr.Event) (protocol.Offer, error) {
@@ -138,18 +140,25 @@ func (e *Engine) marketOrder(o protocol.Offer, eventID string, record OrderRecor
 		row.Status = "expired"
 	}
 	active := false
+	linked := map[string]bool{}
+	for id := range record.Settlements {
+		linked[id] = true
+	}
 	for id, s := range e.s.Swaps {
 		var requested protocol.Offer
 		if json.Unmarshal([]byte(s.Request.OfferEvent.Content), &requested) != nil || requested.Maker != o.Maker || requested.ID != o.ID {
 			continue
 		}
-		row.SwapIDs = append(row.SwapIDs, id)
+		linked[id] = true
 		if !terminalSwap(s) {
 			active = true
 			if !row.Own && row.Status == "open" {
 				row.Status = "pending"
 			}
 		}
+	}
+	for id := range linked {
+		row.SwapIDs = append(row.SwapIDs, id)
 	}
 	sort.Strings(row.SwapIDs)
 	if row.Own && row.Status == "reserved" && !active {
@@ -160,6 +169,10 @@ func (e *Engine) marketOrder(o protocol.Offer, eventID string, record OrderRecor
 	row.Availability = row.Status
 	if row.Own {
 		row.Offer = e.ownOffer(o)
+		if _, live := e.s.OfferTowers[o.ID]; !live && record.Protection != nil {
+			copy := *record.Protection
+			row.Offer.Tower, row.Offer.TowerBPS = &copy, copy.BPS
+		}
 		row.Publication, row.AcknowledgedAt, row.CreatedAt = record.Publication, record.AcknowledgedAt, record.CreatedAt
 		row.Replaces, row.ReplacedBy, row.RecreatedFrom = record.Replaces, record.ReplacedBy, record.RecreatedFrom
 		row.ActivityID = activityID("order", o.ID)

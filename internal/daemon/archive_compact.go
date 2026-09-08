@@ -199,6 +199,9 @@ func (e *Engine) compactArchive(ctx context.Context, swaps, towers map[chain.ID]
 			}
 			chains = []chain.ID{chain.BTC, chain.Blake}
 		}
+		if err := e.retainOrderSettlement(swap); err != nil {
+			return err
+		}
 		if err := move("swaps", id, chains...); err != nil {
 			return err
 		}
@@ -237,7 +240,11 @@ func (e *Engine) compactArchive(ctx context.Context, swaps, towers map[chain.ID]
 			continue
 		}
 		offer, err := historicalOffer(event)
-		if err != nil || (offer.Status == "open" && offer.Expires > time.Now().Unix()) || offer.Status == "reserved" || e.s.Outbox[event.ID.Hex()] != nil {
+		finished, finishErr := e.finishedOrderChecked(id)
+		if finishErr != nil {
+			return finishErr
+		}
+		if err != nil || (offer.Status == "open" && offer.Expires > time.Now().Unix()) || (offer.Status == "reserved" && finished == "") || e.s.Outbox[event.ID.Hex()] != nil {
 			continue
 		}
 		if err := move("offers", id); err != nil {

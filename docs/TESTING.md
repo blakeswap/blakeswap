@@ -632,9 +632,11 @@ A small independent real-daemon/HTTP fixture verifies worker progress outside
 that interval. These are measurements on this host, not universal timing bounds.
 
 Maximum process RSS was 2,179,645,440 bytes; peak sampled heap was 1,436,303,512
-bytes during the unchanged legacy v1 import. Sampled file allocations peaked at
+bytes during the unchanged legacy v1 import. Sampled summed file allocation peaked at
 1,829,212,160 bytes (logical size 1,863,316,815), with hardlinked inodes counted
-once. Disk samples run every 200ms and heap samples every 20ms, so brief higher
+once. Separate APFS clone inodes can share extents; clone sharing is not
+deduplicated, so this is not a unique physical-disk high-water measurement.
+Disk samples run every 200ms and heap samples every 20ms, so brief higher
 peaks may be missed. Host-wide swap-in counters advanced by eight 16KiB pages;
 swap-out counters were unchanged. Active checkpoint/core and individual-record
 memory costs remain, even though cold history does not require a full graph.

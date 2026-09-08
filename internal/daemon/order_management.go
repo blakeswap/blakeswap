@@ -5,6 +5,7 @@ import (
 	"errors"
 	"time"
 
+	"github.com/blakeswap/blakeswap/internal/chain"
 	"github.com/blakeswap/blakeswap/internal/protocol"
 )
 
@@ -26,9 +27,29 @@ func (e *Engine) activeOrderSwap(id string) bool {
 
 // A terminal local maker swap is stronger evidence than a historical relay
 // status. Keep its signed reserved terms intact, but allow a fresh new order.
-func (e *Engine) finishedOrder(id string) string {
-	result := ""
-	for _, swap := range e.s.Swaps {
+func orderSettlementStatus(stage string) string {
+	switch stage {
+	case "completed":
+		return "filled"
+	case "refunded":
+		return "refunded"
+	case "expired before funding", "expired before maker funding", "aborted; counterparty refunded":
+		return "cancelled"
+	}
+	return ""
+}
+
+func (e *Engine) finishedOrderRecord(id string, record OrderRecord) string {
+	// Live state always overrides retained settlement evidence, including a
+	// reactivated obligation which has lost its previous terminal observation.
+	stages := make(map[string]string, len(record.Settlements))
+	for key, stage := range record.Settlements {
+		stages[key] = stage
+	}
+	for key, swap := range e.s.Swaps {
+		if swap == nil {
+			continue
+		}
 		var o protocol.Offer
 		if swap.Role != "maker" || json.Unmarshal([]byte(swap.Request.OfferEvent.Content), &o) != nil || o.ID != id || o.Maker != e.identity.Public().Hex() {
 			continue
@@ -36,16 +57,77 @@ func (e *Engine) finishedOrder(id string) string {
 		if !terminalSwap(swap) {
 			return ""
 		}
-		switch swap.Stage {
-		case "completed":
-			result = "filled"
-		case "refunded":
-			result = "refunded"
-		case "expired before funding", "expired before maker funding", "aborted; counterparty refunded":
-			result = "cancelled"
+		stages[key] = swap.Stage
+	}
+	result := ""
+	for _, stage := range stages {
+		status := orderSettlementStatus(stage)
+		if status == "filled" || status == "refunded" && result != "filled" || status == "cancelled" && result == "" {
+			result = status
 		}
 	}
 	return result
+}
+
+func (e *Engine) finishedOrderChecked(id string) (string, error) {
+	record, ok := e.s.OrderRecords[id]
+	if !ok {
+		if _, err := e.archivedValue("order_records", id, &record); err != nil {
+			return "", err
+		}
+	}
+	if err := validateOrderSettlement(id, record, e.s.Network); err != nil {
+		return "", err
+	}
+	return e.finishedOrderRecord(id, record), nil
+}
+
+func (e *Engine) finishedOrder(id string) string {
+	result, _ := e.finishedOrderChecked(id)
+	return result
+}
+
+// Record the exact positively retired maker identity before its core moves.
+// This is retained history, never a publisher or an absence-based settlement
+// inference. The record and core ownership changes share the next vault commit.
+func (e *Engine) retainOrderSettlement(swap *Swap) error {
+	if swap.Role != "maker" || orderSettlementStatus(swap.Stage) == "" {
+		return nil
+	}
+	offer, err := historicalOffer(swap.Request.OfferEvent)
+	if err != nil || offer.Maker != e.identity.Public().Hex() || offer.Network.Normalized() != e.Config.Network {
+		return nil
+	}
+	if _, exists := e.s.OrderRecords[offer.ID]; !exists {
+		if _, err := e.activateArchived("order_records", offer.ID); err != nil {
+			return err
+		}
+	}
+	if e.s.OrderRecords == nil {
+		e.s.OrderRecords = map[string]OrderRecord{}
+	}
+	record, exists := e.s.OrderRecords[offer.ID]
+	if !exists {
+		event := swap.Request.OfferEvent
+		if own, ok := e.s.Offers[offer.ID]; ok {
+			event = own
+		}
+		source, err := historicalOffer(event)
+		if err != nil || source.ID != offer.ID || source.Maker != offer.Maker || source.Network.Normalized() != e.Config.Network {
+			return errors.New("invalid retained maker source")
+		}
+		record = OrderRecord{Offer: source, EventID: event.ID.Hex(), Publication: "unknown"}
+	}
+	if record.Settlements == nil {
+		record.Settlements = map[string]string{}
+	}
+	record.Settlements[swap.ID] = swap.Stage
+	if tower, ok := e.s.OfferTowers[offer.ID]; ok {
+		copy := tower
+		record.Protection = &copy
+	}
+	e.s.OrderRecords[offer.ID] = record
+	return nil
 }
 
 func (e *Engine) orderSource(p OrderActionFields, now int64) (protocol.Offer, error) {
@@ -97,7 +179,11 @@ func (e *Engine) orderSource(p OrderActionFields, now int64) (protocol.Offer, er
 			return empty, errors.New("only a current unreserved order can be replaced")
 		}
 	case "recreate":
-		if o.Status != "cancelled" && o.Status != "filled" && !(o.Status == "open" && o.Expires <= now) && !(o.Status == "reserved" && e.finishedOrder(o.ID) != "") {
+		finished, err := e.finishedOrderChecked(o.ID)
+		if err != nil {
+			return empty, err
+		}
+		if o.Status != "cancelled" && o.Status != "filled" && !(o.Status == "open" && o.Expires <= now) && !(o.Status == "reserved" && finished != "") {
 			return empty, errors.New("only a finished, cancelled or expired order can be recreated")
 		}
 	default:
@@ -168,4 +254,29 @@ func (e *Engine) cancelOffer(raw json.RawMessage) (any, error) {
 	e.s.OrderRecords[o.ID] = record
 	delete(e.s.CoinReservations, "offer/"+o.ID)
 	return e.ownOffer(o), e.save()
+}
+
+// ValidateOrderSettlements leaves older records without this optional companion
+// unchanged, while rejecting malformed new authority-linked history on load.
+func ValidateOrderSettlements(state *State) error {
+	for id, record := range state.OrderRecords {
+		if err := validateOrderSettlement(id, record, state.Network); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+func validateOrderSettlement(id string, record OrderRecord, network chain.Network) error {
+	if len(record.Settlements) == 0 {
+		return nil
+	}
+	if record.Offer.ID != id || record.Offer.Network.Normalized() != network.Normalized() || record.Offer.Validate(record.Offer.Expires-1) != nil {
+		return errors.New("invalid retained order settlement source")
+	}
+	for swapID, stage := range record.Settlements {
+		if !protocol.Hex32(swapID) || orderSettlementStatus(stage) == "" {
+			return errors.New("invalid retained order settlement identity or outcome")
+		}
+	}
+	return nil
 }

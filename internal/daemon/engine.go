@@ -41,6 +41,7 @@ type Engine struct {
 	automationBusy           atomic.Bool
 	automationCancel         context.CancelFunc
 	historyMu                sync.Mutex
+	historyCancel            context.CancelFunc
 	mailboxWindow            int64
 	mailboxAdmissions        map[string]int
 	semanticParts            *semanticParts
@@ -156,6 +157,9 @@ func Open(ctx context.Context, c Config) (*Engine, error) {
 	if en.s.Network.Normalized() != c.Network {
 		return fail(errors.New("state belongs to a different network; use its own data directory"))
 	}
+	if err := ValidateOrderSettlements(&en.s); err != nil {
+		return fail(err)
+	}
 	if err := ValidateAutomationState(&en.s); err != nil {
 		return fail(err)
 	}
@@ -235,6 +239,9 @@ func (e *Engine) Close() error {
 		return nil
 	}
 	e.activityClosed = true
+	if e.historyCancel != nil {
+		e.historyCancel()
+	}
 	if e.relayCancel != nil {
 		e.relayCancel()
 	}

@@ -101,6 +101,9 @@ func validateBackupState(state *daemon.State) error {
 // Validate an already separated active checkpoint or one typed archive record.
 // Archive completeness and overlap are verified by the streaming owner.
 func validateActiveBackupState(state *daemon.State) error {
+	if err := daemon.ValidateOrderSettlements(state); err != nil {
+		return err
+	}
 	if err := daemon.ValidateAutomationState(state); err != nil {
 		return err
 	}

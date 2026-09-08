@@ -120,9 +120,27 @@ func (s *PageSnapshot) check(tx *bolt.Tx) error {
 	return nil
 }
 func (s *PageSnapshot) VisitArchive(ctx context.Context, visit func(ArchiveRecord) error) error {
+	return s.visitArchive(ctx, "", visit)
+}
+
+// VisitArchiveKind traverses only one authenticated kind prefix. A report does
+// not need to decrypt unrelated signed transactions or protocol payloads. The
+// captured generation and exact kind count fence the complete selected set.
+func (s *PageSnapshot) VisitArchiveKind(ctx context.Context, kind string, visit func(ArchiveRecord) error) error {
+	if kind == "" || len(kind) > 64 {
+		return errors.New("invalid archive report category")
+	}
+	return s.visitArchive(ctx, kind, visit)
+}
+
+func (s *PageSnapshot) visitArchive(ctx context.Context, kind string, visit func(ArchiveRecord) error) error {
 	type encryptedRecord struct{ index, sealed []byte }
 	actual := ArchiveStats{Kinds: map[string]uint64{}}
 	var cursor []byte
+	var prefix []byte
+	if kind != "" {
+		prefix = s.vault.archiveIndex(kind, "")[:32]
+	}
 	for {
 		if err := ctx.Err(); err != nil {
 			return err
@@ -141,13 +159,16 @@ func (s *PageSnapshot) VisitArchive(ctx context.Context, visit func(ArchiveRecor
 			}
 			c := b.Cursor()
 			key, value := c.First()
+			if prefix != nil {
+				key, value = c.Seek(prefix)
+			}
 			if cursor != nil {
 				key, value = c.Seek(cursor)
 				if bytes.Equal(key, cursor) {
 					key, value = c.Next()
 				}
 			}
-			for key != nil {
+			for key != nil && (prefix == nil || bytes.HasPrefix(key, prefix)) {
 				if len(page) >= 64 || (len(page) > 0 && pageBytes+uint64(len(value)) > 4<<20) {
 					break
 				}
@@ -155,7 +176,7 @@ func (s *PageSnapshot) VisitArchive(ctx context.Context, visit func(ArchiveRecor
 				pageBytes += uint64(len(value))
 				key, value = c.Next()
 			}
-			end = key == nil
+			end = key == nil || prefix != nil && !bytes.HasPrefix(key, prefix)
 			return nil
 		})
 		if err != nil {
@@ -167,7 +188,9 @@ func (s *PageSnapshot) VisitArchive(ctx context.Context, visit func(ArchiveRecor
 				var size uint64
 				record, size, err = s.vault.decodeArchive(item.index, item.sealed)
 				if err == nil {
-					if actual.Count == math.MaxUint64 || actual.Bytes > math.MaxUint64-size {
+					if kind != "" && record.Kind != kind {
+						err = errors.New("archive report category mismatch")
+					} else if actual.Count == math.MaxUint64 || actual.Bytes > math.MaxUint64-size {
 						err = errors.New("archive accounting overflow")
 					} else {
 						actual.Count++
@@ -193,10 +216,41 @@ func (s *PageSnapshot) VisitArchive(ctx context.Context, visit func(ArchiveRecor
 			if err := s.vault.db.View(s.check); err != nil {
 				return err
 			}
-			if !archiveStatsEqual(actual, s.stats) {
+			if kind == "" && !archiveStatsEqual(actual, s.stats) || kind != "" && actual.Count != s.stats.Kinds[kind] {
 				return errors.New("snapshot archive completeness mismatch")
 			}
 			return ctx.Err()
 		}
 	}
+}
+
+// ReadArchive returns one copied and authenticated record from the captured
+// generation. No live transaction is retained while decoding or using it.
+func (s *PageSnapshot) ReadArchive(kind, id string) (ArchiveRecord, bool, error) {
+	index := s.vault.archiveIndex(kind, id)
+	var sealed []byte
+	err := s.vault.db.View(func(tx *bolt.Tx) error {
+		if err := s.check(tx); err != nil {
+			return err
+		}
+		if bucket := tx.Bucket(archiveBucket); bucket != nil {
+			sealed = append([]byte(nil), bucket.Get(index)...)
+		}
+		return nil
+	})
+	if err != nil || len(sealed) == 0 {
+		return ArchiveRecord{}, false, err
+	}
+	defer clear(sealed)
+	record, _, err := s.vault.decodeArchive(index, sealed)
+	return record, err == nil, err
+}
+
+// Check is the completion fence after all selected categories and callbacks.
+// Once it succeeds, independent result files no longer depend on the source.
+func (s *PageSnapshot) Check(ctx context.Context) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	return s.vault.db.View(s.check)
 }

@@ -61,6 +61,10 @@ func normalizedBackupValue(state State) (map[string]any, error) {
 	// Keep the complete policy in the archive, but a no-op cadence check or
 	// advisory reference refresh does not create new recovery obligations.
 	// Config, revisions, holds, pending grants, charges and real actions remain.
+	// Query companions duplicate the retained signed swap stage/identity and
+	// OfferTowers policy. Moving their index beside a cold order changes location,
+	// not backup coverage; the original core/policy remain fully fingerprinted.
+	records("order_records", func(record map[string]any) { stripFields(record, "settlements", "protection") })
 	records("automations", func(record map[string]any) {
 		stripFields(record, "next_action", "decision", "reference_events", "reference_observed")
 	})
