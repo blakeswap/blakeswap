@@ -672,7 +672,17 @@ func (e *Engine) planStrategy(p *MakerStrategy, sell chain.ID, now int64, previe
 		size.SetInt64(s.MaxOffer)
 	}
 	amount := max(s.MinOffer, size.Int64())
-	amount = min(amount, s.MaxExposure-u[sell].Exposure, s.VolumeLimit-u[sell].ReservedVolume-u[sell].CommittedVolume)
+	if source != "" {
+		// A replacement transfers the current parent's exact remaining whole
+		// quantity. Inventory can reprice it, but cannot resize that custody.
+		parent := e.s.ParentOrders[source]
+		if parent == nil || parent.Offer.Sell != sell || parent.Offer.FillPolicy.Mode != protocol.FillWhole {
+			return c, q, fields, errors.New("strategy replacement lacks its exact whole parent")
+		}
+		amount = parent.Quantities.Available
+	} else {
+		amount = min(amount, s.MaxExposure-u[sell].Exposure, s.VolumeLimit-u[sell].ReservedVolume-u[sell].CommittedVolume)
+	}
 	if amount < s.MinOffer {
 		return c, q, fields, errors.New("inventory/exposure/gross budget cannot support the minimum whole offer")
 	}
@@ -698,6 +708,9 @@ func (e *Engine) planStrategy(p *MakerStrategy, sell chain.ID, now int64, previe
 	}
 	q.Ready = true
 	q.Reason = "confirmed inventory scaled toward target; exact spread/skew and shared authorization bounds satisfied"
+	if source != "" {
+		q.Reason = "existing whole quantity retained; current price and shared authorization bounds satisfied"
+	}
 	return c, q, fields, nil
 }
 func (e *Engine) strategyView(p *MakerStrategy) StrategyView {
