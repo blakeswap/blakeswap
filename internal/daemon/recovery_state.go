@@ -113,6 +113,19 @@ func prepareRecoveryActive(s *State, snapshotAt int64, legacy bool) error {
 		return err
 	}
 	holdImportedAutomations(s)
+	// A snapshot cannot establish that the original installation never
+	// accepted another child or signed funding later. Keep every allocation
+	// and monetary counter, but never resume a parent's publisher/input pool.
+	for _, parent := range s.ParentOrders {
+		if parent != nil {
+			parent.RestoreHold = true
+		}
+	}
+	for _, child := range s.FillRecords {
+		if child != nil {
+			child.ImportedUncertain = true
+		}
+	}
 	r := s.Recovery
 	if r == nil {
 		r = &RecoveryRecord{SnapshotAt: snapshotAt, Legacy: legacy}
@@ -161,7 +174,7 @@ func prepareRecoveryActive(s *State, snapshotAt int64, legacy bool) error {
 
 func recoveryCoreKind(kind string) bool {
 	switch kind {
-	case "swaps", "sends", "tower_jobs", "recovery_swaps", "recovery_sends", "recovery_tower_jobs", "funding_fees":
+	case "swaps", "sends", "tower_jobs", "recovery_swaps", "recovery_sends", "recovery_tower_jobs", "funding_fees", "parent_orders", "fill_records":
 		return true
 	}
 	return false
