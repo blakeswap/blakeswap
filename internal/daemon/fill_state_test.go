@@ -112,7 +112,31 @@ func TestParentFillResourcesRetainExactBudgetsAcrossSettlementAndReorg(t *testin
 			if err != nil {
 				t.Fatal(err)
 			}
-			state := State{Version: StateVersion, Network: chain.Regtest, ParentOrders: map[string]*ParentOrder{p.Offer.ID: &p}, FillRecords: map[string]*FillRecord{child.ID: child, sibling.ID: sibling}}
+			state := State{Version: StateVersion, Network: chain.Regtest, ParentOrders: map[string]*ParentOrder{p.Offer.ID: &p}, FillRecords: map[string]*FillRecord{child.ID: child, sibling.ID: sibling}, Swaps: map[string]*Swap{}, FundingFees: map[string]FeeSelection{}, FillKeys: map[string]string{}}
+			for _, request := range []protocol.Request{first, second} {
+				makerKeys := map[chain.ID]string{}
+				for _, asset := range []chain.ID{chain.BTC, chain.Blake} {
+					key, err := btcec.NewPrivateKey()
+					if err != nil {
+						t.Fatal(err)
+					}
+					makerKeys[asset] = hex.EncodeToString(key.PubKey().SerializeCompressed())
+				}
+				terms, err := protocol.NewTerms(request, makerKeys, map[chain.ID]uint32{chain.BTC: 200, chain.Blake: 200})
+				if err != nil {
+					t.Fatal(err)
+				}
+				core := &Swap{ID: request.ID, Role: "maker", Request: request, Terms: &terms, Long: terms.Long, Short: terms.Short, OwnerFeeCap: p.FundingPolicy.OwnerFeeCap}
+				state.Swaps[core.ID] = core
+				state.FundingFees["swap/"+core.ID] = p.FundingPolicy
+				keys, err := swapIdentityKeys(core)
+				if err != nil {
+					t.Fatal(err)
+				}
+				for _, key := range keys {
+					state.FillKeys[key] = core.ID
+				}
+			}
 			if err := v.Save(state); err != nil {
 				t.Fatal(err)
 			}

@@ -73,7 +73,7 @@ func isolatedPeerRefundJob(t *testing.T, e *Engine, s *Swap, c contract.HTLC) (p
 }
 
 func TestIsolatedTowerWorkBudgetsKeepHealthyChainProgressing(t *testing.T) {
-	e, s, b, secret := isolatedFixture(t, "maker")
+	e, s, b, secret := isolatedTowerFixture(t)
 	target, observe := s.Long, s.Short
 	if target.Chain != chain.Blake || observe.Chain != chain.BTC {
 		t.Fatal("fixture ordering changed")
@@ -84,7 +84,6 @@ func TestIsolatedTowerWorkBudgetsKeepHealthyChainProgressing(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	e.s.Swaps = map[string]*Swap{}
 	state := &TowerJob{Job: job, Secret: hex.EncodeToString(secret), FundingSeen: true}
 	refund, err := isolatedPeerRefundJob(t, e, s, target)
 	if err != nil {
@@ -574,6 +573,20 @@ func TestIsolatedMempoolClaimKeepsAuthorizedVariantsAndDestination(t *testing.T)
 
 func isolatedFixture(t *testing.T, role string, policies ...FeeSelection) (*Engine, *Swap, *sendBackend, []byte) {
 	return isolatedFixtureSell(t, role, chain.BTC, policies...)
+}
+
+// A tower receives signed jobs without owning the participants' child ledger.
+// Keep the participant fixture intact and install separate empty tower custody;
+// never erase a previously accepted maker from a running wallet to model it.
+func isolatedTowerFixture(t *testing.T) (*Engine, *Swap, *sendBackend, []byte) {
+	t.Helper()
+	participant, s, backend, secret := isolatedFixture(t, "maker")
+	state := State{Version: StateVersion, Network: participant.s.Network, Mnemonic: participant.s.Mnemonic, ReceiveIndexes: map[chain.ID]uint32{chain.BTC: participant.s.ReceiveIndexes[chain.BTC], chain.Blake: participant.s.ReceiveIndexes[chain.Blake]}}
+	e := conservationRestoredEngine(t, participant, state)
+	e.receiveBook = participant.receiveBook
+	e.receiveReady = map[chain.ID]bool{}
+	e.scanners = participant.scanners
+	return e, s, backend, secret
 }
 
 func isolatedPeerID(id string) string { return protocol.Digest("isolated fixture peer/" + id) }
