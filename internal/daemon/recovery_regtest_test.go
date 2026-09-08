@@ -343,8 +343,10 @@ func TestRealPortableTowerRecovery(t *testing.T) {
 			h.offline("tower")
 			h.offline("maker")
 			h.online("taker")
-			h.tick("taker")
-			h.minePending()
+			partialWaitMailbox(h, "peer's confirmed tower-observed claim", func() bool {
+				taker := h.swap("taker", id)
+				return taker.SelfClaim != "" && taker.IncomingClaimSeen && taker.ShortConfirmations >= protocol.Confirmations
+			}, func() { h.tick("taker"); h.minePending() })
 			claimID, _ := settlementVariant(h.swap("taker", id).SelfClaims, h.swap("taker", id).ClaimVariant, maker.Long, maker.Short, false)
 			claimRecord, err := h.nodes[observe.Chain].Transaction(h.ctx, claimID)
 			if err != nil || claimRecord.BlockHash == "" {
