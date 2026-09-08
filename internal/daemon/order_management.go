@@ -170,13 +170,14 @@ func (e *Engine) orderSource(p OrderActionFields, now int64) (protocol.Offer, er
 	if err != nil || o.Maker != e.identity.Public().Hex() || o.Network.Normalized() != e.Config.Network || o.ID != p.SourceOfferID {
 		return empty, errors.New("source order does not belong to this wallet and network")
 	}
-	if e.activeOrderSwap(o.ID) {
+	if p.OrderAction != "replace" && e.activeOrderSwap(o.ID) {
 		return empty, errors.New("reserved orders must settle or refund before recreation")
 	}
 	switch p.OrderAction {
 	case "replace":
-		if o.Status != "open" || o.Expires <= now {
-			return empty, errors.New("only a current unreserved order can be replaced")
+		parent := e.s.ParentOrders[o.ID]
+		if parent == nil || parent.RestoreHold || parent.Quantities.Closed || parent.Quantities.Available == 0 || parent.SignedRevision != parent.Quantities.Revision || o.Status != "open" || o.Expires <= now {
+			return empty, errors.New("only currently available parent quantity can be replaced")
 		}
 	case "recreate":
 		finished, err := e.finishedOrderChecked(o.ID)
@@ -236,24 +237,24 @@ func (e *Engine) cancelOffer(raw json.RawMessage) (any, error) {
 	if o.ID != p.ID || o.Maker != e.identity.Public().Hex() || o.Network.Normalized() != e.Config.Network {
 		return nil, errors.New("order does not belong to this wallet and network")
 	}
-	if o.Status == "cancelled" && (p.ExpectedEventID == "" || p.ExpectedEventID == event.ID.Hex() || e.s.OrderRecords[p.ID].CancelledEventID == p.ExpectedEventID) {
-		return e.ownOffer(o), nil
+	parent := e.s.ParentOrders[p.ID]
+	if parent == nil {
+		return nil, errors.New("parent authorization unavailable")
+	}
+	if parent.Quantities.Closed && (p.ExpectedEventID == "" || p.ExpectedEventID == event.ID.Hex() || e.s.OrderRecords[p.ID].CancelledEventID == p.ExpectedEventID) {
+		return e.ownOffer(parentPublicOffer(*parent)), nil
 	}
 	if p.ExpectedEventID != "" && p.ExpectedEventID != event.ID.Hex() {
 		return nil, errors.New("order changed; refresh before cancelling")
 	}
-	if o.Status != "open" || e.activeOrderSwap(o.ID) {
-		return nil, errors.New("only unreserved offers can be cancelled; committed swaps settle or refund")
-	}
-	o.Status = "cancelled"
-	if err = e.publishOffer(o); err != nil {
+	if err = e.withdrawParentAvailable(o.ID, time.Now().Unix()); err != nil {
 		return nil, err
 	}
 	record := e.s.OrderRecords[o.ID]
 	record.CancelledEventID = event.ID.Hex()
 	e.s.OrderRecords[o.ID] = record
 	delete(e.s.CoinReservations, "offer/"+o.ID)
-	return e.ownOffer(o), e.save()
+	return e.ownOffer(parentPublicOffer(*parent)), e.save()
 }
 
 // ValidateOrderSettlements leaves older records without this optional companion

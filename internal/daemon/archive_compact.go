@@ -337,7 +337,7 @@ func (e *Engine) compactArchive(ctx context.Context, swaps, towers map[chain.ID]
 		if remaining == 0 {
 			break
 		}
-		if delivery := e.s.Outbox[id]; delivery != nil && delivery.IsAck && delivery.Published {
+		if delivery := e.s.Outbox[id]; delivery != nil && (delivery.Retired || (delivery.IsAck && delivery.Published)) {
 			if err := move("outbox", id); err != nil {
 				return err
 			}

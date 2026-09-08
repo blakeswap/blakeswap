@@ -110,7 +110,7 @@ func (e *Engine) status() Status {
 		s.TowerJobs = append(s.TowerJobs, map[string]any{"id": state.Job.ID, "swap_id": state.Job.SwapID, "kind": state.Job.Kind, "chain": state.Job.Target.Chain, "eligible_height": state.Job.Lock, "broadcast": state.Broadcast, "confirmations": state.Confirmed, "secret_observed": state.Secret != "", "error": state.Error, "variants": state.Variants})
 	}
 	for _, d := range e.s.Outbox {
-		if !d.IsAck {
+		if !d.IsAck && !d.Retired {
 			s.PendingMessages++
 		}
 	}

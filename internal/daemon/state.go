@@ -39,6 +39,7 @@ type Delivery struct {
 	Network      chain.Network `json:"network"`
 	SwapID       string        `json:"swap_id,omitempty"`
 	Acknowledged bool          `json:"acknowledged,omitempty"`
+	Retired      bool          `json:"retired,omitempty"`
 	Expires      int64         `json:"expires,omitempty"`
 	Type         string        `json:"type,omitempty"`
 	Event        nostr.Event   `json:"event"`

@@ -85,7 +85,7 @@ func (e *Engine) dispatchPublications() error {
 	}
 	ids := make([]string, 0, len(e.s.Outbox))
 	for id, d := range e.s.Outbox {
-		if e.publicationBusy[id] || (d.Type == "tower-query" && d.Published) {
+		if d.Retired || e.publicationBusy[id] || (d.Type == "tower-query" && d.Published) {
 			continue
 		}
 		interval := int64(5)

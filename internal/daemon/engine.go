@@ -478,6 +478,9 @@ func (e *Engine) tickProtocol(ctx context.Context) error {
 	e.strategyVerifiedSwaps = map[string]bool{}
 	e.recoveryRefunds = map[string]bool{}
 	e.archiveSends = map[string]bool{}
+	if err := e.expireParents(time.Now().Unix()); err != nil {
+		return err
+	}
 	refreshErr := e.refresh(ctx)
 	e.advanceSends(ctx)
 	// Payment lookups must not extend evidence beyond a checkpoint that reorged
@@ -581,7 +584,7 @@ func (e *Engine) queue(to, typ, swapID string, body any) error {
 		if previous.To != to || previous.Type != typ {
 			return errors.New("archived delivery identity mismatch")
 		}
-		if previous.Acknowledged {
+		if previous.Acknowledged || previous.Retired {
 			return nil
 		}
 		if previous.IsAck {
@@ -642,6 +645,9 @@ func (e *Engine) queueEvent(event nostr.Event) {
 func (e *Engine) flush(ctx context.Context) error {
 	now := time.Now().Unix()
 	for id, d := range e.s.Outbox {
+		if d.Retired {
+			continue
+		}
 		if d.Expires > 0 && d.Expires <= now {
 			delete(e.s.Outbox, id)
 			continue

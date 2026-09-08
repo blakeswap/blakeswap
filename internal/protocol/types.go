@@ -283,17 +283,17 @@ func (t Terms) Gate(phase string, heights map[chain.ID]uint32) error {
 	scale := t.Offer().Network.HorizonScale()
 	lh, sh := heights[t.Long.Chain], heights[t.Short.Chain]
 	if lh >= t.Long.RefundHeight || sh >= t.Short.RefundHeight {
-		return errors.New("refund horizon reached")
+		return fundingWindowError("refund horizon reached")
 	}
 	longLeft, shortLeft := t.Long.RefundHeight-lh, t.Short.RefundHeight-sh
 	switch phase {
 	case "fund-long":
 		if longLeft < 84*scale || shortLeft < 40*scale {
-			return errors.New("acceptance too old to fund")
+			return fundingWindowError("acceptance too old to fund")
 		}
 	case "fund-short":
 		if longLeft < 64*scale || shortLeft < 32*scale || lh+8*scale > t.RevealBefore {
-			return errors.New("insufficient funding safety margin")
+			return fundingWindowError("insufficient funding safety margin")
 		}
 	case "reveal":
 		if longLeft < 48*scale || shortLeft < 16*scale || lh >= t.RevealBefore {
