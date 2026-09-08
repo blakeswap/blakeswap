@@ -73,7 +73,7 @@ func normalizedBackupValue(state State) (map[string]any, error) {
 	// covered. Only current observation polling and coverage cursors are noise;
 	// these exclusions do not apply to historical outcomes or nested policy.
 	records("activities", func(record map[string]any) {
-		stripFields(record, "confirmations", "observed_at", "updated_at")
+		stripFields(record, "confirmations", "observed_at", "updated_at", "archive_coverage")
 		observations, _ := record["observations"].([]any)
 		for _, observation := range observations {
 			stripFields(observation, "sequence", "confirmations", "observed_at", "error")

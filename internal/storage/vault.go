@@ -147,3 +147,6 @@ func (v *Vault) authenticate() (bool, error) {
 	})
 	return exists, err
 }
+
+// PrivateDirectory is the wallet-owned directory under the exclusive vault lock.
+func (v *Vault) PrivateDirectory() string { return filepath.Dir(v.path) }

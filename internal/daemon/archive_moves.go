@@ -91,6 +91,9 @@ func (e *Engine) archiveRecord(kind, id string) (storage.ArchiveRecord, bool, er
 	if _, deleting := e.archiveDeletes[key]; deleting || e.vault == nil {
 		return storage.ArchiveRecord{}, false, nil
 	}
+	if e.archiveRead != nil {
+		return e.archiveRead(kind, id)
+	}
 	return e.vault.ReadArchive(kind, id)
 }
 

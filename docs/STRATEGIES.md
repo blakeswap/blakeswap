@@ -110,8 +110,14 @@ keeps BTC and BLAKE separate, counts positively settled claimed volume, and show
 confirmed wallet-paid fees and conditional bounties separately. Refunded principal
 is not completed trade volume. Unavailable, stale or reorged evidence is excluded;
 this is observed accounting, not an assertion that missing costs were zero.
-Partial, cancelled or changed-wallet/source results are discarded. Reporting
-never changes spendable balances or replenishes authorization.
+Partial, cancelled or changed-wallet/source results are discarded. Retained cold
+rows keep their original observation times. They can enter the report only when
+their own authenticated history prefix is positively verified against the current
+chain; a later unrelated settlement anchor is insufficient. Missing, contradicted
+or held settlement ownership returns an explicit incomplete report. A known fork
+contradiction reactivates history for normal per-row verification before a new
+prefix is established. Reporting never changes spendable balances or replenishes
+authorization, and a successful restored report does not clear policy RestoreHold.
 
 The typed API exposes `ListStrategies` (`strategy.list`, POST
 `/v1/strategies/query`), `ReviewStrategy` (`strategy.review`, POST

@@ -146,13 +146,16 @@ func capacityProduct(value, factor uint64) uint64 {
 // network-switch summaries. Ordinary unavailable anchors do not manufacture a
 // new obligation; positively contradicted settlements remain explicit holds.
 type ArchiveMonitoringState struct {
-	Reactivating bool
-	Invalidated  []string
+	Revision      uint64
+	SemanticToken string
+	Reactivating  bool
+	Invalidated   []string
 }
 
 func ArchiveMonitoring(state State) ArchiveMonitoringState {
-	result := ArchiveMonitoringState{}
+	result := ArchiveMonitoringState{SemanticToken: BackupSemanticToken(state)}
 	if state.Capacity != nil {
+		result.Revision = state.Capacity.Revision
 		result.Reactivating = state.Capacity.Reactivating
 		result.Invalidated = sortedArchiveIDs(state.Capacity.Invalidated)
 	}

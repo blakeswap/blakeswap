@@ -3,7 +3,6 @@ package daemon
 import (
 	"context"
 	"errors"
-	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -71,30 +70,14 @@ func TestHistoryVisitorDoesNotPinSettlementWriter(t *testing.T) {
 		e.s.ActivityError = strings.Repeat("x", 8<<20)
 		writeDone <- e.save()
 	}()
-	blocked := false
+	// Require completed persistence before releasing the consumer. A runnable
+	// mmap/dereference frame is normal file growth, not evidence of a read lock.
 	writeFinished := false
-	deadline := time.Now().Add(5 * time.Second)
-	for time.Now().Before(deadline) {
-		select {
-		case err := <-writeDone:
-			if err != nil {
-				close(release)
-				<-readDone
-				t.Fatal(err)
-			}
-			writeFinished = true
-		default:
-		}
-		if writeFinished {
-			break
-		}
-		stacks := make([]byte, 1<<20)
-		n := runtime.Stack(stacks, true)
-		if strings.Contains(string(stacks[:n]), "go.etcd.io/bbolt.(*DB).mmap") {
-			blocked = true
-			break
-		}
-		time.Sleep(10 * time.Millisecond)
+	var writeErr error
+	select {
+	case writeErr = <-writeDone:
+		writeFinished = true
+	case <-time.After(5 * time.Second):
 	}
 	// Always release and join before asserting: this negative probe owns every
 	// handle and must not strand a real writer behind its diagnostic callback.
@@ -117,7 +100,10 @@ func TestHistoryVisitorDoesNotPinSettlementWriter(t *testing.T) {
 			t.Fatal("writer failed to resume after reader released")
 		}
 	}
-	if blocked {
-		t.Fatal("settlement Save held Engine.mu while bbolt mmap waited for VisitActivities callback")
+	if writeErr != nil {
+		t.Fatal(writeErr)
+	}
+	if !writeFinished {
+		t.Fatal("settlement Save did not complete while VisitActivities callback remained blocked")
 	}
 }

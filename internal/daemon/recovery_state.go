@@ -90,8 +90,14 @@ func PrepareStreamedRecovery(s *State, stats storage.ArchiveStats, snapshotAt in
 }
 
 func prepareRecoveryActive(s *State, snapshotAt int64, legacy bool) error {
+	if err := ValidateHistoryCoverage(s); err != nil {
+		return err
+	}
 	if s.Capacity != nil {
 		s.Capacity.Anchors = nil
+		if s.Capacity.Archived.Kinds["activities"] == 0 {
+			s.Capacity.HistoryCoverage = nil
+		}
 		s.Capacity.Reactivating = false
 	}
 	if err := ValidateOrderSettlements(s); err != nil {

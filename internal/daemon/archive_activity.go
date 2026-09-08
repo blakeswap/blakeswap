@@ -215,8 +215,28 @@ func (e *Engine) compactActivity(ctx context.Context, remaining *int, valid map[
 				continue
 			}
 		}
+		var coverage HistoryCoverage
+		if a.Kind != "order" {
+			var err error
+			coverage, err = e.nextHistoryCoverage(ctx, a.Chain)
+			if err != nil {
+				verificationErr = errors.Join(verificationErr, err)
+				if e.s.Capacity != nil && e.s.Capacity.Reactivating {
+					return verificationErr
+				}
+				continue
+			}
+			a.ArchiveCoverage = coverage.ID
+			e.s.Activities[id] = a
+		}
 		if err := e.stageArchive("activities", id); err != nil {
 			return err
+		}
+		if a.Kind != "order" {
+			if e.s.Capacity.HistoryCoverage == nil {
+				e.s.Capacity.HistoryCoverage = map[chain.ID]HistoryCoverage{}
+			}
+			e.s.Capacity.HistoryCoverage[a.Chain] = coverage
 		}
 		if e.s.Capacity.Anchors == nil {
 			e.s.Capacity.Anchors = map[chain.ID]ArchiveAnchor{}

@@ -75,17 +75,25 @@ func (e *Engine) refreshArchiveCheckpoint(ctx context.Context, id chain.ID) erro
 	if err != nil || hash == "" {
 		return errors.Join(err, errors.New("archive checkpoint unavailable"))
 	}
-	anchor := e.archiveAnchors()[id]
-	if anchor.Hash != "" {
-		if height < anchor.Height {
-			return e.invalidateArchive("The chain rewound across an archived settlement checkpoint.")
+	anchors := []ArchiveAnchor{e.archiveAnchors()[id]}
+	if e.s.Capacity != nil {
+		history := e.s.Capacity.HistoryCoverage[id]
+		if history.ID != "" && history.Hash != "" {
+			anchors = append(anchors, ArchiveAnchor{Height: history.Height, Hash: history.Hash})
 		}
-		ancestor, err := source.BlockHash(ctx, anchor.Height)
-		if err != nil || ancestor == "" {
-			return errors.Join(err, errors.New("archived ancestor unavailable"))
-		}
-		if ancestor != anchor.Hash {
-			return e.invalidateArchive("A canonical block hash contradicted archived settlement evidence.")
+	}
+	for _, anchor := range anchors {
+		if anchor.Hash != "" {
+			if height < anchor.Height {
+				return e.invalidateArchive("The chain rewound across an archived settlement checkpoint.")
+			}
+			ancestor, err := source.BlockHash(ctx, anchor.Height)
+			if err != nil || ancestor == "" {
+				return errors.Join(err, errors.New("archived ancestor unavailable"))
+			}
+			if ancestor != anchor.Hash {
+				return e.invalidateArchive("A canonical block hash contradicted archived settlement evidence.")
+			}
 		}
 	}
 	current, err := source.BlockHash(ctx, height)
@@ -367,6 +375,7 @@ func (e *Engine) reactivateArchive() error {
 		e.s.Capacity.Reactivating = false
 		e.s.Capacity.Reason = ""
 		e.s.Capacity.Anchors = nil
+		e.s.Capacity.HistoryCoverage = nil
 	}
 	return nil
 }

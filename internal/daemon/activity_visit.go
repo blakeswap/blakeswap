@@ -4,7 +4,9 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"github.com/blakeswap/blakeswap/internal/chain"
 	"maps"
+	"slices"
 
 	"github.com/blakeswap/blakeswap/internal/storage"
 )
@@ -16,8 +18,11 @@ import (
 // The returned monitoring projection belongs to that same committed view. A
 // caller must discard partial aggregates on any error or relevant recovery hold.
 func (e *Engine) VisitActivities(ctx context.Context, visit func(Activity, bool) error) (ArchiveMonitoringState, error) {
-	e.historyMu.Lock()
-	defer e.historyMu.Unlock()
+	release, err := e.lockHistory(ctx)
+	if err != nil {
+		return ArchiveMonitoringState{}, err
+	}
+	defer release()
 	e.mu.Lock()
 	if e.activityClosed || e.fatal != nil {
 		err := e.fatal
@@ -36,7 +41,7 @@ func (e *Engine) VisitActivities(ctx context.Context, visit func(Activity, bool)
 		e.mu.Unlock()
 		return ArchiveMonitoringState{}, err
 	}
-	contextView := &Engine{Config: e.Config, nodes: e.nodes, chainFresh: maps.Clone(e.chainFresh), chainGeneration: maps.Clone(e.chainGeneration)}
+	contextView := &Engine{Config: e.Config, nodes: e.nodes, chainFresh: maps.Clone(e.chainFresh), chainGeneration: maps.Clone(e.chainGeneration), chainObserved: maps.Clone(e.chainObserved), archiveCurrent: maps.Clone(e.archiveCurrent)}
 	ctx, cancel := context.WithCancel(ctx)
 	e.historyCancel = cancel
 	defer cancel()
@@ -52,12 +57,26 @@ func (e *Engine) VisitActivities(ctx context.Context, visit func(Activity, bool)
 	if err = active.ValidateArchiveCheckpoint(stats); err != nil {
 		return ArchiveMonitoringState{}, err
 	}
+	contextView.s = active
+	monitoring := ArchiveMonitoring(active)
+	coverage := map[chain.ID]HistoryCoverage{}
+	if !monitoring.Reactivating && len(monitoring.Invalidated) == 0 && active.Capacity != nil {
+		for id, prefix := range active.Capacity.HistoryCoverage {
+			if contextView.historyCoverageCurrent(ctx, prefix, id) {
+				coverage[id] = prefix
+			}
+		}
+	}
 	emit := func(a Activity, archived bool) error {
 		if err := ctx.Err(); err != nil {
 			return err
 		}
 		a.Wallet = contextView.Config.Name
-		if a.Generation > 0 && !contextView.activitySourceCurrent(a.Chain, a.Generation) {
+		a.ArchiveVerified = archived && activityCovered(a, coverage[a.Chain])
+		if !archived {
+			a = contextView.projectStrategyActivity(a)
+		}
+		if !a.ArchiveVerified && a.Generation > 0 && !contextView.activitySourceCurrent(a.Chain, a.Generation) {
 			a.History = append(append([]ActivityOutcome{}, a.History...), activityOutcome(a))
 			a.Status = "unknown"
 			a.Confirmations = 0
@@ -91,5 +110,24 @@ func (e *Engine) VisitActivities(ctx context.Context, visit func(Activity, bool)
 	if err := view.Check(ctx); err != nil {
 		return ArchiveMonitoringState{}, err
 	}
-	return ArchiveMonitoring(active), nil
+	for id, prefix := range coverage {
+		if !contextView.historyCoverageCurrent(ctx, prefix, id) {
+			return ArchiveMonitoringState{}, errors.New("history canonical coverage changed during scan")
+		}
+	}
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	current := ArchiveMonitoring(e.s)
+	if e.activityClosed || e.fatal != nil {
+		return ArchiveMonitoringState{}, errEngineClosed
+	}
+	if e.Config.Name != contextView.Config.Name || e.Config.Network != contextView.Config.Network || current.Revision != monitoring.Revision || current.Reactivating != monitoring.Reactivating || !slices.Equal(current.Invalidated, monitoring.Invalidated) {
+		return ArchiveMonitoringState{}, errors.New("history wallet or archive context changed during scan")
+	}
+	for _, id := range []chain.ID{chain.BTC, chain.Blake} {
+		if e.chainGeneration[id] != contextView.chainGeneration[id] || e.chainFresh[id] != contextView.chainFresh[id] || !e.activitySourceCurrent(id, contextView.chainGeneration[id]) {
+			return ArchiveMonitoringState{}, errors.New("history source changed during scan")
+		}
+	}
+	return monitoring, nil
 }

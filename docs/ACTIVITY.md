@@ -93,20 +93,27 @@ Closing joins already registered readers while the vault remains open so their
 immutable witnesses remain durable. New or drained readers and callbacks from
 another wallet/network cannot write; late canonical history stays discarded.
 
-Limits are 50,000 records, 10,000 history transaction IDs per address, and 2,048
-inputs/outputs per indexed transaction. Exceeding a limit leaves an explicit
-incomplete-history warning and preserves existing records. The cursor does not
-advance past a transaction that could not be indexed. Existing protocol send,
-receive-address, and message capacities still apply. There is no production
-archive/compaction workflow. A mnemonic cannot restore local lifecycle times or
-prior observations omitted by a provider or old backup.
+The active index admits up to 50,000 rows, 10,000 history transaction IDs per
+address and 2,048 inputs/outputs per indexed transaction. Completed rows and their
+classification evidence move into an encrypted archive after their exact inclusion
+is verified at the archive depth. Archive depth is a storage policy, not finality:
+a positively contradicted canonical prefix reopens monitoring and promotes records
+in bounded batches. Existing signed obligations and imported restrictions remain
+attached throughout. Capacity warnings distinguish active work, retained bytes,
+available disk and estimated continuation reserve; new optional work can pause
+while admitted settlement evidence keeps its save path.
+
+The cursor does not advance past a transaction that could not be indexed. An
+incomplete-history warning preserves existing records. A mnemonic cannot restore
+local lifecycle times or prior observations omitted by a provider or old backup.
 
 ## Query, navigation, and CSV
 
 The native Activity page filters by type, status, asset, and date. Refresh starts
 a new snapshot; Load more continues the same frozen newest-first snapshot while
 new activity arrives. Details show amounts, provenance, related IDs, variants and
-prior outcomes, with navigation to the order, swap, or send.
+prior outcomes, with navigation to the retained order, swap, send or local tower
+job. Completed records remain available after the routine status view is trimmed.
 
 `ListActivity` (`activity.list`, `POST /v1/activity/query`) requires
 `expected_wallet` and `expected_network`. Optional fields are `kind`, `status`,
@@ -115,6 +122,16 @@ prior outcomes, with navigation to the order, swap, or send.
 means complete. Snapshots expire after ten minutes; four are retained with
 oldest-first eviction. Expired/replaced snapshots or changed scope fail explicitly
 and require refreshing the first page.
+
+Queries read the active checkpoint and only the needed archive categories. They
+sort into private encrypted temporary files with bounded buffers and merge fan-in;
+pages do not materialize unrelated signed transactions or message history. Source
+transactions close before decryption and callbacks, so a report cannot pin wallet
+file growth. A source mutation during collection rejects the partial result. Once
+a complete independent result exists, later wallet changes leave its frozen rows
+intact. Cancellation, expiration, eviction, close and startup cleanup remove owned
+result files and keys. Active checkpoint size and one large legacy record remain
+separate memory costs; available disk and cancellation can still limit a query.
 
 `ExportActivity` (`activity.export`, `POST /v1/activity/export`) takes the same
 query. CSV chunks share its frozen scope and include the header only on the first

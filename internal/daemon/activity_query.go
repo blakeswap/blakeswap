@@ -2,6 +2,7 @@ package daemon
 
 import (
 	"bytes"
+	"context"
 	"encoding/csv"
 	"encoding/json"
 	"errors"
@@ -33,19 +34,26 @@ func activityFilter(q ActivityQuery) string {
 	q.Limit = 0
 	return protocol.Digest(q)
 }
-func (e *Engine) activityPage(raw json.RawMessage) (ActivityPage, error) {
+func (e *Engine) parseActivityQuery(raw json.RawMessage) (ActivityQuery, error) {
 	var q ActivityQuery
 	if err := json.Unmarshal(raw, &q); err != nil {
-		return ActivityPage{}, err
+		return ActivityQuery{}, err
 	}
 	if q.ExpectedWallet != e.Config.Name || q.ExpectedNetwork != string(e.Config.Network.Normalized()) {
-		return ActivityPage{}, errors.New("activity wallet or network changed; refresh the selected wallet")
+		return ActivityQuery{}, errors.New("activity wallet or network changed; refresh the selected wallet")
 	}
 	if (q.Chain != "" && !q.Chain.Valid()) || len(q.Kind) > 64 || len(q.Status) > 100 || q.From < 0 || q.To < 0 || (q.To > 0 && q.From > q.To) || q.Limit > 500 {
-		return ActivityPage{}, errors.New("invalid activity filter or page size")
+		return ActivityQuery{}, errors.New("invalid activity filter or page size")
 	}
 	if q.Limit == 0 {
 		q.Limit = 100
+	}
+	return q, nil
+}
+func (e *Engine) activityPage(raw json.RawMessage) (ActivityPage, error) {
+	q, err := e.parseActivityQuery(raw)
+	if err != nil {
+		return ActivityPage{}, err
 	}
 	now := time.Now().Unix()
 	if e.activitySnapshots == nil {
@@ -53,6 +61,9 @@ func (e *Engine) activityPage(raw json.RawMessage) (ActivityPage, error) {
 	}
 	for id, s := range e.activitySnapshots {
 		if s.Page.Expires <= now {
+			if s.Rows != nil {
+				_ = s.Rows.Close()
+			}
 			delete(e.activitySnapshots, id)
 		}
 	}
@@ -66,6 +77,9 @@ func (e *Engine) activityPage(raw json.RawMessage) (ActivityPage, error) {
 				if oldest == "" || s.Sequence < e.activitySnapshots[oldest].Sequence {
 					oldest = id
 				}
+			}
+			if rows := e.activitySnapshots[oldest].Rows; rows != nil {
+				_ = rows.Close()
 			}
 			delete(e.activitySnapshots, oldest)
 		}
@@ -114,9 +128,30 @@ func (e *Engine) activityPage(raw json.RawMessage) (ActivityPage, error) {
 	if q.Cursor > snapshot.Page.Total {
 		return ActivityPage{}, errors.New("activity cursor is outside its snapshot")
 	}
-	end := min(q.Cursor+q.Limit, snapshot.Page.Total)
+	end := uint32(min(uint64(q.Cursor)+uint64(q.Limit), uint64(snapshot.Page.Total)))
 	page := snapshot.Page
-	page.Records = page.Records[q.Cursor:end]
+	if snapshot.Rows != nil {
+		ctx := e.historyContext
+		if ctx == nil {
+			ctx = context.Background()
+		}
+		rows, err := snapshot.Rows.Page(ctx, uint64(q.Cursor), uint64(end-q.Cursor))
+		if err != nil {
+			return ActivityPage{}, err
+		}
+		page.Records = make([]Activity, 0, len(rows))
+		for _, raw := range rows {
+			var row Activity
+			err := json.Unmarshal(raw, &row)
+			clear(raw)
+			if err != nil {
+				return ActivityPage{}, err
+			}
+			page.Records = append(page.Records, row)
+		}
+	} else {
+		page.Records = page.Records[q.Cursor:end]
+	}
 	page.NextCursor = 0
 	if end < page.Total {
 		page.NextCursor = end

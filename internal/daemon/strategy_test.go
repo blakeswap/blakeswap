@@ -428,6 +428,11 @@ func TestStrategyReportUsesActualConfirmedActivityAndIsAdvisory(t *testing.T) {
 	}
 	e.s.Swaps["foreign-swap"] = &Swap{ID: "foreign-swap", Role: "taker", Request: protocol.Request{OfferEvent: foreignEvent}, Stage: "completed"}
 	raw, _ := json.Marshal(map[string]any{"id": p.Config.ID, "expected_wallet": e.Config.Name, "expected_network": string(e.Config.Network), "expected_revision": p.Revision})
+	// Install the explicit accounting fixture as a committed checkpoint. A
+	// report no longer assembles uncommitted Engine maps from a different view.
+	if err := e.vault.Save(e.s); err != nil {
+		t.Fatal(err)
+	}
 	before, _ := json.Marshal(e.s)
 	v, err := e.strategyReport(context.Background(), raw)
 	after, _ := json.Marshal(e.s)
@@ -449,6 +454,9 @@ func TestStrategyReportUsesActualConfirmedActivityAndIsAdvisory(t *testing.T) {
 	a.Status = "unknown"
 	a.Confirmations = 0
 	e.s.Activities["claim"] = a
+	if err := e.vault.Save(e.s); err != nil {
+		t.Fatal(err)
+	}
 	v, err = e.strategyReport(context.Background(), raw)
 	if err != nil || v.Inventory[chain.Blake].ConfirmedVolume != 0 || v.Inventory[chain.Blake].CommittedVolume != 200000 {
 		t.Fatal("reorg report restored authorization", v, err)

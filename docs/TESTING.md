@@ -640,3 +640,30 @@ Disk samples run every 200ms and heap samples every 20ms, so brief higher
 peaks may be missed. Host-wide swap-in counters advanced by eight 16KiB pages;
 swap-out counters were unchanged. Active checkpoint/core and individual-record
 memory costs remain, even though cold history does not require a full graph.
+
+
+The history query regressions exercise selected-kind encrypted collection rather
+than whole-wallet reconstruction. `TestHistoryRowsFreezeAcrossColdMutationAndAgreeWithCSV`
+checks 401 mixed hot/cold rows, timestamp ties, stable pagination and CSV agreement,
+then later mutation, FIFO eviction and close cleanup. The cold-market equivalence
+matrix checks 72 owner/status/sort/direction combinations and exact revisions against
+the existing live projection, including rational rates whose products exceed int64.
+Queued cancellation and late-context failure tests verify result key/file disposal.
+Storage tests cover 17,003-row multi-level encrypted merging, malformed ciphertext,
+truncation, ordinal/cross-result substitution and final-callback archive ABA.
+
+`TestHistoryVisitorDoesNotPinSettlementWriter` requires a real 8 MiB save to finish
+before a blocked visitor callback is released, with a five-second bound and joined
+read/write goroutines on every outcome. Merely observing a runnable bbolt mmap
+frame is not a lock failure: normal file growth dereferences pages after acquiring
+the mmap lock. The behavioral test still fails against the original pinned reader.
+
+Cold strategy report tests preserve hour-old observation times while requiring
+the row's own current canonical prefix. Outage, unrelated/repaired prefixes,
+source changes, absent proof and held ownership remain incomplete. The realistic
+import regression follows signed maker completion, core/history compaction,
+private streamed promotion/quarantine/import, restored positive scanning and
+rearchive while the strategy stays disabled under RestoreHold. Its reorg variant
+starts with imported live anchors cleared, proves the retained history prefix
+contradiction, checks the new-work hold and bounded promotion, then verifies a new
+row binding, complete report and retention of the old confirmed outcome.

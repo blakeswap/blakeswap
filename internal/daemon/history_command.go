@@ -3,24 +3,22 @@ package daemon
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"maps"
 
+	"github.com/blakeswap/blakeswap/internal/chain"
 	"github.com/blakeswap/blakeswap/internal/storage"
 )
 
-// Freeze a committed database view under the short engine lock, then assemble,
-// filter and serialize lifetime history outside it. Snapshot-page requests use
-// their already frozen rows and never reread archive bodies. Close joins these
-// readers before closing backend/vault resources.
-func (e *Engine) historyCommand(ctx context.Context, request Request) (any, error) {
-	e.historyMu.Lock()
-	defer e.historyMu.Unlock()
-	var query ActivityQuery
-	if request.Method != "market.list" {
-		if err := json.Unmarshal(request.Params, &query); err != nil {
-			return nil, err
-		}
+// Capture one committed active checkpoint and archive generation under the
+// engine lock. Selected-category reads, private sorting, filtering and page
+// serialization run outside it; no live database transaction spans a callback.
+func (e *Engine) historyCommand(ctx context.Context, request Request) (result any, resultErr error) {
+	release, err := e.lockHistory(ctx)
+	if err != nil {
+		return nil, err
 	}
+	defer release()
 	e.mu.Lock()
 	if e.activityClosed || e.fatal != nil {
 		err := e.fatal
@@ -35,13 +33,23 @@ func (e *Engine) historyCommand(ctx context.Context, request Request) (any, erro
 		chainFresh: maps.Clone(e.chainFresh), chainGeneration: maps.Clone(e.chainGeneration),
 		archiveCurrent: maps.Clone(e.archiveCurrent), recoveryCheckpoints: maps.Clone(e.recoveryCheckpoints), recoveryReconciled: maps.Clone(e.recoveryReconciled),
 		marketObservedAt: e.marketObservedAt, marketAllRelays: e.marketAllRelays,
-		activitySnapshots: e.activitySnapshots, activitySnapshotSequence: e.activitySnapshotSequence,
+		activitySnapshots: maps.Clone(e.activitySnapshots), activitySnapshotSequence: e.activitySnapshotSequence,
 	}
-	var frozen *storage.ReadSnapshot
-	var err error
+	var query ActivityQuery
+	var market MarketQuery
+	if request.Method == "market.list" {
+		market, err = view.parseMarketQuery(request.Params)
+	} else {
+		query, err = view.parseActivityQuery(request.Params)
+	}
+	if err != nil {
+		e.mu.Unlock()
+		return nil, err
+	}
+	var source *storage.PageSnapshot
 	if query.Snapshot == "" || request.Method == "market.list" {
 		if e.vault != nil {
-			frozen, err = e.vault.Freeze()
+			_, source, err = e.vault.CaptureArchive("", false)
 		} else {
 			var raw []byte
 			raw, err = json.Marshal(e.s)
@@ -55,41 +63,122 @@ func (e *Engine) historyCommand(ctx context.Context, request Request) (any, erro
 		e.mu.Unlock()
 		return nil, err
 	}
+	ctx, cancel := context.WithCancel(ctx)
+	e.historyCancel = cancel
+	view.historyContext = ctx
 	e.activityReaders.Add(1)
 	e.mu.Unlock()
 	defer e.activityReaders.Done()
-	if frozen != nil {
-		records, _, readErr := frozen.LoadComplete(&view.s, 256<<20)
-		closeErr := frozen.Close()
-		if readErr != nil {
-			return nil, readErr
-		}
-		if closeErr != nil {
-			return nil, closeErr
-		}
-		view.s.Archive = records
-		view.s, err = CompleteState(view.s)
+	defer cancel()
+	if source != nil {
+		defer source.Close()
+		stats, _, err := source.LoadState(&view.s)
 		if err != nil {
 			return nil, err
 		}
+		if err := view.s.ValidateArchiveCheckpoint(stats); err != nil {
+			return nil, err
+		}
+		view.archiveRead = source.ReadArchive
 	}
+	// Even a failed later page must retire expired/replaced private files. Close
+	// joins this reader before disposing its result keys or the vault credential.
+	defer func() {
+		e.mu.Lock()
+		defer e.mu.Unlock()
+		if resultErr != nil {
+			for id, snapshot := range view.activitySnapshots {
+				if snapshot.Sequence > e.activitySnapshotSequence {
+					if snapshot.Rows != nil {
+						_ = snapshot.Rows.Close()
+					}
+					delete(view.activitySnapshots, id)
+				}
+			}
+		}
+		if e.activityClosed {
+			for _, snapshot := range view.activitySnapshots {
+				if snapshot.Rows != nil {
+					_ = snapshot.Rows.Close()
+				}
+			}
+			e.activitySnapshots = nil
+		} else {
+			e.activitySnapshots = view.activitySnapshots
+			e.activitySnapshotSequence = view.activitySnapshotSequence
+		}
+	}()
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
-	var result any
-	switch request.Method {
-	case "market.list":
-		result, err = view.marketPage(request.Params)
-	case "activity.list":
-		result, err = view.activityPage(request.Params)
-	case "activity.export":
-		result, err = view.exportActivity(request.Params)
+	if e.vault == nil {
+		switch request.Method {
+		case "market.list":
+			result, err = view.marketPage(request.Params)
+		case "activity.list":
+			result, err = view.activityPage(request.Params)
+		case "activity.export":
+			result, err = view.exportActivity(request.Params)
+		}
+	} else if request.Method == "market.list" {
+		result, err = view.streamMarketPage(ctx, source, market)
+	} else {
+		if query.Snapshot == "" {
+			query, err = view.freezeActivityRows(ctx, source, query)
+		}
+		if err == nil {
+			var raw []byte
+			raw, err = json.Marshal(query)
+			if err == nil {
+				if request.Method == "activity.export" {
+					result, err = view.exportActivity(raw)
+				} else {
+					result, err = view.activityPage(raw)
+				}
+			}
+		}
+	}
+	if err != nil {
+		return nil, err
+	}
+	if view.archiveReadError != nil {
+		return nil, view.archiveReadError
 	}
 	e.mu.Lock()
 	defer e.mu.Unlock()
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	if e.activityClosed {
 		return nil, errEngineClosed
 	}
-	e.activitySnapshots, e.activitySnapshotSequence = view.activitySnapshots, view.activitySnapshotSequence
-	return result, err
+	if e.Config.Name != view.Config.Name || e.Config.Network != view.Config.Network {
+		return nil, errors.New("history wallet or network changed")
+	}
+	for _, id := range []chain.ID{chain.BTC, chain.Blake} {
+		if e.chainGeneration[id] != view.chainGeneration[id] || e.chainFresh[id] != view.chainFresh[id] {
+			return nil, errors.New("history chain context changed; refresh the result")
+		}
+		if !e.activitySourceCurrent(id, view.chainGeneration[id]) {
+			return nil, errors.New("history chain source changed; refresh the result")
+		}
+	}
+	return result, nil
+}
+
+// A canceled query need not wait for an unrelated full-history sort/report.
+// The channel owns result-cache access; the engine mutex only creates the gate.
+func (e *Engine) lockHistory(ctx context.Context) (func(), error) {
+	e.mu.Lock()
+	if e.historyGate == nil {
+		e.historyGate = make(chan struct{}, 1)
+	}
+	gate := e.historyGate
+	e.mu.Unlock()
+	select {
+	case gate <- struct{}{}:
+		return func() { <-gate }, nil
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	}
 }

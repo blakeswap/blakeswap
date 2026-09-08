@@ -19,21 +19,35 @@ const activeWorkLimit = 1000
 // Anchors are checked against current canonical hashes before new admission.
 // A contradiction persists Reactivating before any archive reader can fail.
 type CapacityRecord struct {
-	SemanticToken     string                     `json:"semantic_token"`
-	ActiveFingerprint string                     `json:"active_fingerprint"`
-	Invalidated       map[string]bool            `json:"invalidated,omitempty"`
-	Archived          storage.ArchiveStats       `json:"archived"`
-	Anchors           map[chain.ID]ArchiveAnchor `json:"anchors"`
-	Reactivating      bool                       `json:"reactivating"`
-	Reason            string                     `json:"reason"`
-	Revision          uint64                     `json:"revision"`
+	SemanticToken     string                       `json:"semantic_token"`
+	ActiveFingerprint string                       `json:"active_fingerprint"`
+	Invalidated       map[string]bool              `json:"invalidated,omitempty"`
+	Archived          storage.ArchiveStats         `json:"archived"`
+	Anchors           map[chain.ID]ArchiveAnchor   `json:"anchors"`
+	HistoryCoverage   map[chain.ID]HistoryCoverage `json:"history_coverage,omitempty"`
+	Reactivating      bool                         `json:"reactivating"`
+	Reason            string                       `json:"reason"`
+	Revision          uint64                       `json:"revision"`
 }
+
+// HistoryCoverage is advisory inclusion continuity, separate from settlement
+// monitoring. Rows carry its random ID so later unrelated anchors cannot
+// authenticate imported or contradicted history. It never grants authority.
+type HistoryCoverage struct {
+	ID     string `json:"id"`
+	Height uint32 `json:"height"`
+	Hash   string `json:"hash"`
+}
+
 type ArchiveAnchor struct {
 	Height uint32 `json:"height"`
 	Hash   string `json:"hash"`
 }
 
 func (s State) ValidateArchiveCheckpoint(stats storage.ArchiveStats) error {
+	if err := ValidateHistoryCoverage(&s); err != nil {
+		return err
+	}
 	if s.Capacity == nil {
 		if stats.Count != 0 {
 			return errors.New("archive has no active ownership checkpoint")
@@ -233,9 +247,15 @@ func LoadCompleteState(vault *storage.Vault) (State, error) {
 func (e *Engine) archivedValue(kind, id string, out any) (bool, error) {
 	record, found, err := e.archiveRecord(kind, id)
 	if err != nil || !found {
+		if err != nil && e.archiveRead != nil {
+			e.archiveReadError = err
+		}
 		return found, err
 	}
 	if err := json.Unmarshal(record.Data, out); err != nil {
+		if e.archiveRead != nil {
+			e.archiveReadError = err
+		}
 		return false, err
 	}
 	return true, nil

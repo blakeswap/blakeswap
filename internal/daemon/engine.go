@@ -40,8 +40,11 @@ type Engine struct {
 	relayAcks                []chan struct{}
 	automationBusy           atomic.Bool
 	automationCancel         context.CancelFunc
-	historyMu                sync.Mutex
+	historyGate              chan struct{}
 	historyCancel            context.CancelFunc
+	historyContext           context.Context
+	archiveRead              func(string, string) (storage.ArchiveRecord, bool, error)
+	archiveReadError         error
 	mailboxWindow            int64
 	mailboxAdmissions        map[string]int
 	semanticParts            *semanticParts
@@ -129,6 +132,9 @@ func Open(ctx context.Context, c Config) (*Engine, error) {
 	}
 	en := &Engine{chainFresh: map[chain.ID]bool{}, chainObserved: map[chain.ID]int64{}, chainErrors: map[chain.ID]string{}, chainGeneration: map[chain.ID]uint64{}, Config: c, vault: v, nodes: map[chain.ID]chain.Backend{}, watch: map[chain.ID]chain.Backend{}, scanners: map[chain.ID]chain.SpendScanner{}, addresses: map[chain.ID]string{}, scripts: map[chain.ID][]byte{}, heights: map[chain.ID]uint32{}, clocks: map[chain.ID]uint32{}, balances: map[chain.ID]int64{}}
 	fail := func(err error) (*Engine, error) { en.Close(); return nil, err }
+	if err := storage.CleanupSortedRows(v.PrivateDirectory()); err != nil {
+		return fail(err)
+	}
 	if _, e = v.Load(&en.s); e != nil {
 		return fail(e)
 	}
@@ -156,6 +162,9 @@ func Open(ctx context.Context, c Config) (*Engine, error) {
 	}
 	if en.s.Network.Normalized() != c.Network {
 		return fail(errors.New("state belongs to a different network; use its own data directory"))
+	}
+	if err := ValidateHistoryCoverage(&en.s); err != nil {
+		return fail(err)
 	}
 	if err := ValidateOrderSettlements(&en.s); err != nil {
 		return fail(err)
@@ -259,6 +268,12 @@ func (e *Engine) Close() error {
 	e.relayReaders.Wait()
 	e.mu.Lock()
 	e.activityDrained = true
+	for _, snapshot := range e.activitySnapshots {
+		if snapshot.Rows != nil {
+			_ = snapshot.Rows.Close()
+		}
+	}
+	e.activitySnapshots = nil
 	e.mu.Unlock()
 	for _, r := range e.nodes {
 		_ = r.Close()

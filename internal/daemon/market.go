@@ -212,13 +212,13 @@ func marketLess(a, b MarketOrder, key string, descending bool) bool {
 	return (comparison < 0) != descending
 }
 
-func (e *Engine) marketPage(raw json.RawMessage) (MarketPage, error) {
+func (e *Engine) parseMarketQuery(raw json.RawMessage) (MarketQuery, error) {
 	var q MarketQuery
 	if err := json.Unmarshal(raw, &q); err != nil {
-		return MarketPage{}, err
+		return MarketQuery{}, err
 	}
 	if err := e.tradeBinding(q.ExpectedWallet, q.ExpectedNetwork); err != nil {
-		return MarketPage{}, err
+		return MarketQuery{}, err
 	}
 	if q.Owner == "" {
 		q.Owner = "all"
@@ -236,12 +236,19 @@ func (e *Engine) marketPage(raw json.RawMessage) (MarketPage, error) {
 		q.Limit = 100
 	}
 	if (q.Owner != "all" && q.Owner != "mine" && q.Owner != "others") || (q.Side != "all" && q.Side != "buy_btc" && q.Side != "sell_btc") || (q.Sort != "rate" && q.Sort != "size" && q.Sort != "expiry") || q.BTCMin < 0 || q.BTCMax < 0 || q.BTCMin > 10000000000 || q.BTCMax > 10000000000 || (q.BTCMax > 0 && q.BTCMax < q.BTCMin) || q.Offset < 0 || q.Limit < 1 || q.Limit > 500 {
-		return MarketPage{}, errors.New("invalid market filters or page")
+		return MarketQuery{}, errors.New("invalid market filters or page")
 	}
 	switch q.Status {
 	case "all", "open", "pending", "reserved", "filled", "cancelled", "expired", "refunded":
 	default:
-		return MarketPage{}, errors.New("invalid order status filter")
+		return MarketQuery{}, errors.New("invalid order status filter")
+	}
+	return q, nil
+}
+func (e *Engine) marketPage(raw json.RawMessage) (MarketPage, error) {
+	q, err := e.parseMarketQuery(raw)
+	if err != nil {
+		return MarketPage{}, err
 	}
 	page := MarketPage{Wallet: e.Config.Name, Network: e.Config.Network, Records: []MarketOrder{}, ObservedAt: e.marketObservedAt, AllRelays: e.marketAllRelays}
 	now := time.Now().Unix()
