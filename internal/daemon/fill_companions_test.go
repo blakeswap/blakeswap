@@ -115,7 +115,10 @@ func TestParentFillActivationFailedSaveReopensAllColdOwnersThenRetries(t *testin
 			t.Fatal("failed save lost original cold owner", key, err)
 		}
 	}
-	e.vault, e.fatal = v, nil
+	e = reopenedFixtureEngine(t, e, v, saved)
+	if activated, err := e.activateArchived("swaps", id); err != nil || !activated {
+		t.Fatal("original complete cold checkpoint could not retry activation", err)
+	}
 	if err := e.save(); err != nil {
 		t.Fatal(err)
 	}

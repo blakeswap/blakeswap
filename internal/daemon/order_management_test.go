@@ -212,16 +212,7 @@ func (b *replacementCrashBackend) Output(ctx context.Context, id string, vout ui
 func TestOrderReplacementInterruptedBeforeAtomicCommit(t *testing.T) {
 	e, p, _ := managedSource(t)
 	request := confirmation(requestQuote(t, e, p))
-	path := filepath.Join(t.TempDir(), "restart.db")
-	if err := e.vault.Backup(path); err != nil {
-		t.Fatal(err)
-	}
-	e.vault.Close()
-	vault, err := storage.Open(path, []byte("receive-test-password"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	e.vault = vault
+	path := filepath.Join(e.vault.PrivateDirectory(), "state.db")
 	backend := e.nodes[chain.Blake]
 	e.nodes[chain.Blake] = &replacementCrashBackend{Backend: backend, before: func() {
 		if err := e.vault.Close(); err != nil {
@@ -247,7 +238,7 @@ func TestOrderReplacementInterruptedBeforeAtomicCommit(t *testing.T) {
 	if len(saved.Offers) != 1 || saved.OrderRecords[p.SourceOfferID].Offer.Status != "open" || len(saved.CoinReservations) != 1 || saved.TradeReceipts[request.RequestID].Result.State != "pending" {
 		t.Fatal("interrupted replacement persisted half a transfer")
 	}
-	e.vault, e.s, e.fatal = reopened, saved, nil
+	e = reopenedFixtureEngine(t, e, reopened, saved)
 	e.nodes[chain.Blake] = backend
 	e.tradeQuotes, e.tradeConfirming = nil, nil
 	if result := confirmQuote(t, e, request); result.State != "accepted" || len(e.s.Offers) != 2 || len(e.s.CoinReservations) != 1 {

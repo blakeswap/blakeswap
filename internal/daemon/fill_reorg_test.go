@@ -344,7 +344,7 @@ func TestParentFillFailedDemotionSaveStopsIOAndReopensOneCheckpoint(t *testing.T
 	if protocol.Digest([]any{saved.ParentOrders[parentID].Quantities, saved.ParentOrders[parentID].Fees, saved.FillRecords}) != before {
 		t.Fatal("failed commit split parent/child/charge checkpoint")
 	}
-	e.vault, e.s, e.fatal = v, saved, nil
+	e = reopenedFixtureEngine(t, e, v, saved)
 	s = e.s.Swaps[s.ID]
 	if err := e.advanceSwap(context.Background(), s, all); err == nil || lookup.calls != 1 {
 		t.Fatal("retry did not reach unchanged injected lookup error", err, lookup.calls)

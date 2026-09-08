@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"path/filepath"
 	"reflect"
 	"strings"
 	"sync"
@@ -32,11 +33,29 @@ func historyScratch(t *testing.T, e *Engine) int {
 	if err != nil {
 		t.Fatal(err)
 	}
-	count := 0
+	count, indexes := 0, 0
 	for _, entry := range entries {
-		if strings.HasPrefix(entry.Name(), ".history-result-") {
-			count++
+		if !strings.HasPrefix(entry.Name(), ".history-result-") {
+			continue
 		}
+		// Custody uses the same encrypted scratch cleanup namespace, but owns
+		// an index.db rather than a published history result. Count it separately
+		// and still reject abandoned duplicate indexes.
+		_, err := os.Stat(filepath.Join(e.vault.PrivateDirectory(), entry.Name(), "index.db"))
+		if err == nil {
+			indexes++
+		} else if os.IsNotExist(err) {
+			count++
+		} else {
+			t.Fatal(err)
+		}
+	}
+	wantIndexes := 0
+	if !e.activityClosed && e.fillValidation != nil && e.fillValidation.inputs != nil {
+		wantIndexes = 1
+	}
+	if indexes != wantIndexes {
+		t.Fatalf("custody scratch count %d, want %d", indexes, wantIndexes)
 	}
 	return count
 }

@@ -165,15 +165,7 @@ func TestActivityClosingReaderPersistsWitnessBeforeVaultClose(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	e.vault.Close()
-	path := filepath.Join(t.TempDir(), "history.db")
-	e.vault, err = storage.Open(path, []byte("history-test-password"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err = e.save(); err != nil {
-		t.Fatal(err)
-	}
+	path := filepath.Join(e.vault.PrivateDirectory(), "state.db")
 	for id, backend := range e.nodes {
 		e.nodes[id] = activityBackend{Backend: backend, observe: func(context.Context, string, uint32, string) (chain.HistoryTransaction, error) {
 			return chain.HistoryTransaction{}, errors.New("unavailable")
@@ -215,7 +207,7 @@ func TestActivityClosingReaderPersistsWitnessBeforeVaultClose(t *testing.T) {
 	if err = retainedSink(witness); err == nil {
 		t.Fatal("drained callback wrote after vault closure")
 	}
-	reopened, err := storage.Open(path, []byte("history-test-password"))
+	reopened, err := storage.Open(path, []byte("receive-test-password"))
 	if err != nil {
 		t.Fatal(err)
 	}

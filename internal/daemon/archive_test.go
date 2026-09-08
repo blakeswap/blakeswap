@@ -148,14 +148,10 @@ func TestArchiveImportRejectsOverlapAndRetainsCompleteRecovery(t *testing.T) {
 
 func TestArchiveFailedSaveCannotPublishANewerFreshnessToken(t *testing.T) {
 	e, _ := receiveEngine(t)
-	_ = e.vault.Close()
-	path := filepath.Join(t.TempDir(), "state.db")
-	password := []byte("isolated failure/reopen password")
-	vault, err := storage.Open(path, password)
-	if err != nil {
-		t.Fatal(err)
-	}
-	e.vault = vault
+	path := filepath.Join(e.vault.PrivateDirectory(), "state.db")
+	password := []byte("receive-test-password")
+	vault := e.vault
+	var err error
 	e.s.Seen = map[string]string{"sender:original": "original digest"}
 	if err = e.save(); err != nil {
 		t.Fatal(err)
@@ -183,7 +179,7 @@ func TestArchiveFailedSaveCannotPublishANewerFreshnessToken(t *testing.T) {
 	if saved.Seen["sender:original"] != "original digest" || BackupSemanticToken(saved) != token {
 		t.Fatal("failed save changed durable evidence or freshness")
 	}
-	e.vault, e.s, e.fatal, e.semanticParts = reopened, saved, nil, nil
+	e = reopenedFixtureEngine(t, e, reopened, saved)
 	if err = e.save(); err != nil {
 		t.Fatal(err)
 	}

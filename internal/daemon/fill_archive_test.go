@@ -247,7 +247,10 @@ func TestParentFillArchiveFailedSaveKeepsAllHotOwnersUntilRetry(t *testing.T) {
 	if err := ValidateVaultProtocolState(v, &saved); err != nil {
 		t.Fatal("failed commit left an invalid ownership checkpoint", err)
 	}
-	e.vault, e.fatal = v, nil
+	e = reopenedFixtureEngine(t, e, v, saved)
+	if err := e.stageArchive("swaps", s.ID); err != nil {
+		t.Fatal(err)
+	}
 	if err := e.save(); err != nil {
 		t.Fatal(err)
 	}
