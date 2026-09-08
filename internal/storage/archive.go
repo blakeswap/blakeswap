@@ -9,10 +9,10 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math"
 	"strings"
 
 	bolt "go.etcd.io/bbolt"
-	"golang.org/x/sys/unix"
 )
 
 var archiveBucket = []byte("archive-v1")
@@ -147,16 +147,18 @@ func (v *Vault) CommitArchive(state any, batch ArchiveBatch, maxBytes uint64) (A
 		defer clear(encoded)
 		puts[index] = encoded
 		putRecords[index] = record
+		if writeSize > math.MaxUint64-uint64(len(encoded)) {
+			return ArchiveStats{}, errors.New("archive write accounting overflow")
+		}
 		writeSize += uint64(len(encoded))
 	}
 	// bbolt may copy the old tree and allocate replacement pages before freeing
 	// them. Reserve room for both encrypted payloads and page/allocation overhead.
-	var disk unix.Statfs_t
-	if err := unix.Statfs(v.db.Path(), &disk); err != nil {
-		return ArchiveStats{}, err
+	if stateSize > math.MaxUint64-writeSize {
+		return ArchiveStats{}, errors.New("archive checkpoint accounting overflow")
 	}
-	if uint64(disk.Bavail)*uint64(disk.Bsize) < 4*(stateSize+writeSize)+1<<20 {
-		return ArchiveStats{}, errors.New("insufficient disk space to checkpoint wallet and archive")
+	if err := v.CheckDiskSpace(stateSize+writeSize, 4); err != nil {
+		return ArchiveStats{}, err
 	}
 	var committed ArchiveStats
 	err = v.db.Update(func(tx *bolt.Tx) error {
@@ -202,8 +204,12 @@ func (v *Vault) CommitArchive(state any, batch ArchiveBatch, maxBytes uint64) (A
 				}
 				continue
 			}
+			size := uint64(len(encoded) + 1)
+			if stats.Count == math.MaxUint64 || stats.Bytes > math.MaxUint64-size || stats.Kinds[putRecords[index].Kind] == math.MaxUint64 {
+				return errors.New("archive checkpoint accounting overflow")
+			}
 			stats.Count++
-			stats.Bytes += uint64(len(encoded) + 1)
+			stats.Bytes += size
 			stats.Kinds[putRecords[index].Kind]++
 			ciphertext, err := v.seal(encoded, archiveAAD([]byte(index)))
 			if err != nil {

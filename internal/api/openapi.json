@@ -2460,6 +2460,21 @@
             "type": "object",
             "$ref": "#/definitions/v1RelaySync"
           }
+        },
+        "active_bytes": {
+          "type": "string",
+          "format": "uint64"
+        },
+        "retained_bytes": {
+          "type": "string",
+          "format": "uint64"
+        },
+        "available_disk_bytes": {
+          "type": "string",
+          "format": "uint64"
+        },
+        "disk_known": {
+          "type": "boolean"
         }
       }
     },

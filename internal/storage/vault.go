@@ -19,6 +19,7 @@ import (
 var bucket = []byte("vault-v1")
 
 type Vault struct {
+	path       string
 	db         *bolt.DB
 	aead       cipher.AEAD
 	archiveKey []byte
@@ -74,7 +75,7 @@ func Open(path string, password []byte) (*Vault, error) {
 	if e != nil {
 		return fail(e)
 	}
-	v := &Vault{db: db, aead: aead, archiveKey: archiveKey}
+	v := &Vault{path: path, db: db, aead: aead, archiveKey: archiveKey}
 	exists, e := v.authenticate()
 	if e != nil {
 		return fail(errors.New("vault password incorrect or state corrupted"))

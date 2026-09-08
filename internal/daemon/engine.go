@@ -51,6 +51,8 @@ type Engine struct {
 	archiveSends             map[string]bool
 	backupFingerprint        string
 	stateBytes               uint64
+	capacityDiskAvailable    uint64
+	capacityDiskKnown        bool
 	marketObservedAt         int64
 	marketAllRelays          bool
 	recoveryRefunds          map[string]bool
@@ -302,6 +304,7 @@ func (e *Engine) persistState() error {
 	e.archivePuts, e.archiveDeletes, e.archiveOrigins = nil, nil, nil
 	e.semanticParts = &parts
 	e.backupFingerprint, e.stateBytes = parts.Complete, stateBytes
+	e.refreshCapacityDisk()
 	e.activityGrowth = 0
 	return nil
 }

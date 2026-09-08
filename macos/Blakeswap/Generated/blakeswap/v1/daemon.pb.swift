@@ -997,6 +997,14 @@ nonisolated struct Blakeswap_V1_CapacityHealth: Sendable {
 
   var relays: [Blakeswap_V1_RelaySync] = []
 
+  var activeBytes: UInt64 = 0
+
+  var retainedBytes: UInt64 = 0
+
+  var availableDiskBytes: UInt64 = 0
+
+  var diskKnown: Bool = false
+
   var unknownFields = SwiftProtobuf.UnknownStorage()
 
   init() {}
@@ -5845,7 +5853,7 @@ nonisolated extension Blakeswap_V1_RelaySync: SwiftProtobuf.Message, SwiftProtob
 
 nonisolated extension Blakeswap_V1_CapacityHealth: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   static let protoMessageName: String = _protobuf_package + ".CapacityHealth"
-  static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}state\0\u{1}active\0\u{1}archived\0\u{3}stored_bytes\0\u{3}reserved_bytes\0\u{3}budget_bytes\0\u{3}admission_available\0\u{1}reactivating\0\u{3}monitoring_holds\0\u{1}message\0\u{3}public_limited\0\u{1}relays\0")
+  static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}state\0\u{1}active\0\u{1}archived\0\u{3}stored_bytes\0\u{3}reserved_bytes\0\u{3}budget_bytes\0\u{3}admission_available\0\u{1}reactivating\0\u{3}monitoring_holds\0\u{1}message\0\u{3}public_limited\0\u{1}relays\0\u{3}active_bytes\0\u{3}retained_bytes\0\u{3}available_disk_bytes\0\u{3}disk_known\0")
 
   mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
     while let fieldNumber = try decoder.nextFieldNumber() {
@@ -5865,6 +5873,10 @@ nonisolated extension Blakeswap_V1_CapacityHealth: SwiftProtobuf.Message, SwiftP
       case 10: try { try decoder.decodeSingularStringField(value: &self.message) }()
       case 11: try { try decoder.decodeSingularBoolField(value: &self.publicLimited) }()
       case 12: try { try decoder.decodeRepeatedMessageField(value: &self.relays) }()
+      case 13: try { try decoder.decodeSingularUInt64Field(value: &self.activeBytes) }()
+      case 14: try { try decoder.decodeSingularUInt64Field(value: &self.retainedBytes) }()
+      case 15: try { try decoder.decodeSingularUInt64Field(value: &self.availableDiskBytes) }()
+      case 16: try { try decoder.decodeSingularBoolField(value: &self.diskKnown) }()
       default: break
       }
     }
@@ -5907,6 +5919,18 @@ nonisolated extension Blakeswap_V1_CapacityHealth: SwiftProtobuf.Message, SwiftP
     if !self.relays.isEmpty {
       try visitor.visitRepeatedMessageField(value: self.relays, fieldNumber: 12)
     }
+    if self.activeBytes != 0 {
+      try visitor.visitSingularUInt64Field(value: self.activeBytes, fieldNumber: 13)
+    }
+    if self.retainedBytes != 0 {
+      try visitor.visitSingularUInt64Field(value: self.retainedBytes, fieldNumber: 14)
+    }
+    if self.availableDiskBytes != 0 {
+      try visitor.visitSingularUInt64Field(value: self.availableDiskBytes, fieldNumber: 15)
+    }
+    if self.diskKnown != false {
+      try visitor.visitSingularBoolField(value: self.diskKnown, fieldNumber: 16)
+    }
     try unknownFields.traverse(visitor: &visitor)
   }
 
@@ -5923,6 +5947,10 @@ nonisolated extension Blakeswap_V1_CapacityHealth: SwiftProtobuf.Message, SwiftP
     if lhs.message != rhs.message {return false}
     if lhs.publicLimited != rhs.publicLimited {return false}
     if lhs.relays != rhs.relays {return false}
+    if lhs.activeBytes != rhs.activeBytes {return false}
+    if lhs.retainedBytes != rhs.retainedBytes {return false}
+    if lhs.availableDiskBytes != rhs.availableDiskBytes {return false}
+    if lhs.diskKnown != rhs.diskKnown {return false}
     if lhs.unknownFields != rhs.unknownFields {return false}
     return true
   }

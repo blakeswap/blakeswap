@@ -166,7 +166,7 @@ message TowerJob {
 }
 message RelayCursor { int64 until = 1; int32 limit = 2; uint64 sweeps = 3; bool blocked = 4; string incomplete = 5; }
 message RelaySync { string relay = 1; string filter = 2; RelayCursor cursor = 3; int64 observed_at = 4; bool live = 5; string error = 6; }
-message CapacityHealth { string state = 1; uint64 active = 2; uint64 archived = 3; uint64 stored_bytes = 4; uint64 reserved_bytes = 5; uint64 budget_bytes = 6; bool admission_available = 7; bool reactivating = 8; uint64 monitoring_holds = 9; string message = 10; bool public_limited = 11; repeated RelaySync relays = 12; }
+message CapacityHealth { string state = 1; uint64 active = 2; uint64 archived = 3; uint64 stored_bytes = 4; uint64 reserved_bytes = 5; uint64 budget_bytes = 6; bool admission_available = 7; bool reactivating = 8; uint64 monitoring_holds = 9; string message = 10; bool public_limited = 11; repeated RelaySync relays = 12; uint64 active_bytes = 13; uint64 retained_bytes = 14; uint64 available_disk_bytes = 15; bool disk_known = 16; }
 message RecordQuery { string kind = 1; string id = 2; string expected_wallet = 3; string expected_network = 4; }
 message RecordDetail { string kind = 1; string id = 2; bool archived = 3; bool monitoring_required = 4; string message = 5; Swap swap = 6; WalletSend send = 7; TowerJob tower_job = 8; }
 message Status {

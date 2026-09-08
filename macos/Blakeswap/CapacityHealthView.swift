@@ -7,7 +7,9 @@ struct CapacityHealthView: View {
         VStack(alignment: .leading, spacing: 8) {
             Text("Wallet capacity · \(health.state.capitalized)").font(.headline)
             Text("\(health.active) active obligations · \(health.archived) encrypted archive records").font(.caption)
-            Text("\(bytes(health.storedBytes)) retained · \(bytes(health.reservedBytes)) reserved for recovery · \(bytes(health.budgetBytes)) admission budget").font(.caption).foregroundStyle(.secondary)
+            Text("\(bytes(health.activeBytes)) active data · \(bytes(health.budgetBytes)) working budget").font(.caption).foregroundStyle(.secondary)
+            Text("\(bytes(health.retainedBytes)) encrypted history · \(bytes(health.reservedBytes)) estimated continuation space").font(.caption).foregroundStyle(.secondary)
+            Text(health.diskKnown ? "\(bytes(health.availableDiskBytes)) disk space currently available" : "Disk availability could not be verified.").font(.caption).foregroundStyle(.secondary)
             Text(health.message).font(.caption).foregroundStyle(health.admissionAvailable ? Color.secondary : Color.orange)
             if health.publicLimited { Text("Public order discovery reached its independent capacity. Known order updates and established wallet messages remain enabled; the displayed market is incomplete.").font(.caption).foregroundStyle(.orange) }
             DisclosureGroup("Relay synchronization") {

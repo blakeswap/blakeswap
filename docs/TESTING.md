@@ -593,3 +593,19 @@ BLAKESWAP_BTC_RPC_PORT=39443 BLAKESWAP_BLAKE_RPC_PORT=49443 \
 
 A run without `BLAKESWAP_REGTEST` compiles and skips these scenarios. It does not
 establish actual-chain settlement, inventory or fee correctness.
+
+## T09 archive, synchronization and resource acceptance
+
+Run focused archive/capacity/mailbox tests with `BLAKESWAP_REGTEST= sh scripts/go.sh test ./internal/storage ./internal/daemon ./internal/desktop -run 'Archive|Capacity|Mailbox|Portable|Stream' -count=1`. Storage tests cover encrypted identity binding, atomic ownership, duplicate/collision rejection, process termination before/after commit, framing order/completeness and private import staging. Restored reactivation tests fill the entire 64-core batch and verify that original authority markers and exact fee companions precede execution; malformed companion reads cannot expose a core record.
+
+`TestCapacityPaymentContinuationEncoding` signs 50-input payments on both chains and retains all 16 variants plus the current copy. `TestCapacitySwapContinuationEncoding` retains both 50-input funding legs, the three owner claim/refund variants, two three-template tower jobs, receipts and outbound encrypted messages. These are measured normal-operation shapes with explicit signature-length headroom, not a universal bound on arbitrary previously accepted imports. Metadata-only capacity tests deliberately inject archive stats to prove active/disk accounting without pretending to be physical workloads.
+
+The opt-in physical test uses real private files and no chain nodes:
+
+```sh
+/usr/bin/time -l env BLAKESWAP_REGTEST= BLAKESWAP_PORTABLE_SCALE=1 BLAKESWAP_SCALE_RECORDS=95000 \
+  sh scripts/go.sh test ./internal/desktop \
+  -run '^TestPortablePhysicalLargeHistoryAndCoreContinuation$' -count=1 -timeout=20m -v
+```
+
+It writes and imports an accepted near-limit v1 population, creates a physical encrypted cold archive, adds retained core payloads so the complete output exceeds the old v1 envelope, and exports/installs a complete v2 profile. The phase log separates original v1 parsing, cold storage, the **entire source staging/worker-pause interval**, export, and v2 validation/restore. The 20ms sampled Go heap high-water marks are measurements, not strict peak guarantees; `/usr/bin/time -l` records OS peak RSS. Payload growth in this format test is not a claim of actual broadcast protocol validity. Run it without concurrent broad native/Go builds or node integration to make memory and latency results interpretable. A smaller `BLAKESWAP_SCALE_RECORDS=1000` run checks fixture mechanics but does not satisfy the large physical workload.

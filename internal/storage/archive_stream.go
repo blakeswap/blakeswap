@@ -212,19 +212,32 @@ func (v *Vault) ImportArchive(ctx context.Context, state any, expected ArchiveSt
 // encrypted records and bbolt replacement pages. Arithmetic cannot wrap to turn
 // an oversized selection into an apparently small allocation.
 func (v *Vault) CheckDiskSpace(bytes, multiplier uint64) error {
-	return CheckPathSpace(v.db.Path(), bytes, multiplier)
+	return CheckPathSpace(v.path, bytes, multiplier)
 }
 func CheckPathSpace(path string, bytes, multiplier uint64) error {
 	if multiplier == 0 || bytes > (math.MaxUint64-(1<<20))/multiplier {
 		return errors.New("archive disk requirement overflows")
 	}
 	required := bytes*multiplier + (1 << 20)
-	var disk unix.Statfs_t
-	if err := unix.Statfs(path, &disk); err != nil {
+	available, err := AvailableDisk(path)
+	if err != nil {
 		return err
 	}
-	if uint64(disk.Bavail) > math.MaxUint64/uint64(disk.Bsize) || uint64(disk.Bavail)*uint64(disk.Bsize) < required {
+	if available < required {
 		return errors.New("insufficient disk space for complete private archive staging")
 	}
 	return nil
+}
+
+func (v *Vault) AvailableDisk() (uint64, error) { return AvailableDisk(v.path) }
+
+func AvailableDisk(path string) (uint64, error) {
+	var disk unix.Statfs_t
+	if err := unix.Statfs(path, &disk); err != nil {
+		return 0, err
+	}
+	if disk.Bsize <= 0 || uint64(disk.Bavail) > math.MaxUint64/uint64(disk.Bsize) {
+		return 0, errors.New("unsupported filesystem capacity accounting")
+	}
+	return uint64(disk.Bavail) * uint64(disk.Bsize), nil
 }

@@ -3,6 +3,7 @@ package daemon
 import (
 	"encoding/json"
 	"fmt"
+	"math"
 	"time"
 
 	"github.com/blakeswap/blakeswap/internal/protocol"
@@ -12,10 +13,14 @@ import (
 // and witness reconciliation continue at the admission ceiling. A new optional
 // signature/fee variant must pass the same growth check before it is created.
 const activeRecoveryReserve = 1 << 20
-const archivedEvidenceReserve = 4 << 10
+const archivedEvidenceReserve = activeRecoveryReserve
 const admissionByteCeiling = WalletRecoveryBudget - 16<<20
 
 type CapacityHealth struct {
+	ActiveBytes        uint64            `json:"active_bytes"`
+	RetainedBytes      uint64            `json:"retained_bytes"`
+	AvailableDiskBytes uint64            `json:"available_disk_bytes"`
+	DiskKnown          bool              `json:"disk_known"`
 	PublicLimited      bool              `json:"public_limited"`
 	Relays             []RelaySyncRecord `json:"relays"`
 	State              string            `json:"state"`
@@ -73,26 +78,34 @@ func (e *Engine) activeWork(kind string) int {
 }
 
 func (e *Engine) capacityHealth() CapacityHealth {
-	health := CapacityHealth{State: "healthy", PublicLimited: e.s.PublicLimited, Relays: e.relayHealth(), Active: uint64(e.activeWork("")), StoredBytes: e.stateBytes, BudgetBytes: WalletRecoveryBudget, Message: "Encrypted archives retain signed recovery evidence. Canonical checkpoints continue to monitor archived settlements."}
+	health := CapacityHealth{State: "healthy", PublicLimited: e.s.PublicLimited, Relays: e.relayHealth(), Active: uint64(e.activeWork("")), ActiveBytes: e.stateBytes, StoredBytes: e.stateBytes, AvailableDiskBytes: e.capacityDiskAvailable, DiskKnown: e.capacityDiskKnown, BudgetBytes: WalletRecoveryBudget, Message: "Encrypted archives retain signed recovery evidence. Canonical checkpoints continue to monitor archived settlements."}
+	core := capacitySum(uint64(len(e.s.Swaps)), uint64(len(e.s.Sends)), uint64(len(e.s.TowerJobs)))
 	if e.s.Capacity != nil {
 		c := e.s.Capacity
 		health.Archived = c.Archived.Count
-		health.StoredBytes += c.Archived.Bytes
+		health.RetainedBytes = c.Archived.Bytes
+		health.StoredBytes = capacitySum(health.StoredBytes, c.Archived.Bytes)
 		health.Reactivating = c.Reactivating
 		health.MonitoringHolds = uint64(len(c.Invalidated))
-		health.ReservedBytes = (c.Archived.Kinds["sends"] + c.Archived.Kinds["swaps"] + c.Archived.Kinds["tower_jobs"]) * archivedEvidenceReserve
+		core = capacitySum(core, c.Archived.Kinds["sends"], c.Archived.Kinds["swaps"], c.Archived.Kinds["tower_jobs"])
 	}
-	health.ReservedBytes += health.Active * activeRecoveryReserve
-	health.AdmissionAvailable = health.StoredBytes+health.ReservedBytes+activeRecoveryReserve <= admissionByteCeiling && e.archiveHold() == nil
+	// Disk reservations cover every retained core obligation, including deep
+	// reactivation. Cold history never consumes the active-memory admission cap.
+	// Open offers/pending requests reserve a core continuation before acceptance.
+	health.ReservedBytes = capacityProduct(capacitySum(core, uint64(e.activeWork("offer"))), archivedEvidenceReserve)
+	activeNeed := capacitySum(health.ActiveBytes, capacityProduct(health.Active, activeRecoveryReserve), activeRecoveryReserve)
+	diskNeed := capacitySum(health.ReservedBytes, activeRecoveryReserve, 16<<20, capacityProduct(health.ActiveBytes, 4))
+	health.AdmissionAvailable = activeNeed <= admissionByteCeiling && diskNeed != math.MaxUint64 && health.DiskKnown && health.AvailableDiskBytes >= diskNeed && e.archiveHold() == nil
 	if health.Reactivating || health.MonitoringHolds > 0 {
 		health.State, health.Message = "recovering", "Archived settlement evidence was contradicted. Keep monitoring while records reactivate and positive current evidence resolves each obligation."
 	} else if !health.AdmissionAvailable {
-		health.State, health.Message = "limited", "New work is held by the recovery-data budget or unavailable archived checkpoints. Existing signed recovery and message acknowledgments continue; retain a complete portable backup."
+		health.State, health.Message = "limited", "New work is held by active working capacity, available disk, or unavailable archived checkpoints. Existing signed recovery and message acknowledgments continue; retain a complete portable backup."
 	}
 	return health
 }
 
 func (e *Engine) admitWork(kind string) error {
+	e.refreshCapacityDisk()
 	if e.activeWork(kind) >= activeWorkLimit {
 		return fmt.Errorf("active %s capacity reached; finish existing work before admitting more", kind)
 	}
@@ -100,6 +113,33 @@ func (e *Engine) admitWork(kind string) error {
 		return fmt.Errorf("new %s exceeds available recovery capacity or awaits archived checkpoint verification", kind)
 	}
 	return nil
+}
+
+func (e *Engine) refreshCapacityDisk() {
+	e.capacityDiskKnown = false
+	if e.vault == nil {
+		return
+	}
+	available, err := e.vault.AvailableDisk()
+	if err == nil {
+		e.capacityDiskAvailable, e.capacityDiskKnown = available, true
+	}
+}
+func capacitySum(values ...uint64) uint64 {
+	var total uint64
+	for _, value := range values {
+		if value > math.MaxUint64-total {
+			return math.MaxUint64
+		}
+		total += value
+	}
+	return total
+}
+func capacityProduct(value, factor uint64) uint64 {
+	if factor != 0 && value > math.MaxUint64/factor {
+		return math.MaxUint64
+	}
+	return value * factor
 }
 
 // ArchiveMonitoring is a small durable projection for all-wallet shutdown and

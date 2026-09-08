@@ -3,6 +3,7 @@ package daemon
 import (
 	"encoding/json"
 	"github.com/blakeswap/blakeswap/internal/chain"
+	"strings"
 )
 
 // Compact lookup indexes let a newly discovered receipt find an archived parent
@@ -92,12 +93,13 @@ func (e *Engine) allowActivityGrowth(previous, next any) bool {
 	growth := max(0, len(after)-len(before)) + 256
 	clear(before)
 	clear(after)
-	stored := e.stateBytes + e.activityGrowth
-	if e.s.Capacity != nil {
-		stored += e.s.Capacity.Archived.Bytes
+	stored := capacitySum(e.stateBytes, e.activityGrowth)
+	if !e.capacityDiskKnown {
+		e.refreshCapacityDisk()
 	}
-	if stored+uint64(growth) > admissionByteCeiling {
-		e.s.ActivityError = "Historical indexing is paused at the recovery-data budget. Existing rows and signed settlement evidence are retained; export a complete portable backup."
+	diskNeed := capacitySum(e.capacityHealth().ReservedBytes, 16<<20, capacityProduct(uint64(growth), 4))
+	if capacitySum(stored, uint64(growth)) > admissionByteCeiling || (e.vault != nil && (!e.capacityDiskKnown || e.capacityDiskAvailable < diskNeed)) {
+		e.s.ActivityError = "Historical indexing is paused by active working capacity or available disk. Existing rows and signed settlement evidence are retained; export a complete portable backup."
 		return false
 	}
 	e.activityGrowth += uint64(growth)
@@ -120,7 +122,7 @@ func (e *Engine) compactActivity(remaining *int, valid map[chain.ID]bool) error 
 			continue
 		}
 		if a.Kind == "tower_earning" {
-			if e.s.TowerJobs[a.GroupID] != nil {
+			if e.s.TowerJobs[strings.TrimPrefix(a.GroupID, "tower/")] != nil {
 				continue
 			}
 		}
