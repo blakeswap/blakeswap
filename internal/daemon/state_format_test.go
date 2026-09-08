@@ -252,16 +252,37 @@ func currentFormatSwap(t *testing.T, id string) *Swap {
 func TestStateCutoverColdProtocolCheckedBeforeAnyPromotion(t *testing.T) {
 	for _, mode := range []string{"legacy core", "malformed last companion", "current"} {
 		t.Run(mode, func(t *testing.T) {
-			child := currentFormatSwap(t, "child")
+			// Promotion requires the current accepted maker's exact custody,
+			// in addition to the protocol marker under test.
+			source, maker, now := fillAdmissionEngine(t, chain.BTC)
+			request := admissionRequest(t, source, maker, 400000)
+			if err := applyFillRequest(t, source, request, now); err != nil {
+				t.Fatal(err)
+			}
+			child := *source.s.Swaps[request.ID]
+			fill := source.s.FillRecords[child.ID]
+			parent := source.s.ParentOrders[fill.ParentID]
 			if mode == "legacy core" {
 				child.Request.Version = 1
 			}
-			raw, _ := json.Marshal(child)
-			records := []storage.ArchiveRecord{{Kind: "swaps", ID: child.ID, Data: raw}, {Kind: "recovery_swaps", ID: child.ID, Data: json.RawMessage(`true`)}, {Kind: "funding_fees", ID: "offer/parent", Data: json.RawMessage(`{"funding_fee":6500}`)}}
-			if mode == "malformed last companion" {
-				records[2].Data = json.RawMessage(`"not a fee"`)
+			record := func(kind, id string, value any) storage.ArchiveRecord {
+				raw, err := json.Marshal(value)
+				if err != nil {
+					t.Fatal(err)
+				}
+				return storage.ArchiveRecord{Kind: kind, ID: id, Data: raw}
 			}
-			e := &Engine{s: State{Version: StateVersion, Network: chain.Regtest}, archivePuts: map[string]storage.ArchiveRecord{}}
+			records := []storage.ArchiveRecord{
+				record("swaps", child.ID, child),
+				record("recovery_swaps", child.ID, true),
+				record("parent_orders", parent.Offer.ID, parent),
+				record("fill_records", child.ID, fill),
+				record("funding_fees", "swap/"+child.ID, fill.FundingPolicy),
+			}
+			if mode == "malformed last companion" {
+				records[len(records)-1].Data = json.RawMessage(`"not a fee"`)
+			}
+			e := &Engine{Config: source.Config, identity: maker, s: State{Version: StateVersion, Network: chain.Regtest}, archivePuts: map[string]storage.ArchiveRecord{}}
 			for _, record := range records {
 				e.archivePuts[archiveMoveKey(record.Kind, record.ID)] = record
 				if err := e.archiveDelta(record, true); err != nil {
@@ -278,7 +299,7 @@ func TestStateCutoverColdProtocolCheckedBeforeAnyPromotion(t *testing.T) {
 				if !bytes.Equal(before, after) || len(e.archivePuts) != len(records) || len(e.archiveOrigins) != 0 {
 					t.Fatal("refused group partially promoted")
 				}
-			} else if err != nil || !found || e.s.Swaps[child.ID] == nil || e.s.Recovery == nil || !e.s.Recovery.Swaps[child.ID] || e.s.FundingFees["offer/parent"].FundingFee != 6500 || len(e.archivePuts) != 0 {
+			} else if err != nil || !found || e.s.Swaps[child.ID] == nil || e.s.Recovery == nil || !e.s.Recovery.Swaps[child.ID] || e.s.FundingFees["swap/"+child.ID] != fill.FundingPolicy || e.s.FillRecords[child.ID] == nil || e.s.ParentOrders[parent.Offer.ID] == nil || len(e.archivePuts) != 0 {
 				t.Fatalf("coherent current activation: %v", err)
 			}
 		})
