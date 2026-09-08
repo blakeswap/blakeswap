@@ -297,6 +297,21 @@ type historyItem struct {
 	Height int64  `json:"height"`
 }
 
+func (item *historyItem) UnmarshalJSON(raw []byte) error {
+	var value struct {
+		TxID   string `json:"tx_hash"`
+		Height *int64 `json:"height"`
+	}
+	if err := json.Unmarshal(raw, &value); err != nil {
+		return err
+	}
+	if value.Height == nil {
+		return errors.New("transaction history entry missing height")
+	}
+	item.TxID, item.Height = value.TxID, *value.Height
+	return nil
+}
+
 func (e *Electrum) history(ctx context.Context, script []byte) ([]historyItem, error) {
 	var history []historyItem
 	err := e.Call(ctx, "blockchain.scripthash.get_history", &history, scriptHash(script))
@@ -416,6 +431,25 @@ func (e *Electrum) transaction(ctx context.Context, id string, rawResponse func(
 	if err != nil {
 		return t, err
 	}
+	if history == nil {
+		return t, errors.New("invalid transaction history response")
+	}
+	// Validate the whole returned history before treating a missing entry as
+	// ordinary unknown inclusion. Malformed or conflicting data is still an
+	// endpoint failure, even if it happens to omit this transaction.
+	seen := map[string]int64{}
+	for i := range history {
+		item := &history[i]
+		hash, err := hex.DecodeString(item.TxID)
+		if err != nil || len(hash) != 32 || item.Height < -1 || item.Height > int64(^uint32(0)) {
+			return t, errors.New("invalid transaction history entry")
+		}
+		item.TxID = hex.EncodeToString(hash)
+		if height, duplicate := seen[item.TxID]; duplicate && height != item.Height {
+			return t, errors.New("conflicting transaction history heights")
+		}
+		seen[item.TxID] = item.Height
+	}
 	for _, item := range history {
 		if item.TxID == id {
 			if item.Height > 0 && item.Height <= int64(^uint32(0)) {
@@ -427,7 +461,7 @@ func (e *Electrum) transaction(ctx context.Context, id string, rawResponse func(
 			return t, errors.New("invalid transaction height")
 		}
 	}
-	return t, errors.New("transaction missing from indexer history")
+	return t, ErrTransactionUnobserved
 }
 func (e *Electrum) Output(ctx context.Context, id string, vout uint32) (*TxOut, error) {
 	t, err := e.raw(ctx, id)

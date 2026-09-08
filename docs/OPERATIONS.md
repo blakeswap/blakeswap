@@ -455,6 +455,16 @@ The archive lives in the same encrypted vault as the active checkpoint. Record k
 
 The 144-confirmation threshold is a storage policy, not a finality claim. The application checks retained canonical ancestors on both chains before accepting more work. An observed rewind or competing ancestor reopens monitoring even if the displayed prior outcome was terminal. Ordinary outages preserve the prior historical outcome while preventing an unsupported claim of fresh observations. Recovery markers and fee companions become active before the corresponding obligation can execute. A deep reorg can require many bounded reactivation cycles; keep the wallet running and retain the original evidence. Availability of historical blocks and transactions at configured sources remains necessary to resolve the reopened records positively.
 
+An Electrum server may still return an orphaned transaction's bytes while its
+current history lists no inclusion or mempool entry. This remains unknown
+observation, without claiming the transaction was unpublished, in the mempool,
+or confirmed. Such an observation does not make an otherwise healthy endpoint
+unavailable. A previously saved payment may retry only its exact authorized
+bytes at the existing interval while its chain is fresh; this does not clear
+monitoring or recovery holds. New funding and owner/tower recovery retain their
+ordinary positive evidence requirements. Invalid bytes, malformed history,
+transport failures and bad inclusion proofs remain failures.
+
 Capacity reports active checkpoint bytes, retained archive bytes, available filesystem space, and **estimated** continuation space separately. Cold history does not consume the active working-data admission ceiling. New work reserves 1 MiB per core obligation (including retained archived obligations and pending maker offers) as an estimate based on supported message and signed-transaction shapes. It also leaves active and filesystem headroom. This is not a promise that arbitrary imported data or indefinitely changing advisory history has a fixed future size. Existing admitted settlement/witness facts and matching ACKs remain persistable above the admission ceiling; actual encrypted checkpoint and backup disk checks can still fail if the filesystem is full. An oversized imported active population pauses unrelated admissions without deleting its existing obligations.
 
 Relay synchronization uses independent durable progress per relay/filter, bounded history pages and a separate live subscription. Pages overlap and resweep old history, including gift wraps with randomized old timestamps. Timestamp bounds are inclusive; ties use the Nostr ordering rule. A relay that hides more events behind a saturated timestamp cannot be exhaustively paginated with standard exact-ID filters. The application reports that limitation and retains its boundary; a short page or EOSE is never presented as proof of exhaustive historical delivery. Unknown public identities and unsolicited mailbox aliases have separate limits, while authenticated messages for established active or archived obligations retain their recovery path.

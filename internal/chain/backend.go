@@ -6,6 +6,13 @@ import (
 	"strings"
 )
 
+// ErrTransactionUnobserved means raw bytes match the requested transaction ID,
+// but the indexer supplies no matching canonical or mempool history entry. It is
+// neither absence proof nor a positive publication/confirmation observation.
+// Exact previously authorized bytes may be retried; other recovery still needs
+// its ordinary positive evidence. Transport and proof failures never use it.
+var ErrTransactionUnobserved = errors.New("transaction missing from indexer history")
+
 // TransactionNotFound only classifies explicit lookup failures. Transport and
 // proof errors must stop recovery rather than be mistaken for mempool eviction.
 func TransactionNotFound(err error) bool {

@@ -709,3 +709,16 @@ swap-ins increased by eight 16KiB pages; swap-outs did not change. These figures
 measure the selected-kind query path, not the separate v1 import's retained
 whole-active-State memory cost documented above. Exact ordering, count, CSV,
 key/file cleanup, archive identity and durable signed-payment assertions passed.
+
+
+The orphan-observation regression uses an actual Electrum transaction lookup
+over a private in-memory transport and the ordinary failover pool. Known raw
+bytes with no matching history remain a distinct error, without endpoint backoff,
+positive publication metadata, or `TransactionNotFound` semantics. Malformed IDs,
+missing/null heights or response shapes, conflicting entries and invalid proofs
+remain errors; the raw-response witness hook still precedes metadata processing.
+Daemon controls verify the unchanged 30-second exact saved-payment retry,
+required fresh target chain, retained archive/recovery/network holds, and durable
+identity/interval after reopen. Prepared maker/taker funding and unseen tower
+registration controls keep unknown observation separate from positive funding or
+explicit absence.
