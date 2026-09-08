@@ -222,7 +222,10 @@ or earlier when its order/provider/automatic-fee review expires.
 Persist a fresh 32-byte hex `request_id` before `ConfirmTrade` (CLI
 `trade.confirm`), alongside the original `token`, `revision`, wallet and network.
 The daemon rechecks signed order/proof, expiry, wallet identity, fee bounds and
-fresh exact inputs before committing. A changed quote needs a new review. One
+fresh exact inputs before committing. Backend reordering of the same outputs does
+not change the reviewed input set; missing, additional, substituted, duplicate or
+cross-chain inputs are rejected. Stored input order is preserved. A changed
+quote needs a new review. One
 quote can authorize only one request ID. `accepted` means an offer is saved for
 publication or a take request is saved for delivery; it does not mean funding or
 settlement has completed. Status tracks the automatic sequence afterward.

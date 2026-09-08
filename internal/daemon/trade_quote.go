@@ -624,8 +624,27 @@ func (e *Engine) validateTradeInputs(owner string, receipt *TradeReceipt) error 
 	if receipt == nil {
 		return nil
 	}
-	if protocol.Digest(e.s.CoinReservations[owner].Inputs) != protocol.Digest(receipt.Snapshot.Quote.Funds.Inputs) {
-		return errors.New("funding inputs changed; review the economics and replay readiness again")
+	reservation := e.s.CoinReservations[owner]
+	reviewed := receipt.Snapshot.Quote.Funds.Inputs
+	changed := errors.New("funding inputs changed; review the economics and replay readiness again")
+	if reservation.Chain != receipt.Snapshot.Quote.PaidChain || len(reviewed) == 0 || len(reservation.Inputs) != len(reviewed) {
+		return changed
+	}
+	// Backends may reorder unchanged UTXOs during the confirmation refresh.
+	// Authorization binds the exact set, without substituting, adding, dropping
+	// or duplicating an input. Preserve both stored orders and all later proofs.
+	remaining := make(map[CoinOutpoint]bool, len(reviewed))
+	for _, point := range reviewed {
+		if remaining[point] {
+			return changed
+		}
+		remaining[point] = true
+	}
+	for _, point := range reservation.Inputs {
+		if !remaining[point] {
+			return changed
+		}
+		delete(remaining, point)
 	}
 	return nil
 }
