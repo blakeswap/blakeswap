@@ -198,10 +198,17 @@ func TestRealEndpointFailoverSettlement(t *testing.T) {
 			id := h.fundBothFees(sell, 0, 6500, 20000)
 			maker := h.swap("maker", id)
 			longRaw, shortRaw := maker.LongFunding, maker.ShortFunding
+			shortFunding, err := partialPublications(h.engines["maker"], []string{id}, "short-funded")
+			if err != nil {
+				t.Fatal(err)
+			}
 			for _, fault := range faults {
 				fault.setDown(true)
 			}
 			h.online("taker")
+			partialWaitForPublications(h, "taker", shortFunding, func() {
+				tickUntilConnected(t, h.engines["taker"])
+			})
 			partialWait(h, "both failover claims confirmed", func() bool {
 				return h.swap("maker", id).Stage == "completed" && h.swap("taker", id).Stage == "completed"
 			}, func() {
