@@ -54,13 +54,24 @@ func openVault(path string, password []byte, readOnly, initializeMissing bool) (
 		}
 	}
 	options := &bolt.Options{Timeout: time.Second, ReadOnly: readOnly}
+	openingSource := true
 	if !readOnly && !initializeMissing {
 		// bbolt otherwise creates an absent/empty file and may commit a freelist
 		// conversion while opening. Both precede the caller's format validation.
-		options.OpenFile = openExistingLocked
+		options.OpenFile = func(name string, flag int, mode os.FileMode) (*os.File, error) {
+			if openingSource {
+				return openExistingLocked(name, flag, mode)
+			}
+			// bbolt retains this hook for CopyFile's destination and WriteTo's
+			// separate source reader. Neither is another writer acquisition.
+			return os.OpenFile(name, flag, mode)
+		}
 		options.NoFreelistSync = true
 	}
 	db, e := bolt.Open(path, 0600, options)
+	// The hook cannot be called by a published Vault until after this point.
+	// Its initial existing-file lock remains owned by db for its full lifetime.
+	openingSource = false
 	if e != nil {
 		return nil, e
 	}
