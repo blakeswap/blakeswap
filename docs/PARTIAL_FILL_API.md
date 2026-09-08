@@ -1,13 +1,11 @@
 # Partial-fill API and native implementation contract
 
-This is the shared T13 implementation interface. The declarations are committed
-before the API/native implementation so those changes can proceed independently
-of daemon state-machine wiring. They are not a claim that partial fills are
-already callable. Before delivery, move the complete typed service/package and
-all HTTP routes from v1 to v2, regenerate Go, gateway, OpenAPI and Swift through
-`scripts/generate-api.sh` and `scripts/generate-swift.sh`, update every consumer,
-and remove v1 registration. The current declaration path is transitional; there
-will be no v1 compatibility handler or default legacy wire execution.
+This is the shared T13 implementation interface. The complete typed service is
+`blakeswap.v2.DaemonService` and every HTTP route uses `/v2/`; there is no v1
+registration, compatibility handler or default legacy wire execution. Go,
+gateway, OpenAPI and Swift bindings are generated through
+`scripts/generate-api.sh` and `scripts/generate-swift.sh`. These mappings alone
+do not establish that the daemon's partial-fill state machine is complete.
 
 ## Create and review an order
 
@@ -116,7 +114,8 @@ make mechanical generated-package import/path edits in desktop/test consumers;
 coordinate semantic desktop/provider changes with the daemon lane. It must keep
 T10 credential byte ownership, structured consent and exact retry exceptions.
 
-The API/native lane starts from an agreed clean T13 source checkpoint in its own
-worktree after PR22 is verified merged. No shared worktree edits. The final T13
+The API contract portion starts from an agreed clean T13 source checkpoint in
+its own worktree. Native behavior and credential/consent integration wait until
+PR22 is verified merged and integrated. No shared worktree edits. The final T13
 integration includes both lanes in one PR, full current protocol/security and
 whole-PR review, generation checks and real both-chain acceptance matrices.

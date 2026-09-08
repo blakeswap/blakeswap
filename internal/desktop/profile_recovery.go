@@ -7,7 +7,7 @@ import (
 	"os"
 	"path/filepath"
 
-	pb "github.com/blakeswap/blakeswap/api/gen/blakeswap/v1"
+	pb "github.com/blakeswap/blakeswap/api/gen/blakeswap/v2"
 )
 
 type preparedProfile struct {

@@ -105,7 +105,7 @@ extension DaemonProcessTests {
         try daemon.start(); try await daemon.waitUntilReady(profile: "alice")
         let endpoint = try DaemonRPC.endpoint(root: root.path, profile: "alice")
         var summary = ActionSummary(); summary.complete = true; summary.requiresMonitoring = true
-        var other = Blakeswap_V1_WalletActions(); other.walletID = "other-wallet"; other.known = true
+        var other = Blakeswap_V2_WalletActions(); other.walletID = "other-wallet"; other.known = true
         var job = WalletAction(); job.kind = "tower"; job.state = "tower_monitoring"; job.requiresMonitoring = true
         other.actions = [job]; summary.wallets = [other]
         var quit = false; var prompted = 0

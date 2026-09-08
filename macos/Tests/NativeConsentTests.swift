@@ -93,7 +93,7 @@ final class NativeConsentTests: XCTestCase {
         var settings = AppSettings(); settings.activeNetwork = "regtest"; settings.revision = 1
         var status = DaemonStatus(); status.name = "alice"; status.network = "regtest"
         XCTAssertTrue(model.acceptSnapshot(status, settings: settings, profile: "alice", generation: model.generation))
-        model.recovery = "synthetic recovery display"; model.setupWallet = Blakeswap_V1_FirstWallet()
+        model.recovery = "synthetic recovery display"; model.setupWallet = Blakeswap_V2_FirstWallet()
         let before = model.generation
         let pending = Task {
             do { _ = try await security.authorize(endpoint: endpoint, profile: "alice", method: "onboarding.get", payload: Data("{}".utf8)); XCTFail("Disconnected prompt approved") }

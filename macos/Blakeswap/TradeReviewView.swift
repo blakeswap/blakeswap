@@ -39,11 +39,11 @@ struct TradeComposer: View {
     private var replacement: ManageOfferContext? { management?.action == "replace" ? management : nil }
     private var feeKey: String { feeReviewKey(profile: context.profile, network: context.network, kind: "funding", chain: paidChain, amount: paidAmount, fee: fundingFee, automatic: automaticFee, generation: context.generation, sourceOfferID: replacement?.order.offer.id ?? "", sourceEventID: replacement?.order.eventID ?? "") }
     private var currentFee: FeeReview? { feeReview?.key == feeKey ? feeReview : nil }
-    private var towers: [Blakeswap_V1_Tower] {
+    private var towers: [Blakeswap_V2_Tower] {
         let favorites = model.settings?.environments.first(where: { $0.network == context.network })?.favoriteWatchtowers ?? []
         return (model.status?.watchtowers ?? []).filter { favorites.contains($0.npub) && $0.expires > Int64(Date().timeIntervalSince1970) }
     }
-    private var selectedTower: Blakeswap_V1_Tower? { towers.first { $0.pubkey == towerID } }
+    private var selectedTower: Blakeswap_V2_Tower? { towers.first { $0.pubkey == towerID } }
     private var validDraft: Bool {
         guard currentFee != nil, !protection || selectedTower != nil else { return false }
         if order != nil { return true }
@@ -119,7 +119,7 @@ struct TradeComposer: View {
     }
     private func reviewDraft() async {
         guard matching, validDraft, let fee = currentFee else { return }
-        var request = Blakeswap_V1_TradeQuoteRequest()
+        var request = Blakeswap_V2_TradeQuoteRequest()
         request.kind = order == nil ? "maker" : "taker"
         request.maker = order?.maker ?? ""; request.id = order?.id ?? ""
         request.sell = order?.sell ?? sell

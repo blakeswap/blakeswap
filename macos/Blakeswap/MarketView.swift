@@ -3,7 +3,7 @@ import SwiftUI
 struct ManageOfferContext: Identifiable {
     let id = UUID()
     let action: String
-    let order: Blakeswap_V1_MarketOrder
+    let order: Blakeswap_V2_MarketOrder
     let wallet: TradeContext
 }
 
@@ -13,7 +13,7 @@ struct MarketView: View {
     @StateObject private var market: MarketModel
     @State private var taking: TakeOfferContext?
     @State private var managing: ManageOfferContext?
-    @State private var selected: Blakeswap_V1_MarketOrder?
+    @State private var selected: Blakeswap_V2_MarketOrder?
     @State private var focusedID = ""
     let context: TradeContext
     let root: String
@@ -125,7 +125,7 @@ struct MarketView: View {
             }.textFieldStyle(.roundedBorder)
         }.accessibilityIdentifier("market-filters")
     }
-    @ViewBuilder private func actions(_ row: Blakeswap_V1_MarketOrder) -> some View {
+    @ViewBuilder private func actions(_ row: Blakeswap_V2_MarketOrder) -> some View {
         HStack {
             if row.canTake { Button("Take offer") { taking = TakeOfferContext(order: row.offer, wallet: context) }.accessibilityIdentifier("take-offer-\(row.offer.id)") }
             if row.canCancel { Button("Cancel") { Task { await market.cancel(row, current: { app.tradeContext }) } } }

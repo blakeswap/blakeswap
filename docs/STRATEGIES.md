@@ -120,10 +120,10 @@ prefix is established. Reporting never changes spendable balances or replenishes
 authorization, and a successful restored report does not clear policy RestoreHold.
 
 The typed API exposes `ListStrategies` (`strategy.list`, POST
-`/v1/strategies/query`), `ReviewStrategy` (`strategy.review`, POST
-`/v1/strategies/review`), `SaveStrategy` (`strategy.save`, PUT `/v1/strategies`),
-`StopStrategy` (`strategy.stop`, POST `/v1/strategies/stop`) and `ReportStrategy`
-(`strategy.report`, POST `/v1/strategies/report`). List requires expected wallet
+`/v2/strategies/query`), `ReviewStrategy` (`strategy.review`, POST
+`/v2/strategies/review`), `SaveStrategy` (`strategy.save`, PUT `/v2/strategies`),
+`StopStrategy` (`strategy.stop`, POST `/v2/strategies/stop`) and `ReportStrategy`
+(`strategy.report`, POST `/v2/strategies/report`). List requires expected wallet
 and network. Review/save use the complete `StrategyEdit`: config, desired enabled
 state, expected revision, restored-budget acknowledgement, and the returned exact
 review digest for save. Stop/report bind the ID, wallet, network and revision.

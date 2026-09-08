@@ -8,18 +8,18 @@ struct SendContext: Identifiable {
     let chain: String
 }
 
-extension Blakeswap_V1_WalletCoin {
+extension Blakeswap_V2_WalletCoin {
     var outpointID: String { "\(txid):\(vout)" }
     func canSend(network: String) -> Bool { !reserved && confirmations >= (network == "regtest" ? 2 : 6) }
 }
 
 struct SendPlan {
-    var request: Blakeswap_V1_SendCoinsRequest
+    var request: Blakeswap_V2_SendCoinsRequest
     let total: Int64
     var change: Int64 { total - request.amount - request.fee }
 
     init(context: SendContext, destination: String, amount: String, fee: String,
-         coins: [Blakeswap_V1_WalletCoin], selection: Set<String>) throws {
+         coins: [Blakeswap_V2_WalletCoin], selection: Set<String>) throws {
         guard let value = Int64(amount), (600...2_100_000_000_000_000).contains(value),
               let networkFee = Int64(fee), (1...1_000_000).contains(networkFee) else {
             throw RPCError.message("Enter an amount of at least 600 sats and a fee of 1–1,000,000 sats.")
@@ -41,12 +41,12 @@ struct SendPlan {
         }
         let target = destination.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !target.isEmpty else { throw RPCError.message("Enter the recipient’s address.") }
-        var request = Blakeswap_V1_SendCoinsRequest()
+        var request = Blakeswap_V2_SendCoinsRequest()
         request.id = UUID().uuidString
         request.chain = context.chain; request.expectedNetwork = context.network
         request.destination = target; request.amount = value; request.fee = networkFee
         request.inputs = selected.map { coin in
-            var point = Blakeswap_V1_Outpoint(); point.txid = coin.txid; point.vout = coin.vout; return point
+            var point = Blakeswap_V2_Outpoint(); point.txid = coin.txid; point.vout = coin.vout; return point
         }
         self.request = request; self.total = sum
     }
@@ -67,7 +67,7 @@ struct SendCoinsView: View {
     @State private var error: String?
     @State private var submitting = false
     @State private var checkedFunds: FundsCheckKey?
-    @State private var activity: Blakeswap_V1_CoinHold?
+    @State private var activity: Blakeswap_V2_CoinHold?
     private var fundsReady: Bool {
         guard let reviewed else { return false }
         return checkedFunds == FundsCheckKey(profile: context.profile, network: context.network, generation: model.generation,
@@ -76,12 +76,12 @@ struct SendCoinsView: View {
     }
 
     private var matchingWallet: Bool { model.profile == context.profile && model.network == context.network }
-    private var coins: [Blakeswap_V1_WalletCoin] { matchingWallet ? (model.status?.coins ?? []).filter { $0.chain == context.chain } : [] }
+    private var coins: [Blakeswap_V2_WalletCoin] { matchingWallet ? (model.status?.coins ?? []).filter { $0.chain == context.chain } : [] }
     private var selectedAmount: Int64 { coins.filter { selection.contains($0.outpointID) }.reduce(0) { $0 + $1.amount } }
 
-    private var selectedInputs: [Blakeswap_V1_Outpoint] {
+    private var selectedInputs: [Blakeswap_V2_Outpoint] {
         coins.filter { selection.contains($0.outpointID) }.map { coin in
-            var point = Blakeswap_V1_Outpoint(); point.txid = coin.txid; point.vout = coin.vout; return point
+            var point = Blakeswap_V2_Outpoint(); point.txid = coin.txid; point.vout = coin.vout; return point
         }
     }
     private var feeKey: String { feeReviewKey(profile: context.profile, network: context.network, kind: "send", chain: context.chain, amount: amount, destination: destination, fee: fee, automatic: automaticFee, generation: model.generation, inputs: selectedInputs) }
@@ -175,7 +175,7 @@ struct SendCoinsView: View {
         defer { submitting = false }
         do {
             let raw = try await DaemonRPC.call(root: model.root, profile: context.profile, method: "wallet.send", payload: plan.request.jsonUTF8Data())
-            let sent = try Blakeswap_V1_WalletSend(serializedBytes: raw)
+            let sent = try Blakeswap_V2_WalletSend(serializedBytes: raw)
             model.notice = sent.submitted ? "Sent transaction: \(sent.txid)" : "Send saved for retry: \(sent.txid). \(sent.error)"
             await model.refresh(); dismiss()
         } catch { self.error = error.localizedDescription }
@@ -183,14 +183,14 @@ struct SendCoinsView: View {
 }
 
 
-extension Blakeswap_V1_CoinHold: Identifiable {
+extension Blakeswap_V2_CoinHold: Identifiable {
     var idForDisplay: String { "\(kind)/\(id)" }
 }
 
 struct CoinActivityView: View {
     @EnvironmentObject private var model: AppModel
     @Environment(\.dismiss) private var dismiss
-    let hold: Blakeswap_V1_CoinHold
+    let hold: Blakeswap_V2_CoinHold
     let context: SendContext
     private var matching: Bool { model.profile == context.profile && model.network == context.network }
     var body: some View {

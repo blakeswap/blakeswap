@@ -21,7 +21,7 @@ final class AppModel: ObservableObject {
     @Published var notice: String?
     @Published var busy = false
     @Published var recovery: String?
-    @Published var setupWallet: Blakeswap_V1_FirstWallet?
+    @Published var setupWallet: Blakeswap_V2_FirstWallet?
     private let daemon: DaemonProcess
     let monitoring: MonitoringModel
  let root: String
@@ -156,7 +156,7 @@ final class AppModel: ObservableObject {
         let selected = profile, expected = generation
         defer { busy = false }
         do {
-            var request = Blakeswap_V1_CreateWalletRequest()
+            var request = Blakeswap_V2_CreateWalletRequest()
             request.name = name.trimmingCharacters(in: .whitespacesAndNewlines)
             request.revision = current.revision
             let raw = try await DaemonRPC.call(root: root, profile: selected, method: "wallet.create", payload: request.jsonUTF8Data())
@@ -176,11 +176,11 @@ final class AppModel: ObservableObject {
             let raw = try await DaemonRPC.call(root: root, profile: selected, method: method, payload: request.jsonUTF8Data())
             guard selected == profile, expected == generation else { return false }
             if method == "onboarding.prepare" || method == "onboarding.get" {
-                let first = try Blakeswap_V1_FirstWallet(serializedBytes: raw)
+                let first = try Blakeswap_V2_FirstWallet(serializedBytes: raw)
                 acceptSnapshot(nil, settings: first.settings, profile: profile, generation: generation)
                 setupWallet = first.settings.onboardingStage == "backup" ? first : nil
             } else if method == "onboarding.export" {
-                _ = try Blakeswap_V1_Backup(serializedBytes: raw)
+                _ = try Blakeswap_V2_Backup(serializedBytes: raw)
                 notice = "Encrypted backup saved. Keep its password separately."
             } else {
                 let next = try AppSettings(serializedBytes: raw)
@@ -192,21 +192,21 @@ final class AppModel: ObservableObject {
     }
     func checkNode(network: String, chain: String, node: NodeSettings) async -> String {
         do {
-            var request = Blakeswap_V1_CheckNodeRequest(); request.network = network; request.chain = chain; request.node = node
+            var request = Blakeswap_V2_CheckNodeRequest(); request.network = network; request.chain = chain; request.node = node
             let raw = try await DaemonRPC.call(root: root, profile: profile, method: "settings.check-node", payload: request.jsonUTF8Data())
-            let result = try Blakeswap_V1_CheckNodeResponse(serializedBytes: raw)
+            let result = try Blakeswap_V2_CheckNodeResponse(serializedBytes: raw)
             return "Connected at block \(result.height)"
         } catch { return error.localizedDescription }
     }
     var recoveryInProgress: Bool { (status?.hasRecovery == true && status?.recovery.state != "ready") || status?.capacity.reactivating == true || (status?.capacity.monitoringHolds ?? 0) > 0 }
-    func inspectBackup(path: String, password: String) async -> Blakeswap_V1_BackupContents? {
+    func inspectBackup(path: String, password: String) async -> Blakeswap_V2_BackupContents? {
         guard !busy else { return nil }
         busy = true; notice = nil
         defer { busy = false }
         do {
-            var request = Blakeswap_V1_InspectBackupRequest(); request.path = path; request.password = password
+            var request = Blakeswap_V2_InspectBackupRequest(); request.path = path; request.password = password
             let raw = try await DaemonRPC.call(root: root, profile: profile, method: "backup.inspect", payload: request.jsonUTF8Data())
-            return try Blakeswap_V1_BackupContents(serializedBytes: raw)
+            return try Blakeswap_V2_BackupContents(serializedBytes: raw)
         } catch { notice = error.localizedDescription; return nil }
     }
     func exportBackup(path: String, password: String, allWallets: Bool) async -> Bool {
@@ -215,10 +215,10 @@ final class AppModel: ObservableObject {
         busy = true; notice = nil
         defer { busy = false }
         do {
-            var request = Blakeswap_V1_ExportPortableBackupRequest()
+            var request = Blakeswap_V2_ExportPortableBackupRequest()
             request.path = path; request.password = password; request.allWallets = allWallets
             let raw = try await DaemonRPC.call(root: root, profile: selected, method: "backup.export", payload: request.jsonUTF8Data())
-            let result = try Blakeswap_V1_PortableBackupResult(serializedBytes: raw)
+            let result = try Blakeswap_V2_PortableBackupResult(serializedBytes: raw)
             if selected == profile && expected == generation {
                 notice = result.reminderWarning.isEmpty ? "Portable backup saved. Keep its chosen password separately." : result.reminderWarning
                 NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: result.path)])
@@ -232,11 +232,11 @@ final class AppModel: ObservableObject {
         busy = true; notice = nil
         defer { busy = false }
         do {
-            var request = Blakeswap_V1_ImportBackupRequest()
+            var request = Blakeswap_V2_ImportBackupRequest()
             request.path = path; request.password = password; request.sourceWalletID = sourceWallet
             request.name = name.trimmingCharacters(in: .whitespacesAndNewlines); request.revision = current.revision
             let raw = try await DaemonRPC.call(root: root, profile: selected, method: "backup.import", payload: request.jsonUTF8Data())
-            let result = try Blakeswap_V1_ImportBackupResult(serializedBytes: raw)
+            let result = try Blakeswap_V2_ImportBackupResult(serializedBytes: raw)
             if selected == profile && expected == generation {
                 acceptSnapshot(nil, settings: result.settings, profile: selected, generation: expected)
                 selectProfile(result.profileID); page = "Wallet"
@@ -256,9 +256,9 @@ final class AppModel: ObservableObject {
             }
             let raw = try await DaemonRPC.call(root: root, profile: selected, method: method, params: bound)
             if selected == profile && expected == generation {
-                if method == "wallet.recovery" { recovery = try Blakeswap_V1_Recovery(serializedBytes: raw).mnemonic }
+                if method == "wallet.recovery" { recovery = try Blakeswap_V2_Recovery(serializedBytes: raw).mnemonic }
                 if method == "wallet.backup" {
-                    let path = try Blakeswap_V1_Backup(serializedBytes: raw).path
+                    let path = try Blakeswap_V2_Backup(serializedBytes: raw).path
                     notice = "Backup saved. Keep the vault password separately."
                     NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: path)])
                 }

@@ -4,7 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	pb "github.com/blakeswap/blakeswap/api/gen/blakeswap/v1"
+	pb "github.com/blakeswap/blakeswap/api/gen/blakeswap/v2"
 	"github.com/blakeswap/blakeswap/internal/daemon"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
@@ -124,6 +124,10 @@ func Call(ctx context.Context, socket string, req daemon.Request) (json.RawMessa
 		p := &pb.ActivityQuery{}
 		in = p
 		invoke = func() (proto.Message, error) { return client.ListActivity(ctx, p) }
+	case "fills.list":
+		p := &pb.FillQuery{}
+		in = p
+		invoke = func() (proto.Message, error) { return client.ListFills(ctx, p) }
 	case "market.list":
 		p := &pb.MarketQuery{}
 		in = p

@@ -92,7 +92,7 @@ final class DaemonRPCTests: XCTestCase {
             }
         }
         _ = try await call("alice", "regtest.mine", ["blocks": 2])
-        let offer = try Blakeswap_V1_Offer(serializedBytes: await call("alice", "offer.create", ["sell": "btc", "sell_amount": 1_000_000, "buy_amount": 2_000_000]))
+        let offer = try Blakeswap_V2_Offer(serializedBytes: await call("alice", "offer.create", ["sell": "btc", "sell_amount": 1_000_000, "buy_amount": 2_000_000]))
         var delivered = false
         for _ in 0..<80 {
             if try await status("bob").orders.contains(where: { $0.id == offer.id }) { delivered = true; break }
@@ -100,7 +100,7 @@ final class DaemonRPCTests: XCTestCase {
         }
         XCTAssertTrue(delivered, "Offer not delivered through the external local relay")
         guard delivered else { return }
-        let taken = try Blakeswap_V1_TakeOfferResponse(serializedBytes: await call("bob", "swap.take", ["maker": offer.maker, "id": offer.id]))
+        let taken = try Blakeswap_V2_TakeOfferResponse(serializedBytes: await call("bob", "swap.take", ["maker": offer.maker, "id": offer.id]))
         var mined = Set<String>()
         for _ in 0..<160 {
             // Keep Bob selected throughout negotiation/settlement. Alice must accept,

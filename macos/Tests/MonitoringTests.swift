@@ -14,7 +14,7 @@ final class MonitoringTests: XCTestCase {
     private func summary(now: Int64, state: String = "confirming", firstReveal: Bool = false) -> ActionSummary {
         var action = WalletAction(); action.id = "swap/private-local-id"; action.kind = "swap"; action.objectID = "private-local-id"
         action.state = state; action.requiresMonitoring = state != "completed"; action.firstReveal = firstReveal
-        var wallet = Blakeswap_V1_WalletActions(); wallet.walletID = "other-wallet"; wallet.network = "regtest"; wallet.known = true; wallet.observedAt = now; wallet.source = "live"; wallet.actions = [action]
+        var wallet = Blakeswap_V2_WalletActions(); wallet.walletID = "other-wallet"; wallet.network = "regtest"; wallet.known = true; wallet.observedAt = now; wallet.source = "live"; wallet.actions = [action]
         var summary = ActionSummary(); summary.network = "regtest"; summary.settingsRevision = 1; summary.observedAt = now; summary.complete = true; summary.requiresMonitoring = action.requiresMonitoring; summary.wallets = [wallet]
         return summary
     }
@@ -59,7 +59,7 @@ final class MonitoringTests: XCTestCase {
         let delivery = RecordingAlerts(); var now: Int64 = 1000
         let model = MonitoringModel(root: root.path, delivery: delivery, now: { now })
         var value = summary(now: now, firstReveal: true)
-        var deadline = Blakeswap_V1_ActionDeadline(); deadline.kind = "reveal"; deadline.chain = "btc"; deadline.unit = "blocks"; deadline.target = 120; deadline.observed = 116; deadline.remaining = 4; deadline.observedAt = now; deadline.certain = true; deadline.band = "approaching"
+        var deadline = Blakeswap_V2_ActionDeadline(); deadline.kind = "reveal"; deadline.chain = "btc"; deadline.unit = "blocks"; deadline.target = 120; deadline.observed = 116; deadline.remaining = 4; deadline.observedAt = now; deadline.certain = true; deadline.band = "approaching"
         value.wallets[0].actions[0].deadlines = [deadline]
         model.interruption(); await model.reconcile(value)
         XCTAssertTrue(model.interrupted); XCTAssertTrue(delivery.delivered.isEmpty)
@@ -94,7 +94,7 @@ extension MonitoringTests {
             let delivery = RecordingAlerts(); var now: Int64 = 1000
             let model = MonitoringModel(root: root.path, delivery: delivery, now: { now })
             var value = summary(now: now, firstReveal: true)
-            var deadline = Blakeswap_V1_ActionDeadline(); deadline.kind = "reveal"; deadline.chain = "btc"; deadline.unit = "blocks"; deadline.observedAt = now; deadline.certain = true; deadline.band = "approaching"; deadline.remaining = 6; deadline.target = 106
+            var deadline = Blakeswap_V2_ActionDeadline(); deadline.kind = "reveal"; deadline.chain = "btc"; deadline.unit = "blocks"; deadline.observedAt = now; deadline.certain = true; deadline.band = "approaching"; deadline.remaining = 6; deadline.target = 106
             value.wallets[0].actions[0].deadlines = [deadline]
             await model.reconcile(value)
             XCTAssertTrue(model.summary!.wallets[0].actions[0].deadlines[0].display.contains("6 blocks"))
@@ -108,7 +108,7 @@ extension MonitoringTests {
             XCTAssertTrue(model.summary!.wallets[0].actions[0].deadlines[0].display.contains("timing unavailable"), change)
             // A fresh wallet regains timing independently of an offline peer wallet.
             now += 1; value.observedAt = now; value.wallets[0].observedAt = now; value.wallets[0].actions[0].deadlines[0].observedAt = now
-            var offline = Blakeswap_V1_WalletActions(); offline.walletID = "offline"; offline.known = false
+            var offline = Blakeswap_V2_WalletActions(); offline.walletID = "offline"; offline.known = false
             value.wallets.append(offline); value.complete = false
             await model.reconcile(value)
             XCTAssertTrue(model.interrupted)
@@ -134,7 +134,7 @@ extension MonitoringTests {
         let delivery = SuspendedAlerts(); var now: Int64 = 1000
         let model = MonitoringModel(root: root.path, delivery: delivery, now: { now })
         var value = summary(now: now, firstReveal: true)
-        var deadline = Blakeswap_V1_ActionDeadline(); deadline.kind = "reveal"; deadline.chain = "btc"; deadline.observedAt = now; deadline.certain = true; deadline.band = "approaching"; deadline.target = 120
+        var deadline = Blakeswap_V2_ActionDeadline(); deadline.kind = "reveal"; deadline.chain = "btc"; deadline.observedAt = now; deadline.certain = true; deadline.band = "approaching"; deadline.target = 120
         value.wallets[0].actions[0].deadlines = [deadline]
         let pending = Task { await model.reconcile(value) }
         await delivery.waitForSubmission()
@@ -149,7 +149,7 @@ extension MonitoringTests {
             let delivery = SuspendedAlerts(); var now: Int64 = 1000
             let model = MonitoringModel(root: root.path, delivery: delivery, now: { now })
             var value = summary(now: now, firstReveal: true)
-            var deadline = Blakeswap_V1_ActionDeadline(); deadline.kind = "reveal"; deadline.chain = "btc"; deadline.observedAt = now; deadline.certain = true; deadline.band = "approaching"; deadline.target = 120
+            var deadline = Blakeswap_V2_ActionDeadline(); deadline.kind = "reveal"; deadline.chain = "btc"; deadline.observedAt = now; deadline.certain = true; deadline.band = "approaching"; deadline.target = 120
             value.wallets[0].actions[0].deadlines = [deadline]
             let pending = Task { await model.reconcile(value) }
             await delivery.waitForSubmission()
@@ -170,9 +170,9 @@ extension MonitoringTests {
         let model = MonitoringModel(root: root.path, delivery: delivery, now: { now })
         model.interruption(); now += 10
         var value = summary(now: now, firstReveal: true)
-        var deadline = Blakeswap_V1_ActionDeadline(); deadline.kind = "reveal"; deadline.chain = "btc"; deadline.unit = "blocks"; deadline.observedAt = now; deadline.certain = true; deadline.band = "approaching"; deadline.remaining = 2; deadline.target = 120
+        var deadline = Blakeswap_V2_ActionDeadline(); deadline.kind = "reveal"; deadline.chain = "btc"; deadline.unit = "blocks"; deadline.observedAt = now; deadline.certain = true; deadline.band = "approaching"; deadline.remaining = 2; deadline.target = 120
         value.wallets[0].actions[0].deadlines = [deadline]
-        var offline = Blakeswap_V1_WalletActions(); offline.walletID = "offline"; offline.known = false
+        var offline = Blakeswap_V2_WalletActions(); offline.walletID = "offline"; offline.known = false
         value.wallets.append(offline); value.complete = false
         await model.reconcile(value)
         XCTAssertTrue(model.interrupted, "The installation still has interrupted monitoring")
@@ -217,7 +217,7 @@ extension MonitoringTests {
         let model = MonitoringModel(root: root.path, delivery: delivery, now: { now })
         var value = summary(now: now)
         value.wallets[0].actions[0].uncertain = true
-        var target = Blakeswap_V1_ActionDeadline(); target.kind = "refund"; target.chain = "btc"; target.unit = "blocks"; target.observedAt = now; target.certain = true; target.band = "approaching"; target.remaining = 2; target.target = 120
+        var target = Blakeswap_V2_ActionDeadline(); target.kind = "refund"; target.chain = "btc"; target.unit = "blocks"; target.observedAt = now; target.certain = true; target.band = "approaching"; target.remaining = 2; target.target = 120
         var reveal = target; reveal.kind = "reveal"; reveal.certain = false; reveal.band = "unknown"
         value.wallets[0].actions[0].deadlines = [target, reveal]
         await model.reconcile(value)

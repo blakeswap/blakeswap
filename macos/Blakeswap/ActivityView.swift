@@ -100,7 +100,7 @@ struct ActivityView: View {
 struct ActivityDetails: View {
     @EnvironmentObject private var app: AppModel
     @Environment(\.dismiss) private var dismiss
-    let record: Blakeswap_V1_ActivityRecord
+    let record: Blakeswap_V2_ActivityRecord
     let context: TradeContext
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {

@@ -22,8 +22,8 @@ struct PendingTradeConfirmation: Codable, Equatable {
     let token: String
     let revision: String
     let kind: String
-    var request: Blakeswap_V1_ConfirmTradeRequest {
-        var value = Blakeswap_V1_ConfirmTradeRequest()
+    var request: Blakeswap_V2_ConfirmTradeRequest {
+        var value = Blakeswap_V2_ConfirmTradeRequest()
         value.requestID = requestID; value.token = token; value.revision = revision
         value.expectedWallet = profile; value.expectedNetwork = network
         return value
@@ -79,7 +79,7 @@ struct TradeConfirmationJournal {
 
 @MainActor
 final class TradeReviewModel: ObservableObject {
-    @Published var quote: Blakeswap_V1_TradeQuote?
+    @Published var quote: Blakeswap_V2_TradeQuote?
     @Published var pending: PendingTradeConfirmation?
     @Published var busy = false
     @Published var error: String?
@@ -99,7 +99,7 @@ final class TradeReviewModel: ObservableObject {
         do { pending = try journal.load(profile: context.profile, network: context.network) }
         catch { self.error = error.localizedDescription; journalBlocked = true }
     }
-    func review(_ draft: Blakeswap_V1_TradeQuoteRequest, current: () -> TradeContext) async {
+    func review(_ draft: Blakeswap_V2_TradeQuoteRequest, current: () -> TradeContext) async {
         guard !busy, pending == nil, !journalBlocked, context.matches(current()) else { return }
         busy = true; quote = nil; error = nil
         defer { busy = false }
@@ -107,7 +107,7 @@ final class TradeReviewModel: ObservableObject {
         request.expectedWallet = context.profile; request.expectedNetwork = context.network
         do {
             let data = try await call("trade.quote", request.jsonUTF8Data())
-            let result = try Blakeswap_V1_TradeQuote(serializedBytes: data)
+            let result = try Blakeswap_V2_TradeQuote(serializedBytes: data)
             guard !Task.isCancelled, context.matches(current()) else { return }
             guard result.wallet == context.profile, result.walletKey == context.walletKey, result.network == context.network,
                   result.kind == request.kind, result.orderAction == request.orderAction,
@@ -134,7 +134,7 @@ final class TradeReviewModel: ObservableObject {
             }
             guard let saved = pending else { return }
             let data = try await call("trade.confirm", saved.request.jsonUTF8Data())
-            let result = try Blakeswap_V1_ConfirmTradeResult(serializedBytes: data)
+            let result = try Blakeswap_V2_ConfirmTradeResult(serializedBytes: data)
             guard result.id == saved.requestID, result.kind == saved.kind || (result.kind.isEmpty && result.state == "rejected") else { throw RPCError.message("Confirmation response does not match the saved request. Retry the saved confirmation.") }
             switch result.state {
             case "accepted", "rejected":

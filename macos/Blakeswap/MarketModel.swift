@@ -10,13 +10,13 @@ struct MarketFilters: Equatable {
     var sort = "rate"
     var descending = false
     var key: String { [owner, side, status, minimum, maximum, sort, String(descending)].joined(separator: "|") }
-    func query(context: TradeContext) throws -> Blakeswap_V1_MarketQuery {
+    func query(context: TradeContext) throws -> Blakeswap_V2_MarketQuery {
         let low = minimum.isEmpty ? 0 : Int64(minimum)
         let high = maximum.isEmpty ? 0 : Int64(maximum)
         guard let low, let high, (0...10_000_000_000).contains(low), (0...10_000_000_000).contains(high), high == 0 || high >= low else {
             throw RPCError.message("BTC amount filters need whole satoshis from 0 to 10 billion, with maximum at least minimum.")
         }
-        var q = Blakeswap_V1_MarketQuery()
+        var q = Blakeswap_V2_MarketQuery()
         q.expectedWallet = context.profile; q.expectedNetwork = context.network
         q.owner = owner; q.side = side; q.status = status; q.btcMin = low; q.btcMax = high
         q.sort = sort; q.descending = descending; q.limit = 100
@@ -24,7 +24,7 @@ struct MarketFilters: Equatable {
     }
 }
 
-extension Blakeswap_V1_MarketOrder: Identifiable {
+extension Blakeswap_V2_MarketOrder: Identifiable {
     var id: String { offer.bookID }
     var sideLabel: String { side == "buy_btc" ? "You buy BTC" : "You sell BTC" }
     var publicationLabel: String {
@@ -49,7 +49,7 @@ extension Blakeswap_V1_MarketOrder: Identifiable {
 @MainActor
 final class MarketModel: ObservableObject {
     @Published var filters = MarketFilters()
-    @Published private(set) var rows: [Blakeswap_V1_MarketOrder] = []
+    @Published private(set) var rows: [Blakeswap_V2_MarketOrder] = []
     @Published private(set) var busy = false
     @Published private(set) var loaded = false
     @Published private(set) var error: String?
@@ -81,7 +81,7 @@ final class MarketModel: ObservableObject {
             var query = try scope.query(context: context)
             if append { query.revision = revision; query.offset = offset }
             let data = try await call("market.list", query.jsonUTF8Data())
-            let page = try Blakeswap_V1_MarketPage(serializedBytes: data)
+            let page = try Blakeswap_V2_MarketPage(serializedBytes: data)
             guard !Task.isCancelled, id == requestID, scope == filters, context.matches(current()) else { return }
             guard page.wallet == context.profile, page.network == context.network, !page.revision.isEmpty,
                   !append || page.revision == revision,
@@ -94,11 +94,11 @@ final class MarketModel: ObservableObject {
             self.error = error.localizedDescription; more = false
         }
     }
-    func cancel(_ order: Blakeswap_V1_MarketOrder, current: () -> TradeContext) async {
+    func cancel(_ order: Blakeswap_V2_MarketOrder, current: () -> TradeContext) async {
         guard !busy, order.own, order.canCancel, context.matches(current()) else { return }
         busy = true; cancelling = true; error = nil
         defer { cancelling = false; busy = false }
-        var request = Blakeswap_V1_CancelOfferRequest()
+        var request = Blakeswap_V2_CancelOfferRequest()
         request.id = order.offer.id; request.expectedEventID = order.eventID
         request.expectedWallet = context.profile; request.expectedNetwork = context.network
         do {

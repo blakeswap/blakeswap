@@ -1,7 +1,7 @@
 import SwiftUI
 
 struct CapacityHealthView: View {
-    let health: Blakeswap_V1_CapacityHealth
+    let health: Blakeswap_V2_CapacityHealth
     private func bytes(_ value: UInt64) -> String { ByteCountFormatter.string(fromByteCount: Int64(clamping: value), countStyle: .binary) }
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -28,7 +28,7 @@ struct CapacityHealthView: View {
 }
 
 struct RetainedRecordPresentation: Identifiable {
-    let detail: Blakeswap_V1_RecordDetail
+    let detail: Blakeswap_V2_RecordDetail
     let context: TradeContext
     var id: String { detail.kind + "/" + detail.id }
 }

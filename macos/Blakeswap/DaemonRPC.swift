@@ -43,7 +43,7 @@ enum DaemonRPC {
         let consent = try await NativeSecurityRegistry.authorize(root: root, endpoint: endpoint, profile: profile, method: method, payload: payload)
         let consentID = await consent?.id
         do { var result = try await withGRPCClient(transport: .http2NIOPosix(target: .unixDomainSocket(path: endpoint.socket), transportSecurity: .plaintext)) { client in
-            let service = Blakeswap_V1_DaemonService.Client(wrapping: client)
+            let service = Blakeswap_V2_DaemonService.Client(wrapping: client)
             var metadata: Metadata = ["authorization": "Bearer \(endpoint.token)"]
             if let consentID { metadata.addString(consentID, forKey: "x-blakeswap-consent") }
             var options = CallOptions.defaults
@@ -52,11 +52,11 @@ enum DaemonRPC {
             options.maxResponseMessageBytes = 8_388_608
             switch method {
             case "actions.summary":
- let request = try Blakeswap_V1_ActionSummaryRequest(jsonUTF8Data: payload)
+ let request = try Blakeswap_V2_ActionSummaryRequest(jsonUTF8Data: payload)
  let response = try await service.getActionSummary(request, metadata: metadata, options: options)
  return try response.serializedData()
             case "record.get":
-                let request = try Blakeswap_V1_RecordQuery(jsonUTF8Data: payload)
+                let request = try Blakeswap_V2_RecordQuery(jsonUTF8Data: payload)
                 let response = try await service.getRecord(request, metadata: metadata, options: options)
                 return try response.serializedData()
             case "status":
@@ -64,35 +64,35 @@ enum DaemonRPC {
                 let response = try await service.getStatus(request, metadata: metadata, options: options)
                 return try response.serializedData()
             case "status.refresh":
-                let request = try Blakeswap_V1_RefreshStatusRequest(jsonUTF8Data: payload)
+                let request = try Blakeswap_V2_RefreshStatusRequest(jsonUTF8Data: payload)
                 let response = try await service.refreshStatus(request, metadata: metadata, options: options)
                 return try response.serializedData()
             case "tower.resolve":
-                let request = try Blakeswap_V1_ResolveWatchtowerRequest(jsonUTF8Data: payload)
+                let request = try Blakeswap_V2_ResolveWatchtowerRequest(jsonUTF8Data: payload)
                 let response = try await service.resolveWatchtower(request, metadata: metadata, options: options)
                 return try response.serializedData()
             case "pause":
-                let request = try Blakeswap_V1_SetPausedRequest(jsonUTF8Data: payload)
+                let request = try Blakeswap_V2_SetPausedRequest(jsonUTF8Data: payload)
                 let response = try await service.setPaused(request, metadata: metadata, options: options)
                 return try response.serializedData()
             case "offer.create":
-                let request = try Blakeswap_V1_CreateOfferRequest(jsonUTF8Data: payload)
+                let request = try Blakeswap_V2_CreateOfferRequest(jsonUTF8Data: payload)
                 let response = try await service.createOffer(request, metadata: metadata, options: options)
                 return try response.serializedData()
             case "offer.cancel":
-                let request = try Blakeswap_V1_CancelOfferRequest(jsonUTF8Data: payload)
+                let request = try Blakeswap_V2_CancelOfferRequest(jsonUTF8Data: payload)
                 let response = try await service.cancelOffer(request, metadata: metadata, options: options)
                 return try response.serializedData()
             case "swap.take":
-                let request = try Blakeswap_V1_TakeOfferRequest(jsonUTF8Data: payload)
+                let request = try Blakeswap_V2_TakeOfferRequest(jsonUTF8Data: payload)
                 let response = try await service.takeOffer(request, metadata: metadata, options: options)
                 return try response.serializedData()
             case "regtest.mine":
-                let request = try Blakeswap_V1_MineRequest(jsonUTF8Data: payload)
+                let request = try Blakeswap_V2_MineRequest(jsonUTF8Data: payload)
                 let response = try await service.mine(request, metadata: metadata, options: options)
                 return try response.serializedData()
             case "regtest.faucet":
-                let request = try Blakeswap_V1_FaucetRequest(jsonUTF8Data: payload)
+                let request = try Blakeswap_V2_FaucetRequest(jsonUTF8Data: payload)
                 let response = try await service.faucet(request, metadata: metadata, options: options)
                 return try response.serializedData()
             case "wallet.recovery":
@@ -100,87 +100,87 @@ enum DaemonRPC {
                 let response = try await service.getRecovery(request, metadata: metadata, options: options)
                 return try response.serializedData()
             case "wallet.preflight":
-                let request = try Blakeswap_V1_FundsPreflightRequest(jsonUTF8Data: payload)
+                let request = try Blakeswap_V2_FundsPreflightRequest(jsonUTF8Data: payload)
                 let response = try await service.preflightFunds(request, metadata: metadata, options: options)
                 return try response.serializedData()
             case "trade.quote":
-                let request = try Blakeswap_V1_TradeQuoteRequest(jsonUTF8Data: payload)
+                let request = try Blakeswap_V2_TradeQuoteRequest(jsonUTF8Data: payload)
                 let response = try await service.quoteTrade(request, metadata: metadata, options: options)
                 return try response.serializedData()
             case "activity.list":
-                let request = try Blakeswap_V1_ActivityQuery(jsonUTF8Data: payload)
+                let request = try Blakeswap_V2_ActivityQuery(jsonUTF8Data: payload)
                 let response = try await service.listActivity(request, metadata: metadata, options: options)
                 return try response.serializedData()
             case "strategy.report":
-                let request = try Blakeswap_V1_StrategyReportRequest(jsonUTF8Data: payload)
+                let request = try Blakeswap_V2_StrategyReportRequest(jsonUTF8Data: payload)
                 let response = try await service.reportStrategy(request, metadata: metadata, options: options)
                 return try response.serializedData()
             case "strategy.list":
-                let request = try Blakeswap_V1_AutomationQuery(jsonUTF8Data: payload)
+                let request = try Blakeswap_V2_AutomationQuery(jsonUTF8Data: payload)
                 let response = try await service.listStrategies(request, metadata: metadata, options: options)
                 return try response.serializedData()
             case "strategy.review":
-                let request = try Blakeswap_V1_StrategyEdit(jsonUTF8Data: payload)
+                let request = try Blakeswap_V2_StrategyEdit(jsonUTF8Data: payload)
                 let response = try await service.reviewStrategy(request, metadata: metadata, options: options)
                 return try response.serializedData()
             case "strategy.save":
-                let request = try Blakeswap_V1_StrategyEdit(jsonUTF8Data: payload)
+                let request = try Blakeswap_V2_StrategyEdit(jsonUTF8Data: payload)
                 let response = try await service.saveStrategy(request, metadata: metadata, options: options)
                 return try response.serializedData()
             case "strategy.stop":
-                let request = try Blakeswap_V1_StopStrategyRequest(jsonUTF8Data: payload)
+                let request = try Blakeswap_V2_StopStrategyRequest(jsonUTF8Data: payload)
                 let response = try await service.stopStrategy(request, metadata: metadata, options: options)
                 return try response.serializedData()
             case "automation.list":
-                let request = try Blakeswap_V1_AutomationQuery(jsonUTF8Data: payload)
+                let request = try Blakeswap_V2_AutomationQuery(jsonUTF8Data: payload)
                 let response = try await service.listAutomations(request, metadata: metadata, options: options)
                 return try response.serializedData()
             case "automation.review":
-                let request = try Blakeswap_V1_AutomationEdit(jsonUTF8Data: payload)
+                let request = try Blakeswap_V2_AutomationEdit(jsonUTF8Data: payload)
                 let response = try await service.reviewAutomation(request, metadata: metadata, options: options)
                 return try response.serializedData()
             case "automation.save":
-                let request = try Blakeswap_V1_AutomationEdit(jsonUTF8Data: payload)
+                let request = try Blakeswap_V2_AutomationEdit(jsonUTF8Data: payload)
                 let response = try await service.saveAutomation(request, metadata: metadata, options: options)
                 return try response.serializedData()
             case "automation.disable":
-                let request = try Blakeswap_V1_DisableAutomationRequest(jsonUTF8Data: payload)
+                let request = try Blakeswap_V2_DisableAutomationRequest(jsonUTF8Data: payload)
                 let response = try await service.disableAutomation(request, metadata: metadata, options: options)
                 return try response.serializedData()
             case "market.list":
-                let request = try Blakeswap_V1_MarketQuery(jsonUTF8Data: payload)
+                let request = try Blakeswap_V2_MarketQuery(jsonUTF8Data: payload)
                 let response = try await service.listMarket(request, metadata: metadata, options: options)
                 return try response.serializedData()
             case "activity.export":
-                let request = try Blakeswap_V1_ActivityQuery(jsonUTF8Data: payload)
+                let request = try Blakeswap_V2_ActivityQuery(jsonUTF8Data: payload)
                 let response = try await service.exportActivity(request, metadata: metadata, options: options)
                 return try response.serializedData()
             case "trade.confirm":
-                let request = try Blakeswap_V1_ConfirmTradeRequest(jsonUTF8Data: payload)
+                let request = try Blakeswap_V2_ConfirmTradeRequest(jsonUTF8Data: payload)
                 let response = try await service.confirmTrade(request, metadata: metadata, options: options)
                 return try response.serializedData()
             case "fee.quote":
-                let request = try Blakeswap_V1_FeeQuoteRequest(jsonUTF8Data: payload)
+                let request = try Blakeswap_V2_FeeQuoteRequest(jsonUTF8Data: payload)
                 let response = try await service.quoteFee(request, metadata: metadata, options: options)
                 return try response.serializedData()
             case "transaction.bump":
-                let request = try Blakeswap_V1_BumpRequest(jsonUTF8Data: payload)
+                let request = try Blakeswap_V2_BumpRequest(jsonUTF8Data: payload)
                 let response = try await service.bumpTransaction(request, metadata: metadata, options: options)
                 return try response.serializedData()
             case "wallet.send":
-                let request = try Blakeswap_V1_SendCoinsRequest(jsonUTF8Data: payload)
+                let request = try Blakeswap_V2_SendCoinsRequest(jsonUTF8Data: payload)
                 let response = try await service.sendCoins(request, metadata: metadata, options: options)
                 return try response.serializedData()
             case "backup.export":
-                let request = try Blakeswap_V1_ExportPortableBackupRequest(jsonUTF8Data: payload)
+                let request = try Blakeswap_V2_ExportPortableBackupRequest(jsonUTF8Data: payload)
                 let response = try await service.exportPortableBackup(request, metadata: metadata, options: options)
                 return try response.serializedData()
             case "backup.inspect":
-                let request = try Blakeswap_V1_InspectBackupRequest(jsonUTF8Data: payload)
+                let request = try Blakeswap_V2_InspectBackupRequest(jsonUTF8Data: payload)
                 let response = try await service.inspectBackup(request, metadata: metadata, options: options)
                 return try response.serializedData()
             case "backup.import":
-                let request = try Blakeswap_V1_ImportBackupRequest(jsonUTF8Data: payload)
+                let request = try Blakeswap_V2_ImportBackupRequest(jsonUTF8Data: payload)
                 let response = try await service.importBackup(request, metadata: metadata, options: options)
                 return try response.serializedData()
             case "wallet.backup":
@@ -188,11 +188,11 @@ enum DaemonRPC {
                 let response = try await service.backupWallet(request, metadata: metadata, options: options)
                 return try response.serializedData()
             case "wallet.create":
-                let request = try Blakeswap_V1_CreateWalletRequest(jsonUTF8Data: payload)
+                let request = try Blakeswap_V2_CreateWalletRequest(jsonUTF8Data: payload)
                 let response = try await service.createWallet(request, metadata: metadata, options: options)
                 return try response.serializedData()
             case "onboarding.prepare":
-                let request = try Blakeswap_V1_PrepareFirstWalletRequest(jsonUTF8Data: payload)
+                let request = try Blakeswap_V2_PrepareFirstWalletRequest(jsonUTF8Data: payload)
                 let response = try await service.prepareFirstWallet(request, metadata: metadata, options: options)
                 return try response.serializedData()
             case "onboarding.get":
@@ -200,15 +200,15 @@ enum DaemonRPC {
                 let response = try await service.getFirstWallet(request, metadata: metadata, options: options)
                 return try response.serializedData()
             case "onboarding.confirm":
-                let request = try Blakeswap_V1_ConfirmFirstWalletRequest(jsonUTF8Data: payload)
+                let request = try Blakeswap_V2_ConfirmFirstWalletRequest(jsonUTF8Data: payload)
                 let response = try await service.confirmFirstWallet(request, metadata: metadata, options: options)
                 return try response.serializedData()
             case "onboarding.export":
-                let request = try Blakeswap_V1_ExportFirstWalletRequest(jsonUTF8Data: payload)
+                let request = try Blakeswap_V2_ExportFirstWalletRequest(jsonUTF8Data: payload)
                 let response = try await service.exportFirstWallet(request, metadata: metadata, options: options)
                 return try response.serializedData()
             case "onboarding.finish":
-                let request = try Blakeswap_V1_Settings(jsonUTF8Data: payload)
+                let request = try Blakeswap_V2_Settings(jsonUTF8Data: payload)
                 let response = try await service.finishOnboarding(request, metadata: metadata, options: options)
                 return try response.serializedData()
             case "settings.get":
@@ -216,11 +216,11 @@ enum DaemonRPC {
                 let response = try await service.getSettings(request, metadata: metadata, options: options)
                 return try response.serializedData()
             case "settings.update":
-                let request = try Blakeswap_V1_Settings(jsonUTF8Data: payload)
+                let request = try Blakeswap_V2_Settings(jsonUTF8Data: payload)
                 let response = try await service.updateSettings(request, metadata: metadata, options: options)
                 return try response.serializedData()
             case "settings.check-node":
-                let request = try Blakeswap_V1_CheckNodeRequest(jsonUTF8Data: payload)
+                let request = try Blakeswap_V2_CheckNodeRequest(jsonUTF8Data: payload)
                 let response = try await service.checkNode(request, metadata: metadata, options: options)
                 return try response.serializedData()
             default: throw RPCError.message("Unknown daemon action.")
