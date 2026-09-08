@@ -32,6 +32,7 @@ func portableManifest(t *testing.T) backupManifest {
 		child.Secret, child.LongFunding, child.SelfRefunds = "private preimage", "saved transaction", []string{"saved refund"}
 		profile.Networks[network] = &daemon.State{Version: daemon.StateVersion, Network: network, Mnemonic: mnemonic, ReceiveIndexes: map[chain.ID]uint32{chain.BTC: 12, chain.Blake: 37}, Swaps: map[string]*daemon.Swap{child.ID: child}}
 		state := profile.Networks[network]
+		fixtureMakerCustody(t, state, child, true)
 		fixtureIndexSwaps(t, state)
 		state.ActivityVersion, state.ActivityRevision, state.ActivityObservationSequence = 1, 3, 9
 		state.Activities = map[string]daemon.Activity{"receive/known": {Version: 1, ID: "receive/known", Wallet: profile.ID, Network: network, Kind: "receive", Chain: chain.BTC, TxID: "transaction", Variants: []string{"transaction"}, Status: "confirmed", Confirmations: 2, Observations: []daemon.ActivityObservation{{Sequence: 9, TxID: "transaction", Status: "confirmed", Height: 10, BlockHash: "current-block", Source: "verified-source", Generation: 1}}, History: []daemon.ActivityOutcome{{TxID: "transaction", Status: "orphaned", BlockHash: "old-block", Source: "prior-source", Generation: 1}}}}
