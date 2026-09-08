@@ -45,7 +45,10 @@ permission to change a later taker's explicit quantity.
 
 `TakeOfferRequest` and take `TradeQuoteRequest` require `quantity` in the maker's
 sell asset and `parent_revision` from the exact signed event. The buy amount is
-`ceil(quantity*B/A)` and is derived by the daemon. For a take quote, all existing
+`ceil(quantity*B/A)` and is derived by the daemon. Redundant `sell`,
+`sell_amount` and `buy_amount` may be omitted by a take caller; when supplied,
+they must match the signed parent exactly. They never provide a second price.
+For a take quote, all existing
 paid/received/outcome fields describe that exact child, `quantity` is the exact
 request, and `example_fill` is absent. The private fee/bounty caps in the quote
 are the taker's exact one-child authorization, not the remote maker's limits.

@@ -174,7 +174,10 @@ func (e *Engine) tradeSnapshot(p TradeQuoteRequest, now int64) (TradeQuoteSnapsh
 		if o.Status != "open" || o.Maker == e.identity.Public().Hex() {
 			return s, errors.New("offer is no longer available to take")
 		}
-		if p.Sell != o.Sell || p.SellAmount != o.SellAmount || p.BuyAmount != o.BuyAmount {
+		// The exact signed parent and revision bind economics. Public take
+		// callers may omit these redundant maker fields; a supplied view must
+		// still match exactly and cannot substitute a second price or asset.
+		if p.Sell != "" && p.Sell != o.Sell || p.SellAmount != 0 && p.SellAmount != o.SellAmount || p.BuyAmount != 0 && p.BuyAmount != o.BuyAmount {
 			return s, errors.New("order amounts changed; refresh the market before reviewing")
 		}
 		if p.ParentRevision != o.Revision {
