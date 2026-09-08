@@ -764,6 +764,13 @@ for normal endpoint readiness before the next new authorization, and verifies
 that the exact persisted bytes confirm after revocation using the existing
 30-second retry interval. It also rejects bearer-only and changed/replayed grants.
 
+The loopback Electrum bridge prepares its existing block index before exposing
+an endpoint, within a separate one-minute fixture setup budget. Wallet readiness,
+RPC deadlines and retry assertions remain unchanged. Synthetic controls block
+initial indexing and verify that no endpoint is returned until it completes;
+cancellation and RPC failure return without a listener. Existing reorg controls
+still verify incremental canonical-prefix reuse and mempool reconciliation.
+
 Run on an exclusively owned local fixture, once with RPC and once with
 `BLAKESWAP_TEST_ELECTRUM=1`:
 
