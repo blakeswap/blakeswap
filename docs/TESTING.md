@@ -411,6 +411,11 @@ duplicate totals, missing creation-time migration, earlier replacement variants,
 reorg demotion, frozen pagination/FIFO eviction, capacity failures, exact CSV and
 formula escaping. Lifecycle tests hold history reads outside the engine lock,
 close/cancel/join them, and reject late wallet/network/source-generation replies.
+`TestActivityBudget*` retains the 200ms per-chain deadline and eight-attempt cap
+while checking that rows and signed variants cut off by earlier reads receive a
+fresh slice. It covers permanently unavailable rows, unchanged observation ages,
+source changes, explicit block contradictions, cancellation, and claim witnesses
+persisted before a partial read returns.
 Chain tests verify historical receipt APIs rather than substituting current UTXOs.
 
 `TestRealActivityHistoryThroughTypedAPI` exercises both assets through generated
