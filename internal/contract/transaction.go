@@ -401,7 +401,13 @@ func VerifySignature(c HTLC, tx *wire.MsgTx, refund bool) error {
 	}
 	return nil
 }
+
+// ExtractSecret returns a copy of a matching claim preimage. This is knowledge
+// of the hash preimage, not a signature, spend, or confirmation proof.
 func ExtractSecret(c HTLC, tx *wire.MsgTx) ([]byte, bool) {
+	if tx == nil {
+		return nil, false
+	}
 	op, e := Outpoint(c.TxID, c.Vout)
 	if e != nil {
 		return nil, false
@@ -411,8 +417,11 @@ func ExtractSecret(c HTLC, tx *wire.MsgTx) ([]byte, bool) {
 		return nil, false
 	}
 	for _, in := range tx.TxIn {
+		if in == nil {
+			continue
+		}
 		w := in.Witness
-		if in.PreviousOutPoint != op || len(w) != 4 || len(w[1]) != 32 || !bytes.Equal(w[2], []byte{1}) || !bytes.Equal(w[3], script) {
+		if in.PreviousOutPoint != op || len(w) != 4 || len(w[1]) != 32 || !observedScriptBool(w[2]) || !bytes.Equal(w[3], script) {
 			continue
 		}
 		h := sha256.Sum256(w[1])
