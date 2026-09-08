@@ -109,5 +109,59 @@ func PreflightStateVersion(path string, password []byte) error {
 	if _, err := v.Load(&s); err != nil {
 		return err
 	}
-	return ValidateProtocolState(&s)
+	return ValidateVaultProtocolState(v, &s)
+}
+
+// ValidateVaultProtocolState checks retained authority without reconstructing
+// unrelated lifetime history. The caller owns a read-only or exclusive vault,
+// so all bounded pages belong to the same committed file. Activation repeats
+// this check under writer ownership after a read-only preflight releases it.
+func ValidateVaultProtocolState(v *storage.Vault, s *State) error {
+	if err := ValidateProtocolState(s); err != nil {
+		return err
+	}
+	stats, err := v.ArchiveStats()
+	if err != nil {
+		return err
+	}
+	if err := s.ValidateArchiveCheckpoint(stats); err != nil {
+		return err
+	}
+	for _, kind := range []string{"offers", "recovery_offers", "order_records", "swaps", "tower_jobs"} {
+		cursor := ""
+		for {
+			records, next, err := v.ArchivePage(kind, cursor, 32)
+			if err != nil {
+				return err
+			}
+			for _, record := range records {
+				if _, err := ValidateArchiveRecordAgainstState(*s, record); err != nil {
+					return err
+				}
+			}
+			if next == "" {
+				break
+			}
+			cursor = next
+		}
+	}
+	return nil
+}
+
+// openCurrentStateVault returns an exclusively owned current-format checkpoint.
+// Neither acquiring/authenticating the writer nor a rejected validation writes.
+func openCurrentStateVault(path string, password []byte) (*storage.Vault, State, error) {
+	v, err := storage.OpenExisting(path, password)
+	if err != nil {
+		return nil, State{}, err
+	}
+	var s State
+	if _, err = v.Load(&s); err == nil {
+		err = ValidateVaultProtocolState(v, &s)
+	}
+	if err != nil {
+		_ = v.Close()
+		return nil, State{}, err
+	}
+	return v, s, nil
 }

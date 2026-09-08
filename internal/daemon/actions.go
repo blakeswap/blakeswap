@@ -344,7 +344,7 @@ func LoadStoredActions(c Config) (WalletActions, error) {
 		if _, err = vault.Load(&e.s); err != nil {
 			return WalletActions{}, err
 		}
-		if err := ValidateProtocolState(&e.s); err != nil {
+		if err := ValidateVaultProtocolState(vault, &e.s); err != nil {
 			return WalletActions{}, err
 		}
 		stats, err := vault.ArchiveStats()

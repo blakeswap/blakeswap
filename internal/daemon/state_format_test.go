@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fiatjaf.com/nostr"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -160,5 +161,161 @@ func TestStateCutoverOuterMarkerCannotUpgradeLegacyChild(t *testing.T) {
 		if _, err := ValidateArchiveRecordAgainstState(active, storage.ArchiveRecord{Kind: "swaps", ID: child.ID, Data: encoded}); err == nil {
 			t.Fatal("cold legacy child bypassed state cutover")
 		}
+	}
+}
+
+func TestStateCutoverWriterRejectsChangedSourceBeforeAnyWrite(t *testing.T) {
+	for _, version := range []int{-1, 0, 1, 2, StateVersion} {
+		t.Run(strconv.Itoa(version), func(t *testing.T) {
+			root := t.TempDir()
+			path, replacement := filepath.Join(root, "state.db"), filepath.Join(root, "replacement.db")
+			password := []byte("disposable-writer-preflight-credential")
+			if err := storage.Initialize(path, password, State{Version: StateVersion, Network: chain.Regtest}); err != nil {
+				t.Fatal(err)
+			}
+			if err := PreflightStateVersion(path, password); err != nil {
+				t.Fatal(err)
+			}
+			if version < 0 {
+				if err := os.WriteFile(replacement, nil, 0600); err != nil {
+					t.Fatal(err)
+				}
+			} else {
+				v, err := storage.Open(replacement, password)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if err := v.Save(map[string]any{"version": version, "network": "regtest"}); err != nil {
+					t.Fatal(err)
+				}
+				if err := v.Close(); err != nil {
+					t.Fatal(err)
+				}
+			}
+			before, err := os.ReadFile(replacement)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := os.Rename(replacement, path); err != nil {
+				t.Fatal(err)
+			}
+			v, state, err := openCurrentStateVault(path, password)
+			if (err == nil) != (version == StateVersion) {
+				t.Fatalf("unexpected activation: version%d %v", version, err)
+			}
+			if v != nil {
+				if state.Version != StateVersion {
+					t.Fatal("wrong writer state")
+				}
+				if err := v.Close(); err != nil {
+					t.Fatal(err)
+				}
+			}
+			after, err := os.ReadFile(path)
+			if err != nil || !bytes.Equal(before, after) {
+				t.Fatalf("validation changed replacement bytes: %v", err)
+			}
+		})
+	}
+}
+
+// A format-only fixture; signing/economic validation is tested in protocol.
+func currentFormatSwap(t *testing.T, id string) *Swap {
+	t.Helper()
+	o := protocol.Offer{Version: protocol.Version, Network: chain.Regtest, ID: "parent", SellAmount: 1000000, BuyAmount: 1000000, Revision: 1, Available: 1000000, FillPolicy: protocol.FillPolicy{Mode: protocol.FillWhole, Min: 1000000, Max: 1000000}}
+	raw, err := json.Marshal(o)
+	if err != nil {
+		t.Fatal(err)
+	}
+	r := protocol.Request{Version: protocol.Version, Quantity: 1000000, Revision: 1, OfferEvent: nostr.Event{Content: string(raw)}}
+	return &Swap{ID: id, Role: "maker", Request: r, Terms: &protocol.Terms{Version: protocol.Version, Request: r}}
+}
+
+func TestStateCutoverColdProtocolCheckedBeforeAnyPromotion(t *testing.T) {
+	for _, mode := range []string{"legacy core", "malformed last companion", "current"} {
+		t.Run(mode, func(t *testing.T) {
+			child := currentFormatSwap(t, "child")
+			if mode == "legacy core" {
+				child.Request.Version = 1
+			}
+			raw, _ := json.Marshal(child)
+			records := []storage.ArchiveRecord{{Kind: "swaps", ID: child.ID, Data: raw}, {Kind: "recovery_swaps", ID: child.ID, Data: json.RawMessage(`true`)}, {Kind: "funding_fees", ID: "offer/parent", Data: json.RawMessage(`{"funding_fee":6500}`)}}
+			if mode == "malformed last companion" {
+				records[2].Data = json.RawMessage(`"not a fee"`)
+			}
+			e := &Engine{s: State{Version: StateVersion, Network: chain.Regtest}, archivePuts: map[string]storage.ArchiveRecord{}}
+			for _, record := range records {
+				e.archivePuts[archiveMoveKey(record.Kind, record.ID)] = record
+				if err := e.archiveDelta(record, true); err != nil {
+					t.Fatal(err)
+				}
+			}
+			before, _ := json.Marshal(e.s)
+			found, err := e.activateArchived("swaps", child.ID)
+			if mode != "current" {
+				if err == nil || found {
+					t.Fatal("incompatible core or companion promoted")
+				}
+				after, _ := json.Marshal(e.s)
+				if !bytes.Equal(before, after) || len(e.archivePuts) != len(records) || len(e.archiveOrigins) != 0 {
+					t.Fatal("refused group partially promoted")
+				}
+			} else if err != nil || !found || e.s.Swaps[child.ID] == nil || e.s.Recovery == nil || !e.s.Recovery.Swaps[child.ID] || e.s.FundingFees["offer/parent"].FundingFee != 6500 || len(e.archivePuts) != 0 {
+				t.Fatalf("coherent current activation: %v", err)
+			}
+		})
+	}
+}
+
+func TestStateCutoverChecksPersistedColdProtocolPages(t *testing.T) {
+	for _, legacy := range []bool{false, true} {
+		t.Run(strconv.FormatBool(legacy), func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), "state.db")
+			password := []byte("disposable-cold-cutover-credential")
+			e := &Engine{s: State{Version: StateVersion, Network: chain.Regtest}}
+			var records []storage.ArchiveRecord
+			for i := 0; i < 70; i++ {
+				child := currentFormatSwap(t, strconv.Itoa(i))
+				if legacy && i == 69 {
+					child.Request.Version = 1
+				}
+				raw, _ := json.Marshal(child)
+				record := storage.ArchiveRecord{Kind: "swaps", ID: child.ID, Data: raw}
+				if err := e.archiveDelta(record, true); err != nil {
+					t.Fatal(err)
+				}
+				records = append(records, record)
+			}
+			v, err := storage.Open(path, password)
+			if err != nil {
+				t.Fatal(err)
+			}
+			// Simulate an independently changed outer format marker, retaining
+			// authenticated cold bytes; normal State writers must not create it.
+			if _, err := v.CommitArchive(e.s, storage.ArchiveBatch{Put: records}, 0); err != nil {
+				t.Fatal(err)
+			}
+			if err := v.Close(); err != nil {
+				t.Fatal(err)
+			}
+			before, err := os.ReadFile(path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := PreflightStateVersion(path, password); (err != nil) != legacy {
+				t.Fatalf("readonly cold check legacy%t: %v", legacy, err)
+			}
+			v, _, err = openCurrentStateVault(path, password)
+			if v != nil {
+				v.Close()
+			}
+			if (err != nil) != legacy {
+				t.Fatalf("writer cold check legacy%t: %v", legacy, err)
+			}
+			after, err := os.ReadFile(path)
+			if err != nil || !bytes.Equal(before, after) {
+				t.Fatalf("cold validation mutated source: %v", err)
+			}
+		})
 	}
 }

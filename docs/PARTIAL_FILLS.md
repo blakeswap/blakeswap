@@ -24,7 +24,12 @@ silently resets or deletes a rejected profile.
 
 Existing-file preflight opens the encrypted vault read-only with a one-second
 writer-lock timeout and authenticates its state before any source cleanup or
-write. Activation repeats validation under exclusive writer ownership. First
+write. Activation opens the existing file without creation, empty-file
+initialization or an opening freelist transaction, then repeats validation under
+exclusive writer ownership. Both passes inspect protocol-bearing cold records
+in bounded pages, without reconstructing unrelated lifetime history. A cold
+core and its required companions are format-checked before any of them acquire
+active ownership. First
 initialization writes a complete current-format state in a private sibling
 directory and atomically links it into an absent final path. Failed writes or
 interruption before publication leave that final path absent; interruption after

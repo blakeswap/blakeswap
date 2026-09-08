@@ -81,7 +81,7 @@ func CheckStoredNetwork(c Config) error {
 	if _, err = vault.Load(&s); err != nil {
 		return err
 	}
-	if err := ValidateProtocolState(&s); err != nil {
+	if err := ValidateVaultProtocolState(vault, &s); err != nil {
 		return err
 	}
 	if s.Network.Normalized() != c.Network.Normalized() {

@@ -26,7 +26,7 @@ type Vault struct {
 }
 
 func Open(path string, password []byte) (*Vault, error) {
-	return openVault(path, password, false)
+	return openVault(path, password, false, true)
 }
 
 // OpenReadOnly authenticates an existing vault without creating directories,
@@ -34,19 +34,33 @@ func Open(path string, password []byte) (*Vault, error) {
 // preflight and offline projections; callers must revalidate after acquiring a
 // writer before activating a profile that could have changed in between.
 func OpenReadOnly(path string, password []byte) (*Vault, error) {
-	return openVault(path, password, true)
+	return openVault(path, password, true, false)
 }
 
-func openVault(path string, password []byte, readOnly bool) (*Vault, error) {
+// OpenExisting acquires exclusive ownership of an authenticated existing vault
+// without initializing or writing it. The caller can reject its decoded format
+// without changing source bytes, including after a separate read-only preflight.
+func OpenExisting(path string, password []byte) (*Vault, error) {
+	return openVault(path, password, false, false)
+}
+
+func openVault(path string, password []byte, readOnly, initializeMissing bool) (*Vault, error) {
 	if len(password) < 16 {
 		return nil, errors.New("vault password must be at least 16 bytes")
 	}
-	if !readOnly {
+	if initializeMissing {
 		if e := os.MkdirAll(filepath.Dir(path), 0700); e != nil {
 			return nil, e
 		}
 	}
-	db, e := bolt.Open(path, 0600, &bolt.Options{Timeout: time.Second, ReadOnly: readOnly})
+	options := &bolt.Options{Timeout: time.Second, ReadOnly: readOnly}
+	if !readOnly && !initializeMissing {
+		// bbolt otherwise creates an absent/empty file and may commit a freelist
+		// conversion while opening. Both precede the caller's format validation.
+		options.OpenFile = openExistingLocked
+		options.NoFreelistSync = true
+	}
+	db, e := bolt.Open(path, 0600, options)
 	if e != nil {
 		return nil, e
 	}
@@ -70,7 +84,7 @@ func openVault(path string, password []byte, readOnly bool) (*Vault, error) {
 		}
 		return nil
 	}
-	if readOnly {
+	if !initializeMissing {
 		e = db.View(func(tx *bolt.Tx) error {
 			b := tx.Bucket(bucket)
 			if b == nil {
@@ -110,13 +124,16 @@ func openVault(path string, password []byte, readOnly bool) (*Vault, error) {
 		return fail(errors.New("vault password incorrect or state corrupted"))
 	}
 	if !exists {
-		if readOnly {
+		if !initializeMissing {
 			return fail(errors.New("existing vault has no authenticated state"))
 		}
 		if e = v.Save(map[string]any{}); e != nil {
 			return fail(e)
 		}
 	}
+	// Authentication is complete. This only controls future caller-requested
+	// commits; rejecting the decoded format and closing still performs no write.
+	db.NoFreelistSync = false
 	return v, nil
 }
 func (v *Vault) Load(out any) (bool, error) {

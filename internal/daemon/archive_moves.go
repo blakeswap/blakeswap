@@ -140,15 +140,41 @@ func (e *Engine) archiveRecord(kind, id string) (storage.ArchiveRecord, bool, er
 }
 
 func (e *Engine) activateArchived(kind, id string) (bool, error) {
+	var records []storage.ArchiveRecord
+	visited := map[string]bool{}
+	found, err := e.collectArchiveActivation(kind, id, visited, &records)
+	if err != nil || !found {
+		return false, err
+	}
+	// All core and companion formats were checked before the first promotion.
+	// Companions precede their core in the shared pending transaction.
+	for _, record := range records {
+		if err := e.promoteArchived(record); err != nil {
+			return false, err
+		}
+	}
+	return true, nil
+}
+
+func (e *Engine) collectArchiveActivation(kind, id string, visited map[string]bool, records *[]storage.ArchiveRecord) (bool, error) {
+	key := archiveMoveKey(kind, id)
+	if visited[key] {
+		return true, nil
+	}
 	record, found, err := e.archiveRecord(kind, id)
 	if err != nil || !found {
 		return found, err
 	}
-	// An obligation must never become executable before its imported-origin
-	// restriction and exact fee policy. These bounded companions share the same
-	// pending transaction, regardless of whether a reorg or a mailbox read caused
-	// reactivation. A read/decode failure leaves the core record cold.
-	companions := []storage.ArchiveKey{}
+	if _, err := ValidateArchiveRecordAgainstState(e.s, record); err != nil {
+		return false, err
+	}
+	if _, err := archiveRecordDigest(record); err != nil {
+		return false, err
+	}
+	visited[key] = true
+	// Imported origin and fee policy must be visible before execution. This
+	// finite companion graph is shared by direct mailbox and reorg activation.
+	var companions []storage.ArchiveKey
 	switch kind {
 	case "swaps":
 		companions = append(companions, storage.ArchiveKey{Kind: "recovery_swaps", ID: id}, storage.ArchiveKey{Kind: "funding_fees", ID: "swap/" + id})
@@ -164,35 +190,40 @@ func (e *Engine) activateArchived(kind, id string) (bool, error) {
 	case "tower_jobs":
 		companions = append(companions, storage.ArchiveKey{Kind: "recovery_tower_jobs", ID: id})
 	}
-	for _, key := range companions {
-		if _, err := e.activateArchived(key.Kind, key.ID); err != nil {
+	for _, companion := range companions {
+		if _, err := e.collectArchiveActivation(companion.Kind, companion.ID, visited, records); err != nil {
 			return false, err
 		}
 	}
+	*records = append(*records, record)
+	return true, nil
+}
+
+func (e *Engine) promoteArchived(record storage.ArchiveRecord) error {
 	origin, err := archiveRecordDigest(record)
 	if err != nil {
-		return false, err
+		return err
 	}
 	if e.archiveOrigins == nil {
 		e.archiveOrigins = map[string][32]byte{}
 	}
-	e.archiveOrigins[archiveMoveKey(kind, id)] = origin
+	e.archiveOrigins[archiveMoveKey(record.Kind, record.ID)] = origin
 	if err = mergeArchiveRecord(&e.s, record); err != nil {
-		return false, err
+		return err
 	}
 	if err = e.archiveDelta(record, false); err != nil {
-		return false, err
+		return err
 	}
-	key := archiveMoveKey(kind, id)
+	key := archiveMoveKey(record.Kind, record.ID)
 	if _, pending := e.archivePuts[key]; pending {
 		delete(e.archivePuts, key)
 	} else {
 		if e.archiveDeletes == nil {
 			e.archiveDeletes = map[string]storage.ArchiveKey{}
 		}
-		e.archiveDeletes[key] = storage.ArchiveKey{Kind: kind, ID: id}
+		e.archiveDeletes[key] = storage.ArchiveKey{Kind: record.Kind, ID: record.ID}
 	}
-	return true, nil
+	return nil
 }
 
 func (e *Engine) pendingArchive() storage.ArchiveBatch {
