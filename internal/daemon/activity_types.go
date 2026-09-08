@@ -130,6 +130,7 @@ type ActivityExport struct {
 type activitySnapshot struct {
 	Rows     *storage.SortedRows
 	Page     ActivityPage
+	Fills    *FillPage
 	Filter   string
 	Sequence uint64
 }

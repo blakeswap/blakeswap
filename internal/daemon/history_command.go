@@ -38,8 +38,11 @@ func (e *Engine) historyCommand(ctx context.Context, request Request) (result an
 	sourceGenerations := e.historySourceGenerations()
 	var query ActivityQuery
 	var market MarketQuery
+	var fills FillQuery
 	if request.Method == "market.list" {
 		market, err = view.parseMarketQuery(request.Params)
+	} else if request.Method == "fills.list" {
+		fills, err = view.parseFillQuery(request.Params)
 	} else {
 		query, err = view.parseActivityQuery(request.Params)
 	}
@@ -48,7 +51,8 @@ func (e *Engine) historyCommand(ctx context.Context, request Request) (result an
 		return nil, err
 	}
 	var source *storage.PageSnapshot
-	if query.Snapshot == "" || request.Method == "market.list" {
+	freshQuery := query.Snapshot == "" && fills.Revision == ""
+	if freshQuery || request.Method == "market.list" {
 		if e.vault != nil {
 			_, source, err = e.vault.CaptureArchive("", false)
 		} else {
@@ -112,7 +116,9 @@ func (e *Engine) historyCommand(ctx context.Context, request Request) (result an
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
-	if e.vault == nil {
+	if request.Method == "fills.list" {
+		result, err = view.fillPage(ctx, source, fills)
+	} else if e.vault == nil {
 		switch request.Method {
 		case "market.list":
 			result, err = view.marketPage(request.Params)

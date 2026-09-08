@@ -191,7 +191,7 @@ func (e *Engine) Command(ctx context.Context, req Request) (any, error) {
 		}
 		return e.Status(), nil
 	}
-	if req.Method == "market.list" || req.Method == "activity.list" || req.Method == "activity.export" {
+	if req.Method == "market.list" || req.Method == "activity.list" || req.Method == "activity.export" || req.Method == "fills.list" {
 		return e.historyCommand(ctx, req)
 	}
 	e.mu.Lock()
