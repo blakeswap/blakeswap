@@ -231,9 +231,8 @@ func TestArchiveActivationPairsSendAndTowerOriginsWithoutInventingThem(t *testin
 }
 
 func TestArchiveActivationRejectsUnsupportedChildFeeCap(t *testing.T) {
-	e, s, _, _ := isolatedFixture(t, "taker")
+	e, s, _, _ := isolatedFixture(t, "taker", FeeSelection{FundingFee: 3456, OwnerFeeCap: 20000})
 	owner := "swap/" + s.ID
-	e.s.FundingFees[owner] = FeeSelection{FundingFee: 3456, OwnerFeeCap: 5000}
 	for _, key := range []storage.ArchiveKey{{Kind: "swaps", ID: s.ID}, {Kind: "funding_fees", ID: owner}} {
 		if err := e.stageArchive(key.Kind, key.ID); err != nil {
 			t.Fatal(err)
@@ -241,6 +240,16 @@ func TestArchiveActivationRejectsUnsupportedChildFeeCap(t *testing.T) {
 	}
 	if err := e.save(); err != nil {
 		t.Fatal(err)
+	}
+	// Normal archival now refuses unsupported policy before committing it.
+	// Inject the malformed cold reader reply to exercise activation's separate
+	// guard without weakening the writer or modifying the committed source.
+	e.archiveRead = func(kind, id string) (storage.ArchiveRecord, bool, error) {
+		record, found, err := e.vault.ReadArchive(kind, id)
+		if err == nil && found && kind == "funding_fees" && id == owner {
+			record.Data, err = json.Marshal(FeeSelection{FundingFee: 3456, OwnerFeeCap: 5000})
+		}
+		return record, found, err
 	}
 	before := protocol.Digest(e.s)
 	if activated, err := e.activateArchived("swaps", s.ID); err == nil || activated || !strings.Contains(err.Error(), "exact retained child funding fee") {
@@ -250,4 +259,9 @@ func TestArchiveActivationRejectsUnsupportedChildFeeCap(t *testing.T) {
 	if found, err := e.archivedValue("funding_fees", owner, &fee); err != nil || !found || fee.OwnerFeeCap != 5000 || fee.FundingFee != 3456 || protocol.Digest(e.s) != before || e.s.Swaps[s.ID] != nil {
 		t.Fatal("refusal changed retained core or exact fee evidence", err)
 	}
+	e.archiveRead = nil
+	if activated, err := e.activateArchived("swaps", s.ID); err != nil || !activated {
+		t.Fatal("unchanged supported source could not activate", activated, err)
+	}
+
 }
