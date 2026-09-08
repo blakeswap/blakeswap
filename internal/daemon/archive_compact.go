@@ -288,7 +288,7 @@ func (e *Engine) compactArchive(ctx context.Context, swaps, towers map[chain.ID]
 		if remaining == 0 {
 			break
 		}
-		if parent != nil && !activeMakerParents[id] && (parent.Quantities.Closed || parent.Quantities.Available == 0) && parent.Quantities.Reserved == 0 && parent.Quantities.Committed == 0 {
+		if parent != nil && !activeMakerParents[id] && (parent.RestoreHold || parent.Quantities.Closed || parent.Quantities.Available == 0) && parent.Quantities.Reserved == 0 && parent.Quantities.Committed == 0 {
 			if err := move("parent_orders", id); err != nil {
 				return err
 			}

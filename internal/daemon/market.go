@@ -127,7 +127,7 @@ type MarketPage struct {
 	AllRelays  bool          `json:"all_relays"`
 }
 
-func (e *Engine) marketOrder(o protocol.Offer, eventID string, record OrderRecord, now int64) MarketOrder {
+func (e *Engine) marketOrder(o protocol.Offer, eventID string, record OrderRecord, now int64) (MarketOrder, error) {
 	row := MarketOrder{Offer: o, EventID: eventID, Own: o.Maker == e.identity.Public().Hex(), Status: o.Status, SwapIDs: []string{}}
 	row.BTCAmount, row.BlakeAmount = o.SellAmount, o.BuyAmount
 	if o.Sell == chain.Blake {
@@ -141,35 +141,43 @@ func (e *Engine) marketOrder(o protocol.Offer, eventID string, record OrderRecor
 	if row.Status == "open" && o.Expires <= now {
 		row.Status = "expired"
 	}
-	active := false
 	linked := map[string]bool{}
 	for id := range record.Settlements {
 		linked[id] = true
 	}
 	for id, s := range e.s.Swaps {
+		if s == nil {
+			return row, errors.New("retained child core is unavailable")
+		}
 		var requested protocol.Offer
 		if json.Unmarshal([]byte(s.Request.OfferEvent.Content), &requested) != nil || requested.Maker != o.Maker || requested.ID != o.ID {
 			continue
 		}
 		linked[id] = true
-		if !terminalSwap(s) {
-			active = true
-			if !row.Own && row.Status == "open" {
-				row.Status = "pending"
-			}
-		}
 	}
 	for id := range linked {
 		row.SwapIDs = append(row.SwapIDs, id)
 	}
 	sort.Strings(row.SwapIDs)
-	if row.Own && row.Status == "reserved" && !active {
-		if finished := e.finishedOrder(o.ID); finished != "" {
-			row.Status = finished
-		}
-	}
 	row.Availability = row.Status
 	if row.Own {
+		parent, err := e.retainedParentOrder(o.ID)
+		if err != nil {
+			return row, err
+		}
+		if parent.Economics != o.EconomicsDigest() {
+			return row, errors.New("retained market parent economics mismatch")
+		}
+		bins := parent.Quantities
+		row.Quantities = &QuantitySummary{Total: bins.Total, Available: bins.Available, Reserved: bins.Reserved, Committed: bins.Committed, Filled: bins.Filled, Released: bins.Released}
+		row.Status = parentPublicOffer(*parent).Status
+		if row.Status == "open" && o.Expires <= now {
+			row.Status = "expired"
+		}
+		if finished := e.finishedParentOrder(parent); finished != "" && row.Status != "open" && !bins.Closed {
+			row.Status = finished
+		}
+		row.Availability = row.Status
 		row.Offer = e.ownOffer(o)
 		if _, live := e.s.OfferTowers[o.ID]; !live && record.Protection != nil {
 			copy := *record.Protection
@@ -178,22 +186,35 @@ func (e *Engine) marketOrder(o protocol.Offer, eventID string, record OrderRecor
 		row.Publication, row.AcknowledgedAt, row.CreatedAt = record.Publication, record.AcknowledgedAt, record.CreatedAt
 		row.Replaces, row.ReplacedBy, row.RecreatedFrom = record.Replaces, record.ReplacedBy, record.RecreatedFrom
 		row.ActivityID = activityID("order", o.ID)
-		row.CanCancel = o.Status == "open" && !active && e.s.Offers[o.ID].ID.Hex() == eventID
-		row.CanReplace = row.CanCancel && row.Status == "open"
+		live := e.s.ParentOrders[o.ID] != nil && e.s.Offers[o.ID].ID.Hex() == eventID
+		row.CanCancel = live && !parent.RestoreHold && !bins.Closed && (bins.Available > 0 || bins.Reserved > 0 || bins.Committed > 0)
+		row.CanReplace = row.CanCancel && bins.Available > 0 && row.Status == "open" && parent.SignedRevision == bins.Revision
 		_, sourceErr := e.orderSource(OrderActionFields{OrderAction: "recreate", SourceOfferID: o.ID, SourceEventID: eventID}, now)
 		row.CanRecreate = sourceErr == nil && e.recoveryTradingReady() == nil
-		if row.Status == "open" && record.Publication != "relay_acknowledged" {
+		if parent.RestoreHold {
+			row.Availability = "recovery_hold"
+		} else if parent.SignedRevision != bins.Revision || row.Status == "open" && record.Publication != "relay_acknowledged" {
 			row.Availability = "publication_pending"
+		}
+		if row.Status == "open" && !parent.RestoreHold {
+			if suggested, err := o.FillPolicy.Suggested(o.SellAmount, o.BuyAmount, bins.Available); err == nil {
+				row.SuggestedQuantity = suggested.Sell
+			}
 		}
 	} else {
 		row.Offer.Tower, row.Offer.TowerBPS = nil, 0
 		fresh := e.marketObservedAt > 0 && now-e.marketObservedAt <= 120
-		row.CanTake = row.Status == "open" && fresh
+		if row.Status == "open" {
+			if suggested, err := o.FillPolicy.Suggested(o.SellAmount, o.BuyAmount, o.Available); err == nil {
+				row.SuggestedQuantity = suggested.Sell
+			}
+		}
+		row.CanTake = row.Status == "open" && fresh && row.SuggestedQuantity > 0
 		if row.Status == "open" && !fresh {
 			row.Availability = "stale"
 		}
 	}
-	return row
+	return row, nil
 }
 
 func marketLess(a, b MarketOrder, key string, descending bool) bool {
@@ -257,7 +278,11 @@ func (e *Engine) marketPage(raw json.RawMessage) (MarketPage, error) {
 	rows := map[string]MarketOrder{}
 	for id, r := range e.s.OrderRecords {
 		if r.Offer.Expires > 0 && r.Offer.Validate(r.Offer.Expires-1) == nil && r.Offer.ID == id && r.Offer.Maker == e.identity.Public().Hex() && r.Offer.Network.Normalized() == e.Config.Network {
-			rows[r.Offer.Maker+":"+id] = e.marketOrder(r.Offer, r.EventID, r, now)
+			row, err := e.marketOrder(r.Offer, r.EventID, r, now)
+			if err != nil {
+				return MarketPage{}, err
+			}
+			rows[r.Offer.Maker+":"+id] = row
 		}
 	}
 	for _, event := range e.s.Book {
@@ -265,7 +290,11 @@ func (e *Engine) marketPage(raw json.RawMessage) (MarketPage, error) {
 		if err != nil || o.Maker == e.identity.Public().Hex() || o.Network.Normalized() != e.Config.Network {
 			continue
 		}
-		rows[o.Maker+":"+o.ID] = e.marketOrder(o, event.ID.Hex(), OrderRecord{}, now)
+		row, err := e.marketOrder(o, event.ID.Hex(), OrderRecord{}, now)
+		if err != nil {
+			return MarketPage{}, err
+		}
+		rows[o.Maker+":"+o.ID] = row
 	}
 	for _, row := range rows {
 		if (q.Owner == "mine" && !row.Own) || (q.Owner == "others" && row.Own) || (q.Side != "all" && row.Side != q.Side) || (q.Status != "all" && row.Status != q.Status) || row.BTCAmount < q.BTCMin || (q.BTCMax > 0 && row.BTCAmount > q.BTCMax) {

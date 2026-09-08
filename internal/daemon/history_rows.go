@@ -175,7 +175,11 @@ func (e *Engine) streamMarketPage(ctx context.Context, source *storage.PageSnaps
 		if _, err := e.finishedOrderChecked(id); err != nil {
 			return err
 		}
-		return emit(e.marketOrder(r.Offer, r.EventID, r, now))
+		row, err := e.marketOrder(r.Offer, r.EventID, r, now)
+		if err != nil {
+			return err
+		}
+		return emit(row)
 	}
 	if q.Owner != "others" {
 		for id, r := range e.s.OrderRecords {
@@ -206,7 +210,11 @@ func (e *Engine) streamMarketPage(ctx context.Context, source *storage.PageSnaps
 			if err != nil || offer.Maker == e.identity.Public().Hex() || offer.Network.Normalized() != e.Config.Network {
 				continue
 			}
-			rows[offer.Maker+":"+offer.ID] = e.marketOrder(offer, event.ID.Hex(), OrderRecord{}, now)
+			row, err := e.marketOrder(offer, event.ID.Hex(), OrderRecord{}, now)
+			if err != nil {
+				return MarketPage{}, err
+			}
+			rows[offer.Maker+":"+offer.ID] = row
 		}
 		for _, row := range rows {
 			if err := emit(row); err != nil {

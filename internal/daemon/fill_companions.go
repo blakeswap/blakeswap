@@ -50,3 +50,27 @@ func (e *Engine) retainedSwapFee(s *Swap) (FeeSelection, error) {
 	}
 	return selection, nil
 }
+
+// retainedParentOrder is a point read from the current authenticated query or
+// live vault boundary. It does not promote publication or spending authority.
+func (e *Engine) retainedParentOrder(id string) (*ParentOrder, error) {
+	p := e.s.ParentOrders[id]
+	if p == nil {
+		var cold ParentOrder
+		found, err := e.archivedValue("parent_orders", id, &cold)
+		if err != nil {
+			return nil, err
+		}
+		if !found {
+			return nil, errors.New("retained parent accounting is unavailable")
+		}
+		p = &cold
+	}
+	if err := validateParentOrder(id, p); err != nil {
+		return nil, err
+	}
+	if p.Offer.Network.Normalized() != e.Config.Network || p.Offer.Maker != e.identity.Public().Hex() {
+		return nil, errors.New("retained parent belongs to another wallet or network")
+	}
+	return p, nil
+}

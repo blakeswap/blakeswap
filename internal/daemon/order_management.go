@@ -18,7 +18,7 @@ type OrderActionFields struct {
 func (e *Engine) activeOrderSwap(id string) bool {
 	for _, s := range e.s.Swaps {
 		var o protocol.Offer
-		if s.Role == "maker" && !terminalSwap(s) && json.Unmarshal([]byte(s.Request.OfferEvent.Content), &o) == nil && o.ID == id && o.Maker == e.identity.Public().Hex() {
+		if s != nil && s.Role == "maker" && !terminalSwap(s) && json.Unmarshal([]byte(s.Request.OfferEvent.Content), &o) == nil && o.ID == id && o.Maker == e.identity.Public().Hex() {
 			return true
 		}
 	}
@@ -39,34 +39,19 @@ func orderSettlementStatus(stage string) string {
 	return ""
 }
 
+func (e *Engine) finishedParentOrder(parent *ParentOrder) string {
+	if parent == nil || parent.Quantities.Available != 0 || parent.Quantities.Reserved != 0 || parent.Quantities.Committed != 0 || e.activeOrderSwap(parent.Offer.ID) {
+		return ""
+	}
+	q := parent.Quantities
+	if q.Filled == q.Total {
+		return "filled"
+	}
+	return "cancelled"
+}
+
 func (e *Engine) finishedOrderRecord(id string, record OrderRecord) string {
-	// Live state always overrides retained settlement evidence, including a
-	// reactivated obligation which has lost its previous terminal observation.
-	stages := make(map[string]string, len(record.Settlements))
-	for key, stage := range record.Settlements {
-		stages[key] = stage
-	}
-	for key, swap := range e.s.Swaps {
-		if swap == nil {
-			continue
-		}
-		var o protocol.Offer
-		if swap.Role != "maker" || json.Unmarshal([]byte(swap.Request.OfferEvent.Content), &o) != nil || o.ID != id || o.Maker != e.identity.Public().Hex() {
-			continue
-		}
-		if !terminalSwap(swap) {
-			return ""
-		}
-		stages[key] = swap.Stage
-	}
-	result := ""
-	for _, stage := range stages {
-		status := orderSettlementStatus(stage)
-		if status == "filled" || status == "refunded" && result != "filled" || status == "cancelled" && result == "" {
-			result = status
-		}
-	}
-	return result
+	return e.finishedParentOrder(e.s.ParentOrders[id])
 }
 
 func (e *Engine) finishedOrderChecked(id string) (string, error) {
@@ -79,7 +64,19 @@ func (e *Engine) finishedOrderChecked(id string) (string, error) {
 	if err := validateOrderSettlement(id, record, e.s.Network); err != nil {
 		return "", err
 	}
-	return e.finishedOrderRecord(id, record), nil
+	parent, err := e.retainedParentOrder(id)
+	if err != nil {
+		return "", err
+	}
+	status := e.finishedParentOrder(parent)
+	if status == "cancelled" && parent.Offer.Mode == protocol.FillWhole && parent.Quantities.Released == parent.Quantities.Total && parent.Quantities.Withdrawn == 0 && len(record.Settlements) == 1 {
+		for _, stage := range record.Settlements {
+			if stage == "refunded" {
+				return "refunded", nil
+			}
+		}
+	}
+	return status, nil
 }
 
 func (e *Engine) finishedOrder(id string) string {
@@ -97,6 +94,16 @@ func (e *Engine) retainOrderSettlement(swap *Swap) error {
 	offer, err := historicalOffer(swap.Request.OfferEvent)
 	if err != nil || offer.Maker != e.identity.Public().Hex() || offer.Network.Normalized() != e.Config.Network {
 		return nil
+	}
+	if _, err := e.fillSummary(swap, false); err != nil {
+		return err
+	}
+	parent, err := e.retainedParentOrder(offer.ID)
+	if err != nil {
+		return err
+	}
+	if parent.Economics != offer.EconomicsDigest() {
+		return errors.New("settled child does not match retained parent economics")
 	}
 	if _, exists := e.s.OrderRecords[offer.ID]; !exists {
 		if _, err := e.activateArchived("order_records", offer.ID); err != nil {
@@ -118,10 +125,16 @@ func (e *Engine) retainOrderSettlement(swap *Swap) error {
 		}
 		record = OrderRecord{Offer: source, EventID: event.ID.Hex(), Publication: "unknown"}
 	}
-	if record.Settlements == nil {
-		record.Settlements = map[string]string{}
+	// Partial history is the paged child index, never a lifetime array embedded
+	// in one hot parent. A whole parent can retain its one final allocated link.
+	fill, err := e.retainedFillRecord(swap.ID)
+	if err != nil {
+		return err
 	}
-	record.Settlements[swap.ID] = swap.Stage
+	record.Settlements = nil
+	if offer.Mode == protocol.FillWhole && fill.Allocation.currentQuantity() > 0 {
+		record.Settlements = map[string]string{swap.ID: swap.Stage}
+	}
 	if tower, ok := e.s.OfferTowers[offer.ID]; ok {
 		copy := tower
 		record.Protection = &copy
@@ -184,7 +197,14 @@ func (e *Engine) orderSource(p OrderActionFields, now int64) (protocol.Offer, er
 		if err != nil {
 			return empty, err
 		}
-		if o.Status != "cancelled" && o.Status != "filled" && !(o.Status == "open" && o.Expires <= now) && !(o.Status == "reserved" && finished != "") {
+		parent, err := e.retainedParentOrder(o.ID)
+		if err != nil {
+			return empty, err
+		}
+		if parent.Quantities.Reserved != 0 || parent.Quantities.Committed != 0 {
+			return empty, errors.New("retained child obligations must settle before recreation")
+		}
+		if !parent.Quantities.Closed && finished == "" && !(o.Status == "open" && o.Expires <= now) {
 			return empty, errors.New("only a finished, cancelled or expired order can be recreated")
 		}
 	default:

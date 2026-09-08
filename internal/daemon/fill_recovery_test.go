@@ -138,8 +138,12 @@ func assertRetiredImportPeerRecovery(t *testing.T, e *Engine, s *Swap, f *FillRe
 	if err := e.save(); err != nil {
 		t.Fatal(err)
 	}
-	if !e.recoverySwapResolved(s, all) || protocol.Digest(e.s.ParentOrders[f.ParentID]) != parentBefore {
-		t.Fatal("cold refusal evidence was lost or retirement reallocated quantity")
+	retainedParent, err := e.retainedParentOrder(f.ParentID)
+	if err != nil || !e.recoverySwapResolved(s, all) || protocol.Digest(retainedParent) != parentBefore {
+		t.Fatal("cold refusal evidence was lost or retirement reallocated quantity", err)
+	}
+	if e.s.ParentOrders[f.ParentID] != nil || !retainedParent.RestoreHold || retainedParent.Quantities.Available != retainedParent.Quantities.Total {
+		t.Fatal("retired imported parent kept hot lifetime authority or lost its saved hold")
 	}
 	if _, err := e.activateArchived("swaps", s.ID); err != nil {
 		t.Fatal(err)

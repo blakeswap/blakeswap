@@ -228,7 +228,15 @@ The quote/confirmation API and native review bind wallet, network, signed parent
 event/revision, q, derived b, min/max/remaining, effective rate, net proceeds and
 per-child costs. A stale asynchronous response or persisted confirmation retry
 cannot authorize a different quantity. Parent history links all child outcomes;
-a single child completion does not mark the entire parent filled.
+a single child completion does not mark the entire parent filled. Market rows
+show the local conserved bins separately from the signed availability event and
+its publication or restore hold. Partial child history is paged through
+`fills.list`; it is not accumulated in a lifetime array inside a hot parent.
+Whole-mode final history retains its one currently allocated terminal child
+link, including when both parent and child are cold. A still-open remote parent
+remains available even when this wallet has another pending child. Suggested
+quantities satisfy the signed bounds and remainder rule; confirmation still
+uses the exact reviewed quantity.
 
 Required validation includes arithmetic properties and overflow, conservation
 through returns/cancellation/reorg, racing requests, save failure and restart
