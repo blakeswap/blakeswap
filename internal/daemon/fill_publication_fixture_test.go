@@ -97,7 +97,7 @@ func TestPartialMatrixAcceptanceRequiresRelayPublication(t *testing.T) {
 	if found, err := maker.vault.Load(&saved); err != nil || !found || saved.Outbox[recordID] == nil || saved.Outbox[recordID].Event.ID.Hex() != eventID || protocol.Digest(saved.Swaps[id].Terms) != terms || protocol.Digest(saved.ParentOrders[offer.ID].Quantities) != bins {
 		t.Fatal("dispatch changed exact durable acceptance", err)
 	}
-	if ready, err := partialAcceptancesPublished(maker, expected); err != nil || ready || saved.Outbox[recordID].Published {
+	if ready, err := partialPublicationsPublished(maker, expected); err != nil || ready || saved.Outbox[recordID].Published {
 		t.Fatal("scheduled publication counted as relay acknowledgement", err)
 	}
 	close(release)
@@ -106,7 +106,7 @@ func TestPartialMatrixAcceptanceRequiresRelayPublication(t *testing.T) {
 		if err := maker.Tick(ctx); err != nil {
 			t.Fatal(err)
 		}
-		ready, err := partialAcceptancesPublished(maker, expected)
+		ready, err := partialPublicationsPublished(maker, expected)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -127,7 +127,7 @@ func TestPartialMatrixAcceptanceRequiresRelayPublication(t *testing.T) {
 			original := maker.s.Outbox[recordID]
 			altered := *original
 			maker.s.Outbox[recordID] = &altered
-			bad := make(map[string]partialAcceptancePublication, len(expected))
+			bad := make(map[string]partialPublication, len(expected))
 			for key, value := range expected {
 				bad[key] = value
 			}
@@ -151,7 +151,7 @@ func TestPartialMatrixAcceptanceRequiresRelayPublication(t *testing.T) {
 				want.terms = "changed"
 			}
 			bad[recordID] = want
-			ready, err := partialAcceptancesPublished(maker, bad)
+			ready, err := partialPublicationsPublished(maker, bad)
 			maker.s.Outbox[recordID] = original
 			if ready || (failure == "pending" && err != nil) || (failure != "pending" && err == nil) || protocol.Digest(maker.s) != before {
 				t.Fatal("invalid publication evidence accepted or mutated custody", err)

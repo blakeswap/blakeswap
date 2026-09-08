@@ -65,42 +65,68 @@ func partialRejectedRequest(e *Engine, expected protocol.Request) (bool, error) 
 	return true, nil
 }
 
-// Capture each exact durable acceptance while its recipient remains offline.
-// Publication is asynchronous: a scheduled attempt alone cannot justify closing
-// the only online sender before the relay has acknowledged that event.
-type partialAcceptancePublication struct {
-	child, recipient, event, terms string
+// Capture exact durable messages while their recipient remains offline.
+// A scheduled asynchronous attempt alone cannot justify closing the sender.
+type partialPublication struct {
+	child, recipient, event, terms, kind, funding string
 }
 
-func partialAcceptancePublications(e *Engine, ids []string) (map[string]partialAcceptancePublication, error) {
-	expected := map[string]partialAcceptancePublication{}
+func partialAcceptancePublications(e *Engine, ids []string) (map[string]partialPublication, error) {
+	return partialPublications(e, ids, "accepted")
+}
+
+func partialPublications(e *Engine, ids []string, kind string) (map[string]partialPublication, error) {
+	expected := map[string]partialPublication{}
 	for _, id := range ids {
 		child := e.s.Swaps[id]
-		if child == nil || child.Role != "maker" || child.Terms == nil {
-			return nil, errors.New("partial matrix acceptance child is unavailable")
+		if child == nil || child.Terms == nil {
+			return nil, errors.New("partial matrix publication child is unavailable")
 		}
-		raw, err := json.Marshal(child.Terms)
+		recipient, funding := child.Request.Taker, ""
+		var body any = child.Terms
+		switch kind {
+		case "accepted":
+			if child.Role != "maker" {
+				return nil, errors.New("acceptance has no maker sender")
+			}
+		case "long-funded", "short-funded":
+			role, rawFunding, sent, target := "taker", child.LongFunding, child.LongSent, child.Long
+			recipient = child.Terms.Offer().Maker
+			if kind == "short-funded" {
+				role, rawFunding, sent, target = "maker", child.ShortFunding, child.ShortSent, child.Short
+				recipient = child.Request.Taker
+			}
+			tx, err := contract.Parse(rawFunding)
+			if child.Role != role || !sent || err != nil || tx.TxHash().String() != target.TxID {
+				return nil, errors.New("funding notification has no exact retained transaction")
+			}
+			funding = protocol.Digest(rawFunding)
+			body = fundingMessage{protocol.Digest(child.Terms), rawFunding}
+		default:
+			return nil, errors.New("unsupported partial matrix publication")
+		}
+		raw, err := json.Marshal(body)
 		if err != nil {
 			return nil, err
 		}
-		key := protocol.Digest([]string{child.Request.Taker, "accepted", id, string(raw)})
+		key := protocol.Digest([]string{recipient, kind, id, string(raw)})
 		delivery := e.s.Outbox[key]
-		if delivery == nil || delivery.Type != "accepted" || delivery.SwapID != id || delivery.To != child.Request.Taker || delivery.Retired || delivery.Acknowledged {
-			return nil, errors.New("partial matrix exact acceptance delivery is unavailable")
+		if delivery == nil || delivery.Type != kind || delivery.SwapID != id || delivery.To != recipient || delivery.Retired || delivery.Acknowledged {
+			return nil, errors.New("partial matrix exact delivery is unavailable")
 		}
-		expected[key] = partialAcceptancePublication{id, child.Request.Taker, delivery.Event.ID.Hex(), protocol.Digest(child.Terms)}
+		expected[key] = partialPublication{id, recipient, delivery.Event.ID.Hex(), protocol.Digest(child.Terms), kind, funding}
 	}
 	return expected, nil
 }
 
-func partialAcceptancesPublished(e *Engine, expected map[string]partialAcceptancePublication) (bool, error) {
+func partialPublicationsPublished(e *Engine, expected map[string]partialPublication) (bool, error) {
 	ready := len(expected) > 0
 	for key, want := range expected {
-		delivery, child := e.s.Outbox[key], e.s.Swaps[want.child]
-		if delivery == nil || child == nil || child.Role != "maker" || child.Request.Taker != want.recipient || child.Terms == nil || protocol.Digest(child.Terms) != want.terms || delivery.Type != "accepted" || delivery.SwapID != want.child || delivery.To != want.recipient || delivery.Event.ID.Hex() != want.event || delivery.Retired || delivery.Acknowledged {
-			return false, errors.New("partial matrix acceptance identity changed before publication")
+		current, err := partialPublications(e, []string{want.child}, want.kind)
+		if err != nil || current[key] != want {
+			return false, errors.New("partial matrix identity changed before publication")
 		}
-		ready = ready && delivery.Published
+		ready = ready && e.s.Outbox[key].Published
 	}
 	return ready, nil
 }
@@ -382,7 +408,7 @@ func runRealPartialFillPair(t *testing.T, sell chain.ID, bps int64) {
 		t.Fatal(err)
 	}
 	partialWait(h, "both exact acceptances acknowledged by relay", func() bool {
-		ready, err := partialAcceptancesPublished(h.engines["parent"], publications)
+		ready, err := partialPublicationsPublished(h.engines["parent"], publications)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -402,6 +428,17 @@ func runRealPartialFillPair(t *testing.T, sell chain.ID, bps int64) {
 				t.Fatal("taker tower acknowledgment substituted another child or template")
 			}
 		}
+		fundingPublication, err := partialPublications(h.engines[name], []string{ids[i]}, "long-funded")
+		if err != nil {
+			t.Fatal(err)
+		}
+		partialWait(h, "exact funding notification acknowledged by relay", func() bool {
+			ready, err := partialPublicationsPublished(h.engines[name], fundingPublication)
+			if err != nil {
+				t.Fatal(err)
+			}
+			return ready
+		}, func() { h.tick(name, "tower") })
 		h.offline(name)
 	}
 	h.minePending()
@@ -411,6 +448,17 @@ func runRealPartialFillPair(t *testing.T, sell chain.ID, bps int64) {
 	h.tick("parent")
 	partialBins(h, parentID, 0, 0, 2*quantity, 0, quantity, quantity)
 	partialAssertFundedChildren(h, ids, bps)
+	shortPublications, err := partialPublications(h.engines["parent"], ids, "short-funded")
+	if err != nil {
+		t.Fatal(err)
+	}
+	partialWait(h, "both exact short-funding notifications acknowledged by relay", func() bool {
+		ready, err := partialPublicationsPublished(h.engines["parent"], shortPublications)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return ready
+	}, func() { h.tick("parent", "tower") })
 	h.offline("parent")
 	// Only the winning taker returns while either reveal window is open.
 	h.online(names[winner])
