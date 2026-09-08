@@ -81,16 +81,26 @@ func restoreRecoveryArchive(t *testing.T, h *harness, name, path string) {
 		t.Fatal(err)
 	}
 	defer clear(password)
+	// A portable import installs a separate vault. Replacing only the active
+	// state in the source vault would retain that installation's cold records.
+	cfg.DataDir = t.TempDir()
+	cfg.PasswordFile = filepath.Join(cfg.DataDir, "pass")
+	cfg.Socket = filepath.Join(cfg.DataDir, "daemon.sock")
+	if err := os.WriteFile(cfg.PasswordFile, password, 0600); err != nil {
+		t.Fatal(err)
+	}
 	vault, err := storage.Open(filepath.Join(cfg.DataDir, "state.db"), bytes.TrimSpace(password))
 	if err != nil {
 		t.Fatal(err)
 	}
 	if err = vault.Save(state); err != nil {
+		_ = vault.Close()
 		t.Fatal(err)
 	}
 	if err = vault.Close(); err != nil {
 		t.Fatal(err)
 	}
+	h.configs[name] = cfg
 	h.online(name)
 	if h.engines[name].Status().Recovery.State != "recovering" {
 		t.Fatal("restored engine opened ready before live reconciliation")
