@@ -2,6 +2,7 @@ package daemon
 
 import (
 	"context"
+	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
 	"testing"
@@ -13,7 +14,6 @@ import (
 	"github.com/blakeswap/blakeswap/internal/contract"
 	"github.com/blakeswap/blakeswap/internal/protocol"
 	"github.com/blakeswap/blakeswap/internal/transport"
-	"github.com/blakeswap/blakeswap/internal/wallet"
 	"github.com/btcsuite/btcd/wire"
 )
 
@@ -200,65 +200,112 @@ func (b *fundingLookupBackend) Broadcast(_ context.Context, raw string) (string,
 	return tx.TxHash().String(), nil
 }
 
+// The prepared-but-not-marked-sent checkpoint is created directly, before any
+// later publication exists. It is not a rollback of an already charged engine.
+// Current accepted terms use distinct local/peer keys, and a maker's signed
+// funding/refunds retain their committed allocation and permanent fee charges.
+func preparedFundingLookupFixture(t *testing.T, role string) (*Engine, *Swap, contract.HTLC, string) {
+	t.Helper()
+	e, _, _ := sendFixture(t)
+	maker, taker := e.identity, nostr.Generate()
+	if role == "taker" {
+		maker, taker = taker, maker
+	}
+	offer := protocol.Offer{Version: protocol.Version, Network: chain.Regtest, FillPolicy: protocol.FillPolicy{Mode: protocol.FillWhole, Min: 1000000, Max: 1000000}, Revision: 1, Available: 1000000, ID: transport.RandomID(), Maker: maker.Public().Hex(), Sell: chain.BTC, SellAmount: 1000000, BuyAmount: 2000000, Expires: time.Now().Unix() + 3600, Status: "open"}
+	raw, err := offer.PublicJSON()
+	if err != nil {
+		t.Fatal(err)
+	}
+	event := nostr.Event{Kind: transport.OfferKind, CreatedAt: nostr.Now(), Tags: nostr.Tags{{"d", offer.ID}, {"t", chain.Regtest.Namespace()}}, Content: string(raw)}
+	if err := transport.Sign(&event, maker); err != nil {
+		t.Fatal(err)
+	}
+	id := transport.RandomID()
+	localKeys, err := e.swapKeys(id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	peerKeys, err := e.swapKeys(isolatedPeerID(id))
+	if err != nil {
+		t.Fatal(err)
+	}
+	makerKeys, takerKeys := localKeys, peerKeys
+	if role == "taker" {
+		makerKeys, takerKeys = peerKeys, localKeys
+	}
+	secret, _ := hex.DecodeString(transport.RandomID())
+	hash := sha256.Sum256(secret)
+	request := protocol.Request{Version: protocol.Version, Revision: offer.Revision, Quantity: offer.SellAmount, ID: id, OfferEvent: event, Taker: taker.Public().Hex(), Hash: hex.EncodeToString(hash[:]), Keys: takerKeys}
+	terms, err := protocol.NewTerms(request, makerKeys, map[chain.ID]uint32{chain.BTC: 100, chain.Blake: 100})
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := &Swap{ID: id, Role: role, Request: request, Terms: &terms, Long: terms.Long, Short: terms.Short, Receipts: map[string]protocol.Receipt{}}
+	if role == "taker" {
+		s.Secret = hex.EncodeToString(secret)
+	}
+	own := &s.Long
+	if role == "maker" {
+		own = &s.Short
+	}
+	// This test supplies synthetic funding inclusion, exactly as before; the
+	// output and resulting real signed refund bundle bind the agreed HTLC.
+	tx := wire.NewMsgTx(2)
+	tx.AddTxIn(wire.NewTxIn(&wire.OutPoint{}, nil, nil))
+	pk, err := own.PkScript()
+	if err != nil {
+		t.Fatal(err)
+	}
+	tx.AddTxOut(wire.NewTxOut(own.Amount, pk))
+	own.TxID = tx.TxHash().String()
+	funding := contract.Hex(tx)
+	if role == "maker" {
+		s.ShortFunding = funding
+	} else {
+		s.LongFunding = funding
+	}
+	e.s.Swaps[id] = s
+	policy := FeeSelection{FundingFee: 2000}
+	e.s.FundingFees = map[string]FeeSelection{"swap/" + id: policy}
+	point := CoinOutpoint{TxID: tx.TxIn[0].PreviousOutPoint.Hash.String(), Vout: tx.TxIn[0].PreviousOutPoint.Index}
+	e.s.CoinReservations = map[string]CoinReservation{"swap/" + id: {Chain: own.Chain, Inputs: []CoinOutpoint{point}}}
+	if role == "maker" {
+		fields := FillOrderFields{FillPolicy: offer.FillPolicy, FeeBudgets: map[chain.ID]int64{offer.Sell: 22000, offer.Sell.Other(): 2000}, BountyBudgets: map[chain.ID]int64{chain.BTC: 0, chain.Blake: 0}}
+		parent, err := newParentOrder(offer, policy, fields, time.Now().Unix())
+		if err != nil {
+			t.Fatal(err)
+		}
+		parent.SignedRevision, parent.LastSignedAt = offer.Revision, int64(event.CreatedAt)
+		reserved, child, err := parent.reserveFill(request)
+		if err != nil {
+			t.Fatal(err)
+		}
+		child.Inputs = []CoinOutpoint{point}
+		committed, allocation, err := reserved.transitionFill(*child, FillCommitted, false)
+		if err != nil {
+			t.Fatal(err)
+		}
+		e.s.ParentOrders = map[string]*ParentOrder{offer.ID: &committed}
+		e.s.FillRecords = map[string]*FillRecord{id: &allocation}
+		e.s.Offers[offer.ID] = event
+		e.s.OfferTowers = map[string]protocol.Tower{offer.ID: {}}
+	}
+	if err := e.retainSwapIdentity(s); err != nil {
+		t.Fatal(err)
+	}
+	if err := e.prepare(s, *own); err != nil {
+		t.Fatal(err)
+	}
+	return e, s, *own, funding
+}
+
 func TestPreparedFundingReconciliationHonorsDeadlineAndLookupErrors(t *testing.T) {
 	for _, role := range []string{"maker", "taker"} {
 		for _, outcome := range []string{"known", "missing", "unavailable", "unobserved"} {
 			t.Run(role+"/"+outcome, func(t *testing.T) {
-				e := discoveryEngine(t)
-				mnemonic, err := wallet.NewMnemonic()
-				if err != nil {
-					t.Fatal(err)
-				}
-				keys, err := wallet.FromMnemonic(mnemonic)
-				if err != nil {
-					t.Fatal(err)
-				}
-				e.keys = keys
-				maker, taker := nostr.Generate(), nostr.Generate()
-				offer := protocol.Offer{ID: transport.RandomID(), Maker: maker.Public().Hex(), Sell: chain.BTC, SellAmount: 1000000, BuyAmount: 2000000, Expires: time.Now().Unix() + 3600, Status: "open"}
-				raw, _ := offer.PublicJSON()
-				event := nostr.Event{Kind: transport.OfferKind, CreatedAt: nostr.Now(), Tags: nostr.Tags{{"d", offer.ID}, {"t", transport.Namespace}}, Content: string(raw)}
-				if err := transport.Sign(&event, maker); err != nil {
-					t.Fatal(err)
-				}
-				id := transport.RandomID()
-				pubkeys := map[chain.ID]string{}
-				for _, c := range []chain.ID{chain.BTC, chain.Blake} {
-					key, err := e.swapKey(c, id)
-					if err != nil {
-						t.Fatal(err)
-					}
-					pubkeys[c] = hex.EncodeToString(key.PubKey().SerializeCompressed())
-				}
-				request := protocol.Request{ID: id, OfferEvent: event, Taker: taker.Public().Hex(), Hash: transport.RandomID(), Keys: pubkeys}
-				terms, err := protocol.NewTerms(request, pubkeys, map[chain.ID]uint32{chain.BTC: 100, chain.Blake: 100})
-				if err != nil {
-					t.Fatal(err)
-				}
-				s := &Swap{ID: id, Role: role, Request: request, Terms: &terms, Long: terms.Long, Short: terms.Short}
-				own := &s.Long
-				if role == "maker" {
-					own = &s.Short
-				}
-				tx := wire.NewMsgTx(2)
-				tx.AddTxIn(wire.NewTxIn(&wire.OutPoint{}, nil, nil))
-				pk, err := own.PkScript()
-				if err != nil {
-					t.Fatal(err)
-				}
-				tx.AddTxOut(wire.NewTxOut(own.Amount, pk))
-				own.TxID = tx.TxHash().String()
-				funding := contract.Hex(tx)
-				if role == "maker" {
-					s.ShortFunding = funding
-				} else {
-					s.LongFunding = funding
-				}
-				e.s.Swaps = map[string]*Swap{id: s}
-				if err := e.prepare(s, *own); err != nil {
-					t.Fatal(err)
-				}
-				e.heights = map[chain.ID]uint32{chain.BTC: terms.Short.RefundHeight + 1, chain.Blake: terms.Long.RefundHeight + 1}
+				e, s, own, funding := preparedFundingLookupFixture(t, role)
+				id := s.ID
+				e.heights = map[chain.ID]uint32{chain.BTC: s.Terms.Short.RefundHeight + 1, chain.Blake: s.Terms.Long.RefundHeight + 1}
 				e.clocks = e.heights
 				backend := &fundingLookupBackend{tx: chain.Transaction{TxID: own.TxID, Hex: funding}}
 				if outcome == "missing" {
@@ -271,7 +318,8 @@ func TestPreparedFundingReconciliationHonorsDeadlineAndLookupErrors(t *testing.T
 					backend.err = chain.ErrTransactionUnobserved
 				}
 				e.nodes = map[chain.ID]chain.Backend{chain.BTC: backend, chain.Blake: backend}
-				err = e.advanceSwap(context.Background(), s, nil)
+				all := map[chain.ID]map[string]chain.Observation{chain.BTC: {}, chain.Blake: {}}
+				err := e.advanceSwap(context.Background(), s, all)
 				if outcome == "known" {
 					if err != nil || s.Stage != "refunding" || len(backend.broadcasts) != 1 || backend.broadcasts[0] != s.SelfRefunds[0] {
 						t.Fatalf("known funding did not reach refund: %s %v", s.Stage, err)
