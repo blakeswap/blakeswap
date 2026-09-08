@@ -379,7 +379,26 @@ func TestRealAsyncSwapRecoveryAndBounties(t *testing.T) {
 				return
 			}
 			h.online("taker")
-			h.tick("taker")
+			partialWaitMailbox(h, "revealing claim present in the mempool", func() bool {
+				peer := h.swap("taker", id)
+				if !peer.SecretExposed || peer.SelfClaim == "" || peer.ClaimLastAttempt == 0 {
+					return false
+				}
+				claim, err := ancestrySelectedClaim(peer)
+				if err != nil {
+					t.Fatal(err)
+				}
+				var pool []string
+				if err := h.nodes[short.Chain].Call(h.ctx, "getrawmempool", &pool); err != nil {
+					t.Fatal(err)
+				}
+				for _, txid := range pool {
+					if txid == claim.TxHash().String() {
+						return true
+					}
+				}
+				return false
+			}, func() { h.tick("taker") })
 			taker := h.swap("taker", id)
 			if !taker.SecretExposed || taker.SelfClaim == "" {
 				t.Fatal("taker did not reveal after confirmed funding", taker.Error)
