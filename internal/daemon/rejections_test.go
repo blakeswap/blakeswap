@@ -19,6 +19,7 @@ func TestRealCancellationReservationAndReceiptBinding(t *testing.T) {
 				h.command("maker", "offer.cancel", map[string]string{"id": o.ID})
 			}
 			first := h.command("taker", "swap.take", map[string]any{"maker": o.Maker, "id": o.ID, "quantity": o.SellAmount, "parent_revision": o.Revision, "tower_bps": 50}).(map[string]string)["id"]
+			request := h.swap("taker", first).Request
 
 			if scenario == "two-takers-one-reservation" {
 				raw, _ := json.Marshal(map[string]any{"maker": o.Maker, "id": o.ID, "quantity": o.SellAmount, "parent_revision": o.Revision})
@@ -26,13 +27,23 @@ func TestRealCancellationReservationAndReceiptBinding(t *testing.T) {
 					t.Fatal("duplicate local reservation request accepted")
 				}
 			}
-			h.tick("taker", "maker", "taker")
 			if scenario == "cancel-before-request" {
-				if len(h.engines["maker"].s.Swaps) != 0 || h.swap("taker", first).Stage != "rejected" {
+				partialWaitMailbox(h, "cancelled request retained as rejected", func() bool {
+					rejected, err := partialRejectedRequest(h.engines["taker"], request)
+					if err != nil {
+						t.Fatal(err)
+					}
+					return rejected
+				}, func() { h.tick("taker", "maker") })
+				if len(h.engines["maker"].s.Swaps) != 0 {
 					t.Fatal("cancelled order executed")
 				}
 				return
 			}
+			partialWaitMailbox(h, "accepted request has refund protection", func() bool {
+				winner := h.swap("taker", first)
+				return winner.Terms != nil && len(winner.Jobs) == 1
+			}, func() { h.tick("taker", "maker") })
 			if len(h.engines["maker"].s.Swaps) != 1 {
 				t.Fatal("offer reserved more than once")
 			}
