@@ -171,6 +171,9 @@ func Open(ctx context.Context, c Config) (*Engine, error) {
 	if err := ValidateAutomationState(&en.s); err != nil {
 		return fail(err)
 	}
+	if err := en.restoreActiveFundingFees(); err != nil {
+		return fail(err)
+	}
 	en.invalidateActivitySession()
 	if en.s.Recovery != nil {
 		en.s.Recovery.Status.State = "recovering"
