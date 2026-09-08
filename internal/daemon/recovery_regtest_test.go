@@ -648,10 +648,11 @@ func TestRealPortableTowerRefundObservesConfirmedOutcome(t *testing.T) {
 					t.Error(err)
 				}
 			}()
-			_ = tick(context.Background())
-			// A bounded scan may still display the prior confirmed outcome. The
-			// known checkpoint contradiction must nevertheless hold monitoring
-			// immediately, before target catch-up can reconcile that display.
+			tickUntilConnected(t, tower)
+			// Require a fresh wallet observation of the changed chain: an RPC
+			// outage alone does not establish a checkpoint contradiction. A
+			// bounded target scan may still display the prior confirmed outcome,
+			// but the observed reorg must already hold monitoring.
 			if state.LastAttempt != 0 || state.Attempt != 0 || tower.CanChangeNetwork() == nil || tower.Status().Recovery.State == "ready" {
 				t.Fatal("tower refund reorg failed to immediately hold monitoring", state.Error, tower.Status().Recovery)
 			}
