@@ -220,3 +220,163 @@ func TestParentFillMarketRetirementRefusesMismatchedCompanionBeforeMetadata(t *t
 		t.Fatal("failed metadata validation mutated authority")
 	}
 }
+
+func wholeMarketFixture(t *testing.T) (*Engine, nostr.SecretKey, int64, *ParentOrder) {
+	e, maker, now := fillAdmissionEngine(t, chain.Blake)
+	var p *ParentOrder
+	for _, value := range e.s.ParentOrders {
+		p = value
+	}
+	p.Offer.FillPolicy = protocol.FillPolicy{Mode: protocol.FillWhole, Min: 1000000, Max: 1000000}
+	p.Economics = p.Offer.EconomicsDigest()
+	request := fillRequestFixture(t, *p, maker, 1000000)
+	e.stageOffer(p.Offer, request.OfferEvent)
+	return e, maker, now, p
+}
+func TestParentFillWholeRefundMarketKeepsRefundClassification(t *testing.T) {
+	e, maker, now, p := wholeMarketFixture(t)
+	r := admissionRequest(t, e, maker, 1000000)
+	if err := applyFillRequest(t, e, r, now); err != nil {
+		t.Fatal(err)
+	}
+	p = e.s.ParentOrders[p.Offer.ID]
+	next, f, err := p.transitionFill(*e.s.FillRecords[r.ID], FillCommitted, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	next, f, err = next.transitionFill(f, FillReleased, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	*p = next
+	*e.s.FillRecords[r.ID] = f
+	e.s.Swaps[r.ID].Stage = "refunded"
+	if err := e.retainOrderSettlement(e.s.Swaps[r.ID]); err != nil {
+		t.Fatal(err)
+	}
+	if got, err := e.finishedOrderChecked(p.Offer.ID); err != nil || got != "refunded" {
+		t.Fatalf("refund fixture: status=%s err=%v", got, err)
+	}
+	if err := e.save(); err != nil {
+		t.Fatal(err)
+	}
+	rows := fillMarket(t, e).Records
+	if len(rows) != 1 || rows[0].Status != "refunded" {
+		t.Fatalf("whole refunded outcome lost: %+v", rows)
+	}
+	raw, _ := json.Marshal(MarketQuery{ExpectedWallet: e.Config.Name, ExpectedNetwork: "regtest", Owner: "mine", Status: "refunded"})
+	result, err := e.Command(context.Background(), Request{Method: "market.list", Params: raw})
+	if err != nil || result.(MarketPage).Total != 1 {
+		t.Fatal("refunded filter lost whole parent", err)
+	}
+}
+
+func TestParentFillRetiredWholeChildCannotEraseLaterTerminalLink(t *testing.T) {
+	e, maker, now, p := wholeMarketFixture(t)
+	first := admissionRequest(t, e, maker, 1000000)
+	if err := applyFillRequest(t, e, first, now); err != nil {
+		t.Fatal(err)
+	}
+	old := e.s.Swaps[first.ID]
+	e.clocks[old.Long.Chain], e.clocks[old.Short.Chain] = old.Long.RefundHeight, old.Short.RefundHeight
+	if err := e.advanceSwap(context.Background(), old, nil); err != nil {
+		t.Fatal(err)
+	}
+	if !e.s.FillRecords[first.ID].FundingDisabled || e.s.FillRecords[first.ID].Allocation.currentQuantity() != 0 {
+		t.Fatal("first child was not permanently returned")
+	}
+	p = e.s.ParentOrders[p.Offer.ID]
+	next, event, err := e.prepareParentPublication(*p, now+2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	*p = next
+	if event != nil {
+		e.stageOffer(parentPublicOffer(next), *event)
+	}
+	e.clocks[chain.BTC], e.clocks[chain.Blake] = 200, 200
+	second := admissionRequest(t, e, maker, 1000000)
+	if err := applyFillRequest(t, e, second, now+2); err != nil {
+		t.Fatal(err)
+	}
+	p = e.s.ParentOrders[p.Offer.ID]
+	next, f, err := p.transitionFill(*e.s.FillRecords[second.ID], FillCommitted, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	next, f, err = next.transitionFill(f, FillFilled, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	*p = next
+	*e.s.FillRecords[second.ID] = f
+	current := e.s.Swaps[second.ID]
+	current.Stage = "completed"
+	if err := e.retainOrderSettlement(current); err != nil {
+		t.Fatal(err)
+	}
+	if err := e.stageArchive("swaps", second.ID); err != nil {
+		t.Fatal(err)
+	}
+	if err := e.save(); err != nil {
+		t.Fatal(err)
+	}
+	if e.s.OrderRecords[p.Offer.ID].Settlements[second.ID] != "completed" {
+		t.Fatal("fixture lacks completed allocated link")
+	}
+	// Retirement of this older zero-allocation child can occur after the later
+	// settled core, including after delayed peer-refund observation or batching.
+	if err := e.retainOrderSettlement(old); err != nil {
+		t.Fatal(err)
+	}
+	if e.s.OrderRecords[p.Offer.ID].Settlements[second.ID] != "completed" {
+		t.Fatal("older returned child erased the allocated completed child link")
+	}
+	// A read/identity failure must not promote even the old cold metadata.
+	if err := e.stageArchive("offers", p.Offer.ID); err != nil {
+		t.Fatal(err)
+	}
+	if err := e.stageArchive("order_records", p.Offer.ID); err != nil {
+		t.Fatal(err)
+	}
+	if err := e.save(); err != nil {
+		t.Fatal(err)
+	}
+	for _, problem := range []string{"core read", "child identity"} {
+		before := protocol.Digest(e.s)
+		deletes := len(e.archiveDeletes)
+		e.archiveRead = func(kind, id string) (storage.ArchiveRecord, bool, error) {
+			record, found, err := e.vault.ReadArchive(kind, id)
+			if id == second.ID && problem == "core read" && kind == "swaps" {
+				return record, false, errors.New("injected terminal core read failure")
+			}
+			if found && err == nil && id == second.ID && problem == "child identity" && kind == "fill_records" {
+				var f FillRecord
+				_ = json.Unmarshal(record.Data, &f)
+				f.ParentID = protocol.Digest("other parent")
+				record.Data, _ = json.Marshal(f)
+			}
+			return record, found, err
+		}
+		if err := e.retainOrderSettlement(old); err == nil {
+			t.Fatal("invalid retained terminal identity accepted", problem)
+		}
+		if protocol.Digest(e.s) != before || len(e.archiveDeletes) != deletes {
+			t.Fatal("failed terminal link check promoted metadata", problem)
+		}
+		e.archiveRead = nil
+	}
+	if err := e.retainOrderSettlement(old); err != nil {
+		t.Fatal(err)
+	}
+	if e.s.OrderRecords[p.Offer.ID].Settlements[second.ID] != "completed" {
+		t.Fatal("cold terminal link retry lost exact identity")
+	}
+	if _, err := e.activateArchived("swaps", second.ID); err != nil {
+		t.Fatal(err)
+	}
+	e.s.Swaps[second.ID].Stage = "recovery awaiting positive settlement evidence"
+	if status, err := e.finishedOrderChecked(p.Offer.ID); err != nil || status != "" {
+		t.Fatal("reactivated live child did not override historical completion", status, err)
+	}
+}

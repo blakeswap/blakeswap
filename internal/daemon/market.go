@@ -174,7 +174,11 @@ func (e *Engine) marketOrder(o protocol.Offer, eventID string, record OrderRecor
 		if row.Status == "open" && o.Expires <= now {
 			row.Status = "expired"
 		}
-		if finished := e.finishedParentOrder(parent); finished != "" && row.Status != "open" && !bins.Closed {
+		finished, err := e.finishedOrderChecked(o.ID)
+		if err != nil {
+			return row, err
+		}
+		if finished != "" && row.Status != "open" && !bins.Closed {
 			row.Status = finished
 		}
 		row.Availability = row.Status

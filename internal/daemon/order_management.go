@@ -3,6 +3,7 @@ package daemon
 import (
 	"encoding/json"
 	"errors"
+	"maps"
 	"time"
 
 	"github.com/blakeswap/blakeswap/internal/chain"
@@ -54,6 +55,41 @@ func (e *Engine) finishedOrderRecord(id string, record OrderRecord) string {
 	return e.finishedParentOrder(e.s.ParentOrders[id])
 }
 
+// The bounded convenience link is historical evidence, not current execution
+// authority. Validate its exact active/cold child identity before preserving or
+// classifying it; live nonterminal state still overrides a retained outcome.
+func (e *Engine) validateWholeOrderLink(parent *ParentOrder, record OrderRecord) error {
+	if len(record.Settlements) > 1 {
+		return errors.New("whole parent has multiple terminal links")
+	}
+	for id := range record.Settlements {
+		core := e.s.Swaps[id]
+		var cold Swap
+		if core == nil {
+			found, err := e.archivedValue("swaps", id, &cold)
+			if err != nil {
+				return err
+			}
+			if !found {
+				return errors.New("terminal whole child core is unavailable")
+			}
+			core = &cold
+		}
+		row, err := e.fillSummary(core, e.s.Swaps[id] == nil)
+		if err != nil {
+			return err
+		}
+		offer, err := historicalOffer(core.Request.OfferEvent)
+		if err != nil {
+			return err
+		}
+		if core.ID != id || core.Role != "maker" || row.ParentID != parent.Offer.ID || row.ParentMaker != parent.Offer.Maker || row.AllocatedQuantity != parent.Quantities.Total || offer.EconomicsDigest() != parent.Economics {
+			return errors.New("terminal whole child does not match parent allocation")
+		}
+	}
+	return nil
+}
+
 func (e *Engine) finishedOrderChecked(id string) (string, error) {
 	record, ok := e.s.OrderRecords[id]
 	if !ok {
@@ -68,9 +104,17 @@ func (e *Engine) finishedOrderChecked(id string) (string, error) {
 	if err != nil {
 		return "", err
 	}
+	if parent.Offer.Mode == protocol.FillWhole {
+		if err := e.validateWholeOrderLink(parent, record); err != nil {
+			return "", err
+		}
+	}
 	status := e.finishedParentOrder(parent)
 	if status == "cancelled" && parent.Offer.Mode == protocol.FillWhole && parent.Quantities.Released == parent.Quantities.Total && parent.Quantities.Withdrawn == 0 && len(record.Settlements) == 1 {
-		for _, stage := range record.Settlements {
+		for childID, stage := range record.Settlements {
+			if live := e.s.Swaps[childID]; live != nil {
+				stage = live.Stage
+			}
 			if stage == "refunded" {
 				return "refunded", nil
 			}
@@ -105,15 +149,15 @@ func (e *Engine) retainOrderSettlement(swap *Swap) error {
 	if parent.Economics != offer.EconomicsDigest() {
 		return errors.New("settled child does not match retained parent economics")
 	}
-	if _, exists := e.s.OrderRecords[offer.ID]; !exists {
-		if _, err := e.activateArchived("order_records", offer.ID); err != nil {
+	record, exists := e.s.OrderRecords[offer.ID]
+	cold := false
+	if !exists {
+		cold, err = e.archivedValue("order_records", offer.ID, &record)
+		if err != nil {
 			return err
 		}
+		exists = cold
 	}
-	if e.s.OrderRecords == nil {
-		e.s.OrderRecords = map[string]OrderRecord{}
-	}
-	record, exists := e.s.OrderRecords[offer.ID]
 	if !exists {
 		event := swap.Request.OfferEvent
 		if own, ok := e.s.Offers[offer.ID]; ok {
@@ -131,13 +175,47 @@ func (e *Engine) retainOrderSettlement(swap *Swap) error {
 	if err != nil {
 		return err
 	}
-	record.Settlements = nil
-	if offer.Mode == protocol.FillWhole && fill.Allocation.currentQuantity() > 0 {
+	if offer.Mode != protocol.FillWhole {
+		record.Settlements = nil
+	} else if fill.Allocation.currentQuantity() > 0 {
+		for previous := range record.Settlements {
+			if previous == swap.ID {
+				continue
+			}
+			other, err := e.retainedFillRecord(previous)
+			if err != nil {
+				return err
+			}
+			if other.ParentID != offer.ID || other.ParentMaker != offer.Maker || other.Allocation.currentQuantity() != 0 {
+				return errors.New("whole parent has conflicting allocated terminal links")
+			}
+		}
 		record.Settlements = map[string]string{swap.ID: swap.Stage}
+	} else if _, exists := record.Settlements[swap.ID]; exists {
+		// Retiring this identity can remove only its own obsolete link. A later
+		// allocated child may already be cold and remains the parent terminal link.
+		record.Settlements = maps.Clone(record.Settlements)
+		delete(record.Settlements, swap.ID)
+	}
+	if offer.Mode == protocol.FillWhole {
+		if err := e.validateWholeOrderLink(parent, record); err != nil {
+			return err
+		}
 	}
 	if tower, ok := e.s.OfferTowers[offer.ID]; ok {
 		copy := tower
 		record.Protection = &copy
+	}
+	if err := validateOrderSettlement(offer.ID, record, e.Config.Network); err != nil {
+		return err
+	}
+	if cold {
+		if _, err := e.activateArchived("order_records", offer.ID); err != nil {
+			return err
+		}
+	}
+	if e.s.OrderRecords == nil {
+		e.s.OrderRecords = map[string]OrderRecord{}
 	}
 	e.s.OrderRecords[offer.ID] = record
 	return nil
