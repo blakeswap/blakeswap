@@ -11,8 +11,10 @@ ancestry checks; the initial short regtest height schedule is retained for tests
 ## Current capability source audit — September 6, 2026
 
 The documentation was reconciled against source at `cfae965` (after PRs #8 and
-#9). This audit changes documentation only and does not record a new integration
-run or security review. Later feature work must update the corresponding limits.
+#9). That audit changed documentation only and did not record a new integration
+run or security review. The references below also track subsequent feature work;
+the dated audit does not establish validation of those later changes. Current
+validation and its limits belong in [Testing](TESTING.md).
 
 | Capability / boundary | Source and test references |
 | --- | --- |
@@ -21,10 +23,11 @@ run or security review. Later feature work must update the corresponding limits.
 | Offer/trade reservations and safe unsigned-request expiry | [Reservations](../internal/daemon/reservations.go), [expiry regressions](../internal/daemon/send_test.go) |
 | Private independent protection and stable provider payouts | [Local protection](../internal/daemon/privacy.go), [provider discovery](../internal/daemon/discovery.go), [protocol](PROTOCOL.md) |
 | Bound maker/taker economics review and durable confirmation retries | [Daemon quotes](../internal/daemon/trade_quote.go), [native review](../macos/Blakeswap/TradeReviewView.swift), [typed real-chain acceptance](../internal/api/trade_regtest_test.go) |
+| Whole or bounded partial parent orders, exact child revision/quantity and current quantity conservation | [Protocol/state design](PARTIAL_FILLS.md), [API/native contract](PARTIAL_FILL_API.md), [integer arithmetic](../internal/protocol/fills.go), [parent allocation](../internal/daemon/fill_state.go) |
 | Durable linked history, spent deposits, reorg lineage, frozen pages and exact CSV | [Activity semantics/limits](ACTIVITY.md), [indexer](../internal/daemon/activity_index.go), [native view](../macos/Blakeswap/ActivityView.swift), [typed acceptance](../internal/api/activity_regtest_test.go) |
 | API names and request fields | [Protobuf service](../api/proto/blakeswap/v2/daemon.proto), [API reference](API.md) |
 | Both Mac architectures, native release tests, ad-hoc signing | [Workflow](../.github/workflows/release.yml), [build/signing script](../scripts/build-dmg.sh), [packaging limits](PACKAGING.md) |
-| Bounded fee allowances, unsupported funding acceleration, bounded history, replay/observer trust, password files, stale recovery, whole-offer v1 swaps, no independent audit | [Risks](RISKS.md), [economics](ECONOMICS.md), [recovery](OPERATIONS.md#backups) |
+| Bounded per-fill fee/bounty allowances, unsupported funding acceleration, bounded history, replay/observer trust, native/file credential boundaries, stale recovery, protocol/state hard cutover, no independent audit | [Risks](RISKS.md), [economics](ECONOMICS.md), [recovery](OPERATIONS.md#backups), [partial fills](PARTIAL_FILLS.md) |
 
 ## Initial regtest milestone — September 5, 2026
 
