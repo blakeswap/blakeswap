@@ -100,6 +100,18 @@ func (e *Engine) createOffer(ctx context.Context, raw json.RawMessage, receipt *
 	if err != nil {
 		return nil, err
 	}
+	var replaced *ParentOrder
+	if oldOwner != "" {
+		current := e.s.ParentOrders[source.ID]
+		if current == nil {
+			return nil, errors.New("source parent authorization unavailable")
+		}
+		copy, err := current.planReplacement(parent)
+		if err != nil {
+			return nil, err
+		}
+		replaced = &copy
+	}
 	reserve, err := parent.fundingReserve(o.SellAmount)
 	if err != nil {
 		return nil, err
@@ -115,7 +127,14 @@ func (e *Engine) createOffer(ctx context.Context, raw json.RawMessage, receipt *
 	if oldOwner != "" {
 		selectionOwner = oldOwner
 	}
-	candidate, err := e.reservationCandidate(selectionOwner, o.Sell, o.SellAmount+reserve)
+	coins := e.knownCoins(o.Sell)
+	if oldOwner != "" {
+		coins, err = e.replacementCoins(oldOwner, o.Sell)
+		if err != nil {
+			return nil, err
+		}
+	}
+	candidate, err := e.reservationCandidateFromCoins(selectionOwner, o.Sell, o.SellAmount+reserve, coins)
 	if err != nil {
 		delete(e.s.CoinReservations, "offer/"+o.ID)
 		return nil, err
@@ -136,15 +155,7 @@ func (e *Engine) createOffer(ctx context.Context, raw json.RawMessage, receipt *
 	var oldParent *ParentOrder
 	var oldEvent *nostr.Event
 	if oldOwner != "" {
-		current := e.s.ParentOrders[source.ID]
-		if current == nil {
-			return nil, errors.New("source parent authorization unavailable")
-		}
-		copy := current.clone()
-		copy.Quantities, err = copy.Quantities.withdrawAvailable()
-		if err != nil {
-			return nil, err
-		}
+		copy := replaced.clone()
 		copy, oldEvent, err = e.prepareParentPublication(copy, time.Now().Unix())
 		if err != nil {
 			return nil, err

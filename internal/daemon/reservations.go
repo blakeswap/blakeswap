@@ -76,6 +76,10 @@ func (e *Engine) reserveCoins(owner string, id chain.ID, target int64) error {
 }
 
 func (e *Engine) reservationCandidate(owner string, id chain.ID, target int64) (CoinReservation, error) {
+	return e.reservationCandidateFromCoins(owner, id, target, e.knownCoins(id))
+}
+
+func (e *Engine) reservationCandidateFromCoins(owner string, id chain.ID, target int64, coins []chain.UTXO) (CoinReservation, error) {
 	reserved := e.reservedCoins(id, owner)
 	var selected []CoinOutpoint
 	var total int64
@@ -84,7 +88,6 @@ func (e *Engine) reservationCandidate(owner string, id chain.ID, target int64) (
 	for _, p := range e.s.CoinReservations[owner].Inputs {
 		previous[pointKey(p)] = true
 	}
-	coins := e.knownCoins(id)
 	sort.SliceStable(coins, func(i, j int) bool {
 		return previous[chain.OutpointKey(coins[i].TxID, coins[i].Vout)] && !previous[chain.OutpointKey(coins[j].TxID, coins[j].Vout)]
 	})

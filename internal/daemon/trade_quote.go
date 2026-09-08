@@ -254,6 +254,15 @@ func (e *Engine) tradeSnapshot(p TradeQuoteRequest, now int64) (TradeQuoteSnapsh
 		if err != nil {
 			return s, err
 		}
+		if p.OrderAction == "replace" {
+			current := e.s.ParentOrders[source.ID]
+			if current == nil {
+				return s, errors.New("source parent authorization unavailable")
+			}
+			if _, err := current.planReplacement(parent); err != nil {
+				return s, err
+			}
+		}
 		q.FundingReserve, err = parent.fundingReserve(o.Available)
 		if err != nil {
 			return s, err

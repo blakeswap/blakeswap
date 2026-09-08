@@ -112,8 +112,13 @@ removed acceptance publisher. Unknown outcomes and irreversible secret knowledge
 survive restart, archive and recovery.
 
 Parent cancellation withdraws only Available and unassigned inputs/fee reserve.
-Remainder-only replacement transfers only that withdrawn available inventory and
-unassigned resource authorization into a freshly reviewed new parent. The old
+Remainder-only replacement keeps the sell asset and uses exactly that available
+quantity. It selects only the old unassigned input pool and transfers no more
+than the unused per-asset authorization into the freshly reviewed parent. Each
+old budget retains its original limit, Reserved and Consumed values and records
+Transferred separately, so transferred permission cannot be reserved again. A
+replacement that needs unrelated funds or larger authorization requires a
+separate new-order review. The old
 parent and all accepted children, permanent charges, receipt identities and
 uncertain funding remain. Replacement cannot cancel a funded child by deleting
 its parent or reuse its input assignment.

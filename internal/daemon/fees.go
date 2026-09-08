@@ -5,7 +5,6 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
-	"sort"
 	"time"
 
 	"github.com/blakeswap/blakeswap/internal/chain"
@@ -114,13 +113,11 @@ func (e *Engine) quoteFee(ctx context.Context, raw json.RawMessage) (FeeQuote, e
 			e.mu.Unlock()
 			return FeeQuote{}, err
 		}
-		prior := map[string]bool{}
-		for _, point := range e.s.CoinReservations[owner].Inputs {
-			prior[pointKey(point)] = true
+		coins, err = e.replacementCoins(owner, p.Chain)
+		if err != nil {
+			e.mu.Unlock()
+			return FeeQuote{}, err
 		}
-		sort.SliceStable(coins, func(i, j int) bool {
-			return prior[chain.OutpointKey(coins[i].TxID, coins[i].Vout)] && !prior[chain.OutpointKey(coins[j].TxID, coins[j].Vout)]
-		})
 	}
 	reserved := e.reservedCoins(p.Chain, owner)
 	network, node := e.Config.Network, e.nodes[p.Chain]

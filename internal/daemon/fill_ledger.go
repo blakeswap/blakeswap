@@ -210,13 +210,14 @@ func (l QuantityLedger) withdrawAvailable() (QuantityLedger, error) {
 // permanent: settlement/refund/reorg cannot credit it. A safely retired
 // never-funded child can return only its still-reserved authorization.
 type FillBudget struct {
-	Limit    int64 `json:"limit"`
-	Reserved int64 `json:"reserved"`
-	Consumed int64 `json:"consumed"`
+	Limit       int64 `json:"limit"`
+	Reserved    int64 `json:"reserved"`
+	Consumed    int64 `json:"consumed"`
+	Transferred int64 `json:"transferred"`
 }
 
 func (b FillBudget) validate() error {
-	if b.Limit < 0 || b.Reserved < 0 || b.Consumed < 0 || b.Consumed > b.Limit || b.Reserved > b.Limit-b.Consumed {
+	if b.Limit < 0 || b.Reserved < 0 || b.Consumed < 0 || b.Consumed > b.Limit || b.Reserved > b.Limit-b.Consumed || b.Transferred < 0 || b.Transferred > b.Limit-b.Consumed-b.Reserved {
 		return errors.New("invalid per-asset fill budget")
 	}
 	return nil
@@ -226,7 +227,7 @@ func (b FillBudget) reserve(amount int64) (FillBudget, error) {
 	if err := b.validate(); err != nil {
 		return b, err
 	}
-	if amount < 0 || amount > b.Limit-b.Consumed-b.Reserved {
+	if amount < 0 || amount > b.Limit-b.Consumed-b.Reserved-b.Transferred {
 		return b, errors.New("parent fee or bounty authorization exhausted")
 	}
 	b.Reserved += amount
@@ -253,5 +254,18 @@ func (b FillBudget) returnReserved(amount int64) (FillBudget, error) {
 		return b, errors.New("cannot return consumed fill authorization")
 	}
 	b.Reserved -= amount
+	return b, nil
+}
+
+// transfer removes only unused authorization from this parent. The original
+// reviewed limit and permanent consumption remain available for audit.
+func (b FillBudget) transfer(amount int64) (FillBudget, error) {
+	if err := b.validate(); err != nil {
+		return b, err
+	}
+	if amount < 0 || amount > b.Limit-b.Consumed-b.Reserved-b.Transferred {
+		return b, errors.New("replacement exceeds unassigned parent authorization")
+	}
+	b.Transferred += amount
 	return b, nil
 }
