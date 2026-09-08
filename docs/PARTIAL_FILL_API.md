@@ -114,8 +114,36 @@ make mechanical generated-package import/path edits in desktop/test consumers;
 coordinate semantic desktop/provider changes with the daemon lane. It must keep
 T10 credential byte ownership, structured consent and exact retry exceptions.
 
-The API contract portion starts from an agreed clean T13 source checkpoint in
-its own worktree. Native behavior and credential/consent integration wait until
-PR22 is verified merged and integrated. No shared worktree edits. The final T13
-integration includes both lanes in one PR, full current protocol/security and
-whole-PR review, generation checks and real both-chain acceptance matrices.
+Both lanes retain isolated worktrees. Final integration includes both lanes in
+one PR on the current merged base, full protocol and whole-PR review,
+generation checks and real both-chain acceptance matrices.
+
+
+## Native review and exact retry
+
+The composer keeps quantity as explicit integer text. Refreshing a changed
+parent keeps that text and requires a new complete economics review; it never
+substitutes the next suggested quantity. Maker fee and bounty limits must be
+entered explicitly. Partial-parent aggregate funding reserves and limits are
+shown separately from the representative child's claim/refund outcomes.
+
+Native confirmation saves only the original request ID, quote token/revision,
+kind and selected wallet/network before submission. **Check saved outcome**
+sends this exact request with the ordinary bearer credential and no new consent
+grant to a native-mode helper. Only an authenticated matching terminal receipt
+can answer through the daemon's existing read exception. Missing, pending,
+changed or unreadable records cannot authorize new work. Transport failure
+keeps the journal intact; no OS authentication starts automatically.
+**Retry saved authorization** explicitly requests fresh authentication for the
+same saved identity through the ordinary sensitive-action boundary. It does
+not create a new quote or request ID. File mode uses this explicit retry path,
+because its operator-controlled bearer authority is different from native mode.
+A final reply can clear only its original journal and cannot be displayed under
+a different selected wallet or network.
+
+Parent history retains one 100-row page at a time. Activity links resolve the
+exact child with `record.get`, verify parent maker and ID, then open the bounded
+fill query. They never select a parent by bare ID or scan lifetime market
+history. Allocation is unknown unless locally established; a released child
+retains its released allocation, while a retired child retains its original
+quantity with zero current allocation.

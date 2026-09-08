@@ -91,13 +91,17 @@ final class TradeReviewModel: ObservableObject {
     private let now: () -> Int64
     private let journal: TradeConfirmationJournal
     private let call: (String, Data) async throws -> Data
+    private let readConfirmation: (PendingTradeConfirmation) async throws -> Data
 
-    init(context: TradeContext, root: String, now: @escaping () -> Int64 = { Int64(Date().timeIntervalSince1970) }, call: ((String, Data) async throws -> Data)? = nil) {
+    init(context: TradeContext, root: String, now: @escaping () -> Int64 = { Int64(Date().timeIntervalSince1970) }, readConfirmation: ((PendingTradeConfirmation) async throws -> Data)? = nil, call: ((String, Data) async throws -> Data)? = nil) {
         self.context = context
         self.now = now
         self.journal = TradeConfirmationJournal(root: root)
         self.call = call ?? { method, payload in
             try await DaemonRPC.call(root: root, profile: context.profile, method: method, payload: payload)
+        }
+        self.readConfirmation = readConfirmation ?? { saved in
+            return try await DaemonRPC.readConfirmation(root: root, saved: saved)
         }
         do { pending = try journal.load(profile: context.profile, network: context.network) }
         catch { self.error = error.localizedDescription; journalBlocked = true }
@@ -140,8 +144,9 @@ final class TradeReviewModel: ObservableObject {
         }
     }
     func back() { guard !busy, pending == nil else { return }; quote = nil; error = nil }
-    func confirm(current: () -> TradeContext) async {
+    func confirm(authorizeSaved: Bool = false, current: () -> TradeContext) async {
         guard !busy, !journalBlocked, acceptedID == nil, context.matches(current()) else { return }
+        let savedAttempt = pending != nil
         busy = true; error = nil
         defer { busy = false }
         do {
@@ -153,7 +158,9 @@ final class TradeReviewModel: ObservableObject {
                 pending = saved
             }
             guard let saved = pending else { return }
-            let data = try await call("trade.confirm", saved.request.jsonUTF8Data())
+            let data: Data
+            if savedAttempt && !authorizeSaved { data = try await readConfirmation(saved) }
+            else { data = try await call("trade.confirm", saved.request.jsonUTF8Data()) }
             let result = try Blakeswap_V2_ConfirmTradeResult(serializedBytes: data)
             guard result.id == saved.requestID, result.kind == saved.kind || (result.kind.isEmpty && result.state == "rejected") else { throw RPCError.message("Confirmation response does not match the saved request. Retry the saved confirmation.") }
             switch result.state {

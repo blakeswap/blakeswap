@@ -5,8 +5,8 @@ struct FillHistoryView: View {
     @EnvironmentObject private var app: AppModel
     @Environment(\.dismiss) private var dismiss
     @StateObject private var history: FillHistoryModel
-    let order: Blakeswap_V2_MarketOrder
-    init(context: ParentFillContext, order: Blakeswap_V2_MarketOrder, call: @escaping FillHistoryCall) {
+    let order: Blakeswap_V2_MarketOrder?
+    init(context: ParentFillContext, order: Blakeswap_V2_MarketOrder? = nil, call: @escaping FillHistoryCall) {
         self.order = order
         _history = StateObject(wrappedValue: FillHistoryModel(context: context, call: call))
     }
@@ -14,7 +14,7 @@ struct FillHistoryView: View {
         VStack(alignment: .leading, spacing: 12) {
             Text("Parent order fills").font(.title2)
             Text("\(history.context.wallet.profile) · \(history.context.wallet.network)\nMaker \(history.context.maker)\nParent \(history.context.parentID)").font(.caption.monospaced()).textSelection(.enabled)
-            if order.own, order.hasQuantities {
+            if let order, order.own, order.hasQuantities {
                 let q = order.quantities
                 Text("Total \(q.total) · Available \(q.available) · Reserved \(q.reserved) · Committed \(q.committed) · Filled \(q.filled) · Released \(q.released) sell sats")
                 Text("Parent accounting at selection; it is not recomputed from this child page.").font(.caption)

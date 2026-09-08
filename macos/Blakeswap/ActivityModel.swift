@@ -15,10 +15,29 @@ struct ActivityFilters: Equatable {
     }
 }
 
-struct ActivityDestination: Equatable {
+struct ActivityDestination: Equatable, Hashable {
     let page: String
     let anchor: String
-    static func order(_ id: String) -> Self? { id.isEmpty ? nil : Self(page: "Market", anchor: "order/" + id) }
+    var maker: String = ""
+    static func order(_ id: String, maker: String) -> Self? {
+        id.isEmpty || maker.isEmpty ? nil : Self(page: "Market", anchor: "order/" + id, maker: maker)
+    }
+    // Activity rows do not carry maker identity. Resolve one authenticated
+    // child instead of choosing a market row from an unqualified order ID.
+    @MainActor static func parent(_ record: Blakeswap_V2_ActivityRecord, context: TradeContext, current: () -> TradeContext, call: FillHistoryCall) async throws -> Self? {
+        guard context.matches(current()), record.wallet == context.profile, record.network == context.network else { throw NativeSecurityError.changed }
+        if record.kind == "order" { return order(record.orderID, maker: context.walletKey) }
+        guard !record.swapID.isEmpty else { return nil }
+        var request = Blakeswap_V2_RecordQuery()
+        request.kind = "swap"; request.id = record.swapID; request.expectedWallet = context.profile; request.expectedNetwork = context.network
+        let raw = try await call("record.get", request.jsonUTF8Data())
+        let detail = try Blakeswap_V2_RecordDetail(serializedBytes: raw)
+        guard !Task.isCancelled, context.matches(current()) else { throw NativeSecurityError.changed }
+        guard detail.kind == "swap", detail.id == record.swapID, detail.hasSwap, detail.swap.id == record.swapID,
+              !detail.swap.parentID.isEmpty, !detail.swap.parentMaker.isEmpty,
+              record.orderID.isEmpty || detail.swap.parentID == record.orderID else { throw RPCError.message("Parent identity is unavailable for this child.") }
+        return order(detail.swap.parentID, maker: detail.swap.parentMaker)
+    }
     static func settlement(_ record: Blakeswap_V2_ActivityRecord) -> Self? {
         if record.kind == "tower_earning" {
             let group = record.groupID.hasPrefix("tower/") ? record.groupID : record.id

@@ -33,6 +33,7 @@ struct RetainedRecordPresentation: Identifiable {
     var id: String { detail.kind + "/" + detail.id }
 }
 struct RetainedRecordView: View {
+    @EnvironmentObject private var app: AppModel
     let record: RetainedRecordPresentation
     @Environment(\.dismiss) private var dismiss
     var body: some View {
@@ -49,6 +50,14 @@ struct RetainedRecordView: View {
                         Text("Long leg: \(swap.long.amount) \(symbol(swap.long.chain)) sats · \(swap.longConfirmations) confirmations")
                         Text("Short leg: \(swap.short.amount) \(symbol(swap.short.chain)) sats · \(swap.shortConfirmations) confirmations")
                         Text("Long funding: \(swap.long.txid)\nLong spend: \(swap.longSpend)\nShort funding: \(swap.short.txid)\nShort spend: \(swap.shortSpend)").font(.caption.monospaced())
+                        if !swap.parentID.isEmpty, !swap.parentMaker.isEmpty {
+                            Text("Fill \(swap.quantity) sell sats · Parent revision \(swap.parentRevision)")
+                            Text(swap.allocationKnown ? "\(swap.allocation.capitalized): \(swap.allocatedQuantity) sell sats currently allocated" : "Current maker allocation unknown")
+                            Button("Show parent fills") {
+                                guard record.context.matches(app.tradeContext) else { return }
+                                app.activityDestination = .order(swap.parentID, maker: swap.parentMaker); app.page = "Market"; dismiss()
+                            }.disabled(!record.context.matches(app.tradeContext))
+                        }
                         Text("Owner fee cap: \(swap.ownerFeeCap) sats · Tower paid: \(swap.feeLabel)")
                         Text(swap.secretRevealed ? "Preimage release/observation is retained." : "No preimage release recorded.")
                         if !swap.error.isEmpty { Text(swap.error).foregroundStyle(.orange) }

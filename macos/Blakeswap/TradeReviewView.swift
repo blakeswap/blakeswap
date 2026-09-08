@@ -52,7 +52,7 @@ struct TradeComposer: View {
         guard let q = try? TradeFillDraft.amount(fill.quantity, positive: true), let amount = try? roundedFillBuy(total: order.sellAmount, buy: order.buyAmount, quantity: q) else { return "" }
         return String(amount)
     }
-    private var fillFeeScope: String { [fill.quantity, fill.mode, fill.minimum, fill.maximum, fill.btcFees, fill.blakeFees, fill.btcBounty, fill.blakeBounty, String(order?.revision ?? 0), expectedEventID].joined(separator: "|") }
+    private var fillFeeScope: String { [fill.quantity, fill.mode, fill.minimum, fill.maximum, fill.btcFees, fill.blakeFees, fill.btcBounty, fill.blakeBounty, String(order?.revision ?? 0), order?.maker ?? "", order?.id ?? "", expectedEventID].joined(separator: "|") }
     private var replacement: ManageOfferContext? { management?.action == "replace" ? management : nil }
     private var feeKey: String { feeReviewKey(profile: context.profile, network: context.network, kind: "funding", chain: paidChain, amount: paidAmount, fee: fundingFee, automatic: automaticFee, generation: context.generation, sourceOfferID: replacement?.order.offer.id ?? "", sourceEventID: replacement?.order.eventID ?? "") }
     private var currentFee: FeeReview? { feeReview?.key == feeKey ? feeReview : nil }
@@ -231,6 +231,10 @@ struct TradeEconomicsReview: View {
                                 Text("Representative child — not aggregate parent outcomes").font(.headline)
                                 Text("\(q.exampleFill.quantity) sell sats → \(q.exampleFill.buyAmount) buy sats · Funding fee \(q.exampleFill.fundingFee) · Owner fee cap \(q.exampleFill.ownerFeeCap)")
                             }
+                            if q.kind == "taker" {
+                                Text("Fill quantity: \(q.quantity) maker sell sats · Parent revision \(q.parentRevision)").font(.headline)
+                                Text("Parent \(q.offerID) · Maker \(q.offerMaker)").font(.caption.monospaced()).textSelection(.enabled)
+                            }
                             Text("Principal exchange rate ≈ \(q.rateDisplay) \(symbol(q.receivedChain)) per \(symbol(q.paidChain)) (exactly \(q.rateNumerator)/\(q.rateDenominator)).").font(.caption)
                             ForEach(economics.displayedOutcomes, id: \.kind) { outcome in
                                 VStack(alignment: .leading, spacing: 3) {
@@ -261,14 +265,19 @@ struct TradeEconomicsReview: View {
                         }
                         if let pending = review.pending {
                             Text("Saved confirmation: \(pending.requestID)").font(.caption.monospaced()).textSelection(.enabled)
-                            Text("Retrying checks this same authorized request, including after quote expiry or restart.").font(.caption)
+                            Text("Check saved outcome reads an exact final receipt without a new prompt. Retry saved authorization asks for fresh authentication for this same saved request; it never creates a new confirmation identity.").font(.caption)
                         }
                     }.frame(maxWidth: .infinity, alignment: .leading)
                 }.frame(maxHeight: 460)
                 HStack {
                     if review.pending == nil { Button("Back") { review.back() }.disabled(review.busy) }
                     Spacer()
-                    Button(review.pending == nil ? (review.quote?.orderAction == "replace" ? "Confirm replacement" : (review.quote?.kind == "maker" ? "Confirm and publish" : "Confirm swap request")) : "Retry saved confirmation") {
+                    if review.pending != nil {
+                        Button("Retry saved authorization") {
+                            Task { await review.confirm(authorizeSaved: true, current: { model.tradeContext }) }
+                        }.disabled(review.busy || !review.context.matches(model.tradeContext))
+                    }
+                    Button(review.pending == nil ? (review.quote?.orderAction == "replace" ? "Confirm replacement" : (review.quote?.kind == "maker" ? "Confirm and publish" : "Confirm swap request")) : "Check saved outcome") {
                         Task { await review.confirm(current: { model.tradeContext }) }
                     }.buttonStyle(MintButton())
                         .disabled(review.busy || !review.context.matches(model.tradeContext) || (review.pending == nil && (review.quote?.ready != true || (review.quote?.expires ?? 0) <= Int64(clock.date.timeIntervalSince1970))))

@@ -68,13 +68,12 @@ final class TradeReviewTests: XCTestCase {
         resume?.resume(throwing: RPCError.message("Response lost")); await first.value
         XCTAssertNotNil(model.pending); XCTAssertNil(model.acceptedID)
         var expired = q; expired.expires = 1
-        let restored = TradeReviewModel(context: context, root: directory) { method, data in
-            XCTAssertEqual(method, "trade.confirm")
-            let request = try Blakeswap_V2_ConfirmTradeRequest(jsonUTF8Data: data)
+        let restored = TradeReviewModel(context: context, root: directory, readConfirmation: { saved in
+            let request = saved.request
             XCTAssertEqual(request, original)
             var result = Blakeswap_V2_ConfirmTradeResult(); result.id = request.requestID; result.kind = "taker"; result.state = "accepted"
             return try result.serializedData()
-        }
+        })
         restored.quote = expired
         await restored.confirm(current: { self.context })
         XCTAssertEqual(restored.acceptedID, original?.requestID); XCTAssertEqual(restored.acceptedKind, "taker")

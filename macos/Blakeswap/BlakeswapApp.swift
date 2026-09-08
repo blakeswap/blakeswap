@@ -170,7 +170,7 @@ struct ContentView: View {
         .sheet(item: $creatingOffer, onDismiss: refreshPendingTrade) { context in TradeComposer(context: context, root: model.root).environmentObject(model) }
         .sheet(item: $resumingTrade, onDismiss: refreshPendingTrade) { context in TradeComposer(context: context, root: model.root).environmentObject(model) }
         .task(id: model.profile + "|" + model.network + "|" + String(model.generation)) { refreshPendingTrade() }
-        .sheet(item: $takingOrder, onDismiss: refreshPendingTrade) { context in TradeComposer(context: context.wallet, root: model.root, order: context.order).environmentObject(model) }
+        .sheet(item: $takingOrder, onDismiss: refreshPendingTrade) { context in TradeComposer(context: context.wallet, root: model.root, order: context.order, suggestedQuantity: context.suggestedQuantity, expectedEventID: context.eventID).environmentObject(model) }
         .sheet(isPresented: Binding(get: { model.recovery != nil }, set: { if !$0 { model.recovery = nil } })) {
             VStack(alignment: .leading, spacing: 20) {
                 Text("Wallet recovery phrase").font(.title2.bold())
@@ -304,6 +304,13 @@ struct ContentView: View {
                     if swap.long.refundLocktime > 0 {
                         HStack(spacing: 20) { leg(swap.long, swap.longSpend, swap.longConfirmations); Image(systemName: "arrow.left.arrow.right").foregroundStyle(.secondary); leg(swap.short, swap.shortSpend, swap.shortConfirmations) }
                     } else { Text("Waiting for maker acceptance.").font(.callout).foregroundStyle(.secondary) }
+                    if !swap.parentID.isEmpty, !swap.parentMaker.isEmpty {
+                        Text("Fill \(swap.quantity) sell sats · Parent revision \(swap.parentRevision)").font(.caption)
+                        Text(swap.allocationKnown ? "\(swap.allocation.capitalized): \(swap.allocatedQuantity) sell sats currently allocated" : "Current maker allocation unknown").font(.caption)
+                        Button("Show parent fills") {
+                            model.activityDestination = .order(swap.parentID, maker: swap.parentMaker); model.page = "Market"
+                        }
+                    }
                     Text("Funding fee: \(swap.fundingFee) native sats · Owner settlement cap: \(swap.ownerFeeCap > 0 ? String(swap.ownerFeeCap) : "original signed fees")")
                         .font(.caption).foregroundStyle(.secondary)
                     if (swap.stage == "claiming" || swap.stage == "refunding") {

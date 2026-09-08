@@ -8,6 +8,7 @@ final class AppModel: ObservableObject {
     @Published var profile = "alice"
     @Published var page = "Market"
     @Published var activityDestination: ActivityDestination?
+    private var pendingOrderRoute: AlertDestination?
  @Published var monitoringDestination: AlertDestination?
     struct Snapshot {
         var status: DaemonStatus?
@@ -41,7 +42,7 @@ final class AppModel: ObservableObject {
     var checkingSwaps: Bool { swapRefreshGeneration == generation }
     var network: String { settings?.activeNetwork ?? status?.network ?? "mainnet" }
     var isRegtest: Bool { network == "regtest" }
-    func invalidateSnapshot() { daemon.revokeConsent(); generation &+= 1; snapshot.status = nil; recovery = nil; activityDestination = nil; monitoringDestination = nil }
+    func invalidateSnapshot() { daemon.revokeConsent(); generation &+= 1; snapshot.status = nil; recovery = nil; activityDestination = nil; monitoringDestination = nil; pendingOrderRoute = nil }
     func selectProfile(_ name: String) { invalidateSnapshot(); profile = name; notice = nil }
 
     @discardableResult
@@ -56,6 +57,13 @@ final class AppModel: ObservableObject {
         if nextSettings.onboardingStage != "backup" { setupWallet = nil }
         let matching = next?.network == nextSettings.activeNetwork && next?.name == selected
         snapshot = Snapshot(status: matching ? next : nil, settings: nextSettings)
+        if let route = pendingOrderRoute {
+            if route.wallet != selected || route.network != nextSettings.activeNetwork { pendingOrderRoute = nil }
+            else if matching, let next, !next.pubkey.isEmpty {
+                activityDestination = .order(route.object, maker: next.pubkey)
+                pendingOrderRoute = nil
+            }
+        }
         if !nextSettings.wallets.isEmpty, !nextSettings.wallets.contains(where: { $0.id == profile }) { selectProfile(nextSettings.wallets[0].id) }
         return matching
     }
@@ -90,8 +98,8 @@ final class AppModel: ObservableObject {
         selectProfile(route.wallet)
         if route.kind == "swap" { activityDestination = .swap(route.object) }
         else if route.kind == "send" { activityDestination = .send(route.object) }
-        else if route.kind == "order" { activityDestination = .order(route.object) }
-        page = activityDestination?.page ?? (route.kind == "automation" ? "Market" : "Activity")
+        else if route.kind == "order" { pendingOrderRoute = route }
+        page = activityDestination?.page ?? (["automation", "order"].contains(route.kind) ? "Market" : "Activity")
  if !["swap", "send", "order"].contains(route.kind) { monitoringDestination = route }
         NSApp?.activate(ignoringOtherApps: true)
     }

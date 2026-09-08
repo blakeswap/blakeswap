@@ -85,7 +85,7 @@ final class NativeSecurityTests: XCTestCase {
         let created = try Blakeswap_V2_FirstWallet(serializedBytes: await DaemonRPC.call(root: root.path, profile: "alice", method: "onboarding.prepare", payload: prepare.jsonUTF8Data()))
         XCTAssertFalse(FileManager.default.fileExists(atPath: root.appendingPathComponent("wallets/alice/vault.password").path))
         XCTAssertGreaterThanOrEqual(owner.calls, 2)
-        var request = URLRequest(url: URL(string: endpoint.http + "/v1/onboarding/recovery")!)
+        var request = URLRequest(url: URL(string: endpoint.http + "/v2/onboarding/recovery")!)
         request.httpMethod = "POST"; request.httpBody = Data("{}".utf8); request.setValue("application/json", forHTTPHeaderField: "Content-Type"); request.setValue("Bearer " + endpoint.token, forHTTPHeaderField: "Authorization")
         let (_, response) = try await URLSession.shared.data(for: request)
         XCTAssertGreaterThanOrEqual((response as! HTTPURLResponse).statusCode, 400)

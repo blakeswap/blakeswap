@@ -35,6 +35,34 @@ enum DaemonRPC {
         }
         return endpoint
     }
+    // Only the native daemon's exact terminal-receipt exception can answer
+    // this request without a grant. Unknown or pending requests cannot act.
+    // Deliberate file mode has different authority and must use normal retry.
+    static func readConfirmation(root: String, saved: PendingTradeConfirmation) async throws -> Data {
+        let endpoint = try endpoint(root: root, profile: saved.profile)
+        guard endpoint.credentialMode == "native" else {
+            throw RPCError.message("Use Retry saved authorization for this file-mode wallet.")
+        }
+        do {
+            let result = try await withGRPCClient(transport: .http2NIOPosix(target: .unixDomainSocket(path: endpoint.socket), transportSecurity: .plaintext)) { client in
+                let service = Blakeswap_V2_DaemonService.Client(wrapping: client)
+                let metadata: Metadata = ["authorization": "Bearer \(endpoint.token)"]
+                var options = CallOptions.defaults
+                options.timeout = .seconds(45); options.maxRequestMessageBytes = 131_072; options.maxResponseMessageBytes = 131_072
+                let result = try await service.confirmTrade(saved.request, metadata: metadata, options: options)
+                guard result.id == saved.requestID,
+                      result.state == "accepted" || result.state == "rejected",
+                      result.kind == saved.kind || (result.kind.isEmpty && result.state == "rejected") else {
+                    throw RPCError.message("No matching final receipt is available. The saved identity is unchanged.")
+                }
+                return try result.serializedData()
+            }
+            try Task.checkCancellation()
+            return result
+        } catch let error as GRPCCore.RPCError {
+            throw RPCError.message(error.message.isEmpty ? "The saved outcome is unavailable." : error.message)
+        }
+    }
     static func call(root: String, profile: String, method: String, params: [String: Any] = [:]) async throws -> Data {
         try await call(root: root, profile: profile, method: method, payload: JSONSerialization.data(withJSONObject: params))
     }
@@ -106,6 +134,10 @@ enum DaemonRPC {
             case "trade.quote":
                 let request = try Blakeswap_V2_TradeQuoteRequest(jsonUTF8Data: payload)
                 let response = try await service.quoteTrade(request, metadata: metadata, options: options)
+                return try response.serializedData()
+            case "fills.list":
+                let request = try Blakeswap_V2_FillQuery(jsonUTF8Data: payload)
+                let response = try await service.listFills(request, metadata: metadata, options: options)
                 return try response.serializedData()
             case "activity.list":
                 let request = try Blakeswap_V2_ActivityQuery(jsonUTF8Data: payload)

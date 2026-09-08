@@ -14,14 +14,15 @@ struct MarketView: View {
     @State private var taking: TakeOfferContext?
     @State private var managing: ManageOfferContext?
     @State private var selected: Blakeswap_V2_MarketOrder?
-    @State private var focusedID = ""
-    @State private var fillParent: Blakeswap_V2_MarketOrder?
+    @State private var fillParent: ParentFillContext?
     private let fillCall: FillHistoryCall?
     let context: TradeContext
     let root: String
 
     init(context: TradeContext, root: String, fillCall: FillHistoryCall? = nil) {
-        self.context = context; self.root = root; self.fillCall = fillCall
+        self.context = context; self.root = root; self.fillCall = fillCall ?? { method, payload in
+            try await DaemonRPC.call(root: root, profile: context.profile, method: method, payload: payload)
+        }
         _market = StateObject(wrappedValue: MarketModel(context: context, root: root))
     }
     var body: some View {
@@ -64,33 +65,23 @@ struct MarketView: View {
                 if market.more { Button("Load more") { Task { await market.load(more: true, current: { app.tradeContext }) } }.disabled(market.busy) }
             }
         }
-        .task(id: market.filters.key + "|" + focusedID) {
-            await market.load(current: { app.tradeContext })
-            if !focusedID.isEmpty {
-                var pages = 0
-                while !Task.isCancelled, market.more, !market.rows.contains(where: { $0.offer.id == focusedID }), pages < 20 {
-                    pages += 1; await market.load(more: true, current: { app.tradeContext })
-                }
-                selected = market.rows.first { $0.offer.id == focusedID }
-            }
-        }
+        .task(id: market.filters.key) { await market.load(current: { app.tradeContext }) }
         .task {
             while !Task.isCancelled {
                 do { try await Task.sleep(for: .seconds(15)) } catch { break }
-                if !market.busy, taking == nil, managing == nil, selected == nil { await market.load(current: { app.tradeContext }) }
+                if !market.busy, taking == nil, managing == nil, selected == nil, fillParent == nil { await market.load(current: { app.tradeContext }) }
             }
         }
-        .task(id: app.activityDestination?.anchor ?? "") {
-            if let target = app.activityDestination, target.page == "Market", target.anchor.hasPrefix("order/") {
-                market.filters = MarketFilters(owner: "mine", status: "all")
-                focusedID = String(target.anchor.dropFirst(6))
+        .task(id: app.activityDestination) {
+            if let target = app.activityDestination, target.page == "Market", target.anchor.hasPrefix("order/"), !target.maker.isEmpty {
+                fillParent = ParentFillContext(wallet: context, maker: target.maker, parentID: String(target.anchor.dropFirst(6)))
             }
         }
         .sheet(item: $taking, onDismiss: { Task { await market.load(current: { app.tradeContext }) } }) { item in TradeComposer(context: item.wallet, root: root, order: item.order, suggestedQuantity: item.suggestedQuantity, expectedEventID: item.eventID, refreshParent: { order in try await market.refreshParent(order, current: { app.tradeContext }) }).environmentObject(app) }
         .sheet(item: $managing, onDismiss: { Task { await market.load(current: { app.tradeContext }) } }) { item in TradeComposer(context: item.wallet, root: root, management: item).environmentObject(app) }
         .sheet(item: $fillParent) { row in
             if let fillCall {
-                FillHistoryView(context: ParentFillContext(wallet: context, maker: row.offer.maker, parentID: row.offer.id), order: row, call: fillCall).environmentObject(app)
+                FillHistoryView(context: row, order: market.rows.first { $0.offer.maker == row.maker && $0.offer.id == row.parentID }, call: fillCall).environmentObject(app)
             }
         }
         .sheet(item: $selected) { row in
@@ -134,7 +125,7 @@ struct MarketView: View {
     }
     @ViewBuilder private func actions(_ row: Blakeswap_V2_MarketOrder) -> some View {
         HStack {
-            if fillCall != nil { Button("Fill history") { fillParent = row } }
+            if fillCall != nil { Button("Fill history") { fillParent = ParentFillContext(wallet: context, maker: row.offer.maker, parentID: row.offer.id) } }
             if row.canTake { Button("Take offer") { taking = TakeOfferContext(order: row.offer, wallet: context, suggestedQuantity: row.suggestedQuantity, eventID: row.eventID) }.accessibilityIdentifier("take-offer-\(row.offer.id)") }
             if row.canCancel { Button("Cancel") { Task { await market.cancel(row, current: { app.tradeContext }) } } }
             if row.canReplace { Button("Edit / replace") { managing = ManageOfferContext(action: "replace", order: row, wallet: context) } }

@@ -102,6 +102,8 @@ struct ActivityDetails: View {
     @Environment(\.dismiss) private var dismiss
     let record: Blakeswap_V2_ActivityRecord
     let context: TradeContext
+    @State private var resolvingParent = false
+    @State private var parentError: String?
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
             Text(record.label).font(.title2.bold())
@@ -123,10 +125,13 @@ struct ActivityDetails: View {
                     Text("ID: \(record.id)\nGroup: \(record.groupID)").font(.caption.monospaced())
                     if !record.address.isEmpty { Text("Address: \(record.address)").font(.caption.monospaced()) }
                     HStack {
-                        if let target = ActivityDestination.order(record.orderID) { Button("Show order") { navigate(target) } }
+                        if !record.orderID.isEmpty || !record.swapID.isEmpty {
+                            Button("Show parent fills") { Task { await showParent() } }.disabled(resolvingParent)
+                        }
                         if let target = ActivityDestination.settlement(record) { Button(record.kind == "tower_earning" ? "Show tower job" : "Show swap") { navigate(target) } }
                         if let target = ActivityDestination.send(record.sendID) { Button("Show send") { navigate(target) } }
                     }.disabled(!context.matches(app.tradeContext))
+                    if let parentError { Text(parentError).foregroundStyle(.orange) }
                     if !record.variants.isEmpty {
                         Divider(); Text("Transaction lineage").font(.headline)
                         ForEach(record.variants, id: \.self) { txid in
@@ -151,6 +156,16 @@ struct ActivityDetails: View {
             }.frame(maxHeight: 560)
             Button("Done") { dismiss() }.keyboardShortcut(.cancelAction)
         }.padding(28).frame(width: 660)
+    }
+    private func showParent() async {
+        guard !resolvingParent else { return }; resolvingParent = true; parentError = nil
+        defer { resolvingParent = false }
+        do {
+            if let target = try await ActivityDestination.parent(record, context: context, current: { app.tradeContext }, call: { method, payload in
+                try await DaemonRPC.call(root: app.root, profile: context.profile, method: method, payload: payload)
+            }) { navigate(target) }
+            else { parentError = "No parent order identity is available for this record." }
+        } catch { if context.matches(app.tradeContext) { parentError = error.localizedDescription } }
     }
     private func navigate(_ destination: ActivityDestination) {
         guard context.matches(app.tradeContext) else { return }

@@ -43,7 +43,7 @@ final class ActivityTests: XCTestCase {
         XCTAssertEqual(model.records.map(\.id), ["new", "old"]); XCTAssertEqual(model.nextCursor, 0)
         model.select(second); XCTAssertEqual(model.selected?.amount, 9007199254740993)
         XCTAssertEqual(activityDate(model.selected?.createdAt ?? 0), "Unknown")
-        XCTAssertEqual(ActivityDestination.order("o"), ActivityDestination(page: "Market", anchor: "order/o"))
+        XCTAssertEqual(ActivityDestination.order("o", maker: "maker"), ActivityDestination(page: "Market", anchor: "order/o", maker: "maker"))
         XCTAssertEqual(ActivityDestination.swap("s"), ActivityDestination(page: "Swaps", anchor: "swap/s"))
         XCTAssertEqual(ActivityDestination.send("p"), ActivityDestination(page: "Wallet", anchor: "send/p"))
         XCTAssertNil(ActivityDestination.swap(""))
