@@ -6,12 +6,16 @@ import (
 	"testing"
 	"time"
 
+	"github.com/blakeswap/blakeswap/internal/contract"
 	"github.com/blakeswap/blakeswap/internal/storage"
 )
 
 func TestArchiveSemanticFreshnessSurvivesMovesChangesAndReopen(t *testing.T) {
-	e, _ := receiveEngine(t)
-	e.s.Swaps = map[string]*Swap{"settled": {ID: "settled", Role: "maker", Stage: "completed", SecretObserved: true, SelfClaims: []string{"retained signed transaction"}}}
+	e, swap, _, secret := isolatedFixture(t, "taker")
+	id := swap.ID
+	swap.Stage, swap.SecretObserved = "completed", true
+	claim := recoverySpend(t, e, swap, swap.Short, false, secret)
+	swap.SelfClaims = []string{contract.Hex(claim.Tx)}
 	if err := e.save(); err != nil {
 		t.Fatal(err)
 	}
@@ -30,13 +34,13 @@ func TestArchiveSemanticFreshnessSurvivesMovesChangesAndReopen(t *testing.T) {
 	if e.Status().Backup.StateChanged {
 		t.Fatal("frozen snapshot was not recorded")
 	}
-	if err = e.stageArchive("swaps", "settled"); err != nil {
+	if err = e.stageArchive("swaps", id); err != nil {
 		t.Fatal(err)
 	}
 	if err = e.save(); err != nil {
 		t.Fatal(err)
 	}
-	if e.s.Version != 2 || BackupSemanticToken(e.s) != token || e.Status().Backup.StateChanged {
+	if e.s.Version != StateVersion || BackupSemanticToken(e.s) != token || e.Status().Backup.StateChanged {
 		t.Fatal("a storage-only move changed semantic freshness")
 	}
 	archived, err := e.BackupSnapshot()
@@ -50,7 +54,7 @@ func TestArchiveSemanticFreshnessSurvivesMovesChangesAndReopen(t *testing.T) {
 	if _, err := BackupFingerprint(e.s); err == nil {
 		t.Fatal("active-only state claimed a complete fingerprint")
 	}
-	if _, err = e.activateArchived("swaps", "settled"); err != nil {
+	if _, err = e.activateArchived("swaps", id); err != nil {
 		t.Fatal(err)
 	}
 	if err = e.save(); err != nil {
@@ -59,8 +63,12 @@ func TestArchiveSemanticFreshnessSurvivesMovesChangesAndReopen(t *testing.T) {
 	if BackupSemanticToken(e.s) != token {
 		t.Fatal("reactivation changed semantic freshness")
 	}
-	e.s.Swaps["settled"].SelfClaims = append(e.s.Swaps["settled"].SelfClaims, "new signed variant")
-	if err = e.stageArchive("swaps", "settled"); err != nil {
+	replacement, err := contract.Spend(swap.Short, isolatedSpendKey(t, e, swap, swap.Short, false), e.scripts[swap.Short.Chain], 6000, false, 0, nil, 0, secret)
+	if err != nil {
+		t.Fatal(err)
+	}
+	e.s.Swaps[id].SelfClaims = append(e.s.Swaps[id].SelfClaims, contract.Hex(replacement))
+	if err = e.stageArchive("swaps", id); err != nil {
 		t.Fatal(err)
 	}
 	if err = e.save(); err != nil {
