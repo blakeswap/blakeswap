@@ -436,3 +436,87 @@ func TestProfileSourceOwnsErrorsAndDoesNotReuseOrphanAccounts(t *testing.T) {
 		t.Fatal("new profile did not own a distinct item")
 	}
 }
+
+type reviewAmbiguousReplyStore struct {
+	gets  int
+	reply []byte
+}
+
+func (s *reviewAmbiguousReplyStore) Get(context.Context, Key) ([]byte, error) {
+	s.gets++
+	if s.gets == 1 {
+		return nil, ErrMissing
+	}
+	return s.reply, ErrDenied
+}
+func (s *reviewAmbiguousReplyStore) Create(context.Context, Key, []byte) error {
+	return errors.New("lost creation acknowledgement")
+}
+func (s *reviewAmbiguousReplyStore) Delete(context.Context, Key) error { return nil }
+func TestReviewAmbiguousCreateClearsFailedReadBytes(t *testing.T) {
+	s := &reviewAmbiguousReplyStore{reply: []byte("isolated credential returned with provider error")}
+	p := Profiles{Store: s}
+	if err := p.establish(context.Background(), Key{Installation: "test", Profile: "alice", Record: strings.Repeat("a", 64)}, []byte("isolated migration input")); err == nil {
+		t.Fatal("expected provider failure")
+	}
+	for _, b := range s.reply {
+		if b != 0 {
+			t.Fatal("failed reconciliation retained provider credential bytes")
+		}
+	}
+}
+func TestReviewMigrationLateCancellationReturnsNoCredential(t *testing.T) {
+	for _, stage := range []string{"file_removed", "removed"} {
+		t.Run(stage, func(t *testing.T) {
+			root := t.TempDir()
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+			if err := os.WriteFile(filepath.Join(root, "vault.password"), []byte("isolated migration input"), 0600); err != nil {
+				t.Fatal(err)
+			}
+			p := Profiles{Store: &testStore{values: map[Key][]byte{}}, After: func(at string) error {
+				if at == stage {
+					cancel()
+				}
+				return nil
+			}}
+			got, err := p.Migrate(ctx, root, Key{Installation: "test", Profile: "alice"}, func([]byte) (string, error) { return strings.Repeat("a", 64), nil })
+			defer clear(got)
+			if !errors.Is(err, context.Canceled) || got != nil {
+				t.Fatalf("cancelled migration returned credential=%t error=%v", got != nil, err)
+			}
+		})
+	}
+}
+func TestReviewExistingProfileHonorsExplicitRecordIdentity(t *testing.T) {
+	for _, method := range []string{"Source", "Migrate"} {
+		t.Run(method, func(t *testing.T) {
+			root := t.TempDir()
+			identity := strings.Repeat("b", 64)
+			key := Key{Installation: "test", Profile: "alice"}
+			p := Profiles{Store: &testStore{values: map[Key][]byte{}}}
+			got, err := p.Initialize(context.Background(), root, key, identity, func([]byte) error { return nil }, func([]byte) (string, error) { return identity, nil })
+			clear(got)
+			if err != nil {
+				t.Fatal(err)
+			}
+			key.Record = strings.Repeat("a", 64)
+			if method == "Source" {
+				source, err := p.Source(root, key)
+				if err == nil {
+					got, err = source.Acquire(context.Background())
+					clear(got)
+				}
+				if err == nil {
+					t.Fatal("stale explicit record acquired another record credential")
+				}
+			} else {
+				got, err = p.Migrate(context.Background(), root, key, func([]byte) (string, error) { return identity, nil })
+				clear(got)
+				if err == nil {
+					t.Fatal("stale explicit record migrated another record credential")
+				}
+			}
+		})
+	}
+}

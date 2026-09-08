@@ -175,6 +175,7 @@ func (p Profiles) establish(ctx context.Context, key Key, password []byte) error
 		}
 		stored, err = p.Store.Get(ctx, key)
 		if err != nil && createErr != nil {
+			clear(stored)
 			return createErr
 		}
 	}
@@ -198,7 +199,7 @@ func (p Profiles) Migrate(ctx context.Context, root string, key Key, verify func
 			return nil, e
 		}
 		j, err = p.begin(root, key, "legacy")
-	} else if err == nil && (j.Key.Installation != key.Installation || j.Key.Profile != key.Profile) {
+	} else if err == nil && (j.Key.Installation != key.Installation || j.Key.Profile != key.Profile || (key.Record != "" && key.Record != j.Key.Record)) {
 		err = ErrConflict
 	}
 	if err != nil {
@@ -268,6 +269,9 @@ func (p Profiles) Migrate(ctx context.Context, root string, key Key, verify func
 		if err = p.record(root, &j, "removed"); err != nil {
 			return nil, err
 		}
+	}
+	if err = ctx.Err(); err != nil {
+		return nil, err
 	}
 	return append([]byte(nil), password...), nil
 }
@@ -363,7 +367,7 @@ func (p Profiles) Source(root string, key Key) (Source, error) {
 	if err != nil {
 		return nil, err
 	}
-	if j.Key.Installation != key.Installation || j.Key.Profile != key.Profile || (j.Phase != "active" && j.Phase != "removed") {
+	if j.Key.Installation != key.Installation || j.Key.Profile != key.Profile || (key.Record != "" && key.Record != j.Key.Record) || (j.Phase != "active" && j.Phase != "removed") {
 		return nil, errors.New("wallet credential migration is incomplete")
 	}
 	return SourceFunc(func(ctx context.Context) ([]byte, error) {
