@@ -122,7 +122,10 @@ func TestRealReviewedFundingAndOwnerAcceleration(t *testing.T) {
 			}
 			h.offline("maker")
 			h.online("taker")
-			h.tick("taker")
+			partialWaitMailbox(h, "taker prepares the claim after receiving funding", func() bool {
+				peer := h.swap("taker", id)
+				return peer.SelfClaim != "" && peer.ClaimLastAttempt != 0
+			}, func() { h.tick("taker") })
 			taker := h.swap("taker", id)
 			if taker.OwnerFeeCap != 20000 || len(taker.SelfClaims) != 3 {
 				t.Fatal("owner consent/variants lost after restart")
@@ -136,7 +139,10 @@ func TestRealReviewedFundingAndOwnerAcceleration(t *testing.T) {
 			}
 			h.mine(taker.Short.Chain, 2)
 			h.online("maker")
-			h.tick("maker")
+			partialWait(h, "maker prepares the witnessed claim", func() bool {
+				owner := h.swap("maker", id)
+				return owner.SelfClaim != "" && owner.ClaimLastAttempt != 0
+			}, func() { h.tick("maker") })
 			maker = h.swap("maker", id)
 			if maker.OwnerFeeCap != 20000 || len(maker.SelfClaims) != 3 {
 				t.Fatal("maker claim policy lost")
