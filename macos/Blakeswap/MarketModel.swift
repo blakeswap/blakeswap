@@ -94,6 +94,19 @@ final class MarketModel: ObservableObject {
             self.error = error.localizedDescription; more = false
         }
     }
+    func refreshParent(_ previous: Order, current: () -> TradeContext) async throws -> Blakeswap_V2_MarketOrder {
+        guard context.matches(current()) else { throw RPCError.message("Wallet changed.") }
+        let query = try filters.query(context: context)
+        let data = try await call("market.list", query.jsonUTF8Data())
+        let page = try Blakeswap_V2_MarketPage(serializedBytes: data)
+        guard !Task.isCancelled, context.matches(current()), page.wallet == context.profile,
+              page.network == context.network, !page.revision.isEmpty else { throw RPCError.message("Market context changed.") }
+        guard let row = page.records.first(where: { $0.offer.maker == previous.maker && $0.offer.id == previous.id }) else {
+            throw RPCError.message("This parent is absent from the refreshed page. Your entered quantity is retained; reselect the order before submitting it.")
+        }
+        try validateRefreshedParent(previous, refreshed: row)
+        return row
+    }
     func cancel(_ order: Blakeswap_V2_MarketOrder, current: () -> TradeContext) async {
         guard !busy, order.own, order.canCancel, context.matches(current()) else { return }
         busy = true; cancelling = true; error = nil

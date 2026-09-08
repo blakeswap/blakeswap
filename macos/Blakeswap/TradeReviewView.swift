@@ -4,6 +4,8 @@ struct TakeOfferContext: Identifiable {
     let id = UUID()
     let order: Order
     let wallet: TradeContext
+    var suggestedQuantity: Int64 = 0
+    var eventID: String = ""
 }
 
 @MainActor
@@ -11,9 +13,13 @@ struct TradeComposer: View {
     @EnvironmentObject private var model: AppModel
     @Environment(\.dismiss) private var dismiss
     let context: TradeContext
-    let order: Order?
+    @State private var order: Order?
+    let refreshParent: ((Order) async throws -> Blakeswap_V2_MarketOrder)?
+    @State private var refreshingParent = false
     let management: ManageOfferContext?
     @StateObject private var review: TradeReviewModel
+    @State private var fill = TradeFillDraft()
+    @State private var expectedEventID: String
     @State private var sell = "btc"
     @State private var sellAmount = "1000000"
     @State private var buyAmount = "2000000"
@@ -24,18 +30,29 @@ struct TradeComposer: View {
     @State private var feeReview: FeeReview?
     @State private var expires = Date().addingTimeInterval(86_400)
 
-    init(context: TradeContext, root: String, order: Order? = nil, management: ManageOfferContext? = nil) {
-        self.context = context; self.order = order; self.management = management
+    init(context: TradeContext, root: String, order: Order? = nil, management: ManageOfferContext? = nil, suggestedQuantity: Int64 = 0, expectedEventID: String = "", refreshParent: ((Order) async throws -> Blakeswap_V2_MarketOrder)? = nil) {
+        self.context = context; _order = State(initialValue: order); self.management = management; _expectedEventID = State(initialValue: expectedEventID); self.refreshParent = refreshParent
+        var initial = TradeFillDraft()
+        if let order { initial.seed(quantity: suggestedQuantity > 0 ? suggestedQuantity : (order.fillMode == "whole" ? order.sellAmount : 0)) }
+        _fill = State(initialValue: initial)
         _review = StateObject(wrappedValue: TradeReviewModel(context: context, root: root))
         if let original = management?.order.offer {
             _sell = State(initialValue: original.sell)
             _sellAmount = State(initialValue: String(original.sellAmount)); _buyAmount = State(initialValue: String(original.buyAmount))
-            _protection = State(initialValue: original.towerBps > 0)
+            // Public history cannot authorize private budgets or protection.
+            initial.mode = original.fillMode
+            initial.minimum = String(original.minFill); initial.maximum = String(original.maxFill)
+            _fill = State(initialValue: initial)
         }
     }
     private var matching: Bool { context.matches(model.tradeContext) }
     private var paidChain: String { order?.buy ?? sell }
-    private var paidAmount: String { order.map { String($0.buyAmount) } ?? sellAmount }
+    private var paidAmount: String {
+        guard let order else { return sellAmount }
+        guard let q = try? TradeFillDraft.amount(fill.quantity, positive: true), let amount = try? roundedFillBuy(total: order.sellAmount, buy: order.buyAmount, quantity: q) else { return "" }
+        return String(amount)
+    }
+    private var fillFeeScope: String { [fill.quantity, fill.mode, fill.minimum, fill.maximum, fill.btcFees, fill.blakeFees, fill.btcBounty, fill.blakeBounty, String(order?.revision ?? 0), expectedEventID].joined(separator: "|") }
     private var replacement: ManageOfferContext? { management?.action == "replace" ? management : nil }
     private var feeKey: String { feeReviewKey(profile: context.profile, network: context.network, kind: "funding", chain: paidChain, amount: paidAmount, fee: fundingFee, automatic: automaticFee, generation: context.generation, sourceOfferID: replacement?.order.offer.id ?? "", sourceEventID: replacement?.order.eventID ?? "") }
     private var currentFee: FeeReview? { feeReview?.key == feeKey ? feeReview : nil }
@@ -45,7 +62,9 @@ struct TradeComposer: View {
     }
     private var selectedTower: Blakeswap_V2_Tower? { towers.first { $0.pubkey == towerID } }
     private var validDraft: Bool {
-        guard currentFee != nil, !protection || selectedTower != nil else { return false }
+        guard !refreshingParent, currentFee != nil, !protection || selectedTower != nil else { return false }
+        var draft = Blakeswap_V2_TradeQuoteRequest(); draft.sellAmount = order?.sellAmount ?? (Int64(sellAmount) ?? 0)
+        guard (try? fill.apply(to: &draft, order: order)) != nil else { return false }
         if order != nil { return true }
         guard expires > Date(), expires <= Date().addingTimeInterval(7 * 86_400) else { return false }
         guard let a = Int64(sellAmount), let b = Int64(buyAmount) else { return false }
@@ -60,7 +79,7 @@ struct TradeComposer: View {
             } else if review.quote != nil || review.pending != nil {
                 TradeEconomicsReview(review: review)
             } else {
-                form.disabled(review.busy || review.journalBlocked)
+                form.disabled(review.busy || review.journalBlocked || refreshingParent)
                 HStack {
                     Spacer()
                     Button("Review economics") { Task { await reviewDraft() } }
@@ -78,8 +97,11 @@ struct TradeComposer: View {
             .interactiveDismissDisabled(review.busy)
             .task {
                 if order == nil, management == nil, !(model.status?.canReviewOffer(sell) ?? false), model.status?.canReviewOffer("blake") == true { sell = "blake" }
-                towerID = management?.order.offer.tower.pubkey ?? towers.first?.pubkey ?? ""
+                towerID = towers.first?.pubkey ?? ""
             }
+            .onChange(of: fill) { _, _ in feeReview = nil; review.invalidateDraft() }
+            .onChange(of: protection) { _, _ in review.invalidateDraft() }
+            .onChange(of: towerID) { _, _ in review.invalidateDraft() }
             .onChange(of: review.acceptedID) { _, id in
                 guard let id, matching else { return }
                 let kind = review.acceptedKind ?? review.quote?.kind ?? order.map { _ in "taker" } ?? "maker"
@@ -92,20 +114,46 @@ struct TradeComposer: View {
     private var form: some View {
         VStack(alignment: .leading, spacing: 14) {
             if let order {
-                Text("Pay \(order.buyAmount) \(symbol(order.buy)) sats for a principal of \(order.sellAmount) \(symbol(order.sell)) sats.")
+                Text("Available: \(order.available) \(symbol(order.sell)) sats · Bounds: \(order.minFill)–\(order.maxFill) · Signed revision \(order.revision)")
+                TextField("Fill quantity (maker sell sats)", text: $fill.quantity).accessibilityIdentifier("fill-quantity")
+                if let refreshParent {
+                    Button("Refresh signed parent; keep quantity") {
+                        Task {
+                            refreshingParent = true; review.invalidateDraft(); feeReview = nil
+                            defer { refreshingParent = false }
+                            do {
+                                let refreshed = try await refreshParent(order)
+                                guard !Task.isCancelled, matching else { return }
+                                try validateRefreshedParent(order, refreshed: refreshed)
+                                self.order = refreshed.offer; expectedEventID = refreshed.eventID
+                            } catch { if matching { review.error = error.localizedDescription } }
+                        }
+                    }
+                }
+                Text("Exact rounded payment preview: \(paidAmount.isEmpty ? "Unavailable" : paidAmount) \(symbol(order.buy)) sats. The daemon checks the remaining tail and current funds.").font(.caption)
             } else {
                 Picker("You sell", selection: $sell) {
                     Text("Bitcoin (BTC)").tag("btc")
                     Text("Bitcoin Blake2b (BLAKE)").tag("blake")
                 }
                 TextField("Sell principal (sats)", text: $sellAmount).accessibilityIdentifier("sell-amount")
-                TextField("Receive principal (sats)", text: $buyAmount).accessibilityIdentifier("buy-amount")
+                TextField("Price-reference receive amount (sats)", text: $buyAmount).accessibilityIdentifier("buy-amount")
+                Picker("Fill mode", selection: $fill.mode) { Text("Whole").tag("whole"); Text("Partial").tag("partial") }
+                if fill.mode == "partial" {
+                    TextField("Minimum fill (sell sats)", text: $fill.minimum)
+                    TextField("Maximum fill (sell sats)", text: $fill.maximum)
+                }
+                Text("Hard monetary limits for this parent — enter fresh reviewed limits. These are authorizations, not up-front charges.").font(.caption)
+                TextField("BTC fee budget (sats)", text: $fill.btcFees)
+                TextField("BLAKE fee budget (sats)", text: $fill.blakeFees)
+                TextField("BTC conditional bounty budget (sats)", text: $fill.btcBounty)
+                TextField("BLAKE conditional bounty budget (sats)", text: $fill.blakeBounty)
                 DatePicker("Offer expiry (up to 7 days)", selection: $expires, in: Date()...Date().addingTimeInterval(7 * 86_400), displayedComponents: [.date, .hourAndMinute]).accessibilityIdentifier("offer-expiry")
                 if let management {
-                    Text(management.action == "replace" ? "Confirming creates a new order and cancels this unreserved offer. Its coins stay reserved until the change is saved. An accepted order cannot be edited." : "This is a new order with a new ID. Funds, fees and optional protection are checked again.").font(.caption).foregroundStyle(.secondary)
+                    Text(management.action == "replace" ? "Confirming replaces the available remainder under fresh limits. Accepted children keep their original terms and continue settlement." : "This is a new order with a new ID. Funds, fees and optional protection are checked again.").font(.caption).foregroundStyle(.secondary)
                 }
             }
-            FeeQuoteControl(kind: "funding", chain: paidChain, amount: paidAmount, sourceOfferID: replacement?.order.offer.id ?? "", sourceEventID: replacement?.order.eventID ?? "", fee: $fundingFee, automatic: $automaticFee, review: $feeReview)
+            FeeQuoteControl(kind: "funding", chain: paidChain, amount: paidAmount, sourceOfferID: replacement?.order.offer.id ?? "", sourceEventID: replacement?.order.eventID ?? "", fee: $fundingFee, automatic: $automaticFee, review: $feeReview).id(fillFeeScope)
             Toggle("Protect my side with a watchtower", isOn: $protection)
             if protection {
                 Picker("Favorite watchtower", selection: $towerID) {
@@ -133,7 +181,9 @@ struct TradeComposer: View {
         if fee.automatic { request.rateSatKvb = fee.quote.estimate.rateSatKvb; request.feeTimestamp = fee.quote.estimate.timestamp }
         let tower = protection ? selectedTower : nil
         request.towerBps = tower?.bps ?? 0; request.towerPubkey = tower?.pubkey ?? ""
-        await review.review(request, current: { model.tradeContext })
+        do { try fill.apply(to: &request, order: order) }
+        catch { review.error = error.localizedDescription; return }
+        await review.review(request, expectedEventID: expectedEventID, current: { model.tradeContext })
     }
 }
 
@@ -167,10 +217,22 @@ struct TradeEconomicsReview: View {
                                 Text("Source order: \(q.sourceOfferID)").font(.caption.monospaced()).textSelection(.enabled)
                             }
                             Text("Review economics").font(.headline)
-                            Text("Pay: \(q.paidPrincipal) \(symbol(q.paidChain)) sats principal + \(q.fees.fundingFee) sats funding fee = \(q.paidTotal) \(symbol(q.paidChain)) sats.")
-                            Text("Receive principal: \(q.receivedPrincipal) \(symbol(q.receivedChain)) sats. Claim fees are deducted from this asset.")
+                            let economics = TradeEconomicsPresentation(quote: q)
+                            Text("Pay: \(q.paidPrincipal) \(symbol(q.paidChain)) sats principal + \(economics.fundingReserve) sats funding reserve = \(q.paidTotal) \(symbol(q.paidChain)) sats.")
+                            Text("\(economics.receivedLabel): \(q.receivedPrincipal) \(symbol(q.receivedChain)) sats.")
+                            if economics.partialParent {
+                                Text("Parent total \(q.totalSellAmount) · Available \(q.available) · Fill bounds \(q.minFill)–\(q.maxFill) sell sats")
+                                Text("Independently rounded fills can receive a different total from this rate reference.").font(.caption)
+                            } else if q.kind == "taker" { Text("Fill \(q.quantity) maker sell sats · Parent revision \(q.parentRevision)") }
+                            ForEach(["btc", "blake"], id: \.self) { asset in
+                                Text("\(symbol(asset)) limits: fees \(q.feeBudgets[asset].map(String.init) ?? "Not provided"), conditional bounties \(q.bountyBudgets[asset].map(String.init) ?? "Not provided") sats").font(.caption)
+                            }
+                            if economics.partialParent {
+                                Text("Representative child — not aggregate parent outcomes").font(.headline)
+                                Text("\(q.exampleFill.quantity) sell sats → \(q.exampleFill.buyAmount) buy sats · Funding fee \(q.exampleFill.fundingFee) · Owner fee cap \(q.exampleFill.ownerFeeCap)")
+                            }
                             Text("Principal exchange rate ≈ \(q.rateDisplay) \(symbol(q.receivedChain)) per \(symbol(q.paidChain)) (exactly \(q.rateNumerator)/\(q.rateDenominator)).").font(.caption)
-                            ForEach(q.outcomes, id: \.kind) { outcome in
+                            ForEach(economics.displayedOutcomes, id: \.kind) { outcome in
                                 VStack(alignment: .leading, spacing: 3) {
                                     Text(outcomeLabel(outcome.kind)).font(.subheadline.bold())
                                     Text("Net receipt: \(outcome.netMin)–\(outcome.netMax) \(symbol(outcome.chain)) sats")

@@ -87,11 +87,14 @@ final class TradeReviewModel: ObservableObject {
     @Published private(set) var acceptedKind: String?
     @Published private(set) var journalBlocked = false
     let context: TradeContext
+    private var draftGeneration: UInt64 = 0
+    private let now: () -> Int64
     private let journal: TradeConfirmationJournal
     private let call: (String, Data) async throws -> Data
 
-    init(context: TradeContext, root: String, call: ((String, Data) async throws -> Data)? = nil) {
+    init(context: TradeContext, root: String, now: @escaping () -> Int64 = { Int64(Date().timeIntervalSince1970) }, call: ((String, Data) async throws -> Data)? = nil) {
         self.context = context
+        self.now = now
         self.journal = TradeConfirmationJournal(root: root)
         self.call = call ?? { method, payload in
             try await DaemonRPC.call(root: root, profile: context.profile, method: method, payload: payload)
@@ -99,23 +102,40 @@ final class TradeReviewModel: ObservableObject {
         do { pending = try journal.load(profile: context.profile, network: context.network) }
         catch { self.error = error.localizedDescription; journalBlocked = true }
     }
-    func review(_ draft: Blakeswap_V2_TradeQuoteRequest, current: () -> TradeContext) async {
+    func invalidateDraft() {
+        guard pending == nil else { return }
+        draftGeneration &+= 1; quote = nil; error = nil; busy = false
+    }
+    func review(_ draft: Blakeswap_V2_TradeQuoteRequest, expectedEventID: String = "", current: () -> TradeContext) async {
         guard !busy, pending == nil, !journalBlocked, context.matches(current()) else { return }
+        draftGeneration &+= 1
+        let attempt = draftGeneration
         busy = true; quote = nil; error = nil
-        defer { busy = false }
+        defer { if attempt == draftGeneration { busy = false } }
         var request = draft
         request.expectedWallet = context.profile; request.expectedNetwork = context.network
         do {
             let data = try await call("trade.quote", request.jsonUTF8Data())
             let result = try Blakeswap_V2_TradeQuote(serializedBytes: data)
-            guard !Task.isCancelled, context.matches(current()) else { return }
+            guard !Task.isCancelled, attempt == draftGeneration, context.matches(current()) else { return }
             guard result.wallet == context.profile, result.walletKey == context.walletKey, result.network == context.network,
                   result.kind == request.kind, result.orderAction == request.orderAction,
                   result.sourceOfferID == request.sourceOfferID, result.sourceEventID == request.sourceEventID else { throw RPCError.message("The wallet or source order changed while quoting. Reopen the review.") }
+            guard result.offerID == request.id || request.kind == "maker",
+                  result.offerMaker == request.maker || request.kind == "maker",
+                  expectedEventID.isEmpty || result.offerEventID == expectedEventID else { throw RPCError.message("The signed parent changed. Refresh and review its terms explicitly.") }
+            if request.kind == "taker" {
+                guard result.quantity == request.quantity, result.parentRevision == request.parentRevision, !result.hasExampleFill else { throw RPCError.message("The fill quantity or parent revision changed while quoting.") }
+            } else {
+                guard result.fillMode == request.fillMode, result.minFill == request.minFill, result.maxFill == request.maxFill, result.feeBudgets == request.feeBudgets, result.bountyBudgets == request.bountyBudgets else { throw RPCError.message("The reviewed fill bounds or monetary limits changed.") }
+                if result.fillMode == "partial" {
+                    guard result.outcomes.isEmpty, result.hasExampleFill, result.exampleFill.quantity > 0 else { throw RPCError.message("Partial parent review needs separately identified child costs.") }
+                }
+            }
             quote = result
             if !result.ready { error = result.error.isEmpty ? result.funds.message : result.error }
         } catch {
-            guard !Task.isCancelled, context.matches(current()) else { return }
+            guard !Task.isCancelled, attempt == draftGeneration, context.matches(current()) else { return }
             self.error = error.localizedDescription
         }
     }
@@ -126,7 +146,7 @@ final class TradeReviewModel: ObservableObject {
         defer { busy = false }
         do {
             if pending == nil {
-                guard let quote, quote.ready, quote.expires > Int64(Date().timeIntervalSince1970) else { throw RPCError.message("Quote expired. Review the economics again.") }
+                guard let quote, quote.ready, quote.expires > now() else { throw RPCError.message("Quote expired. Review the economics again.") }
                 let id = (UUID().uuidString + UUID().uuidString).replacingOccurrences(of: "-", with: "").lowercased()
                 let saved = PendingTradeConfirmation(profile: context.profile, network: context.network, requestID: id, token: quote.token, revision: quote.revision, kind: quote.kind)
                 try journal.save(saved)

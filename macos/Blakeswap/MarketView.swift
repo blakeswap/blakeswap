@@ -15,11 +15,13 @@ struct MarketView: View {
     @State private var managing: ManageOfferContext?
     @State private var selected: Blakeswap_V2_MarketOrder?
     @State private var focusedID = ""
+    @State private var fillParent: Blakeswap_V2_MarketOrder?
+    private let fillCall: FillHistoryCall?
     let context: TradeContext
     let root: String
 
-    init(context: TradeContext, root: String) {
-        self.context = context; self.root = root
+    init(context: TradeContext, root: String, fillCall: FillHistoryCall? = nil) {
+        self.context = context; self.root = root; self.fillCall = fillCall
         _market = StateObject(wrappedValue: MarketModel(context: context, root: root))
     }
     var body: some View {
@@ -84,8 +86,13 @@ struct MarketView: View {
                 focusedID = String(target.anchor.dropFirst(6))
             }
         }
-        .sheet(item: $taking, onDismiss: { Task { await market.load(current: { app.tradeContext }) } }) { item in TradeComposer(context: item.wallet, root: root, order: item.order).environmentObject(app) }
+        .sheet(item: $taking, onDismiss: { Task { await market.load(current: { app.tradeContext }) } }) { item in TradeComposer(context: item.wallet, root: root, order: item.order, suggestedQuantity: item.suggestedQuantity, expectedEventID: item.eventID, refreshParent: { order in try await market.refreshParent(order, current: { app.tradeContext }) }).environmentObject(app) }
         .sheet(item: $managing, onDismiss: { Task { await market.load(current: { app.tradeContext }) } }) { item in TradeComposer(context: item.wallet, root: root, management: item).environmentObject(app) }
+        .sheet(item: $fillParent) { row in
+            if let fillCall {
+                FillHistoryView(context: ParentFillContext(wallet: context, maker: row.offer.maker, parentID: row.offer.id), order: row, call: fillCall).environmentObject(app)
+            }
+        }
         .sheet(item: $selected) { row in
             VStack(alignment: .leading, spacing: 14) {
                 Text(row.sideLabel).font(.title2)
@@ -103,7 +110,7 @@ struct MarketView: View {
                 ForEach(row.swapIds, id: \.self) { id in
                     Button("Show swap \(id.prefix(12))…") { selected = nil; app.activityDestination = .swap(id); app.page = "Swaps" }.accessibilityIdentifier("order-swap-\(id)")
                 }
-                Text("Cancellation stops an unreserved local offer. Relay acknowledgement only records publication; stale relay copies cannot authorize another acceptance.").font(.caption).foregroundStyle(.secondary)
+                Text("Cancellation withdraws only the available remainder. Accepted children keep settling. Relay acknowledgement records publication; it does not remove child obligations.").font(.caption).foregroundStyle(.secondary)
                 Button("Done") { selected = nil }
             }.padding(28).frame(width: 620)
         }
@@ -127,7 +134,8 @@ struct MarketView: View {
     }
     @ViewBuilder private func actions(_ row: Blakeswap_V2_MarketOrder) -> some View {
         HStack {
-            if row.canTake { Button("Take offer") { taking = TakeOfferContext(order: row.offer, wallet: context) }.accessibilityIdentifier("take-offer-\(row.offer.id)") }
+            if fillCall != nil { Button("Fill history") { fillParent = row } }
+            if row.canTake { Button("Take offer") { taking = TakeOfferContext(order: row.offer, wallet: context, suggestedQuantity: row.suggestedQuantity, eventID: row.eventID) }.accessibilityIdentifier("take-offer-\(row.offer.id)") }
             if row.canCancel { Button("Cancel") { Task { await market.cancel(row, current: { app.tradeContext }) } } }
             if row.canReplace { Button("Edit / replace") { managing = ManageOfferContext(action: "replace", order: row, wallet: context) } }
             if row.canRecreate { Button("Recreate") { managing = ManageOfferContext(action: "recreate", order: row, wallet: context) } }
