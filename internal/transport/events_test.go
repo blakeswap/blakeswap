@@ -76,26 +76,38 @@ func TestGiftWrapHardCutoverRefusesLegacyEnvelopeAndNamespace(t *testing.T) {
 }
 func TestRejectMismatchedRumorAuthor(t *testing.T) {
 	alice, bob, eve := nostr.Generate(), nostr.Generate(), nostr.Generate()
-	rumor := nostr.Event{PubKey: eve.Public(), Kind: RumorKind, CreatedAt: nostr.Now(), Tags: nostr.Tags{{"p", bob.Public().Hex()}, {"t", Namespace}}, Content: `{"version":1}`}
-	rumor.ID = EventID(rumor)
-	content, e := encrypt(alice, bob.Public(), rumor.String())
-	if e != nil {
-		t.Fatal(e)
+	message := Message{Version: MessageVersion, ID: RandomID(), Type: "test", Body: json.RawMessage(`{}`)}
+	raw, err := json.Marshal(message)
+	if err != nil {
+		t.Fatal(err)
 	}
-	seal := nostr.Event{Kind: 13, CreatedAt: nostr.Now(), Content: content, Tags: nostr.Tags{}}
-	if e = Sign(&seal, alice); e != nil {
-		t.Fatal(e)
+	wrapRumor := func(author nostr.PubKey) nostr.Event {
+		t.Helper()
+		rumor := nostr.Event{PubKey: author, Kind: RumorKind, CreatedAt: nostr.Now(), Tags: nostr.Tags{{"p", bob.Public().Hex()}, {"t", Namespace}}, Content: string(raw)}
+		rumor.ID = EventID(rumor)
+		content, err := encrypt(alice, bob.Public(), rumor.String())
+		if err != nil {
+			t.Fatal(err)
+		}
+		seal := nostr.Event{Kind: 13, CreatedAt: nostr.Now(), Content: content, Tags: nostr.Tags{}}
+		if err = Sign(&seal, alice); err != nil {
+			t.Fatal(err)
+		}
+		ephemeral := nostr.Generate()
+		content, err = encrypt(ephemeral, bob.Public(), seal.String())
+		if err != nil {
+			t.Fatal(err)
+		}
+		outer := nostr.Event{Kind: 1059, CreatedAt: nostr.Now(), Content: content, Tags: nostr.Tags{{"p", bob.Public().Hex()}}}
+		if err = Sign(&outer, ephemeral); err != nil {
+			t.Fatal(err)
+		}
+		return outer
 	}
-	ephemeral := nostr.Generate()
-	content, e = encrypt(ephemeral, bob.Public(), seal.String())
-	if e != nil {
-		t.Fatal(e)
+	if from, got, err := Unwrap(bob, wrapRumor(alice.Public())); err != nil || from != alice.Public() || got.ID != message.ID {
+		t.Fatal("valid current-format control failed", err)
 	}
-	outer := nostr.Event{Kind: 1059, CreatedAt: nostr.Now(), Content: content, Tags: nostr.Tags{{"p", bob.Public().Hex()}}}
-	if e = Sign(&outer, ephemeral); e != nil {
-		t.Fatal(e)
-	}
-	if _, _, e = Unwrap(bob, outer); e == nil {
+	if _, _, err := Unwrap(bob, wrapRumor(eve.Public())); err == nil {
 		t.Fatal("seal author silently replaced forged rumor author")
 	}
 }
