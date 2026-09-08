@@ -56,7 +56,8 @@ func TestRealAutomaticOfferPolicyUpdatePreservesAcceptedTrade(t *testing.T) {
 			if order == nil || order.Offer.SellAmount != 1000000 || order.Offer.BuyAmount != 2000000 || policy.Usage.ReservedVolume != 1000000 {
 				t.Fatal("automatic offer missing or not exact", policy, order)
 			}
-			take := h.quote("taker", &pb.TradeQuoteRequest{Kind: "taker", Maker: order.Offer.Maker, Id: order.Offer.Id, Sell: string(sell), SellAmount: 1000000, BuyAmount: 2000000, FundingFee: 6500, OwnerFeeCap: 20000})
+			requireWholeReviewedParent(t, order.Offer, h.status("maker").Pubkey, 1000000, 2000000)
+			take := h.quote("taker", &pb.TradeQuoteRequest{Kind: "taker", Maker: order.Offer.Maker, Id: order.Offer.Id, Sell: string(sell), Quantity: 1000000, ParentRevision: order.Offer.Revision, FundingFee: 6500, OwnerFeeCap: 20000})
 			swapID, _ := h.confirm("taker", take)
 			for i := 0; i < 3; i++ {
 				h.tick()

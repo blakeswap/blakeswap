@@ -65,7 +65,8 @@ func TestRealInventoryStrategyTradeAndRefund(t *testing.T) {
 			if order.Offer.BuyAmount != buy {
 				t.Fatal("exact spread rounding changed", order)
 			}
-			swapID, _ := h.confirm("taker", h.quote("taker", &pb.TradeQuoteRequest{Kind: "taker", Maker: order.Offer.Maker, Id: order.Offer.Id, Sell: string(scenario.sell), SellAmount: 500000, BuyAmount: buy, FundingFee: 6500, OwnerFeeCap: 20000}))
+			requireWholeReviewedParent(t, order.Offer, h.status("maker").Pubkey, 500000, buy)
+			swapID, _ := h.confirm("taker", h.quote("taker", &pb.TradeQuoteRequest{Kind: "taker", Maker: order.Offer.Maker, Id: order.Offer.Id, Sell: string(scenario.sell), Quantity: 500000, ParentRevision: order.Offer.Revision, FundingFee: 6500, OwnerFeeCap: 20000}))
 			find := func(name string) *pb.Swap {
 				for _, s := range h.status(name).Swaps {
 					if s.Id == swapID {

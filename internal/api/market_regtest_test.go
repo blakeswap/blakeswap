@@ -32,7 +32,7 @@ func TestRealManagedOrderThroughTypedAPI(t *testing.T) {
 	for _, sell := range []chain.ID{chain.BTC, chain.Blake} {
 		t.Run(string(sell), func(t *testing.T) {
 			expiry := time.Now().Unix() + 1234
-			first := h.quote("maker", &pb.TradeQuoteRequest{Kind: "maker", Sell: string(sell), SellAmount: 1_000_000, BuyAmount: 2_000_000, FundingFee: 6500, OwnerFeeCap: 20000, Expires: expiry})
+			first := h.quote("maker", &pb.TradeQuoteRequest{Kind: "maker", FillMode: "whole", MinFill: 1_000_000, MaxFill: 1_000_000, FeeBudgets: map[string]int64{string(sell): 26500, string(sell.Other()): 20000}, BountyBudgets: map[string]int64{"btc": 0, "blake": 0}, Sell: string(sell), SellAmount: 1_000_000, BuyAmount: 2_000_000, FundingFee: 6500, OwnerFeeCap: 20000, Expires: expiry})
 			oldID, _ := h.confirm("maker", first)
 			old := find(market("maker"), oldID)
 			if old.Offer.Expires != expiry || old.Publication != "local_committed" {
@@ -45,7 +45,7 @@ func TestRealManagedOrderThroughTypedAPI(t *testing.T) {
 			}
 			// Keep the taker's authenticated old event deliberately stale while the
 			// maker durably cancels/replaces its own source and transfers reservation.
-			replacement := h.quote("maker", &pb.TradeQuoteRequest{Kind: "maker", Sell: string(sell), SellAmount: 1_500_000, BuyAmount: 2_500_000, FundingFee: 6500, OwnerFeeCap: 20000, Expires: expiry + 60, OrderAction: "replace", SourceOfferId: oldID, SourceEventId: old.EventId})
+			replacement := h.quote("maker", &pb.TradeQuoteRequest{Kind: "maker", FillMode: "whole", MinFill: 1_500_000, MaxFill: 1_500_000, FeeBudgets: map[string]int64{string(sell): 26500, string(sell.Other()): 20000}, BountyBudgets: map[string]int64{"btc": 0, "blake": 0}, Sell: string(sell), SellAmount: 1_500_000, BuyAmount: 2_500_000, FundingFee: 6500, OwnerFeeCap: 20000, Expires: expiry + 60, OrderAction: "replace", SourceOfferId: oldID, SourceEventId: old.EventId})
 			newID, request := h.confirm("maker", replacement)
 			orders := market("maker")
 			cancelled := find(orders, oldID)
@@ -53,7 +53,8 @@ func TestRealManagedOrderThroughTypedAPI(t *testing.T) {
 			if cancelled.Status != "cancelled" || cancelled.ReplacedBy != newID || cancelled.Publication != "local_committed" || created.Replaces != oldID || newID == oldID {
 				t.Fatal("replacement lineage", orders)
 			}
-			stale := h.quote("taker", &pb.TradeQuoteRequest{Kind: "taker", Maker: old.Offer.Maker, Id: oldID, Sell: string(sell), SellAmount: 1_000_000, BuyAmount: 2_000_000, FundingFee: 6500, OwnerFeeCap: 20000})
+			requireWholeReviewedParent(t, old.Offer, h.status("maker").Pubkey, 1_000_000, 2_000_000)
+			stale := h.quote("taker", &pb.TradeQuoteRequest{Kind: "taker", Maker: old.Offer.Maker, Id: oldID, Sell: string(sell), Quantity: 1_000_000, ParentRevision: old.Offer.Revision, FundingFee: 6500, OwnerFeeCap: 20000})
 			staleID, _ := h.confirm("taker", stale)
 			for i := 0; i < 4; i++ {
 				h.tick()
@@ -76,7 +77,8 @@ func TestRealManagedOrderThroughTypedAPI(t *testing.T) {
 			if created.Publication != "relay_acknowledged" || find(market("maker"), oldID).Publication != "relay_acknowledged" {
 				t.Fatal("both replacement publications not acknowledged")
 			}
-			tq := h.quote("taker", &pb.TradeQuoteRequest{Kind: "taker", Maker: created.Offer.Maker, Id: newID, Sell: string(sell), SellAmount: 1_500_000, BuyAmount: 2_500_000, FundingFee: 6500, OwnerFeeCap: 20000})
+			requireWholeReviewedParent(t, created.Offer, h.status("maker").Pubkey, 1_500_000, 2_500_000)
+			tq := h.quote("taker", &pb.TradeQuoteRequest{Kind: "taker", Maker: created.Offer.Maker, Id: newID, Sell: string(sell), Quantity: 1_500_000, ParentRevision: created.Offer.Revision, FundingFee: 6500, OwnerFeeCap: 20000})
 			swapID, _ := h.confirm("taker", tq)
 			complete := func() bool {
 				for _, name := range []string{"maker", "taker"} {

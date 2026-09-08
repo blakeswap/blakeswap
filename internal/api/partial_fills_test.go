@@ -113,7 +113,7 @@ func TestPartialFillTakeAndOwnedQuantityMapping(t *testing.T) {
 		case "market.list":
 			return daemon.MarketPage{Records: []daemon.MarketOrder{{Own: true, SuggestedQuantity: 400000, Quantities: &daemon.QuantitySummary{Total: exactFillAmount, Available: exactFillAmount - 15, Reserved: 1, Committed: 2, Filled: 4, Released: 8}}, {Own: false, SuggestedQuantity: 500000}}}, nil
 		case "status":
-			return daemon.Status{Swaps: []daemon.PublicSwap{{ID: "child", ParentID: "parent", ParentMaker: "maker", ParentRevision: exactParentRevision, Quantity: exactFillAmount, Allocation: "released", AllocatedQuantity: 0, AllocationKnown: true}, {ID: "foreign-child", ParentID: "parent", ParentMaker: "foreign", ParentRevision: 3, Quantity: 12345}}}, nil
+			return daemon.Status{Swaps: []daemon.PublicSwap{{ID: "child", ParentID: "parent", ParentMaker: "maker", ParentRevision: exactParentRevision, Quantity: exactFillAmount, Allocation: "retired", AllocatedQuantity: 0, AllocationKnown: true}, {ID: "foreign-child", ParentID: "parent", ParentMaker: "foreign", ParentRevision: 3, Quantity: 12345}, {ID: "released-child", ParentID: "parent", ParentMaker: "maker", ParentRevision: 4, Quantity: 23456, Allocation: "released", AllocatedQuantity: 23456, AllocationKnown: true}}}, nil
 		}
 		t.Fatal("unexpected method", r.Method)
 		return nil, nil
@@ -134,12 +134,16 @@ func TestPartialFillTakeAndOwnedQuantityMapping(t *testing.T) {
 		t.Fatal("owned ledger conflated with foreign availability", market)
 	}
 	state, err := service.GetStatus(ctx, &emptypb.Empty{})
-	if err != nil || len(state.GetSwaps()) != 2 {
+	if err != nil || len(state.GetSwaps()) != 3 {
 		t.Fatal(state, err)
 	}
 	child, foreign := state.Swaps[0], state.Swaps[1]
-	if child.ParentId != "parent" || child.ParentMaker != "maker" || child.ParentRevision != exactParentRevision || child.Quantity != exactFillAmount || child.Allocation != "released" || !child.AllocationKnown || child.AllocatedQuantity != 0 || foreign.AllocationKnown || foreign.Allocation != "" || foreign.ParentMaker != "foreign" {
+	if child.ParentId != "parent" || child.ParentMaker != "maker" || child.ParentRevision != exactParentRevision || child.Quantity != exactFillAmount || child.Allocation != "retired" || !child.AllocationKnown || child.AllocatedQuantity != 0 || foreign.AllocationKnown || foreign.Allocation != "" || foreign.ParentMaker != "foreign" {
 		t.Fatal("child identity/allocation provenance lost", state)
+	}
+	released := state.Swaps[2]
+	if released.Quantity != 23456 || released.Allocation != "released" || released.AllocatedQuantity != released.Quantity || !released.AllocationKnown {
+		t.Fatal("released allocation lost its current parent bin", released)
 	}
 }
 
@@ -166,7 +170,7 @@ func TestV2FillTransportAndLegacyRouteRefusal(t *testing.T) {
 			t.Fatal("missing frozen page revision")
 		}
 		return daemon.FillPage{Wallet: "alice", Network: chain.Regtest, ParentMaker: q.ParentMaker, ParentID: q.ParentID, Revision: q.Revision, Total: 1000, NextOffset: 39, More: true,
-			Records: []daemon.FillSummary{{ID: "child", ParentMaker: "maker", ParentID: "parent", ParentRevision: exactParentRevision, Quantity: exactFillAmount, BuyAmount: exactFillAmount - 1, Disposition: "committed", AllocatedQuantity: exactFillAmount, AllocationKnown: true, Stage: "awaiting chain confirmations", Archived: true, MonitoringRequired: true}, {ID: "retired", ParentMaker: "maker", ParentID: "parent", ParentRevision: 2, Quantity: 12345, BuyAmount: 34567, Disposition: "released", AllocationKnown: true, Stage: "expired"}}}, nil
+			Records: []daemon.FillSummary{{ID: "child", ParentMaker: "maker", ParentID: "parent", ParentRevision: exactParentRevision, Quantity: exactFillAmount, BuyAmount: exactFillAmount - 1, Disposition: "committed", AllocatedQuantity: exactFillAmount, AllocationKnown: true, Stage: "awaiting chain confirmations", Archived: true, MonitoringRequired: true}, {ID: "retired", ParentMaker: "maker", ParentID: "parent", ParentRevision: 2, Quantity: 12345, BuyAmount: 34567, Disposition: "retired", AllocationKnown: true, Stage: "expired"}}}, nil
 	}}
 	server, err := Listen(context.Background(), filepath.Join(dir, "rpc.sock"), service)
 	if err != nil {
@@ -192,7 +196,7 @@ func TestV2FillTransportAndLegacyRouteRefusal(t *testing.T) {
 		t.Fatal("page metadata lost", got)
 	}
 	child := got.Records[0]
-	if child.ParentRevision != exactParentRevision || child.Quantity != exactFillAmount || child.BuyAmount != exactFillAmount-1 || child.AllocatedQuantity != exactFillAmount || !child.AllocationKnown || !child.Archived || !child.MonitoringRequired || child.Disposition != "committed" || child.Stage != "awaiting chain confirmations" || got.Records[1].AllocatedQuantity != 0 || !got.Records[1].AllocationKnown {
+	if child.ParentRevision != exactParentRevision || child.Quantity != exactFillAmount || child.BuyAmount != exactFillAmount-1 || child.AllocatedQuantity != exactFillAmount || !child.AllocationKnown || !child.Archived || !child.MonitoringRequired || child.Disposition != "committed" || child.Stage != "awaiting chain confirmations" || got.Records[1].Disposition != "retired" || got.Records[1].AllocatedQuantity != 0 || !got.Records[1].AllocationKnown {
 		t.Fatal("fill row lost fields", got)
 	}
 	body, _ := protojson.Marshal(query)

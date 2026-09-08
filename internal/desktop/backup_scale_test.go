@@ -132,9 +132,13 @@ func TestPortablePhysicalLargeHistoryAndCoreContinuation(t *testing.T) {
 		state.Activities[id] = a
 	}
 	for i := 0; i < core; i++ {
-		id := fmt.Sprintf("retained-%08d", i)
-		state.Swaps[id] = &daemon.Swap{ID: id, Role: "maker", Stage: "awaiting peer evidence", SelfRefunds: []string{"original retained refund bytes"}}
+		id := fmt.Sprintf("%064x", i+1)
+		child := fixtureSwap(t, chain.Regtest, state.Mnemonic, "maker")
+		child.ID, child.Request.ID = id, id
+		child.Stage, child.SelfRefunds = "awaiting peer evidence", []string{"original retained refund bytes"}
+		state.Swaps[id] = child
 	}
+	fixtureIndexSwaps(t, state)
 	var plain portableScaleCounter
 	if err := storage.WriteJSONRecord(ctx, &plain, manifest); err != nil {
 		t.Fatal(err)
@@ -217,7 +221,7 @@ func TestPortablePhysicalLargeHistoryAndCoreContinuation(t *testing.T) {
 	if active.Capacity == nil {
 		active.Capacity = &daemon.CapacityRecord{}
 	}
-	active.Version = 2
+	active.Version = daemon.StateVersion
 	active.Capacity.Archived = stats
 	nextPath := filepath.Join(root, "regtest", "growth.db")
 	portableScalePhase(t, "stage_actual_cold_history", func() {

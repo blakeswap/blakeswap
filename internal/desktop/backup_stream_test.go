@@ -60,7 +60,7 @@ func TestPortableStreamRestoresEveryNetworkWithoutRetainingWholeManifest(t *test
 	defer clear(key)
 	for _, network := range []chain.Network{chain.Regtest, chain.Testnet, chain.Mainnet} {
 		state, err := readStateBackupBounded(m.root, filepath.Join(root, string(network), "state.db"), string(key), portableVaultLimit)
-		if err != nil || state.Recovery == nil || state.Recovery.Status.State != "recovering" || state.Swaps["swap"].SelfRefunds[0] != "saved refund" || len(state.Activities["receive/known"].History) != 1 {
+		if err != nil || state.Recovery == nil || state.Recovery.Status.State != "recovering" || state.Swaps[fixtureChildID].SelfRefunds[0] != "saved refund" || len(state.Activities["receive/known"].History) != 1 {
 			t.Fatal("lost gated retained network", network, err)
 		}
 	}

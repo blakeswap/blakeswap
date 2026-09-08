@@ -105,7 +105,7 @@ func TestInterruptedPortableImportPreservesLargeActivityHistory(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if restored.Mnemonic != seed || len(restored.Activities) != records || restored.Recovery == nil || restored.Recovery.Status.State != "recovering" || !restored.Recovery.Swaps["swap"] {
+	if restored.Mnemonic != seed || len(restored.Activities) != records || restored.Recovery == nil || restored.Recovery.Status.State != "recovering" || !restored.Recovery.Swaps[fixtureChildID] {
 		t.Fatal("recovery gate, identity or activity lost")
 	}
 	for _, i := range []int{0, records - 1} {

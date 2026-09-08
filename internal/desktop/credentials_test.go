@@ -103,7 +103,7 @@ func TestNativeDesktopMigrationPreservesEveryNetworkAndRejectsFallback(t *testin
 	defer clear(password)
 	states := map[chain.Network]daemon.State{}
 	for _, network := range []chain.Network{chain.Regtest, chain.Testnet, chain.Mainnet} {
-		state := daemon.State{Version: 1, Network: network, Mnemonic: seed, TradeReceipts: map[string]*daemon.TradeReceipt{"accepted": {Digest: "exact saved acceptance", Result: daemon.ConfirmTradeResult{ID: "accepted", State: "accepted"}}}, ReceiveIndexes: map[chain.ID]uint32{chain.BTC: 17, chain.Blake: 29}}
+		state := daemon.State{Version: daemon.StateVersion, Network: network, Mnemonic: seed, TradeReceipts: map[string]*daemon.TradeReceipt{"accepted": {Digest: "exact saved acceptance", Result: daemon.ConfirmTradeResult{ID: "accepted", State: "accepted"}}}, ReceiveIndexes: map[chain.ID]uint32{chain.BTC: 17, chain.Blake: 29}}
 		states[network] = state
 		if err := saveVault(filepath.Join(root, string(network), "state.db"), password, state); err != nil {
 			t.Fatal(err)

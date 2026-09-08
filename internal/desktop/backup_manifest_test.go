@@ -28,8 +28,11 @@ func portableManifest(t *testing.T) backupManifest {
 	}
 	profile := backupWallet{ID: "source-profile", Name: "Personal", Identity: id, Mnemonic: mnemonic, Networks: map[chain.Network]*daemon.State{}}
 	for _, network := range []chain.Network{chain.Regtest, chain.Testnet, chain.Mainnet} {
-		profile.Networks[network] = &daemon.State{Version: 1, Network: network, Mnemonic: mnemonic, ReceiveIndexes: map[chain.ID]uint32{chain.BTC: 12, chain.Blake: 37}, Swaps: map[string]*daemon.Swap{"swap": {ID: "swap", Role: "maker", Secret: "private preimage", LongFunding: "saved transaction", SelfRefunds: []string{"saved refund"}}}}
+		child := fixtureSwap(t, network, mnemonic, "maker")
+		child.Secret, child.LongFunding, child.SelfRefunds = "private preimage", "saved transaction", []string{"saved refund"}
+		profile.Networks[network] = &daemon.State{Version: daemon.StateVersion, Network: network, Mnemonic: mnemonic, ReceiveIndexes: map[chain.ID]uint32{chain.BTC: 12, chain.Blake: 37}, Swaps: map[string]*daemon.Swap{child.ID: child}}
 		state := profile.Networks[network]
+		fixtureIndexSwaps(t, state)
 		state.ActivityVersion, state.ActivityRevision, state.ActivityObservationSequence = 1, 3, 9
 		state.Activities = map[string]daemon.Activity{"receive/known": {Version: 1, ID: "receive/known", Wallet: profile.ID, Network: network, Kind: "receive", Chain: chain.BTC, TxID: "transaction", Variants: []string{"transaction"}, Status: "confirmed", Confirmations: 2, Observations: []daemon.ActivityObservation{{Sequence: 9, TxID: "transaction", Status: "confirmed", Height: 10, BlockHash: "current-block", Source: "verified-source", Generation: 1}}, History: []daemon.ActivityOutcome{{TxID: "transaction", Status: "orphaned", BlockHash: "old-block", Source: "prior-source", Generation: 1}}}}
 		state.ActivityReceipts = map[string]daemon.ReceiptEvidence{"transaction": {Inputs: []daemon.CoinOutpoint{{TxID: "parent", Vout: 1}}, Total: 200000, OwnedTotal: 150000}}
@@ -103,7 +106,7 @@ func TestPortableManifestRejectsIdentityAndNetworkMismatch(t *testing.T) {
 		"network mismatch":  func(m *backupManifest) { m.Wallets[0].Networks[chain.Regtest].Network = chain.Mainnet },
 		"seed mismatch":     func(m *backupManifest) { m.Wallets[0].Networks[chain.Regtest].Mnemonic = "different seed" },
 		"nil state":         func(m *backupManifest) { m.Wallets[0].Networks[chain.Regtest] = nil },
-		"nil swap":          func(m *backupManifest) { m.Wallets[0].Networks[chain.Regtest].Swaps["swap"] = nil },
+		"nil swap":          func(m *backupManifest) { m.Wallets[0].Networks[chain.Regtest].Swaps[fixtureChildID] = nil },
 		"activity network mismatch": func(m *backupManifest) {
 			a := m.Wallets[0].Networks[chain.Regtest].Activities["receive/known"]
 			a.Network = chain.Mainnet
@@ -158,7 +161,7 @@ func TestPortableAndLegacyReaderKeepSourceUnchanged(t *testing.T) {
 			t.Fatal("cannot recover source", err, oldFormat)
 		}
 		state := restored.Wallets[0].Networks[chain.Regtest]
-		if state.ReceiveIndexes[chain.Blake] != 37 || state.Swaps["swap"].SelfRefunds[0] != "saved refund" {
+		if state.ReceiveIndexes[chain.Blake] != 37 || state.Swaps[fixtureChildID].SelfRefunds[0] != "saved refund" {
 			t.Fatal("lost recovery state")
 		}
 		after, err := os.ReadFile(path)

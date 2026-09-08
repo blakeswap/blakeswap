@@ -16,6 +16,7 @@ import (
 	pb "github.com/blakeswap/blakeswap/api/gen/blakeswap/v2"
 	"github.com/blakeswap/blakeswap/internal/chain"
 	"github.com/blakeswap/blakeswap/internal/daemon"
+	"github.com/blakeswap/blakeswap/internal/protocol"
 )
 
 type workerFixture struct {
@@ -157,7 +158,7 @@ func TestNetworkSwitchJoinsWorkersBeforeCheckingNewObligations(t *testing.T) {
 			return err
 		}
 		defer v.Close()
-		return v.Save(daemon.State{TowerJobs: map[string]*daemon.TowerJob{"job": {}}})
+		return v.Save(daemon.State{Version: daemon.StateVersion, Network: chain.Regtest, TowerJobs: map[string]*daemon.TowerJob{"job": {Job: protocol.Job{Version: protocol.Version}}}})
 	}}
 	w := startWalletWorker(context.Background(), f)
 	defer stopWorker(w)

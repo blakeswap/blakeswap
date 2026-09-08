@@ -140,7 +140,7 @@ func TestRealNativeRevocationRetainsFundedSettlement(t *testing.T) {
 	} {
 		t.Run(scenario.name, func(t *testing.T) {
 			h, owners := nativeReviewedFixture(t)
-			mq := h.quote("maker", &pb.TradeQuoteRequest{Kind: "maker", Sell: string(scenario.sell), SellAmount: 1000000, BuyAmount: 2000000, FundingFee: 6500, OwnerFeeCap: 20000})
+			mq := h.quote("maker", &pb.TradeQuoteRequest{Kind: "maker", FillMode: "whole", MinFill: 1000000, MaxFill: 1000000, FeeBudgets: map[string]int64{string(scenario.sell): 26500, string(scenario.sell.Other()): 20000}, BountyBudgets: map[string]int64{"btc": 0, "blake": 0}, Sell: string(scenario.sell), SellAmount: 1000000, BuyAmount: 2000000, FundingFee: 6500, OwnerFeeCap: 20000})
 			offerID, mrequest := nativeConfirm(t, h, "maker", mq)
 			h.tick()
 			var order *pb.Offer
@@ -152,7 +152,8 @@ func TestRealNativeRevocationRetainsFundedSettlement(t *testing.T) {
 			if order == nil {
 				t.Fatal("authorized maker offer was not acknowledged by private relay")
 			}
-			tq := h.quote("taker", &pb.TradeQuoteRequest{Kind: "taker", Maker: order.Maker, Id: order.Id, Sell: order.Sell, SellAmount: order.SellAmount, BuyAmount: order.BuyAmount, FundingFee: 6500, OwnerFeeCap: 20000})
+			requireWholeReviewedParent(t, order, h.status("maker").Pubkey, 1000000, 2000000)
+			tq := h.quote("taker", &pb.TradeQuoteRequest{Kind: "taker", Maker: order.Maker, Id: order.Id, Sell: order.Sell, Quantity: 1000000, ParentRevision: order.Revision, FundingFee: 6500, OwnerFeeCap: 20000})
 			swapID, trequest := nativeConfirm(t, h, "taker", tq)
 			find := func(name string) *pb.Swap {
 				for _, s := range h.status(name).Swaps {

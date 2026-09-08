@@ -191,7 +191,11 @@ func TestEncryptedBackupRoundTripPreservesStateAndSource(t *testing.T) {
 		t.Fatal("state restore unnecessarily returned recovery words")
 	}
 	// An existing state backup may have unsettled swaps; retain them and the network guard.
-	state := daemon.State{Version: 1, Network: chain.Mainnet, Mnemonic: seed, Swaps: map[string]*daemon.Swap{"pending": {ID: "pending", Role: "taker", Stage: "funding broadcast", Secret: "test-only-secret"}}}
+	state := daemon.State{Version: daemon.StateVersion, Network: chain.Mainnet, Mnemonic: seed}
+	child := fixtureSwap(t, chain.Mainnet, state.Mnemonic, "taker")
+	child.Stage, child.Secret = "funding broadcast", "test-only-secret"
+	state.Swaps = map[string]*daemon.Swap{child.ID: child}
+	fixtureIndexSwaps(t, &state)
 	legacyPath := filepath.Join(t.TempDir(), "pending-legacy.db")
 	if err := saveVault(legacyPath, []byte(password), state); err != nil {
 		t.Fatal(err)
@@ -218,7 +222,7 @@ func TestEncryptedBackupRoundTripPreservesStateAndSource(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if legacy || recovered == nil || recovered.Swaps["pending"] == nil || recovered.Swaps["pending"].Secret != "test-only-secret" || recovered.Recovery == nil || recovered.Recovery.Status.State != "recovering" {
+	if legacy || recovered == nil || recovered.Swaps[fixtureChildID] == nil || recovered.Swaps[fixtureChildID].Secret != "test-only-secret" || recovered.Recovery == nil || recovered.Recovery.Status.State != "recovering" {
 		t.Fatal("pending swap state lost", err)
 	}
 }

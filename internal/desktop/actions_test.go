@@ -216,7 +216,11 @@ func TestActionFirstWalletRestoreProtectsQuitDuringDirectRPC(t *testing.T) {
 	if err != nil || !before.Complete || before.RequiresMonitoring {
 		t.Fatal("not initially empty", before, err)
 	}
-	state := daemon.State{Version: 1, Network: chain.Mainnet, Mnemonic: "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about", Swaps: map[string]*daemon.Swap{"pending": {ID: "pending", Role: "taker", Stage: "funding broadcast", Secret: "test-only-secret"}}}
+	state := daemon.State{Version: daemon.StateVersion, Network: chain.Mainnet, Mnemonic: "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about"}
+	child := fixtureSwap(t, chain.Mainnet, state.Mnemonic, "taker")
+	child.Stage, child.Secret = "funding broadcast", "test-only-secret"
+	state.Swaps = map[string]*daemon.Swap{child.ID: child}
+	fixtureIndexSwaps(t, &state)
 	backup := t.TempDir() + "/old-wallet.db"
 	if err := saveVault(backup, []byte("isolated-restore-test-password"), state); err != nil {
 		t.Fatal(err)
