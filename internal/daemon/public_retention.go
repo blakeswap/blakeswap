@@ -49,10 +49,13 @@ func (e *Engine) retainPublicOffer(event nostr.Event, offer protocol.Offer) erro
 			return err
 		}
 		known = cold
+	}
+	if own {
 		if legacy, ok := e.s.PublicVersions[key]; ok && (!known || legacy.CreatedAt > previous.CreatedAt || legacy.CreatedAt == previous.CreatedAt && legacy.ID < previous.ID) {
 			previous, known = legacy, true
 		}
 	}
+
 	if current, ok := e.s.Book[key]; ok && (!known || newerPublic(current, previous)) {
 		previous = PublicVersion{CreatedAt: current.CreatedAt, ID: current.ID.Hex()}
 		known = true
@@ -82,20 +85,63 @@ func (e *Engine) retainPublicOffer(event nostr.Event, offer protocol.Offer) erro
 	e.s.Book[key] = event
 	return nil
 }
-func (e *Engine) prunePublicOffers() {
+
+// Keep the strongest authenticated floor, including a cold owner. The old
+// public map can be discarded only after this lookup or promotion succeeds.
+func (e *Engine) retainOwnPublicVersion(key string, candidate PublicVersion) error {
+	if e.s.OwnPublicVersions == nil {
+		e.s.OwnPublicVersions = map[string]PublicVersion{}
+	}
+	previous, known := e.s.OwnPublicVersions[key]
+	cold := false
+	if !known {
+		var err error
+		cold, err = e.archivedValue("own_public_versions", key, &previous)
+		if err != nil {
+			return err
+		}
+		known = cold
+	}
+	if known && (previous.CreatedAt > candidate.CreatedAt || previous.CreatedAt == candidate.CreatedAt && previous.ID <= candidate.ID) {
+		return nil
+	}
+	if cold {
+		if _, err := e.activateArchived("own_public_versions", key); err != nil {
+			return err
+		}
+	}
+	e.s.OwnPublicVersions[key] = candidate
+	return nil
+}
+
+func (e *Engine) prunePublicOffers() error {
 	if e.s.PublicVersions == nil {
 		e.s.PublicVersions = map[string]PublicVersion{}
 	}
+	prefix := e.identity.Public().Hex() + ":"
 	for key, event := range e.s.Book {
-		previous, known := e.s.PublicVersions[key]
-		if !known || newerPublic(event, previous) {
-			e.s.PublicVersions[key] = PublicVersion{CreatedAt: event.CreatedAt, ID: event.ID.Hex()}
+		if strings.HasPrefix(key, prefix) {
+			if legacy, ok := e.s.PublicVersions[key]; ok {
+				if err := e.retainOwnPublicVersion(key, legacy); err != nil {
+					return err
+				}
+			}
+			if err := e.retainOwnPublicVersion(key, PublicVersion{CreatedAt: event.CreatedAt, ID: event.ID.Hex()}); err != nil {
+				return err
+			}
+			delete(e.s.PublicVersions, key)
+		} else {
+			previous, known := e.s.PublicVersions[key]
+			if !known || newerPublic(event, previous) {
+				e.s.PublicVersions[key] = PublicVersion{CreatedAt: event.CreatedAt, ID: event.ID.Hex()}
+			}
 		}
 		var offer protocol.Offer
 		if json.Unmarshal([]byte(event.Content), &offer) == nil && (offer.Expires <= time.Now().Unix() || offer.Status == "cancelled" || offer.Status == "filled") && (offer.Maker != e.identity.Public().Hex() || e.s.Offers[offer.ID].ID == (nostr.ID{})) {
 			delete(e.s.Book, key)
 		}
 	}
+	return nil
 }
 
 // Called after owned publication has safely left the live offer map. The
@@ -103,29 +149,52 @@ func (e *Engine) prunePublicOffers() {
 // rebuilding the active view after compaction or restart.
 func (e *Engine) archiveOwnOfferView(id string, event nostr.Event) error {
 	key := e.identity.Public().Hex() + ":" + id
-	if e.s.OwnPublicVersions == nil {
-		e.s.OwnPublicVersions = map[string]PublicVersion{}
-	}
-	if _, ok := e.s.OwnPublicVersions[key]; !ok {
-		if _, err := e.activateArchived("own_public_versions", key); err != nil {
+	if legacy, ok := e.s.PublicVersions[key]; ok {
+		if err := e.retainOwnPublicVersion(key, legacy); err != nil {
 			return err
 		}
 	}
-	previous := e.s.OwnPublicVersions[key]
-	if previous.ID == "" || newerPublic(event, previous) {
-		e.s.OwnPublicVersions[key] = PublicVersion{CreatedAt: event.CreatedAt, ID: event.ID.Hex()}
+	if err := e.retainOwnPublicVersion(key, PublicVersion{CreatedAt: event.CreatedAt, ID: event.ID.Hex()}); err != nil {
+		return err
 	}
-	if current, ok := e.s.Book[key]; ok && !newerPublic(current, e.s.OwnPublicVersions[key]) {
+	// An equal or newer cold floor can stay cold. For the view comparison only,
+	// read that exact floor without creating a second active owner.
+	previous, known := e.s.OwnPublicVersions[key]
+	if !known {
+		if _, err := e.archivedValue("own_public_versions", key, &previous); err != nil {
+			return err
+		}
+	}
+
+	if current, ok := e.s.Book[key]; ok && !newerPublic(current, previous) {
 		delete(e.s.Book, key)
 	}
 	delete(e.s.PublicVersions, key)
 	if _, ok := e.s.Book[key]; ok {
 		return nil
 	}
-	return e.stageArchive("own_public_versions", key)
+	if _, active := e.s.OwnPublicVersions[key]; active {
+		return e.stageArchive("own_public_versions", key)
+	}
+	return nil
 }
 func (e *Engine) compactOwnPublicVersions(remaining *int) error {
 	prefix := e.identity.Public().Hex() + ":"
+	// Older checkpoints may contain orphaned own floors with no Book/Offers row.
+	// Migrate at most the normal batch budget, preserving newer cold evidence.
+	for _, key := range sortedArchiveIDs(e.s.PublicVersions) {
+		if *remaining <= 0 {
+			break
+		}
+		if !strings.HasPrefix(key, prefix) {
+			continue
+		}
+		if err := e.retainOwnPublicVersion(key, e.s.PublicVersions[key]); err != nil {
+			return err
+		}
+		delete(e.s.PublicVersions, key)
+		*remaining--
+	}
 	for _, key := range sortedArchiveIDs(e.s.OwnPublicVersions) {
 		if *remaining <= 0 {
 			break

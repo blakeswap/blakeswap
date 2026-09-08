@@ -465,8 +465,11 @@ func (e *Engine) tickProtocol(ctx context.Context) error {
 		return err
 	}
 	e.pruneDiscovery()
-	e.prunePublicOffers()
+	publicErr := e.prunePublicOffers()
 	e.lastError = ""
+	if publicErr != nil {
+		e.lastError = "public history: " + publicErr.Error()
+	}
 	if err := e.refreshFavoriteTowers(); err != nil {
 		e.lastError = "watchtower discovery: " + err.Error()
 	}
@@ -517,12 +520,14 @@ func (e *Engine) tickProtocol(ctx context.Context) error {
 	}
 	e.acknowledgeRelayPages()
 	publishErr := e.dispatchPublications()
-	return errors.Join(refreshErr, scanErr, publishErr)
+	return errors.Join(refreshErr, scanErr, publishErr, publicErr)
 }
 func (e *Engine) ingestOffer(event nostr.Event) error {
 	o, err := protocol.DecodeOffer(event, time.Now().Unix())
+	// Historical sweeps routinely contain expired or otherwise permanently
+	// ineligible events. Only failures applying a valid event are retryable.
 	if err != nil || o.Network.Normalized() != e.Config.Network {
-		return err
+		return nil
 	}
 	return e.retainPublicOffer(event, o)
 }
