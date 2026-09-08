@@ -608,7 +608,7 @@ The opt-in physical test uses real private files and no chain nodes:
   -run '^TestPortablePhysicalLargeHistoryAndCoreContinuation$' -count=1 -timeout=20m -v
 ```
 
-It writes and imports an accepted near-limit v1 population, creates a physical encrypted cold archive, adds retained core payloads so the complete output exceeds the old v1 envelope, and exports/installs a complete v2 profile. The phase log separates original v1 parsing, cold storage, the **entire source staging/worker-pause interval**, export, and v2 validation/restore. The 20ms sampled Go heap high-water marks are measurements, not strict peak guarantees; `/usr/bin/time -l` records OS peak RSS. Payload growth in this format test is not a claim of actual broadcast protocol validity. Run it without concurrent broad native/Go builds or node integration to make memory and latency results interpretable. A smaller `BLAKESWAP_SCALE_RECORDS=1000` run checks fixture mechanics but does not satisfy the large physical workload.
+It writes and imports an accepted near-limit v1 population, creates a physical encrypted cold archive, adds retained core payloads so the complete output exceeds the old v1 envelope, and exports/installs a complete v2 profile. The phase log separates original v1 parsing, cold storage, total source preparation/validation, the separate **complete worker join/save/capture/resume pause**, export, and v2 validation/restore. The 20ms sampled Go heap high-water marks are measurements, not strict peak guarantees; `/usr/bin/time -l` records OS peak RSS. Payload growth in this format test is not a claim of actual broadcast protocol validity. Run it without concurrent broad native/Go builds or node integration to make memory and latency results interpretable. A smaller `BLAKESWAP_SCALE_RECORDS=1000` run checks fixture mechanics but does not satisfy the large physical workload.
 
 The snapshot capture regressions force the non-clone fallback even on APFS. They
 exercise concurrent 8 MiB bbolt writer growth from an archive callback, exact
@@ -621,3 +621,20 @@ and a deliberately blocked archive callback. This is scheduling evidence, not a
 real-chain settlement test. The physical fixture reports `source_snapshot_total`
 separately from the complete `source_snapshot_worker_pause`, including worker
 join/save/capture/resume; its large-history measurement remains the latency test.
+
+At checkpoint `da8858609f2fd8c30a733045dfcf9557ba54e9b6` on the measured APFS
+host, 95,000 retained activity rows and 2,021 core obligations produced a
+232,874,099-byte accepted v1 input and a 284,706,570-byte complete v2 output.
+The full export/restore fixture passed in 120.251 seconds. Source preparation and
+private validation took 10.359 seconds in total; the common worker pause was
+79.627 milliseconds, compared with 31.280 seconds before capture was separated.
+A small independent real-daemon/HTTP fixture verifies worker progress outside
+that interval. These are measurements on this host, not universal timing bounds.
+
+Maximum process RSS was 2,179,645,440 bytes; peak sampled heap was 1,436,303,512
+bytes during the unchanged legacy v1 import. Sampled file allocations peaked at
+1,829,212,160 bytes (logical size 1,863,316,815), with hardlinked inodes counted
+once. Disk samples run every 200ms and heap samples every 20ms, so brief higher
+peaks may be missed. Host-wide swap-in counters advanced by eight 16KiB pages;
+swap-out counters were unchanged. Active checkpoint/core and individual-record
+memory costs remain, even though cold history does not require a full graph.
