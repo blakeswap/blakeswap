@@ -65,6 +65,46 @@ func partialRejectedRequest(e *Engine, expected protocol.Request) (bool, error) 
 	return true, nil
 }
 
+// Capture each exact durable acceptance while its recipient remains offline.
+// Publication is asynchronous: a scheduled attempt alone cannot justify closing
+// the only online sender before the relay has acknowledged that event.
+type partialAcceptancePublication struct {
+	child, recipient, event, terms string
+}
+
+func partialAcceptancePublications(e *Engine, ids []string) (map[string]partialAcceptancePublication, error) {
+	expected := map[string]partialAcceptancePublication{}
+	for _, id := range ids {
+		child := e.s.Swaps[id]
+		if child == nil || child.Role != "maker" || child.Terms == nil {
+			return nil, errors.New("partial matrix acceptance child is unavailable")
+		}
+		raw, err := json.Marshal(child.Terms)
+		if err != nil {
+			return nil, err
+		}
+		key := protocol.Digest([]string{child.Request.Taker, "accepted", id, string(raw)})
+		delivery := e.s.Outbox[key]
+		if delivery == nil || delivery.Type != "accepted" || delivery.SwapID != id || delivery.To != child.Request.Taker || delivery.Retired || delivery.Acknowledged {
+			return nil, errors.New("partial matrix exact acceptance delivery is unavailable")
+		}
+		expected[key] = partialAcceptancePublication{id, child.Request.Taker, delivery.Event.ID.Hex(), protocol.Digest(child.Terms)}
+	}
+	return expected, nil
+}
+
+func partialAcceptancesPublished(e *Engine, expected map[string]partialAcceptancePublication) (bool, error) {
+	ready := len(expected) > 0
+	for key, want := range expected {
+		delivery, child := e.s.Outbox[key], e.s.Swaps[want.child]
+		if delivery == nil || child == nil || child.Role != "maker" || child.Request.Taker != want.recipient || child.Terms == nil || protocol.Digest(child.Terms) != want.terms || delivery.Type != "accepted" || delivery.SwapID != want.child || delivery.To != want.recipient || delivery.Event.ID.Hex() != want.event || delivery.Retired || delivery.Acknowledged {
+			return false, errors.New("partial matrix acceptance identity changed before publication")
+		}
+		ready = ready && delivery.Published
+	}
+	return ready, nil
+}
+
 // Add wallets through normal startup, first with RPC so the fixture owns their
 // watch-only node wallets, then use the same selected adapter as newHarness.
 // The parent receives exactly three independent confirmed 610000-sat coins;
@@ -337,7 +377,17 @@ func runRealPartialFillPair(t *testing.T, sell chain.ID, bps int64) {
 		t.Fatal("cancelled available input pool remains locked")
 	}
 	partialAssertIndependentChildren(h, ids)
-	h.tick("parent")
+	publications, err := partialAcceptancePublications(h.engines["parent"], ids)
+	if err != nil {
+		t.Fatal(err)
+	}
+	partialWait(h, "both exact acceptances acknowledged by relay", func() bool {
+		ready, err := partialAcceptancesPublished(h.engines["parent"], publications)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return ready
+	}, func() { h.tick("parent") })
 	h.offline("parent")
 	for i, name := range names {
 		h.online(name)
