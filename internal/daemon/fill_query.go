@@ -60,19 +60,8 @@ func (e *Engine) fillSummary(s *Swap, archived bool) (FillSummary, error) {
 	}
 	row := FillSummary{ID: s.ID, ParentMaker: offer.Maker, ParentID: offer.ID, ParentRevision: s.Request.Revision, Quantity: s.Request.Quantity, BuyAmount: buy, Stage: s.Stage, Archived: archived, MonitoringRequired: e.archivedObligationHeld("swap/" + s.ID)}
 	if s.Role == "maker" {
-		child := e.s.FillRecords[s.ID]
-		if child == nil {
-			var cold FillRecord
-			found, err := e.archivedValue("fill_records", s.ID, &cold)
-			if err != nil {
-				return row, err
-			}
-			if !found {
-				return row, errors.New("fill allocation evidence is unavailable")
-			}
-			child = &cold
-		}
-		if err := validateFillRecord(s.ID, child); err != nil {
+		child, err := e.retainedFillRecord(s.ID)
+		if err != nil {
 			return row, err
 		}
 		if child.ParentMaker != offer.Maker || child.ParentID != offer.ID || child.ParentRevision != s.Request.Revision || child.RequestDigest != protocol.Digest(s.Request) || child.Allocation.Quantity != row.Quantity || child.BuyAmount != row.BuyAmount {

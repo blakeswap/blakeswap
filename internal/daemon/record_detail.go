@@ -56,18 +56,11 @@ func (e *Engine) recordDetail(raw json.RawMessage) (RecordDetail, error) {
 		p.ParentID, p.ParentMaker, p.ParentRevision, p.Quantity = fill.ParentID, fill.ParentMaker, fill.ParentRevision, fill.Quantity
 		p.Allocation, p.AllocatedQuantity, p.AllocationKnown = fill.Disposition, fill.AllocatedQuantity, fill.AllocationKnown
 		result.MonitoringRequired = result.MonitoringRequired || fill.MonitoringRequired
-		owner := "swap/" + value.ID
-		if _, active := e.s.FundingFees[owner]; !active {
-			var selection FeeSelection
-			found, err := e.archivedValue("funding_fees", owner, &selection)
-			if err != nil {
-				return result, err
-			}
-			if !found || selection.FundingFee <= 0 {
-				return result, errors.New("exact retained child funding fee is unavailable")
-			}
-			p.FundingFee, p.Error = selection.FundingFee, value.Error
+		selection, err := e.retainedSwapFee(value)
+		if err != nil {
+			return result, err
 		}
+		p.FundingFee, p.Error = selection.FundingFee, value.Error
 		result.Swap = &p
 	case "send":
 		value := e.s.Sends[q.ID]

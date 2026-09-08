@@ -42,6 +42,11 @@ func (e *Engine) restoreActiveFundingFees() error {
 			return fmt.Errorf("cannot restore retained funding fee: %w", err)
 		}
 	}
+	for _, swap := range e.s.Swaps {
+		if _, err := e.retainedSwapFee(swap); err != nil {
+			return err
+		}
+	}
 	return nil
 }
 
@@ -84,14 +89,6 @@ func (e *Engine) archiveDelta(record storage.ArchiveRecord, add bool) error {
 }
 
 func (e *Engine) stageArchive(kind, id string) error {
-	if kind == "swaps" && e.s.Swaps[id] != nil {
-		if err := e.retainSwapIdentity(e.s.Swaps[id]); err != nil {
-			return err
-		}
-		if err := e.stageArchive("fill_records", id); err != nil {
-			return err
-		}
-	}
 	key := archiveMoveKey(kind, id)
 	// A just-reactivated record stays active through this checkpoint. Its next
 	// compaction can replace the old evidence only after the deletion commits.
@@ -116,6 +113,19 @@ func (e *Engine) stageArchive(kind, id string) error {
 			return err
 		} else if found {
 			return errors.New("archive already owns an active record")
+		}
+	}
+	if err := ValidateStateVersion(&e.s); err != nil {
+		return err
+	}
+	if kind == "swaps" && e.s.Swaps[id] != nil {
+		if err := e.retainSwapIdentity(e.s.Swaps[id]); err != nil {
+			return err
+		}
+		// Complete the core's fallible read/encoding/collision checks before
+		// changing companion placement. The remaining core staging is local.
+		if err := e.stageArchive("fill_records", id); err != nil {
+			return err
 		}
 	}
 	if err := e.archiveDelta(record, true); err != nil {
@@ -184,6 +194,9 @@ func (e *Engine) collectArchiveActivation(kind, id string, visited map[string]bo
 		companions = append(companions, storage.ArchiveKey{Kind: "recovery_swaps", ID: id}, storage.ArchiveKey{Kind: "funding_fees", ID: "swap/" + id})
 		var swap Swap
 		if err := json.Unmarshal(record.Data, &swap); err != nil {
+			return false, err
+		}
+		if _, err := e.retainedSwapFee(&swap); err != nil {
 			return false, err
 		}
 		if swap.Role == "maker" {
