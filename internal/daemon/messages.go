@@ -172,6 +172,11 @@ func (e *Engine) handle(from string, m transport.Message) error {
 			}
 			return nil
 		}
+		withTerms := *s
+		withTerms.Terms = &terms
+		if err := e.retainSwapIdentity(&withTerms); err != nil {
+			return err
+		}
 		s.Terms = &terms
 		s.Long = terms.Long
 		s.Short = terms.Short

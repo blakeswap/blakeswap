@@ -44,6 +44,11 @@ func ValidateProtocolState(s *State) error {
 			}
 		}
 	}
+	for key, owner := range s.FillKeys {
+		if err := validateFillIdentityRecord(key, owner); err != nil {
+			return err
+		}
+	}
 	for id, parent := range s.ParentOrders {
 		if err := validateParentOrder(id, parent); err != nil {
 			return err
@@ -89,6 +94,9 @@ func ValidateProtocolState(s *State) error {
 	for _, swap := range s.Swaps {
 		if swap == nil || swap.Request.Version != protocol.Version || swap.Request.Revision == 0 || swap.Request.Quantity < protocol.MinPrincipal {
 			return errors.New("incompatible saved child request")
+		}
+		if _, err := swapIdentityKeys(swap); err != nil {
+			return err
 		}
 		var offered protocol.Offer
 		if err := json.Unmarshal([]byte(swap.Request.OfferEvent.Content), &offered); err != nil {
@@ -149,10 +157,15 @@ func ValidateVaultProtocolState(v *storage.Vault, s *State) error {
 	if err := s.ValidateArchiveCheckpoint(stats); err != nil {
 		return err
 	}
+	for _, swap := range s.Swaps {
+		if err := validateVaultSwapIdentity(v, s, swap); err != nil {
+			return err
+		}
+	}
 	for kind, fields := range archiveFields {
 		// Derive the category from the registry's actual State field path;
 		// Recovery.Offers is stored as quarantined_offers, not recovery_offers.
-		owned := len(fields) == 1 && (fields[0] == "Outbox" || fields[0] == "ParentOrders" || fields[0] == "FillRecords" || fields[0] == "Offers" || fields[0] == "OrderRecords" || fields[0] == "Swaps" || fields[0] == "TowerJobs")
+		owned := len(fields) == 1 && (fields[0] == "FillKeys" || fields[0] == "Outbox" || fields[0] == "ParentOrders" || fields[0] == "FillRecords" || fields[0] == "Offers" || fields[0] == "OrderRecords" || fields[0] == "Swaps" || fields[0] == "TowerJobs")
 		quarantined := len(fields) == 2 && fields[0] == "Recovery" && (fields[1] == "Offers" || fields[1] == "Outbox")
 		if !owned && !quarantined {
 			continue
@@ -164,6 +177,15 @@ func ValidateVaultProtocolState(v *storage.Vault, s *State) error {
 				return err
 			}
 			for _, record := range records {
+				if record.Kind == "swaps" {
+					var swap Swap
+					if err := json.Unmarshal(record.Data, &swap); err != nil {
+						return err
+					}
+					if err := validateVaultSwapIdentity(v, s, &swap); err != nil {
+						return err
+					}
+				}
 				if _, err := ValidateArchiveRecordAgainstState(*s, record); err != nil {
 					return err
 				}

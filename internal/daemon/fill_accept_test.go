@@ -3,6 +3,7 @@ package daemon
 import (
 	"encoding/hex"
 	"encoding/json"
+	"strings"
 	"testing"
 	"time"
 
@@ -217,5 +218,48 @@ func TestParentFillMissingCoreNeverReallocatesRetainedChild(t *testing.T) {
 	}
 	if protocol.Digest(*p) != before {
 		t.Fatal("incomplete prior child double-allocated quantity")
+	}
+}
+
+func TestParentFillPublicKeyCaseCannotAliasChildIdentity(t *testing.T) {
+	e, maker, now := fillAdmissionEngine(t, chain.Blake)
+	first := admissionRequest(t, e, maker, 400000)
+	if err := applyFillRequest(t, e, first, now); err != nil {
+		t.Fatal(err)
+	}
+	p := e.s.ParentOrders[e.s.FillRecords[first.ID].ParentID]
+	next, event, err := e.prepareParentPublication(*p, now+1)
+	if err != nil || event == nil {
+		t.Fatal(err)
+	}
+	*p = next
+	e.stageOffer(parentPublicOffer(next), *event)
+	second := admissionRequest(t, e, maker, 600000)
+	second.Keys[chain.BTC] = strings.ToUpper(first.Keys[chain.BTC])
+	if second.Keys[chain.BTC] == first.Keys[chain.BTC] {
+		t.Fatal("fixture key has no hexadecimal letters")
+	}
+	before := protocol.Digest(e.s)
+	if err := applyFillRequest(t, e, second, now+1); err == nil {
+		t.Fatal("same curve key with changed hex case was admitted to a second child")
+	}
+	if protocol.Digest(e.s) != before {
+		t.Fatal("aliased key changed parent, child, input, money, or registry state")
+	}
+}
+
+func TestParentFillCaseAliasCannotReuseOneKeyAcrossChains(t *testing.T) {
+	e, maker, now := fillAdmissionEngine(t, chain.Blake)
+	r := admissionRequest(t, e, maker, 400000)
+	r.Keys[chain.Blake] = strings.ToUpper(r.Keys[chain.BTC])
+	if r.Keys[chain.Blake] == r.Keys[chain.BTC] {
+		t.Fatal("fixture key has no hexadecimal letters")
+	}
+	before := protocol.Digest(e.s)
+	if err := applyFillRequest(t, e, r, now); err == nil {
+		t.Fatal("one curve key was admitted for both child chains")
+	}
+	if protocol.Digest(e.s) != before {
+		t.Fatal("rejected chain alias changed parent, child, input, money, or registry state")
 	}
 }

@@ -296,6 +296,9 @@ func (e *Engine) save() error {
 // persistState is also used by already registered immutable-witness readers
 // while Close joins them. Protocol execution remains blocked by errEngineClosed.
 func (e *Engine) persistState() error {
+	if err := e.retainActiveSwapIdentities(); err != nil {
+		return err
+	}
 	e.reconcileAutomations()
 	e.reconcileStrategyExposure()
 	e.syncOrderRecords()

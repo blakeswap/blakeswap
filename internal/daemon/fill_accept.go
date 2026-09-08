@@ -14,6 +14,9 @@ import (
 // fillIdentityKeys binds both parties' per-child keys and the hash across active
 // and cold history. Returning quantity never makes these identities reusable.
 func fillIdentityKeys(request protocol.Request, makerKeys map[chain.ID]string) ([]string, error) {
+	if len(request.Keys) != 2 || len(makerKeys) != 2 {
+		return nil, errors.New("fill requires both parties and both chain keys")
+	}
 	keys := []string{"hash/" + request.Hash}
 	seen := map[string]bool{}
 	for _, party := range []map[chain.ID]string{request.Keys, makerKeys} {

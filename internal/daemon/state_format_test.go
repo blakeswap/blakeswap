@@ -3,8 +3,11 @@ package daemon
 import (
 	"bytes"
 	"context"
+	"encoding/hex"
 	"encoding/json"
 	"fiatjaf.com/nostr"
+	"github.com/blakeswap/blakeswap/internal/transport"
+	"github.com/btcsuite/btcd/btcec/v2"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -227,8 +230,20 @@ func currentFormatSwap(t *testing.T, id string) *Swap {
 	if err != nil {
 		t.Fatal(err)
 	}
-	r := protocol.Request{Version: protocol.Version, Quantity: 1000000, Revision: 1, OfferEvent: nostr.Event{Content: string(raw)}}
-	return &Swap{ID: id, Role: "maker", Request: r, Terms: &protocol.Terms{Version: protocol.Version, Request: r}}
+	id = protocol.Digest(id)
+	keys := func() map[chain.ID]string {
+		out := map[chain.ID]string{}
+		for _, chainID := range []chain.ID{chain.BTC, chain.Blake} {
+			k, err := btcec.NewPrivateKey()
+			if err != nil {
+				t.Fatal(err)
+			}
+			out[chainID] = hex.EncodeToString(k.PubKey().SerializeCompressed())
+		}
+		return out
+	}
+	r := protocol.Request{ID: id, Hash: transport.RandomID(), Keys: keys(), Version: protocol.Version, Quantity: 1000000, Revision: 1, OfferEvent: nostr.Event{Content: string(raw)}}
+	return &Swap{ID: id, Role: "maker", Request: r, Terms: &protocol.Terms{Version: protocol.Version, Request: r, MakerKeys: keys()}}
 }
 
 func TestStateCutoverColdProtocolCheckedBeforeAnyPromotion(t *testing.T) {
@@ -276,6 +291,12 @@ func TestStateCutoverChecksPersistedColdProtocolPages(t *testing.T) {
 			var records []storage.ArchiveRecord
 			for i := 0; i < 70; i++ {
 				child := currentFormatSwap(t, strconv.Itoa(i))
+				// Derive the valid retained index before corrupting just the
+				// protocol marker for the incompatible-source negative control.
+				keys, err := swapIdentityKeys(child)
+				if err != nil {
+					t.Fatal(err)
+				}
 				if legacy && i == 69 {
 					child.Request.Version = 1
 				}
@@ -285,6 +306,15 @@ func TestStateCutoverChecksPersistedColdProtocolPages(t *testing.T) {
 					t.Fatal(err)
 				}
 				records = append(records, record)
+				// Current-format retained child identity includes its derived index.
+				for _, key := range keys {
+					data, _ := json.Marshal(child.ID)
+					index := storage.ArchiveRecord{Kind: "fill_keys", ID: key, Data: data}
+					if err := e.archiveDelta(index, true); err != nil {
+						t.Fatal(err)
+					}
+					records = append(records, index)
+				}
 			}
 			v, err := storage.Open(path, password)
 			if err != nil {

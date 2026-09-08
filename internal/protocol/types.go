@@ -120,7 +120,7 @@ func Hex32(s string) bool {
 }
 func ValidKey(s string) bool {
 	b, e := hex.DecodeString(s)
-	if e != nil || len(b) != 33 {
+	if e != nil || len(b) != 33 || hex.EncodeToString(b) != s {
 		return false
 	}
 	_, e = btcec.ParsePubKey(b)

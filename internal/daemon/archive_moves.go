@@ -88,6 +88,11 @@ func (e *Engine) archiveDelta(record storage.ArchiveRecord, add bool) error {
 }
 
 func (e *Engine) stageArchive(kind, id string) error {
+	if kind == "swaps" && e.s.Swaps[id] != nil {
+		if err := e.retainSwapIdentity(e.s.Swaps[id]); err != nil {
+			return err
+		}
+	}
 	key := archiveMoveKey(kind, id)
 	// A just-reactivated record stays active through this checkpoint. Its next
 	// compaction can replace the old evidence only after the deletion commits.

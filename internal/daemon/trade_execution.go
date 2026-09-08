@@ -279,6 +279,9 @@ func (e *Engine) takeOffer(ctx context.Context, raw json.RawMessage, receipt *Tr
 		return nil, err
 	}
 	s.OwnerFeeCap = e.s.FundingFees["swap/"+id].OwnerFeeCap
+	if err := e.retainSwapIdentity(s); err != nil {
+		return nil, err
+	}
 	if err = e.queue(o.Maker, "request", id, request); err != nil {
 		return nil, err
 	}
