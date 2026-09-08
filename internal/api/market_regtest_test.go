@@ -31,6 +31,29 @@ func TestRealManagedOrderThroughTypedAPI(t *testing.T) {
 	}
 	for _, sell := range []chain.ID{chain.BTC, chain.Blake} {
 		t.Run(string(sell), func(t *testing.T) {
+			wait := func(label string, allowance time.Duration, ready func() bool) {
+				t.Helper()
+				deadline := time.Now().Add(allowance)
+				for !ready() && time.Now().Before(deadline) {
+					h.tick()
+					time.Sleep(100 * time.Millisecond)
+				}
+				if !ready() {
+					t.Fatal("did not observe", label)
+				}
+			}
+			visible := func(eventID string) bool {
+				page, err := h.clients["taker"].ListMarket(h.contexts["taker"], &pb.MarketQuery{ExpectedWallet: "taker", ExpectedNetwork: "regtest", Owner: "others", Status: "all"})
+				if err != nil {
+					t.Fatal(err)
+				}
+				for _, row := range page.Records {
+					if row.EventId == eventID {
+						return true
+					}
+				}
+				return false
+			}
 			expiry := time.Now().Unix() + 1234
 			first := h.quote("maker", &pb.TradeQuoteRequest{Kind: "maker", FillMode: "whole", MinFill: 1_000_000, MaxFill: 1_000_000, FeeBudgets: map[string]int64{string(sell): 26500, string(sell.Other()): 20000}, BountyBudgets: map[string]int64{"btc": 0, "blake": 0}, Sell: string(sell), SellAmount: 1_000_000, BuyAmount: 2_000_000, FundingFee: 6500, OwnerFeeCap: 20000, Expires: expiry})
 			oldID, _ := h.confirm("maker", first)
@@ -38,11 +61,16 @@ func TestRealManagedOrderThroughTypedAPI(t *testing.T) {
 			if old.Offer.Expires != expiry || old.Publication != "local_committed" {
 				t.Fatal("custom expiry/local commit", old)
 			}
-			h.tick()
-			old = find(market("maker"), oldID)
+			wait("positive maker publication acknowledgement", 20*time.Second, func() bool {
+				old = find(market("maker"), oldID)
+				return old.Publication == "relay_acknowledged" && old.AcknowledgedAt > 0
+			})
 			if old.Publication != "relay_acknowledged" || old.AcknowledgedAt == 0 {
 				t.Fatal("positive publication ack missing", old)
 			}
+			// Include the normal 30s history resweep before the taker deliberately
+			// retains this exact authenticated revision across the replacement.
+			wait("taker's exact original signed order", 50*time.Second, func() bool { return visible(old.EventId) })
 			// Keep the taker's authenticated old event deliberately stale while the
 			// maker durably cancels/replaces its own source and transfers reservation.
 			replacement := h.quote("maker", &pb.TradeQuoteRequest{Kind: "maker", FillMode: "whole", MinFill: 1_000_000, MaxFill: 1_000_000, FeeBudgets: map[string]int64{string(sell): 26500, string(sell.Other()): 20000}, BountyBudgets: map[string]int64{"btc": 0, "blake": 0}, Sell: string(sell), SellAmount: 1_000_000, BuyAmount: 2_500_000, FundingFee: 6500, OwnerFeeCap: 20000, Expires: expiry + 60, OrderAction: "replace", SourceOfferId: oldID, SourceEventId: old.EventId})
@@ -56,27 +84,34 @@ func TestRealManagedOrderThroughTypedAPI(t *testing.T) {
 			requireWholeReviewedParent(t, old.Offer, h.status("maker").Pubkey, 1_000_000, 2_000_000)
 			stale := h.quote("taker", &pb.TradeQuoteRequest{Kind: "taker", Maker: old.Offer.Maker, Id: oldID, Sell: string(sell), Quantity: 1_000_000, ParentRevision: old.Offer.Revision, FundingFee: 6500, OwnerFeeCap: 20000})
 			staleID, _ := h.confirm("taker", stale)
-			for i := 0; i < 4; i++ {
-				h.tick()
-			}
-			rejected := false
-			for _, s := range h.status("taker").Swaps {
-				if s.Id == staleID {
-					rejected = s.Stage == "rejected" && s.GetLong().GetTxid() == "" && s.GetShort().GetTxid() == ""
+			// A never-funded rejection may become cold during the same Tick.
+			// Resolve this exact child through the API that serves both stores.
+			wait("stale signed order rejection before funding", 50*time.Second, func() bool {
+				detail, err := h.clients["taker"].GetRecord(h.contexts["taker"], &pb.RecordQuery{Kind: "swap", Id: staleID, ExpectedWallet: "taker", ExpectedNetwork: "regtest"})
+				if err != nil || detail.GetKind() != "swap" || detail.GetId() != staleID || detail.GetSwap().GetId() != staleID {
+					t.Fatal("stale request detail identity changed", detail, err)
 				}
-			}
-			if !rejected {
-				t.Fatal("stale signed offer was not rejected before funding", h.status("taker").Swaps)
-			}
+				swap := detail.Swap
+				if swap.GetLong().GetTxid() != "" || swap.GetShort().GetTxid() != "" {
+					t.Fatal("stale signed order acquired funding", swap)
+				}
+				return swap.Stage == "rejected"
+			})
 			for _, s := range h.status("maker").Swaps {
 				if s.Id == staleID {
 					t.Fatal("stale maker acceptance", s)
 				}
 			}
-			created = find(market("maker"), newID)
+			wait("both replacement publication acknowledgements", 20*time.Second, func() bool {
+				orders := market("maker")
+				created = find(orders, newID)
+				cancelled = find(orders, oldID)
+				return created.Publication == "relay_acknowledged" && created.AcknowledgedAt > 0 && cancelled.Publication == "relay_acknowledged" && cancelled.AcknowledgedAt > 0
+			})
 			if created.Publication != "relay_acknowledged" || find(market("maker"), oldID).Publication != "relay_acknowledged" {
 				t.Fatal("both replacement publications not acknowledged")
 			}
+			wait("taker's exact signed replacement", 50*time.Second, func() bool { return visible(created.EventId) })
 			requireWholeReviewedParent(t, created.Offer, h.status("maker").Pubkey, 1_000_000, 2_500_000)
 			tq := h.quote("taker", &pb.TradeQuoteRequest{Kind: "taker", Maker: created.Offer.Maker, Id: newID, Sell: string(sell), Quantity: 1_000_000, ParentRevision: created.Offer.Revision, FundingFee: 6500, OwnerFeeCap: 20000})
 			swapID, _ := h.confirm("taker", tq)
