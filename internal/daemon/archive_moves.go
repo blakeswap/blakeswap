@@ -1,9 +1,11 @@
 package daemon
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
 	"reflect"
 
 	"github.com/blakeswap/blakeswap/internal/protocol"
@@ -88,55 +90,122 @@ func (e *Engine) archiveDelta(record storage.ArchiveRecord, add bool) error {
 	return nil
 }
 
+// Prepare all fallible reads and encodings before changing any active owner.
+// A child additionally carries its allocation, fee/origin and immutable indexes.
 func (e *Engine) stageArchive(kind, id string) error {
-	key := archiveMoveKey(kind, id)
-	// A just-reactivated record stays active through this checkpoint. Its next
-	// compaction can replace the old evidence only after the deletion commits.
-	if _, deleting := e.archiveDeletes[key]; deleting {
-		return nil
-	}
-	group, err := archiveMap(&e.s, kind, false)
-	if err != nil || !group.IsValid() {
-		return err
-	}
-	value := group.MapIndex(reflect.ValueOf(id))
-	if !value.IsValid() {
-		return nil
-	}
-	data, err := json.Marshal(value.Interface())
-	if err != nil {
-		return err
-	}
-	record := storage.ArchiveRecord{Kind: kind, ID: id, Data: data}
-	if e.vault != nil {
-		if _, found, err := e.vault.ReadArchive(kind, id); err != nil {
-			return err
-		} else if found {
-			return errors.New("archive already owns an active record")
-		}
-	}
 	if err := ValidateStateVersion(&e.s); err != nil {
 		return err
 	}
-	if kind == "swaps" && e.s.Swaps[id] != nil {
-		if err := e.retainSwapIdentity(e.s.Swaps[id]); err != nil {
+	record, err := e.planArchiveRecord(kind, id, "")
+	if err != nil || record == nil {
+		return err
+	}
+	records := []storage.ArchiveRecord{}
+	if kind == "swaps" {
+		swap := e.s.Swaps[id]
+		if _, err := e.fillSummary(swap, false); err != nil {
 			return err
 		}
-		// Complete the core's fallible read/encoding/collision checks before
-		// changing companion placement. The remaining core staging is local.
-		if err := e.stageArchive("fill_records", id); err != nil {
+		if _, err := e.retainedSwapFee(swap); err != nil {
+			return err
+		}
+		keys, err := swapIdentityKeys(swap)
+		if err != nil {
+			return err
+		}
+		for _, key := range []storage.ArchiveKey{{Kind: "fill_records", ID: id}, {Kind: "funding_fees", ID: "swap/" + id}, {Kind: "recovery_swaps", ID: id}} {
+			companion, err := e.planArchiveRecord(key.Kind, key.ID, "")
+			if err != nil {
+				return err
+			}
+			if companion != nil {
+				records = append(records, *companion)
+			}
+		}
+		for _, key := range keys {
+			index, err := e.planArchiveRecord("fill_keys", key, id)
+			if err != nil {
+				return err
+			}
+			if index != nil {
+				records = append(records, *index)
+			}
+		}
+	}
+	records = append(records, *record)
+	// Compute the complete ownership checkpoint privately too. No encoding,
+	// source read or fallible counter update remains once owners start moving.
+	planned := Engine{s: State{Version: e.s.Version, Network: e.s.Network}}
+	if e.s.Capacity != nil {
+		copy := *e.s.Capacity
+		copy.Archived.Kinds = maps.Clone(copy.Archived.Kinds)
+		planned.s.Capacity = &copy
+	}
+	for _, record := range records {
+		if err := planned.archiveDelta(record, true); err != nil {
 			return err
 		}
 	}
-	if err := e.archiveDelta(record, true); err != nil {
-		return err
+	if e.s.Capacity == nil {
+		e.s.Capacity = planned.s.Capacity
+	} else {
+		*e.s.Capacity = *planned.s.Capacity
 	}
 	if e.archivePuts == nil {
 		e.archivePuts = map[string]storage.ArchiveRecord{}
 	}
-	e.archivePuts[key] = record
-	group.SetMapIndex(reflect.ValueOf(id), reflect.Value{})
+	for _, record := range records {
+		group, _ := archiveMap(&e.s, record.Kind, false) // Field paths validated during planning.
+		e.archivePuts[archiveMoveKey(record.Kind, record.ID)] = record
+		group.SetMapIndex(reflect.ValueOf(record.ID), reflect.Value{})
+	}
 	return nil
+}
+
+// newOwner is used only for a child's exact immutable identity index. An index
+// already cold stays cold; missing current index data can be created with its
+// core in this same checkpoint, never as an independent acceptance permission.
+func (e *Engine) planArchiveRecord(kind, id, newOwner string) (*storage.ArchiveRecord, error) {
+	if _, deleting := e.archiveDeletes[archiveMoveKey(kind, id)]; deleting {
+		return nil, nil
+	}
+	group, err := archiveMap(&e.s, kind, false)
+	if err != nil || !group.IsValid() {
+		return nil, err
+	}
+	value := group.MapIndex(reflect.ValueOf(id))
+	if !value.IsValid() && newOwner == "" {
+		return nil, nil
+	}
+	cold, found, err := e.archiveRecord(kind, id)
+	if err != nil {
+		return nil, err
+	}
+	if found {
+		if value.IsValid() {
+			return nil, errors.New("archive already owns an active record")
+		}
+		var owner string
+		if kind != "fill_keys" || json.Unmarshal(cold.Data, &owner) != nil || owner != newOwner {
+			return nil, errors.New("cold identity belongs to another child")
+		}
+		return nil, nil
+	}
+	var source any = newOwner
+	if value.IsValid() {
+		source = value.Interface()
+		if newOwner != "" && source != newOwner {
+			return nil, errors.New("active identity belongs to another child")
+		}
+	}
+	data, err := json.Marshal(source)
+	if err != nil {
+		return nil, err
+	}
+	if bytes.Equal(data, []byte("null")) {
+		return nil, errors.New("cannot archive a null record")
+	}
+	return &storage.ArchiveRecord{Kind: kind, ID: id, Data: data}, nil
 }
 
 func (e *Engine) archiveRecord(kind, id string) (storage.ArchiveRecord, bool, error) {

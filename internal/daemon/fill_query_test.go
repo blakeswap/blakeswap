@@ -34,6 +34,7 @@ func fillHistoryFixture(t *testing.T, count int) (*Engine, FillQuery, []string) 
 		f.Allocation.Disposition, f.FundingDisabled = FillRetired, true
 		f.Inputs = []CoinOutpoint{{TxID: transport.RandomID()}}
 		e.s.FillRecords[r.ID] = f
+		e.s.FundingFees["swap/"+r.ID] = f.FundingPolicy
 		e.s.Swaps[r.ID] = &Swap{ID: r.ID, Role: "maker", Request: r, Stage: "expired before maker funding"}
 		ids = append(ids, r.ID)
 		if i%2 == 0 {

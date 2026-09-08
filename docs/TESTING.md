@@ -840,3 +840,24 @@ came from an unimplemented injected `Output` backend after successful cold
 reactivation; the fixture now returns unknown explicitly. All test and service
 handles closed. These are development controls; actual matrices and the final
 protocol/security and whole-PR gates remain separate.
+
+## Partial-fill cold identity custody
+
+`fill_archive_test.go` checks that archiving a child moves its exact hash/key
+indexes, allocation, fee and recovery-origin companions in one checkpoint.
+Planning failures leave all prior owners unchanged; a failed commit reopens the
+complete old hot checkpoint, and a successful retry publishes the complete cold
+checkpoint. Both market directions preserve the complete backup fingerprint and
+semantic token through serialization, installation in another encrypted vault,
+preflight, reactivation and repeated archival. Immutable identity lookups stay
+cold, including a taker's locally generated secret and an exact confirmation
+receipt retry. Archival eligibility remains a separate lifecycle decision.
+
+The initial backup comparison exposed an independent projection change: a new
+activity retained fee-template variant order, while its next unchanged save
+sorted those variants and appended a false historical outcome. The diagnostic
+reproduced the same change with no archival. First insertion now uses the same
+canonical ID and aligned amount order as replay. A deterministic control retains
+unchanged history and backup coverage on replay, while a distinct new variant
+still records an outcome and changes coverage. No fingerprint fields or genuine
+historical outcomes are excluded to make the archival comparison pass.

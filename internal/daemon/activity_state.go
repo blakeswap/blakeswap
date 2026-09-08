@@ -94,6 +94,22 @@ func (e *Engine) putActivity(next Activity, backfill bool) bool {
 	next.Version = 1
 	next.Wallet = e.Config.Name
 	next.Network = e.Config.Network
+	// Initial projection and replay use the same canonical set and amount order.
+	// Template order alone must not create a new outcome on the next save.
+	next.Variants = mergeActivityIDs(previous.Variants, next.Variants)
+	values := map[string]ActivityVariant{}
+	for _, v := range previous.VariantAmounts {
+		values[v.TxID] = v
+	}
+	for _, v := range next.VariantAmounts {
+		values[v.TxID] = v
+	}
+	next.VariantAmounts = nil
+	for _, id := range next.Variants {
+		if v, ok := values[id]; ok {
+			next.VariantAmounts = append(next.VariantAmounts, v)
+		}
+	}
 	if exists {
 		// Retain the recorded origin after a portable import assigns a new local
 		// profile. API/CSV copies bind their wallet field to the current view.
@@ -101,23 +117,9 @@ func (e *Engine) putActivity(next Activity, backfill bool) bool {
 			next.Wallet = previous.Wallet
 		}
 		next.CreatedAt, next.CreatedSource, next.RecordedAt = previous.CreatedAt, previous.CreatedSource, previous.RecordedAt
-		next.Variants = mergeActivityIDs(previous.Variants, next.Variants)
 		next.History = previous.History
 		if next.Observations == nil {
 			next.Observations = previous.Observations
-		}
-		values := map[string]ActivityVariant{}
-		for _, v := range previous.VariantAmounts {
-			values[v.TxID] = v
-		}
-		for _, v := range next.VariantAmounts {
-			values[v.TxID] = v
-		}
-		next.VariantAmounts = nil
-		for _, id := range next.Variants {
-			if v, ok := values[id]; ok {
-				next.VariantAmounts = append(next.VariantAmounts, v)
-			}
 		}
 	} else {
 		next.RecordedAt = now
