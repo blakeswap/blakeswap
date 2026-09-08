@@ -121,9 +121,8 @@ func TestArchiveBatchPreservesRestoredRefundAuthority(t *testing.T) {
 }
 
 func TestArchiveDirectActivationLoadsOriginAndMakerFeeBeforeCore(t *testing.T) {
-	e, s, _, _ := isolatedFixture(t, "maker")
+	e, s, _, _ := isolatedFixture(t, "maker", FeeSelection{FundingFee: 3456, OwnerFeeCap: 20000})
 	markRestored(t, e)
-	setArchiveMakerFee(t, e, s, FeeSelection{FundingFee: 3456, OwnerFeeCap: 20000})
 	feeKey := "swap/" + s.ID
 	parentKey := "offer/" + s.Terms.Offer().ID
 	e.s.FundingFees[parentKey] = FeeSelection{FundingFee: 2000}

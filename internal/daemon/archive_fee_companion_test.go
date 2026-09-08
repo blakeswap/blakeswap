@@ -14,34 +14,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
-	"time"
 )
-
-// Rebuild only synthetic fixture authorization before using the selected fee.
-// The exact accepted request, principals, child inputs and funded contracts stay
-// unchanged; this is not an edit to a running parent's production policy.
-func setArchiveMakerFee(t *testing.T, e *Engine, swap *Swap, policy FeeSelection) {
-	t.Helper()
-	o := swap.Terms.Offer()
-	old := e.s.FillRecords[swap.ID]
-	fields := FillOrderFields{FillPolicy: o.FillPolicy, FeeBudgets: map[chain.ID]int64{o.Sell: policy.FundingFee + 20000, o.Sell.Other(): max(policy.OwnerFeeCap, int64(2000))}, BountyBudgets: map[chain.ID]int64{chain.BTC: 0, chain.Blake: 0}}
-	parent, err := newParentOrder(o, policy, fields, time.Now().Unix())
-	if err != nil {
-		t.Fatal(err)
-	}
-	reserved, child, err := parent.reserveFill(swap.Request)
-	if err != nil {
-		t.Fatal(err)
-	}
-	child.Inputs = append([]CoinOutpoint{}, old.Inputs...)
-	committed, allocation, err := reserved.transitionFill(*child, FillCommitted, false)
-	if err != nil {
-		t.Fatal(err)
-	}
-	e.s.ParentOrders[o.ID], e.s.FillRecords[swap.ID] = &committed, &allocation
-	e.s.FundingFees["swap/"+swap.ID] = policy
-	swap.OwnerFeeCap = policy.OwnerFeeCap
-}
 
 // Publish the fixture's exact conserved parent projection without rewriting
 // the signed source event embedded in an accepted child request.
@@ -63,11 +36,10 @@ func stageArchiveParent(t *testing.T, e *Engine, swap *Swap) nostr.Event {
 
 func recentRefundFeeFixture(t *testing.T) (*Engine, *Swap, map[chain.ID]map[string]chain.Observation) {
 	t.Helper()
-	e, swap, backend, secret := isolatedFixture(t, "maker")
+	e, swap, backend, secret := isolatedFixture(t, "maker", FeeSelection{FundingFee: 6500, OwnerFeeCap: 20000})
 	e.Config.Name = "funded-order"
 	e.Config.Mode = "trader"
 	offer := swap.Terms.Offer()
-	setArchiveMakerFee(t, e, swap, FeeSelection{FundingFee: 6500, OwnerFeeCap: 20000})
 	stageArchiveParent(t, e, swap)
 	e.s.Outbox = map[string]*Delivery{}
 	// A stale parent fee cache is not this child's accepted authorization.
@@ -349,7 +321,9 @@ func TestOpenRejectsUnreadableSplitFeeBeforeConsumers(t *testing.T) {
 		opened.Close()
 		t.Fatal("unreadable fee opened")
 	}
-	if err == nil || !strings.Contains(err.Error(), "cannot restore retained funding fee") {
+	// Completed custody validation now rejects this exact malformed fee before
+	// the later startup repair phase can run.
+	if err == nil || !strings.Contains(err.Error(), "FeeSelection.funding_fee") {
 		t.Fatal("startup did not refuse fee evidence before consumers", err)
 	}
 	vault, err := storage.Open(filepath.Join(root, "state.db"), []byte("receive-test-password"))

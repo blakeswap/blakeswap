@@ -483,7 +483,7 @@ func TestIsolatedTowerFeeSelectionCannotReuseChangedSourceEvidence(t *testing.T)
 func TestIsolatedManualAccelerationCannotPublishPrivateClaim(t *testing.T) {
 	for _, role := range []string{"maker", "taker"} {
 		t.Run(role, func(t *testing.T) {
-			e, s, b, secret := isolatedFixture(t, role)
+			e, s, b, secret := isolatedFixture(t, role, FeeSelection{FundingFee: 2000, OwnerFeeCap: 20000})
 			target := s.Short
 			if role == "maker" {
 				target = s.Long
@@ -493,7 +493,7 @@ func TestIsolatedManualAccelerationCannotPublishPrivateClaim(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			s.OwnerFeeCap, s.SelfClaim, s.SecretExposed = 20000, contract.Hex(claim), true
+			s.SelfClaim, s.SecretExposed = contract.Hex(claim), true
 			if err := e.save(); err != nil {
 				t.Fatal(err)
 			}
@@ -522,7 +522,7 @@ func TestIsolatedMempoolClaimKeepsAuthorizedVariantsAndDestination(t *testing.T)
 	for _, role := range []string{"maker", "taker"} {
 		for _, cap := range []int64{0, 20000} {
 			t.Run(role+"/"+map[int64]string{0: "legacy", 20000: "authorized"}[cap], func(t *testing.T) {
-				e, s, b, secret := isolatedFixture(t, role)
+				e, s, b, secret := isolatedFixture(t, role, FeeSelection{FundingFee: 2000, OwnerFeeCap: cap})
 				target := s.Short
 				if role == "maker" {
 					target = s.Long
@@ -532,7 +532,7 @@ func TestIsolatedMempoolClaimKeepsAuthorizedVariantsAndDestination(t *testing.T)
 				if err != nil {
 					t.Fatal(err)
 				}
-				s.OwnerFeeCap, s.SelfClaim, s.SecretExposed, s.SecretObserved, s.ClaimAttempt = cap, contract.Hex(claim), true, true, 3
+				s.SelfClaim, s.SecretExposed, s.SecretObserved, s.ClaimAttempt = contract.Hex(claim), true, true, 3
 				original := s.SelfClaim
 				e.scripts[target.Chain] = []byte{0x51} // A rotated receive address must not redirect saved variants.
 				b.spent = true
@@ -572,8 +572,8 @@ func TestIsolatedMempoolClaimKeepsAuthorizedVariantsAndDestination(t *testing.T)
 	}
 }
 
-func isolatedFixture(t *testing.T, role string) (*Engine, *Swap, *sendBackend, []byte) {
-	return isolatedFixtureSell(t, role, chain.BTC)
+func isolatedFixture(t *testing.T, role string, policies ...FeeSelection) (*Engine, *Swap, *sendBackend, []byte) {
+	return isolatedFixtureSell(t, role, chain.BTC, policies...)
 }
 
 func isolatedPeerID(id string) string { return protocol.Digest("isolated fixture peer/" + id) }
@@ -599,7 +599,7 @@ func isolatedSpendKey(t *testing.T, e *Engine, s *Swap, c contract.HTLC, refund 
 	return nil
 }
 
-func isolatedFixtureSell(t *testing.T, role string, sell chain.ID) (*Engine, *Swap, *sendBackend, []byte) {
+func isolatedFixtureSell(t *testing.T, role string, sell chain.ID, policies ...FeeSelection) (*Engine, *Swap, *sendBackend, []byte) {
 	t.Helper()
 	e, b, _ := sendFixture(t)
 	maker, taker := e.identity, nostr.Generate()
@@ -659,9 +659,16 @@ func isolatedFixtureSell(t *testing.T, role string, sell chain.ID) (*Engine, *Sw
 	e.clocks = e.heights
 	e.s.Swaps = map[string]*Swap{id: s}
 	policy := FeeSelection{FundingFee: 2000}
+	if len(policies) > 1 {
+		t.Fatal("fixture has more than one initial fee authorization")
+	}
+	if len(policies) == 1 {
+		policy = policies[0]
+	}
+	s.OwnerFeeCap = policy.OwnerFeeCap
 	e.s.FundingFees = map[string]FeeSelection{"swap/" + id: policy}
 	if role == "maker" {
-		fields := FillOrderFields{FillPolicy: offer.FillPolicy, FeeBudgets: map[chain.ID]int64{sell: 22000, sell.Other(): 2000}, BountyBudgets: map[chain.ID]int64{chain.BTC: 0, chain.Blake: 0}}
+		fields := FillOrderFields{FillPolicy: offer.FillPolicy, FeeBudgets: map[chain.ID]int64{sell: policy.FundingFee + max(policy.OwnerFeeCap, int64(20000)), sell.Other(): max(policy.OwnerFeeCap, int64(2000))}, BountyBudgets: map[chain.ID]int64{chain.BTC: 0, chain.Blake: 0}}
 		parent, err := newParentOrder(offer, policy, fields, time.Now().Unix())
 		if err != nil {
 			t.Fatal(err)
