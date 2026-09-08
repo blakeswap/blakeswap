@@ -291,7 +291,7 @@ func TestIsolatedTowerIncompleteScanRetainsWitnessAcrossRestart(t *testing.T) {
 		if err := e.save(); err != nil {
 			t.Fatal(err)
 		}
-		key, _ := e.swapKey(observe.Chain, s.ID)
+		key := isolatedSpendKey(t, e, s, observe, false)
 		claim, err := contract.Spend(observe, key, e.scripts[observe.Chain], 2000, false, 0, nil, 0, secret)
 		if err != nil {
 			t.Fatal(err)
