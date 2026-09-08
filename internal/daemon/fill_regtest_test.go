@@ -261,6 +261,7 @@ func partialWait(h *harness, label string, ready func() bool, tick func()) {
 		for name, e := range h.engines {
 			if e != nil {
 				h.t.Log(name, e.Status().LastError, e.Status().Swaps)
+				h.t.Log(name, "relay history", e.relayHealth())
 			}
 		}
 		h.t.Fatal("did not reach", label)
@@ -414,9 +415,13 @@ func runRealPartialFillPair(t *testing.T, sell chain.ID, bps int64) {
 		}
 		return ready
 	}, func() { h.tick("parent") })
+	for key, publication := range publications {
+		t.Logf("stored acceptance child=%s recipient=%s event=%s created_at=%d", publication.child, publication.recipient, publication.event, h.engines["parent"].s.Outbox[key].Event.CreatedAt)
+	}
 	h.offline("parent")
 	for i, name := range names {
 		h.online(name)
+		t.Log(name, "resumed mailbox", h.engines[name].relayHealth())
 		partialWait(h, "independent long funding", func() bool { return h.swap(name, ids[i]).LongSent }, func() { h.tick(name, "tower") })
 		s := h.swap(name, ids[i])
 		if !towerReady(s) || (bps == 0 && len(s.Jobs) != 0) || (bps > 0 && len(s.Jobs) != 1) {
