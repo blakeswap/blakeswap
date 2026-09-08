@@ -313,8 +313,40 @@ func TestStateCutoverChecksPersistedColdProtocolPages(t *testing.T) {
 			password := []byte("disposable-cold-cutover-credential")
 			e := &Engine{s: State{Version: StateVersion, Network: chain.Regtest}}
 			var records []storage.ArchiveRecord
+			template, maker := fillParentFixture(t, chain.BTC, 0)
 			for i := 0; i < 70; i++ {
-				child := currentFormatSwap(t, strconv.Itoa(i))
+				// Each persisted maker core carries its complete accepted custody;
+				// the final negative changes only the child's protocol marker.
+				parent := template.clone()
+				parent.Offer.ID = protocol.Digest("cold-cutover-parent/" + strconv.Itoa(i))
+				parent.Economics = parent.Offer.EconomicsDigest()
+				request := fillRequestFixture(t, parent, maker, 400000)
+				terms, err := protocol.NewTerms(request, currentFormatSwap(t, strconv.Itoa(i)).Terms.MakerKeys, map[chain.ID]uint32{chain.BTC: 100, chain.Blake: 100})
+				if err != nil {
+					t.Fatal(err)
+				}
+				parent, fill, err := parent.reserveFill(request)
+				if err != nil {
+					t.Fatal(err)
+				}
+				fill.Inputs = []CoinOutpoint{{TxID: protocol.Digest("cold-cutover-input/" + strconv.Itoa(i))}}
+				child := &Swap{ID: request.ID, Role: "maker", Request: request, Terms: &terms, Long: terms.Long, Short: terms.Short, OwnerFeeCap: fill.FundingPolicy.OwnerFeeCap}
+				for _, companion := range []struct {
+					kind, id string
+					value    any
+				}{
+					{"parent_orders", parent.Offer.ID, &parent}, {"fill_records", child.ID, fill}, {"funding_fees", "swap/" + child.ID, fill.FundingPolicy},
+				} {
+					data, err := json.Marshal(companion.value)
+					if err != nil {
+						t.Fatal(err)
+					}
+					record := storage.ArchiveRecord{Kind: companion.kind, ID: companion.id, Data: data}
+					if err := e.archiveDelta(record, true); err != nil {
+						t.Fatal(err)
+					}
+					records = append(records, record)
+				}
 				// Derive the valid retained index before corrupting just the
 				// protocol marker for the incompatible-source negative control.
 				keys, err := swapIdentityKeys(child)
