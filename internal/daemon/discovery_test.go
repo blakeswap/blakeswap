@@ -195,9 +195,7 @@ func TestRealDiscoveredTraderWatchtowerAndOfferBalance(t *testing.T) {
 	for _, name := range []string{"maker", "taker"} {
 		h.engines[name].Config.Tower = TowerConfig{}
 	}
-	h.command("maker", "tower.resolve", map[string]string{"pubkey": tower.ownTower().Npub})
-	h.command("taker", "tower.resolve", map[string]string{"pubkey": tower.ownTower().Npub})
-	h.tick("maker", "taker", "tower", "maker", "taker")
+	partialDiscoverTower(h, 125, "maker", "taker")
 	maker := h.engines["maker"]
 	for _, sell := range []string{"btc", "blake"} {
 		empty, _ := json.Marshal(walletWholeParams(chain.ID(sell), 1000000, 2000000, 2000, 0, 0))
