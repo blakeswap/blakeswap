@@ -286,8 +286,7 @@ func (m *Manager) command(ctx context.Context, profile string, req daemon.Reques
 		defer m.beginAction()()
 	}
 
-	if req.Method == "automation.list" || req.Method == "automation.review" || req.Method == "automation.save" || req.Method == "automation.disable" || req.Method == "wallet.preflight" || req.Method == "fee.quote" || req.Method == "trade.quote" || req.Method == "trade.confirm" || req.Method == "activity.list" || req.Method == "activity.export" || req.Method == "market.list" {
-
+	if req.Method == "strategy.report" || req.Method == "strategy.list" || req.Method == "strategy.review" || req.Method == "strategy.save" || req.Method == "strategy.stop" || req.Method == "automation.list" || req.Method == "automation.review" || req.Method == "automation.save" || req.Method == "automation.disable" || req.Method == "wallet.preflight" || req.Method == "fee.quote" || req.Method == "trade.quote" || req.Method == "trade.confirm" || req.Method == "activity.list" || req.Method == "activity.export" || req.Method == "market.list" {
 		return m.preflightFunds(ctx, profile, req)
 	}
 	if req.Method == "status.refresh" {

@@ -16,6 +16,11 @@ option (grpc.gateway.protoc_gen_openapiv2.options.openapiv2_swagger) = {
 };
 
 service DaemonService {
+ rpc ReportStrategy(StrategyReportRequest) returns (StrategyView) { option (google.api.http) = { post: "/v1/strategies/report" body: "*" }; }
+ rpc ListStrategies(AutomationQuery) returns (StrategyList) { option (google.api.http) = { post: "/v1/strategies/query" body: "*" }; }
+ rpc ReviewStrategy(StrategyEdit) returns (StrategyReview) { option (google.api.http) = { post: "/v1/strategies/review" body: "*" }; }
+ rpc SaveStrategy(StrategyEdit) returns (StrategyView) { option (google.api.http) = { put: "/v1/strategies" body: "*" }; }
+ rpc StopStrategy(StopStrategyRequest) returns (StrategyView) { option (google.api.http) = { post: "/v1/strategies/stop" body: "*" }; }
  rpc ListAutomations(AutomationQuery) returns (AutomationList) { option (google.api.http) = { post: "/v1/automations/query" body: "*" }; }
  rpc ReviewAutomation(AutomationEdit) returns (AutomationReview) { option (google.api.http) = { post: "/v1/automations/review" body: "*" }; }
  rpc SaveAutomation(AutomationEdit) returns (AutomationView) { option (google.api.http) = { put: "/v1/automations" body: "*" }; }
@@ -438,7 +443,7 @@ message AutomationConfig {
  int64 btc_fee_budget = 15; int64 blake_fee_budget = 16;
  int64 tower_bps = 17; string tower_pubkey = 18;
  string reference = 19; repeated string reference_makers = 20;
- int64 reference_freshness = 21; int64 reference_spread_bps = 22;
+ int64 reference_freshness = 21; int64 reference_spread_bps = 22; string strategy_id = 23;
 }
 message AutomationUsage {
  int64 reserved_volume = 1; int64 committed_volume = 2;
@@ -474,3 +479,55 @@ message ActionSummary { string network = 1; uint64 settings_revision = 2; int64 
 message WalletActions { string source = 6; string wallet_id = 1; string network = 2; bool known = 3; int64 observed_at = 4; repeated WalletAction actions = 5; }
 message WalletAction { string id = 1; string kind = 2; string object_id = 3; string state = 4; bool requires_monitoring = 5; bool uncertain = 6; bool first_reveal = 7; bool tower_ready = 8; repeated ActionDeadline deadlines = 9; }
 message ActionDeadline { string kind = 1; string chain = 2; string unit = 3; uint32 target = 4; uint32 observed = 5; int64 observed_at = 6; int64 remaining = 7; bool certain = 8; string band = 9; string reason = 10; }
+
+// Explicit two-asset maker authorization. All money is native integer satoshis.
+message StrategySide {
+ int64 target = 1; int64 minimum_reserve = 2; int64 max_exposure = 3;
+ int64 min_offer = 4; int64 max_offer = 5; int64 volume_limit = 6;
+ int64 funding_fee = 7; int64 max_funding_fee = 8;
+}
+message StrategyConfig {
+ string id = 1; string wallet = 2; string network = 3;
+ StrategySide btc = 4; StrategySide blake = 5;
+ AutomationRate rate = 6; AutomationRate min_rate = 7; AutomationRate max_rate = 8;
+ int64 spread_bps = 9; int64 min_spread_bps = 10; int64 max_spread_bps = 11; int64 skew_bps = 12;
+ int64 lifetime = 13; int64 cadence = 14; uint32 max_concurrent = 15;
+ int64 btc_fee_budget = 16; int64 blake_fee_budget = 17;
+ int64 tower_bps = 18; string tower_pubkey = 19;
+ string reference = 20; repeated string reference_makers = 21;
+ int64 reference_freshness = 22; int64 reference_spread_bps = 23;
+ uint32 max_consecutive_failures = 24; uint32 max_replacement_failures = 25; int64 failure_rate_bps = 26;
+}
+message StrategyEdit {
+ StrategyConfig config = 1; uint64 expected_revision = 2; bool enabled = 3;
+ bool acknowledge_restored_budget = 4; string review_digest = 5;
+}
+message StrategyQuote {
+ string sell = 1; int64 sell_amount = 2; int64 buy_amount = 3; AutomationRate rate = 4;
+ string source_offer_id = 5; bool ready = 6; string reason = 7;
+ repeated string reference_events = 8; int64 btc_fees = 9; int64 blake_fees = 10;
+}
+message StrategyInventory {
+ ChainBalance funds = 1; bool fresh = 2; int64 exposure = 3;
+ int64 reserved_volume = 4; int64 committed_volume = 5;
+ int64 reserved_fees = 6; int64 committed_fees = 7;
+ int64 confirmed_volume = 8; int64 known_fees = 9; int64 known_bounties = 10; uint32 unknown_fees = 11;
+}
+message StrategyView {
+ StrategyConfig config = 1; uint64 revision = 2; bool enabled = 3; bool restore_hold = 4; bool tripped = 5;
+ string decision = 6; uint32 consecutive_failures = 7; uint32 replacement_failures = 8;
+ string btc_policy_id = 9; string blake_policy_id = 10;
+ map<string, StrategyInventory> inventory = 11; repeated StrategyQuote quotes = 12;
+ uint32 active_quotes = 13; uint32 active_swaps = 14; int64 observed_at = 15; bool report_included = 16;
+}
+message StrategyList { string wallet = 1; string network = 2; repeated StrategyView strategies = 3; }
+message StrategyReview {
+ StrategyConfig config = 1; uint64 expected_revision = 2; bool enabled = 3;
+ string review_digest = 4; StrategyView preview = 5; string warning = 6;
+}
+message StopStrategyRequest {
+ string id = 1; string expected_wallet = 2; string expected_network = 3;
+ uint64 expected_revision = 4; bool stop = 5;
+}
+
+message StrategyReportRequest { string id = 1; string expected_wallet = 2; string expected_network = 3; uint64 expected_revision = 4; }

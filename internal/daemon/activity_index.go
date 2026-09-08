@@ -287,6 +287,26 @@ func (e *Engine) observeActivityChain(ctx context.Context, id chain.ID) {
 			e.mu.Unlock()
 			continue
 		}
+		if err != nil && attempt > 0 && readCtx.Err() == context.DeadlineExceeded {
+			// Earlier rows consumed part of this attempt's slice. Give this exact
+			// variant a fresh slice next time instead of repeatedly wrapping past
+			// it. A first-attempt timeout still advances, so a permanently slow
+			// row cannot monopolize later passes.
+			for i, candidate := range a.Variants {
+				if candidate == txid {
+					e.activityCursors[id], e.activityVariants[id] = key, i
+					break
+				}
+			}
+			if !result.PreviousBlockChanged {
+				// A locally cut-off read is not a new outcome. Retain the previous
+				// observation without refreshing its age; source/expiry projection
+				// still applies. Raw secret witnesses were persisted above. Positive
+				// block contradictions must still pass through normal validation.
+				e.mu.Unlock()
+				return
+			}
+		}
 		if !e.activitySourceCurrent(id, result.Generation) {
 			e.mu.Unlock()
 			continue // Never attach a late response to the new endpoint generation.

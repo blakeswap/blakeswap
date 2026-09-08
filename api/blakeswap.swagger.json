@@ -851,6 +851,166 @@
         ]
       }
     },
+    "/v1/strategies": {
+      "put": {
+        "operationId": "DaemonService_SaveStrategy",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1StrategyView"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/googleRpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/v1StrategyEdit"
+            }
+          }
+        ],
+        "tags": [
+          "DaemonService"
+        ]
+      }
+    },
+    "/v1/strategies/query": {
+      "post": {
+        "operationId": "DaemonService_ListStrategies",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1StrategyList"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/googleRpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/v1AutomationQuery"
+            }
+          }
+        ],
+        "tags": [
+          "DaemonService"
+        ]
+      }
+    },
+    "/v1/strategies/report": {
+      "post": {
+        "operationId": "DaemonService_ReportStrategy",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1StrategyView"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/googleRpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/v1StrategyReportRequest"
+            }
+          }
+        ],
+        "tags": [
+          "DaemonService"
+        ]
+      }
+    },
+    "/v1/strategies/review": {
+      "post": {
+        "operationId": "DaemonService_ReviewStrategy",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1StrategyReview"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/googleRpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/v1StrategyEdit"
+            }
+          }
+        ],
+        "tags": [
+          "DaemonService"
+        ]
+      }
+    },
+    "/v1/strategies/stop": {
+      "post": {
+        "operationId": "DaemonService_StopStrategy",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1StrategyView"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/googleRpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/v1StopStrategyRequest"
+            }
+          }
+        ],
+        "tags": [
+          "DaemonService"
+        ]
+      }
+    },
     "/v1/swaps": {
       "post": {
         "operationId": "DaemonService_TakeOffer",
@@ -1936,6 +2096,9 @@
         "reference_spread_bps": {
           "type": "string",
           "format": "int64"
+        },
+        "strategy_id": {
+          "type": "string"
         }
       }
     },
@@ -3369,6 +3532,402 @@
           "type": "string",
           "format": "uint64",
           "description": "Compare-and-swap revision: stale updates are rejected."
+        }
+      }
+    },
+    "v1StopStrategyRequest": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "expected_wallet": {
+          "type": "string"
+        },
+        "expected_network": {
+          "type": "string"
+        },
+        "expected_revision": {
+          "type": "string",
+          "format": "uint64"
+        },
+        "stop": {
+          "type": "boolean"
+        }
+      }
+    },
+    "v1StrategyConfig": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "wallet": {
+          "type": "string"
+        },
+        "network": {
+          "type": "string"
+        },
+        "btc": {
+          "$ref": "#/definitions/v1StrategySide"
+        },
+        "blake": {
+          "$ref": "#/definitions/v1StrategySide"
+        },
+        "rate": {
+          "$ref": "#/definitions/v1AutomationRate"
+        },
+        "min_rate": {
+          "$ref": "#/definitions/v1AutomationRate"
+        },
+        "max_rate": {
+          "$ref": "#/definitions/v1AutomationRate"
+        },
+        "spread_bps": {
+          "type": "string",
+          "format": "int64"
+        },
+        "min_spread_bps": {
+          "type": "string",
+          "format": "int64"
+        },
+        "max_spread_bps": {
+          "type": "string",
+          "format": "int64"
+        },
+        "skew_bps": {
+          "type": "string",
+          "format": "int64"
+        },
+        "lifetime": {
+          "type": "string",
+          "format": "int64"
+        },
+        "cadence": {
+          "type": "string",
+          "format": "int64"
+        },
+        "max_concurrent": {
+          "type": "integer",
+          "format": "int64"
+        },
+        "btc_fee_budget": {
+          "type": "string",
+          "format": "int64"
+        },
+        "blake_fee_budget": {
+          "type": "string",
+          "format": "int64"
+        },
+        "tower_bps": {
+          "type": "string",
+          "format": "int64"
+        },
+        "tower_pubkey": {
+          "type": "string"
+        },
+        "reference": {
+          "type": "string"
+        },
+        "reference_makers": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "reference_freshness": {
+          "type": "string",
+          "format": "int64"
+        },
+        "reference_spread_bps": {
+          "type": "string",
+          "format": "int64"
+        },
+        "max_consecutive_failures": {
+          "type": "integer",
+          "format": "int64"
+        },
+        "max_replacement_failures": {
+          "type": "integer",
+          "format": "int64"
+        },
+        "failure_rate_bps": {
+          "type": "string",
+          "format": "int64"
+        }
+      }
+    },
+    "v1StrategyEdit": {
+      "type": "object",
+      "properties": {
+        "config": {
+          "$ref": "#/definitions/v1StrategyConfig"
+        },
+        "expected_revision": {
+          "type": "string",
+          "format": "uint64"
+        },
+        "enabled": {
+          "type": "boolean"
+        },
+        "acknowledge_restored_budget": {
+          "type": "boolean"
+        },
+        "review_digest": {
+          "type": "string"
+        }
+      }
+    },
+    "v1StrategyInventory": {
+      "type": "object",
+      "properties": {
+        "funds": {
+          "$ref": "#/definitions/v1ChainBalance"
+        },
+        "fresh": {
+          "type": "boolean"
+        },
+        "exposure": {
+          "type": "string",
+          "format": "int64"
+        },
+        "reserved_volume": {
+          "type": "string",
+          "format": "int64"
+        },
+        "committed_volume": {
+          "type": "string",
+          "format": "int64"
+        },
+        "reserved_fees": {
+          "type": "string",
+          "format": "int64"
+        },
+        "committed_fees": {
+          "type": "string",
+          "format": "int64"
+        },
+        "confirmed_volume": {
+          "type": "string",
+          "format": "int64"
+        },
+        "known_fees": {
+          "type": "string",
+          "format": "int64"
+        },
+        "known_bounties": {
+          "type": "string",
+          "format": "int64"
+        },
+        "unknown_fees": {
+          "type": "integer",
+          "format": "int64"
+        }
+      }
+    },
+    "v1StrategyList": {
+      "type": "object",
+      "properties": {
+        "wallet": {
+          "type": "string"
+        },
+        "network": {
+          "type": "string"
+        },
+        "strategies": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/v1StrategyView"
+          }
+        }
+      }
+    },
+    "v1StrategyQuote": {
+      "type": "object",
+      "properties": {
+        "sell": {
+          "type": "string"
+        },
+        "sell_amount": {
+          "type": "string",
+          "format": "int64"
+        },
+        "buy_amount": {
+          "type": "string",
+          "format": "int64"
+        },
+        "rate": {
+          "$ref": "#/definitions/v1AutomationRate"
+        },
+        "source_offer_id": {
+          "type": "string"
+        },
+        "ready": {
+          "type": "boolean"
+        },
+        "reason": {
+          "type": "string"
+        },
+        "reference_events": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "btc_fees": {
+          "type": "string",
+          "format": "int64"
+        },
+        "blake_fees": {
+          "type": "string",
+          "format": "int64"
+        }
+      }
+    },
+    "v1StrategyReportRequest": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "expected_wallet": {
+          "type": "string"
+        },
+        "expected_network": {
+          "type": "string"
+        },
+        "expected_revision": {
+          "type": "string",
+          "format": "uint64"
+        }
+      }
+    },
+    "v1StrategyReview": {
+      "type": "object",
+      "properties": {
+        "config": {
+          "$ref": "#/definitions/v1StrategyConfig"
+        },
+        "expected_revision": {
+          "type": "string",
+          "format": "uint64"
+        },
+        "enabled": {
+          "type": "boolean"
+        },
+        "review_digest": {
+          "type": "string"
+        },
+        "preview": {
+          "$ref": "#/definitions/v1StrategyView"
+        },
+        "warning": {
+          "type": "string"
+        }
+      }
+    },
+    "v1StrategySide": {
+      "type": "object",
+      "properties": {
+        "target": {
+          "type": "string",
+          "format": "int64"
+        },
+        "minimum_reserve": {
+          "type": "string",
+          "format": "int64"
+        },
+        "max_exposure": {
+          "type": "string",
+          "format": "int64"
+        },
+        "min_offer": {
+          "type": "string",
+          "format": "int64"
+        },
+        "max_offer": {
+          "type": "string",
+          "format": "int64"
+        },
+        "volume_limit": {
+          "type": "string",
+          "format": "int64"
+        },
+        "funding_fee": {
+          "type": "string",
+          "format": "int64"
+        },
+        "max_funding_fee": {
+          "type": "string",
+          "format": "int64"
+        }
+      },
+      "description": "Explicit two-asset maker authorization. All money is native integer satoshis."
+    },
+    "v1StrategyView": {
+      "type": "object",
+      "properties": {
+        "config": {
+          "$ref": "#/definitions/v1StrategyConfig"
+        },
+        "revision": {
+          "type": "string",
+          "format": "uint64"
+        },
+        "enabled": {
+          "type": "boolean"
+        },
+        "restore_hold": {
+          "type": "boolean"
+        },
+        "tripped": {
+          "type": "boolean"
+        },
+        "decision": {
+          "type": "string"
+        },
+        "consecutive_failures": {
+          "type": "integer",
+          "format": "int64"
+        },
+        "replacement_failures": {
+          "type": "integer",
+          "format": "int64"
+        },
+        "btc_policy_id": {
+          "type": "string"
+        },
+        "blake_policy_id": {
+          "type": "string"
+        },
+        "inventory": {
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/definitions/v1StrategyInventory"
+          }
+        },
+        "quotes": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/v1StrategyQuote"
+          }
+        },
+        "active_quotes": {
+          "type": "integer",
+          "format": "int64"
+        },
+        "active_swaps": {
+          "type": "integer",
+          "format": "int64"
+        },
+        "observed_at": {
+          "type": "string",
+          "format": "int64"
+        },
+        "report_included": {
+          "type": "boolean"
         }
       }
     },

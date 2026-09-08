@@ -98,6 +98,11 @@ func (e *Engine) advanceRestoredSwap(ctx context.Context, s *Swap, all map[chain
 		} else {
 			s.Stage = "contested outcome"
 		}
+		// Recovery may also resolve an unfunded peer leg from one refund. Only
+		// two exact confirmed spends establish a reusable exposure proof.
+		if long.Tx != nil && short.Tx != nil && long.Confirmations >= e.Config.Network.Confirmations() && short.Confirmations >= e.Config.Network.Confirmations() && (s.Stage == "completed" || s.Stage == "refunded") {
+			e.recordStrategyExposure(s)
+		}
 		return nil
 	}
 	if recoverySwapOwnInactive(s) {

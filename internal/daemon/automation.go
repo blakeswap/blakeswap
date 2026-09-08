@@ -28,6 +28,7 @@ func (r AutomationRate) valid() bool {
 }
 
 type AutomationConfig struct {
+	StrategyID         string         `json:"strategy_id,omitempty"`
 	ID                 string         `json:"id"`
 	Wallet             string         `json:"wallet"`
 	Network            chain.Network  `json:"network"`
@@ -52,13 +53,14 @@ type AutomationConfig struct {
 	ReferenceSpreadBPS int64          `json:"reference_spread_bps"`
 }
 type AutomationCharge struct {
-	OfferID   string `json:"offer_id"`
-	Volume    int64  `json:"volume"`
-	BTCFees   int64  `json:"btc_fees"`
-	BlakeFees int64  `json:"blake_fees"`
-	State     string `json:"state"` // reserved, committed, released; committed never reverses.
-	Successor string `json:"successor"`
-	Uncertain bool   `json:"uncertain,omitempty"` // Imported reservations cannot be refunded or transferred by reauthorization.
+	ExposureSettled *StrategyExposureProof `json:"exposure_settled,omitempty"`
+	OfferID         string                 `json:"offer_id"`
+	Volume          int64                  `json:"volume"`
+	BTCFees         int64                  `json:"btc_fees"`
+	BlakeFees       int64                  `json:"blake_fees"`
+	State           string                 `json:"state"` // reserved, committed, released; committed never reverses.
+	Successor       string                 `json:"successor"`
+	Uncertain       bool                   `json:"uncertain,omitempty"` // Imported reservations cannot be refunded or transferred by reauthorization.
 }
 type AutomationPolicy struct {
 	Config            AutomationConfig             `json:"config"`
@@ -208,6 +210,12 @@ func (e *Engine) listAutomations(raw json.RawMessage) (AutomationList, error) {
 	return r, nil
 }
 func (e *Engine) validateAutomationEdit(p AutomationEdit) error {
+	return e.validateAutomationEditInternal(p, false)
+}
+func (e *Engine) validateAutomationEditInternal(p AutomationEdit, strategy bool) error {
+	if !strategy && (p.Config.StrategyID != "" || (e.s.Automations[p.Config.ID] != nil && e.s.Automations[p.Config.ID].Config.StrategyID != "")) {
+		return errors.New("edit this linked policy through its two-asset strategy authorization")
+	}
 	if p.Enabled {
 		if err := e.recoveryTradingReady(); err != nil {
 			return err
@@ -217,6 +225,33 @@ func (e *Engine) validateAutomationEdit(p AutomationEdit) error {
 	if err := e.tradeBinding(c.Wallet, string(c.Network)); err != nil {
 		return err
 	}
+	if err := validateAutomationConfig(c, e.identity.Public().Hex()); err != nil {
+		return err
+	}
+	old := e.s.Automations[c.ID]
+	if old == nil {
+		if p.ExpectedRevision != 0 || len(e.s.Automations) >= 32 {
+			return errors.New("unknown revision or automation capacity reached")
+		}
+	} else {
+		if old.Revision != p.ExpectedRevision || old.Config.Sell != c.Sell || old.WalletKey != e.identity.Public().Hex() {
+			return errors.New("policy revision, wallet or direction changed; reopen its authorization")
+		}
+		u := e.automationUsage(old, "")
+		if c.VolumeLimit < u.ReservedVolume+u.CommittedVolume || c.BTCFeeBudget < u.ReservedBTCFees+u.CommittedBTCFees || c.BlakeFeeBudget < u.ReservedBlakeFees+u.CommittedBlakeFees {
+			return errors.New("new limits cannot erase reserved or committed authorization")
+		}
+		if old.RestoreHold && p.Enabled && !p.AcknowledgeRestoredBudget {
+			return errors.New("restored policy may omit later spending; explicitly review and authorize its remaining limits before enabling")
+		}
+	}
+	_, err := automationAmounts(c, c.Rate)
+	return err
+}
+
+// Intrinsic limits apply before durable strategy records enter import/load,
+// as well as before a live authorization. This does not enable any policy.
+func validateAutomationConfig(c AutomationConfig, walletKey string) error {
 	if !protocol.Hex32(c.ID) || !c.Sell.Valid() || c.SellAmount < 100000 || c.SellAmount > 10000000000 || c.VolumeLimit < c.SellAmount || c.VolumeLimit > contract.MaxMoney {
 		return errors.New("policy needs a new 32-byte ID, valid direction and exact bounded size/total sell volume")
 	}
@@ -241,32 +276,16 @@ func (e *Engine) validateAutomationEdit(p AutomationEdit) error {
 		}
 		seen := map[string]bool{}
 		for _, maker := range c.ReferenceMakers {
-			if !protocol.Hex32(maker) || maker == e.identity.Public().Hex() || seen[maker] {
+			if !protocol.Hex32(maker) || maker == walletKey || seen[maker] {
 				return errors.New("reference makers must be distinct external identities")
 			}
 			seen[maker] = true
 		}
 	}
-	old := e.s.Automations[c.ID]
-	if old == nil {
-		if p.ExpectedRevision != 0 || len(e.s.Automations) >= 32 {
-			return errors.New("unknown revision or automation capacity reached")
-		}
-	} else {
-		if old.Revision != p.ExpectedRevision || old.Config.Sell != c.Sell || old.WalletKey != e.identity.Public().Hex() {
-			return errors.New("policy revision, wallet or direction changed; reopen its authorization")
-		}
-		u := e.automationUsage(old, "")
-		if c.VolumeLimit < u.ReservedVolume+u.CommittedVolume || c.BTCFeeBudget < u.ReservedBTCFees+u.CommittedBTCFees || c.BlakeFeeBudget < u.ReservedBlakeFees+u.CommittedBlakeFees {
-			return errors.New("new limits cannot erase reserved or committed authorization")
-		}
-		if old.RestoreHold && p.Enabled && !p.AcknowledgeRestoredBudget {
-			return errors.New("restored policy may omit later spending; explicitly review and authorize its remaining limits before enabling")
-		}
-	}
 	_, err := automationAmounts(c, c.Rate)
 	return err
 }
+
 func automationEditDigest(p AutomationEdit, key string) string {
 	p.ReviewDigest = ""
 	return protocol.Digest(struct {
@@ -342,7 +361,7 @@ func (e *Engine) disableAutomation(raw json.RawMessage) (AutomationView, error) 
 		return AutomationView{}, err
 	}
 	p := e.s.Automations[q.ID]
-	if p == nil || p.Revision != q.ExpectedRevision {
+	if p == nil || p.Revision != q.ExpectedRevision || p.Config.StrategyID != "" {
 		return AutomationView{}, errors.New("policy changed; reload before disabling")
 	}
 	retireAutomationPending(&e.s, p, "policy disabled; prior automatic authorization revoked")
@@ -402,7 +421,13 @@ func automationAmounts(c AutomationConfig, rate AutomationRate) (int64, error) {
 
 func (e *Engine) automationPrice(c AutomationConfig, now int64) (AutomationRate, []string, error) {
 	if c.Reference == "fixed" {
+		if !c.Rate.valid() {
+			return AutomationRate{}, nil, errors.New("invalid fixed reference ratio")
+		}
 		return c.Rate, nil, nil
+	}
+	if c.Reference != "orderbook" || len(c.ReferenceMakers) < 3 || len(c.ReferenceMakers) > 16 {
+		return AutomationRate{}, nil, errors.New("invalid orderbook reference quorum")
 	}
 	if !e.marketAllRelays || e.marketObservedAt > now || now-e.marketObservedAt > c.ReferenceFreshness {
 		return AutomationRate{}, nil, errors.New("reference relay view is incomplete or stale")
@@ -498,6 +523,9 @@ func (e *Engine) validateAutomationReceipt(r *TradeReceipt) error {
 	if len(e.Config.Relays) == 0 {
 		return errors.New("automation requires a configured relay")
 	}
+	if p.Config.StrategyID != "" {
+		return e.strategyReceipt(p, r)
+	}
 	rate, _, err := e.automationPrice(p.Config, time.Now().Unix())
 	if err != nil {
 		return err
@@ -531,7 +559,9 @@ func (e *Engine) acceptAutomationOffer(r *TradeReceipt) {
 			old.State = "released"
 		}
 	}
-	p.Charges[r.Result.ID] = automationCharge(p.Config, r.Result.ID, s.BuyAmount, s.FundingFee)
+	config := p.Config
+	config.SellAmount = s.SellAmount
+	p.Charges[r.Result.ID] = automationCharge(config, r.Result.ID, s.BuyAmount, s.FundingFee)
 	p.CurrentOfferID = r.Result.ID
 	p.Pending = nil
 	p.LastAction = time.Now().Unix()
@@ -596,7 +626,14 @@ func (e *Engine) runAutomations(ctx context.Context) {
 		return
 	}
 	config, revision := p.Config, p.Revision
-	fail := func(err error) { p.Decision = err.Error(); _ = e.save(); e.mu.Unlock() }
+	fail := func(err error) {
+		p.Decision = err.Error()
+		if p.Config.StrategyID != "" {
+			e.strategyFailure(p, false, err)
+		}
+		_ = e.save()
+		e.mu.Unlock()
+	}
 	if err := e.tradeBinding(config.Wallet, string(config.Network)); err != nil {
 		fail(err)
 		return
@@ -606,6 +643,13 @@ func (e *Engine) runAutomations(ctx context.Context) {
 		return
 	}
 	rate, events, err := e.automationPrice(config, now)
+	var strategyFields OrderActionFields
+	var strategyQuote StrategyQuote
+	if config.StrategyID != "" {
+		strategy := e.s.MakerStrategies[config.StrategyID]
+		config, strategyQuote, strategyFields, err = e.planStrategy(strategy, config.Sell, now, false)
+		rate, events = strategyQuote.Rate, strategyQuote.ReferenceEvents
+	}
 	if err != nil {
 		fail(err)
 		return
@@ -626,6 +670,9 @@ func (e *Engine) runAutomations(ctx context.Context) {
 	}
 	sort.Strings(sources)
 	for _, id := range sources {
+		if config.StrategyID != "" {
+			break
+		}
 		event, ok := e.s.Offers[id]
 		if !ok {
 			continue
@@ -649,6 +696,22 @@ func (e *Engine) runAutomations(ctx context.Context) {
 		if _, sourceErr := e.orderSource(fields, now); sourceErr == nil {
 			request.OrderActionFields = fields
 			break
+		}
+	}
+	if config.StrategyID != "" {
+		request.OrderActionFields = strategyFields
+		if strategyFields.OrderAction == "replace" {
+			o, _ := historicalOffer(e.s.Offers[strategyFields.SourceOfferID])
+			if o.SellAmount == config.SellAmount && o.BuyAmount == buy {
+				p.Decision = errStrategyQuoteCurrent.Error()
+				_ = e.save()
+				e.mu.Unlock()
+				return
+			}
+			if e.s.OrderRecords[o.ID].Publication != "relay_acknowledged" {
+				fail(errors.New("waiting for previous strategy quote relay acknowledgement"))
+				return
+			}
 		}
 	}
 	if err = e.automationBudget(p, automationCharge(config, "", buy, config.FundingFee), request.SourceOfferID); err != nil {
@@ -705,6 +768,9 @@ func (e *Engine) runAutomations(ctx context.Context) {
 		r.Result.Error = err.Error()
 		p.Pending = nil
 		p.Decision = err.Error()
+		if p.Config.StrategyID != "" {
+			e.strategyFailure(p, r.Snapshot.Request.OrderAction == "replace", err)
+		}
 	}
 	if saveErr := e.save(); saveErr != nil {
 		e.mu.Unlock()
@@ -729,6 +795,17 @@ func (e *Engine) finishAutomationAttempt(id string, revision uint64, requestID s
 		p.Pending = nil
 	}
 	if p.Revision == revision {
+		if p.Config.StrategyID != "" {
+			failure := err
+			if failure == nil && result.State == "rejected" {
+				failure = errors.New(result.Error)
+			}
+			replacing := e.strategySource(p, time.Now().Unix()).OrderAction == "replace"
+			if r := e.s.TradeReceipts[requestID]; r != nil {
+				replacing = r.Snapshot.Request.OrderAction == "replace"
+			}
+			e.strategyFailure(p, replacing, failure)
+		}
 		if err != nil {
 			p.Decision = fmt.Sprintf("paused: %v", err)
 		} else if result.State == "rejected" {
@@ -752,11 +829,20 @@ func retireAutomationPending(s *State, p *AutomationPolicy, reason string) {
 
 // Called only on the private imported snapshot before any daemon starts.
 func holdImportedAutomations(s *State) {
+	for _, p := range s.MakerStrategies {
+		p.Enabled = false
+		p.RestoreHold = true
+		p.Revision++
+		p.Decision = "Imported strategy held; review remaining authorization and potentially omitted spending before enabling"
+	}
 	for _, p := range s.Automations {
 		if p == nil {
 			continue
 		}
 		for _, c := range p.Charges {
+			if c != nil && c.ExposureSettled != nil {
+				c.ExposureSettled.Held = true
+			}
 			if c != nil && c.State == "reserved" {
 				c.Uncertain = true
 			}

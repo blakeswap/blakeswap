@@ -117,6 +117,7 @@ extension WalletAction {
         case "tower_monitoring": return "Accepted local rescue job needs monitoring"
         case "offer_open": return "Open order can accept a trade"
  case "automation_enabled": return "Automatic offers are enabled"
+ case "strategy_enabled": return "Inventory-aware market making is enabled"
  case "restored_monitoring": return "Restored trade needs settlement monitoring; first revelation is disabled"
         case "recovery_required": return "Restored obligations need reconciliation"
         default: return "Waiting for the peer"

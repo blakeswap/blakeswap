@@ -164,3 +164,8 @@ Automatic whole-offer renewal and bounded repricing are opt-in under **Market â†
 Automatic offers**. Review exact price, gross volume, per-chain fee/rescue and
 schedule limits before enabling; accepted swaps retain their original terms.
 Policies run only in the running wallet daemon. See [automatic offers](docs/AUTOMATION.md).
+
+Inventory-aware whole-offer making is opt-in under **Market â†’ Inventory-aware market making**.
+Review separate asset targets, unlocked reserves, exposure, shared fee allowances
+and circuit breakers; Pause/Stop preserves accepted settlement. See
+[inventory strategies](docs/STRATEGIES.md).

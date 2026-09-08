@@ -173,6 +173,7 @@ func (e *Engine) advanceSwap(ctx context.Context, s *Swap, all map[chain.ID]map[
 		_, sc := contract.ExtractSecret(s.Short, shortObs.Tx)
 		if lc && sc {
 			s.Stage = "completed"
+			e.recordStrategyExposure(s)
 			if s.Role == "maker" {
 				event := e.s.Offers[s.Terms.Offer().ID]
 				o := s.Terms.Offer()
@@ -191,6 +192,7 @@ func (e *Engine) advanceSwap(ctx context.Context, s *Swap, all map[chain.ID]map[
 		}
 		if !lc && !sc {
 			s.Stage = "refunded"
+			e.recordStrategyExposure(s)
 			return nil
 		}
 		s.Stage = "contested outcome"

@@ -22,7 +22,7 @@ struct AutomationView: View {
                 }.disabled(model.busy || !context.matches(app.tradeContext))
                 if let error = model.error { Text(error).foregroundStyle(.orange) }
                 if model.loaded && model.policies.isEmpty { Text("No policies. Automatic offers are off.").foregroundStyle(.secondary) }
-                ForEach(model.policies) { p in
+                ForEach(model.policies.filter { $0.config.strategyID.isEmpty }) { p in
                     VStack(alignment: .leading, spacing: 8) {
                         Text("\(p.enabled ? "Enabled" : "Disabled") · Sell \(p.config.sellAmount) \(p.config.sell.uppercased()) sats · \(p.config.reference == "fixed" ? "Fixed rate" : "Selected maker reference")").font(.headline)
                         Text(p.decision).foregroundStyle(p.restoreHold ? .orange : .secondary)

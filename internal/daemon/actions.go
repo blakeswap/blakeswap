@@ -126,6 +126,15 @@ func (e *Engine) walletActions(now int64) WalletActions {
 			w.Actions = append(w.Actions, WalletAction{ID: "order/" + id, Kind: "order", ObjectID: id, State: "offer_open", RequiresMonitoring: true, Uncertain: !fresh})
 		}
 	}
+	for id, p := range e.s.MakerStrategies {
+		if p == nil {
+			w.Known = false
+			continue
+		}
+		if p.Enabled && !p.RestoreHold {
+			w.Actions = append(w.Actions, WalletAction{ID: "strategy/" + id, Kind: "strategy", ObjectID: id, State: "strategy_enabled", RequiresMonitoring: true, Uncertain: !fresh})
+		}
+	}
 	for id, p := range e.s.Automations {
 		if p == nil {
 			w.Known = false

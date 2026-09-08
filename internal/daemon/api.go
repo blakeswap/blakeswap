@@ -128,6 +128,9 @@ func (e *Engine) status() Status {
 	return s
 }
 func (e *Engine) Command(ctx context.Context, req Request) (any, error) {
+	if req.Method == "strategy.report" {
+		return e.strategyReport(ctx, req.Params)
+	}
 	if req.Method == "trade.quote" {
 		return e.quoteTrade(ctx, req.Params)
 	}
@@ -161,6 +164,14 @@ func (e *Engine) Command(ctx context.Context, req Request) (any, error) {
 		return nil, e.fatal
 	}
 	switch req.Method {
+	case "strategy.list":
+		return e.listStrategies(req.Params)
+	case "strategy.review":
+		return e.reviewStrategy(req.Params)
+	case "strategy.save":
+		return e.saveStrategy(req.Params)
+	case "strategy.stop":
+		return e.stopStrategy(req.Params)
 	case "automation.list":
 		return e.listAutomations(req.Params)
 	case "automation.review":

@@ -411,6 +411,11 @@ duplicate totals, missing creation-time migration, earlier replacement variants,
 reorg demotion, frozen pagination/FIFO eviction, capacity failures, exact CSV and
 formula escaping. Lifecycle tests hold history reads outside the engine lock,
 close/cancel/join them, and reject late wallet/network/source-generation replies.
+`TestActivityBudget*` retains the 200ms per-chain deadline and eight-attempt cap
+while checking that rows and signed variants cut off by earlier reads receive a
+fresh slice. It covers permanently unavailable rows, unchanged observation ages,
+source changes, explicit block contradictions, cancellation, and claim witnesses
+persisted before a partial read returns.
 Chain tests verify historical receipt APIs rather than substituting current UTXOs.
 
 `TestRealActivityHistoryThroughTypedAPI` exercises both assets through generated
@@ -559,3 +564,32 @@ Two actual helpers sharing one isolated root verify a rejected second owner
 cannot accept or remove the first runtime. A suspended actual child verifies
 forced cleanup using its PID and launch nonce.
 These tests never create an always-on service or use public wallets.
+
+## Inventory strategies
+
+`TestStrategy*` exercises exact two-sided sizing/prices, shared per-chain caps,
+manual whole-input reservations, unconfirmed/HTLC exclusions, selected funding
+fees, imported uncertainty/exposure, duplicate/restart/breaker behavior, recovery
+scanner proofs and reorg holds. Report controls cover exact owned swap/transaction
+attribution, a foreign maker reusing the same order ID, current confirmed fees,
+refunds, cancellation and immutable gross consumption. Native `StrategyTests`
+uses injected typed responses to check full review/context binding, stop/import
+state, and production view compilation.
+
+`TestRealInventoryStrategyTradeAndRefund` uses a private relay and isolated wallet
+profiles on real BTC/BLAKE regtest nodes. It completes each maker direction and a
+stopped strategy refund, verifies immutable principals and exact 6,500-sat funding
+fees against raw node transactions, and reconciles confirmed inventory and T08
+activity fees independently from conservative lifetime charges after restart.
+Run serially under the exclusive fixture lock, then repeat with
+`BLAKESWAP_TEST_ELECTRUM=1`:
+
+```sh
+BLAKESWAP_REGTEST=/absolute/path/to/isolated-fixture \
+BLAKESWAP_BTC_RPC_PORT=39443 BLAKESWAP_BLAKE_RPC_PORT=49443 \
+  sh scripts/go.sh test -race -p=1 -count=1 ./internal/api \
+  -run '^TestRealInventoryStrategyTradeAndRefund$' -v
+```
+
+A run without `BLAKESWAP_REGTEST` compiles and skips these scenarios. It does not
+establish actual-chain settlement, inventory or fee correctness.

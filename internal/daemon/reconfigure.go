@@ -85,6 +85,15 @@ func CheckStoredNetwork(c Config) error {
 // selected wallet. Standalone immutable-config daemons accept legacy callers.
 func CheckCommandNetwork(req Request, actual chain.Network, required bool) error {
 	switch req.Method {
+	case "strategy.review", "strategy.save":
+		var edit StrategyEdit
+		if err := json.Unmarshal(req.Params, &edit); err != nil {
+			return err
+		}
+		if edit.Config.Network != actual.Normalized() {
+			return errors.New("strategy network changed; reopen authorization")
+		}
+		return nil
 	case "automation.review", "automation.save":
 		var edit AutomationEdit
 		if err := json.Unmarshal(req.Params, &edit); err != nil {
@@ -94,7 +103,7 @@ func CheckCommandNetwork(req Request, actual chain.Network, required bool) error
 			return errors.New("automation network changed; reopen policy review")
 		}
 		return nil
-	case "automation.list", "automation.disable":
+	case "automation.list", "automation.disable", "strategy.list", "strategy.stop", "strategy.report":
 	case "activity.list", "activity.export":
 		// Each activity query separately requires its immutable wallet/network.
 	case "trade.quote", "trade.confirm", "status.refresh", "wallet.preflight", "fee.quote", "transaction.bump", "wallet.send", "tower.resolve", "offer.create", "offer.cancel", "swap.take", "pause", "regtest.mine", "regtest.faucet":

@@ -253,3 +253,41 @@ func TestRestoredObservedClaimRequiresCompleteTargetSnapshot(t *testing.T) {
 		})
 	}
 }
+
+func TestStrategyRestoredPositiveSettlementReleasesExposure(t *testing.T) {
+	for _, role := range []string{"maker", "taker"} {
+		for _, refund := range []bool{false, true} {
+			name := role + "/claim"
+			if refund {
+				name = role + "/refund"
+			}
+			t.Run(name, func(t *testing.T) {
+				e, s, _, secret := isolatedFixture(t, role)
+				markRestored(t, e)
+				all := map[chain.ID]map[string]chain.Observation{chain.BTC: {}, chain.Blake: {}}
+				for _, c := range []contract.HTLC{s.Long, s.Short} {
+					all[c.Chain][chain.OutpointKey(c.TxID, c.Vout)] = recoverySpend(t, e, s, c, refund, secret)
+				}
+				for cycle := 0; cycle < 2; cycle++ {
+					if err := e.advanceSwap(context.Background(), s, all); err != nil {
+						t.Fatal(err)
+					}
+					e.reconcileRecovery(all, map[chain.ID]map[string]chain.Observation{chain.BTC: {}, chain.Blake: {}})
+					if err := e.save(); err != nil {
+						t.Fatal(err)
+					}
+				}
+				if !strategySettled(s, e.Config.Network.Confirmations()) || e.s.Recovery.Status.State != "ready" {
+					t.Fatalf("fixture failed: stage=%s recovery=%+v", s.Stage, e.s.Recovery.Status)
+				}
+				if err := e.recoveryTradingReady(); err != nil {
+					t.Fatal("recovery gate", err)
+				}
+				u, _, n := e.strategyUsage(StrategyConfig{}, "")
+				if n != 0 || u[chain.BTC].Exposure != 0 || u[chain.Blake].Exposure != 0 {
+					t.Fatalf("fresh dual-spend %s remains charged as active strategy exposure after recovery ready: count=%d BTC=%d Blake=%d verified=%v", s.Stage, n, u[chain.BTC].Exposure, u[chain.Blake].Exposure, e.strategyVerifiedSwaps[s.ID])
+				}
+			})
+		}
+	}
+}

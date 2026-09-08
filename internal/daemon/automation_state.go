@@ -22,6 +22,9 @@ func ValidateAutomationState(s *State) error {
 			if c == nil || id == "" || c.OfferID != id {
 				return errors.New("invalid automation charge record")
 			}
+			if err := validateStrategyExposure(c, p.Config.Sell); err != nil {
+				return err
+			}
 			if c.State != "reserved" && c.State != "committed" && c.State != "released" {
 				return errors.New("invalid automation charge state")
 			}
@@ -39,5 +42,5 @@ func ValidateAutomationState(s *State) error {
 			blake += c.BlakeFees
 		}
 	}
-	return nil
+	return validateStrategyState(s)
 }
