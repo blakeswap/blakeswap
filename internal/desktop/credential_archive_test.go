@@ -8,6 +8,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"reflect"
 	"testing"
 
 	pb "github.com/blakeswap/blakeswap/api/gen/blakeswap/v2"
@@ -85,15 +86,19 @@ func TestNativeMigrationRejectsArchiveCheckpointBeforeActivation(t *testing.T) {
 	for _, name := range []string{"master.db", "regtest/state.db", "vault.password"} {
 		before[name] = credentialSourceDigest(t, filepath.Join(root, name))
 	}
-	if _, err = openProfileCredentials(context.Background(), m.root, newIsolatedCredentialStore()); err == nil {
+	// The state-format cutover now authenticates every source before even
+	// creating the installation reference, migration journal or native item.
+	// Keep the original encrypted-record comparison and require exact files too.
+	beforeFiles := cutoverFileDigests(t, m.root)
+	store := newIsolatedCredentialStore()
+	if _, err = openProfileCredentials(context.Background(), m.root, store); err == nil {
 		t.Fatal("inconsistent archived ownership activated a native credential")
 	}
-	j, err := credential.ReadJournal(root)
-	if err != nil {
-		t.Fatal(err)
+	if _, err := credential.ReadJournal(root); !errors.Is(err, os.ErrNotExist) {
+		t.Fatal("invalid source reached journal creation", err)
 	}
-	if j.Phase == "active" || j.Phase == "removed" {
-		t.Fatal("invalid source reached activation", j.Phase)
+	if len(store.values) != 0 || !reflect.DeepEqual(beforeFiles, cutoverFileDigests(t, m.root)) {
+		t.Fatal("archive preflight refusal changed files or native items")
 	}
 	for name, expected := range before {
 		got := credentialSourceDigest(t, filepath.Join(root, name))
