@@ -97,7 +97,7 @@ func (e *Engine) freezeActivityRows(ctx context.Context, source *storage.PageSna
 			delete(e.activitySnapshots, id)
 		}
 	}
-	if len(e.activitySnapshots) >= 4 {
+	if e.historyContext == nil && len(e.activitySnapshots) >= 4 {
 		oldest := ""
 		for id, snapshot := range e.activitySnapshots {
 			if oldest == "" || snapshot.Sequence < e.activitySnapshots[oldest].Sequence {

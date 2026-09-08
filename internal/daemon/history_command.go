@@ -109,6 +109,12 @@ func (e *Engine) historyCommand(ctx context.Context, request Request) (result an
 			}
 			e.activitySnapshots = nil
 		} else {
+			if resultErr == nil {
+				// Keep the one unpublished result alongside existing revisions
+				// until every source/context fence has succeeded. A failed fifth
+				// query must not destroy any still-valid published result.
+				view.trimHistorySnapshots(4)
+			}
 			e.activitySnapshots = view.activitySnapshots
 			e.activitySnapshotSequence = view.activitySnapshotSequence
 		}
@@ -170,7 +176,25 @@ func (e *Engine) historyCommand(ctx context.Context, request Request) (result an
 	if !maps.Equal(sourceGenerations, e.historySourceGenerations()) {
 		return nil, errors.New("history chain source changed; refresh the result")
 	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	return result, nil
+}
+
+func (e *Engine) trimHistorySnapshots(limit int) {
+	for len(e.activitySnapshots) > limit {
+		oldest := ""
+		for id, snapshot := range e.activitySnapshots {
+			if oldest == "" || snapshot.Sequence < e.activitySnapshots[oldest].Sequence {
+				oldest = id
+			}
+		}
+		if rows := e.activitySnapshots[oldest].Rows; rows != nil {
+			_ = rows.Close()
+		}
+		delete(e.activitySnapshots, oldest)
+	}
 }
 
 // A canceled query need not wait for an unrelated full-history sort/report.
