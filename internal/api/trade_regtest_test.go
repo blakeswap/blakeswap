@@ -258,11 +258,19 @@ func TestRealReviewedSwapThroughTypedAPI(t *testing.T) {
 				t.Fatal("maker economics", mq)
 			}
 			offerID, mrequest := h.confirm("maker", mq)
-			h.tick()
 			var order *pb.Offer
-			for _, o := range h.status("taker").Orders {
-				if o.Id == offerID {
-					order = o
+			// Publication is asynchronous; allow the normal history resweep
+			// before using the taker's authenticated offer for its own review.
+			deadline := time.Now().Add(50 * time.Second)
+			for order == nil && time.Now().Before(deadline) {
+				h.tick()
+				for _, o := range h.status("taker").Orders {
+					if o.Id == offerID {
+						order = o
+					}
+				}
+				if order == nil {
+					time.Sleep(100 * time.Millisecond)
 				}
 			}
 			if order == nil {
