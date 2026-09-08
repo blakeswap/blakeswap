@@ -103,6 +103,9 @@ func (e *Engine) stageArchive(kind, id string) error {
 	records := []storage.ArchiveRecord{}
 	if kind == "swaps" {
 		swap := e.s.Swaps[id]
+		if err := validateSwapFundingParents(&e.s, engineFillReader{e}, swap); err != nil {
+			return err
+		}
 		if _, err := e.fillSummary(swap, false); err != nil {
 			return err
 		}
@@ -259,10 +262,19 @@ func (e *Engine) collectArchiveActivation(kind, id string, visited map[string]bo
 	// finite companion graph is shared by direct mailbox and reorg activation.
 	var companions []storage.ArchiveKey
 	switch kind {
+	case "fill_keys":
+		if validFundingIdentityKey(id) {
+			if err := validateFundingIdentity(&e.s, engineFillReader{e}, id); err != nil {
+				return false, err
+			}
+		}
 	case "swaps":
 		companions = append(companions, storage.ArchiveKey{Kind: "recovery_swaps", ID: id}, storage.ArchiveKey{Kind: "funding_fees", ID: "swap/" + id})
 		var swap Swap
 		if err := json.Unmarshal(record.Data, &swap); err != nil {
+			return false, err
+		}
+		if err := validateSwapFundingParents(&e.s, engineFillReader{e}, &swap); err != nil {
 			return false, err
 		}
 		if _, err := e.retainedSwapFee(&swap); err != nil {
@@ -322,6 +334,12 @@ func (e *Engine) promoteArchived(record storage.ArchiveRecord) error {
 	e.archiveOrigins[archiveMoveKey(record.Kind, record.ID)] = origin
 	if err = mergeArchiveRecord(&e.s, record); err != nil {
 		return err
+	}
+	if record.Kind == "swaps" {
+		if swap := e.s.Swaps[record.ID]; swap != nil && len(swap.FundingParents) > 0 {
+			swap.FundingAncestryHeld = true
+			delete(e.fundingAncestryProofs, swap.ID)
+		}
 	}
 	if err = e.archiveDelta(record, false); err != nil {
 		return err

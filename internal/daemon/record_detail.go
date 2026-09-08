@@ -60,7 +60,7 @@ func (e *Engine) recordDetail(raw json.RawMessage) (RecordDetail, error) {
 		if err != nil {
 			return result, err
 		}
-		p.FundingFee, p.Error = selection.FundingFee, value.Error
+		p.FundingFee = selection.FundingFee
 		result.Swap = &p
 	case "send":
 		value := e.s.Sends[q.ID]

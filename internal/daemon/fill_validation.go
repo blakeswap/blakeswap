@@ -319,6 +319,10 @@ func validateFillConservation(ctx context.Context, s *State, reader FillStateRea
 					}
 				}
 			}
+		case "fill_keys":
+			if strings.HasPrefix(id, "funding/") {
+				return validateFundingIdentity(s, reader, id)
+			}
 		case "swaps":
 			core, err := fillValue[Swap](s, reader, kind, id)
 			if err != nil {
@@ -326,6 +330,9 @@ func validateFillConservation(ctx context.Context, s *State, reader FillStateRea
 			}
 			if core == nil {
 				return errors.New("child core vanished")
+			}
+			if err := validateSwapFundingParents(s, reader, core); err != nil {
+				return err
 			}
 			if core.Role == "maker" {
 				f, err := fillValue[FillRecord](s, reader, "fill_records", id)
@@ -339,7 +346,7 @@ func validateFillConservation(ctx context.Context, s *State, reader FillStateRea
 		}
 		return nil
 	}
-	for _, kind := range []string{"parent_orders", "fill_records", "swaps"} {
+	for _, kind := range []string{"parent_orders", "fill_records", "swaps", "fill_keys"} {
 		group, err := archiveMap(s, kind, false)
 		if err != nil {
 			return err
@@ -354,7 +361,7 @@ func validateFillConservation(ctx context.Context, s *State, reader FillStateRea
 	}
 	if reader != nil {
 		if err = reader.VisitArchive(ctx, func(record storage.ArchiveRecord) error {
-			if record.Kind != "parent_orders" && record.Kind != "fill_records" && record.Kind != "swaps" {
+			if record.Kind != "parent_orders" && record.Kind != "fill_records" && record.Kind != "swaps" && record.Kind != "fill_keys" {
 				return nil
 			}
 			if _, err := ValidateArchiveRecordAgainstState(*s, record); err != nil {
@@ -481,7 +488,7 @@ func (r vaultFillReader) ReadArchive(kind, id string) (storage.ArchiveRecord, bo
 	return r.v.ReadArchive(kind, id)
 }
 func (r vaultFillReader) VisitArchive(ctx context.Context, visit func(storage.ArchiveRecord) error) error {
-	for _, kind := range []string{"parent_orders", "fill_records", "swaps"} {
+	for _, kind := range []string{"parent_orders", "fill_records", "swaps", "fill_keys"} {
 		cursor := ""
 		for {
 			if err := ctx.Err(); err != nil {

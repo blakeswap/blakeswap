@@ -117,7 +117,7 @@ func (e *Engine) advanceSwap(ctx context.Context, s *Swap, all map[chain.ID]map[
 		}
 	}
 	ancestryErr := e.refreshFundingAncestry(ctx, s)
-	if ancestryErr != nil && (!pendingAncestryPublication(s, all) || !e.fresh(chain.BTC) || !e.fresh(chain.Blake) || all[chain.BTC] == nil || all[chain.Blake] == nil) {
+	if ancestryErr != nil && (!errors.Is(ancestryErr, errFundingAncestry) || !pendingAncestryPublication(s, all) || !e.fresh(chain.BTC) || !e.fresh(chain.Blake) || all[chain.BTC] == nil || all[chain.Blake] == nil) {
 		return e.holdFundingAncestry(ctx, s, all, ancestryErr)
 	}
 	if err := e.reconcileObservedSwap(ctx, s, all); err != nil {

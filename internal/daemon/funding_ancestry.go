@@ -105,6 +105,16 @@ func deriveFundingParents(state *State, reader FillStateReader, s *Swap) ([]Fund
 }
 
 func validateSwapFundingParents(state *State, reader FillStateReader, s *Swap) error {
+	tx, err := localFundingTransaction(s)
+	if err != nil {
+		return err
+	}
+	if tx != nil {
+		own, _, _ := localFunding(s)
+		if err := validateFundingIdentity(state, reader, fundingIdentityKey(own.Chain, own.TxID)); err != nil {
+			return err
+		}
+	}
 	expected, err := deriveFundingParents(state, reader, s)
 	if err != nil {
 		return err
@@ -132,6 +142,46 @@ func (e *Engine) retainFundingParents(s *Swap) error {
 	s.FundingParents = parents
 	if len(parents) > 0 {
 		s.FundingAncestryHeld = true
+	}
+	return nil
+}
+
+func fundingCustodyHash(s *Swap) string {
+	if s == nil {
+		return ""
+	}
+	own, raw, _ := localFunding(s)
+	if raw == "" {
+		return ""
+	}
+	return protocol.Digest([]any{s.Role, own, raw, s.FundingParents})
+}
+
+func validateFundingIdentity(state *State, reader FillStateReader, key string) error {
+	if !validFundingIdentityKey(key) {
+		return errors.New("invalid funding ownership index")
+	}
+	owner, err := fillValue[string](state, reader, "fill_keys", key)
+	if err != nil {
+		return err
+	}
+	if owner == nil || !protocol.Hex32(*owner) {
+		return errors.New("funding ownership index is missing")
+	}
+	core, err := fillValue[Swap](state, reader, "swaps", *owner)
+	if err != nil {
+		return err
+	}
+	if core == nil || core.ID != *owner {
+		return errors.New("funding ownership has no exact child")
+	}
+	tx, err := localFundingTransaction(core)
+	if err != nil {
+		return err
+	}
+	own, _, _ := localFunding(core)
+	if tx == nil || fundingIdentityKey(own.Chain, own.TxID) != key {
+		return errors.New("funding index contradicts its local signed transaction")
 	}
 	return nil
 }

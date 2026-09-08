@@ -5,6 +5,7 @@ import (
 	"errors"
 	"maps"
 	"reflect"
+	"strings"
 
 	"github.com/blakeswap/blakeswap/internal/chain"
 	"github.com/blakeswap/blakeswap/internal/protocol"
@@ -15,6 +16,7 @@ import (
 // uses an independently encrypted disposable index, never a lifetime Go map.
 // Neither representation is serialized or exported as wallet authority.
 type fillValidationCheckpoint struct {
+	fundings     map[string]string // only active signed funding identities, both roles
 	parents      map[string]*ParentOrder
 	children     map[string]*FillRecord
 	cores        map[string]string
@@ -43,7 +45,7 @@ func fillCoreValidationHash(s *Swap, fee FeeSelection) string {
 	}{s.Role, s.Request, s.Terms, s.Long, s.Short, s.ShortFunding, s.ShortSent, s.OwnerFeeCap, s.SelfRefunds, s.Jobs, fee})
 }
 func captureFillValidation(s *State, inputs *storage.PrivateIndex) *fillValidationCheckpoint {
-	c := &fillValidationCheckpoint{parents: map[string]*ParentOrder{}, children: map[string]*FillRecord{}, cores: map[string]string{}, coreTerms: map[string]string{}, reservations: map[string]CoinReservation{}, inputs: inputs}
+	c := &fillValidationCheckpoint{fundings: map[string]string{}, parents: map[string]*ParentOrder{}, children: map[string]*FillRecord{}, cores: map[string]string{}, coreTerms: map[string]string{}, reservations: map[string]CoinReservation{}, inputs: inputs}
 	for id, p := range s.ParentOrders {
 		if p != nil {
 			value := p.clone()
@@ -69,6 +71,9 @@ func captureFillValidation(s *State, inputs *storage.PrivateIndex) *fillValidati
 		c.reservations[owner] = reservation
 	}
 	for id, core := range s.Swaps {
+		if hash := fundingCustodyHash(core); hash != "" {
+			c.fundings[id] = hash
+		}
 		if core != nil && core.Role == "maker" {
 			c.cores[id] = fillCoreValidationHash(core, s.FundingFees["swap/"+id])
 			c.coreTerms[id] = protocol.Digest([]any{core.Request, core.Terms})
@@ -102,7 +107,7 @@ func (r engineFillReader) VisitArchive(ctx context.Context, visit func(storage.A
 		}
 	}
 	for _, record := range r.e.archivePuts {
-		if record.Kind == "parent_orders" || record.Kind == "fill_records" || record.Kind == "swaps" {
+		if record.Kind == "parent_orders" || record.Kind == "fill_records" || record.Kind == "swaps" || record.Kind == "fill_keys" {
 			if err := ctx.Err(); err != nil {
 				return err
 			}
@@ -157,8 +162,11 @@ func (e *Engine) prepareFillValidation() (*fillValidationCheckpoint, error) {
 	for id := range previous.cores {
 		cores[id] = true
 	}
+	for id := range previous.fundings {
+		cores[id] = true
+	}
 	for id, core := range e.s.Swaps {
-		if core != nil && core.Role == "maker" {
+		if core != nil {
 			cores[id] = true
 		}
 	}
@@ -279,6 +287,27 @@ func (e *Engine) prepareFillValidation() (*fillValidationCheckpoint, error) {
 			return nil, errors.New("write breaks parent/child quantity or monetary conservation")
 		}
 	}
+	for key := range e.s.FillKeys {
+		if strings.HasPrefix(key, "funding/") {
+			if err := validateFundingIdentity(&e.s, reader, key); err != nil {
+				return nil, err
+			}
+		}
+	}
+	for _, record := range e.archivePuts {
+		if record.Kind == "fill_keys" && strings.HasPrefix(record.ID, "funding/") {
+			if err := validateFundingIdentity(&e.s, reader, record.ID); err != nil {
+				return nil, err
+			}
+		}
+	}
+	for _, key := range e.archiveDeletes {
+		if key.Kind == "fill_keys" && strings.HasPrefix(key.ID, "funding/") {
+			if err := validateFundingIdentity(&e.s, reader, key.ID); err != nil {
+				return nil, err
+			}
+		}
+	}
 	for id := range cores {
 		core, err := fillValue[Swap](&e.s, reader, "swaps", id)
 		if err != nil {
@@ -289,10 +318,24 @@ func (e *Engine) prepareFillValidation() (*fillValidationCheckpoint, error) {
 			if readErr != nil {
 				return nil, readErr
 			}
-			if previous.cores[id] != "" || oldCore != nil && oldCore.Role == "maker" {
-				return nil, errors.New("write erased an accepted maker core")
+			if previous.fundings[id] != "" || previous.cores[id] != "" || oldCore != nil && (oldCore.Role == "maker" || fundingCustodyHash(oldCore) != "") {
+				return nil, errors.New("write erased retained child funding custody")
 			}
 			continue
+		}
+		if err := validateSwapFundingParents(&e.s, reader, core); err != nil {
+			return nil, err
+		}
+		oldFunding := previous.fundings[id]
+		if oldFunding == "" && oldReader != nil {
+			oldCore, err := fillValue[Swap](&oldState, oldReader, "swaps", id)
+			if err != nil {
+				return nil, err
+			}
+			oldFunding = fundingCustodyHash(oldCore)
+		}
+		if oldFunding != "" && oldFunding != fundingCustodyHash(core) {
+			return nil, errors.New("write changed immutable local funding ancestry")
 		}
 		if core.Role != "maker" {
 			allocation, readErr := fillValue[FillRecord](&e.s, reader, "fill_records", id)

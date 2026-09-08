@@ -96,6 +96,10 @@ func (e *Engine) refreshFundingAncestry(ctx context.Context, s *Swap) (result er
 	ctx, cancel := context.WithTimeout(ctx, time.Second)
 	defer cancel()
 	height := e.heights[own.Chain]
+	actualHeight, err := node.Height(ctx)
+	if err != nil || actualHeight != height {
+		return errors.Join(errFundingAncestry, err)
+	}
 	tip, err := hasher.BlockHash(ctx, height)
 	if err != nil || tip == "" {
 		return errors.Join(errFundingAncestry, err)
@@ -114,6 +118,10 @@ func (e *Engine) refreshFundingAncestry(ctx context.Context, s *Swap) (result er
 			return errFundingAncestry
 		}
 		if contradicted {
+			stable, err := hasher.BlockHash(ctx, height)
+			if err != nil || stable != tip {
+				return errors.Join(errFundingAncestry, err)
+			}
 			if err := e.contradictFundingAncestry(s); err != nil {
 				return err
 			}
@@ -134,6 +142,10 @@ func (e *Engine) refreshFundingAncestry(ctx context.Context, s *Swap) (result er
 		return errors.Join(errFundingAncestry, err)
 	}
 	after, err := hasher.BlockHash(ctx, height)
+	actualHeight, heightErr := node.Height(ctx)
+	if heightErr != nil || actualHeight != height {
+		return errors.Join(errFundingAncestry, heightErr)
+	}
 	if err != nil || after != tip || ctx.Err() != nil || !e.fresh(own.Chain) || e.heights[own.Chain] != height || !e.activitySourceCurrent(own.Chain, generation) {
 		return errors.Join(errFundingAncestry, err, ctx.Err())
 	}

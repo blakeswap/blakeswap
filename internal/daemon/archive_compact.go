@@ -204,7 +204,7 @@ func (e *Engine) compactArchive(ctx context.Context, swaps, towers map[chain.ID]
 		if remaining == 0 {
 			break
 		}
-		if swap == nil || !terminalSwap(swap) {
+		if swap == nil || !terminalSwap(swap) || !e.fundingAncestryReady(swap) {
 			continue
 		}
 		var chains []chain.ID

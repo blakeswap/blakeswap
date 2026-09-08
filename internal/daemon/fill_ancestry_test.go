@@ -4,14 +4,21 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"fiatjaf.com/nostr"
 	"fmt"
 	"github.com/blakeswap/blakeswap/internal/chain"
 	"github.com/blakeswap/blakeswap/internal/contract"
 	"github.com/blakeswap/blakeswap/internal/protocol"
+	"github.com/blakeswap/blakeswap/internal/storage"
 	"github.com/blakeswap/blakeswap/internal/transport"
 	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/btcsuite/btcd/wire"
+	"net/http"
+	"net/http/httptest"
+	"os"
+	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
@@ -77,7 +84,7 @@ func (b *ancestryBackend) Broadcast(_ context.Context, raw string) (string, erro
 	return tx.TxHash().String(), nil
 }
 
-func ancestryChild(t *testing.T, e *Engine, role string, sell chain.ID, input chain.UTXO) (*Swap, chain.UTXO) {
+func ancestryChild(t *testing.T, e *Engine, role string, sell chain.ID, input chain.UTXO, pending ...bool) (*Swap, chain.UTXO) {
 	t.Helper()
 	maker, taker := e.identity, nostr.Generate()
 	if role == "taker" {
@@ -113,6 +120,13 @@ func ancestryChild(t *testing.T, e *Engine, role string, sell chain.ID, input ch
 		t.Fatal(err)
 	}
 	s := &Swap{ID: id, Role: role, Request: request, Terms: &terms, Long: terms.Long, Short: terms.Short, Receipts: map[string]protocol.Receipt{}, Secret: hex.EncodeToString(secret[:]), LongSent: true, ShortSent: true}
+	if len(pending) > 0 && pending[0] {
+		if role == "maker" {
+			s.ShortSent = false
+		} else {
+			s.LongSent = false
+		}
+	}
 	own, incoming := &s.Short, &s.Long
 	if role == "taker" {
 		own, incoming = &s.Long, &s.Short
@@ -136,6 +150,12 @@ func ancestryChild(t *testing.T, e *Engine, role string, sell chain.ID, input ch
 	pk, _ := incoming.PkScript()
 	peerTx.AddTxOut(wire.NewTxOut(incoming.Amount, pk))
 	incoming.TxID = peerTx.TxHash().String()
+	if backend, ok := e.nodes[incoming.Chain].(*ancestryBackend); ok {
+		backend.transactions[incoming.TxID] = chain.Transaction{TxID: incoming.TxID, Hex: contract.Hex(peerTx), Confirmations: 200}
+		out := &chain.TxOut{Value: chain.Coins(incoming.Amount), Confirmations: 200}
+		out.Script.Hex = hex.EncodeToString(pk)
+		backend.outputs[chain.OutpointKey(incoming.TxID, incoming.Vout)] = out
+	}
 	e.s.Swaps[id] = s
 	if e.s.FundingFees == nil {
 		e.s.FundingFees = map[string]FeeSelection{}
@@ -182,9 +202,14 @@ func ancestryChild(t *testing.T, e *Engine, role string, sell chain.ID, input ch
 	return s, chain.UTXO{TxID: own.TxID, Vout: 1, Amount: chain.Coins(tx.TxOut[1].Value), Script: hex.EncodeToString(tx.TxOut[1].PkScript), Confirmations: 200}
 }
 
-func ancestryGraph(t *testing.T, role string, sell chain.ID) (*Engine, []*Swap, map[chain.ID]*ancestryBackend) {
+func ancestryGraph(t *testing.T, role string, sell chain.ID, pending ...bool) (*Engine, []*Swap, map[chain.ID]*ancestryBackend) {
 	t.Helper()
 	e, _, _ := sendFixture(t)
+	identity, err := e.keys.Derive(2, "nostr-identity")
+	if err != nil {
+		t.Fatal(err)
+	}
+	e.identity = nostr.SecretKey(identity.Serialize())
 	backends := map[chain.ID]*ancestryBackend{}
 	for _, id := range []chain.ID{chain.BTC, chain.Blake} {
 		b := &ancestryBackend{Backend: e.nodes[id], height: 500, generation: 1, transactions: map[string]chain.Transaction{}, errors: map[string]error{}, outputs: map[string]*chain.TxOut{}}
@@ -201,7 +226,7 @@ func ancestryGraph(t *testing.T, role string, sell chain.ID) (*Engine, []*Swap, 
 	}
 	input := chain.UTXO{TxID: transport.RandomID(), Amount: 12000000, Script: hex.EncodeToString(e.scripts[ownChain]), Confirmations: 200}
 	a, next := ancestryChild(t, e, role, sell, input)
-	b, next := ancestryChild(t, e, role, sell, next)
+	b, next := ancestryChild(t, e, role, sell, next, pending...)
 	c, _ := ancestryChild(t, e, role, sell, next)
 	input.TxID = transport.RandomID()
 	d, _ := ancestryChild(t, e, role, sell, input)
@@ -420,6 +445,313 @@ func TestFundingAncestryColdAncestorRestartAndImport(t *testing.T) {
 				t.Fatal("positive proof activated cold ancestor")
 			}
 
+		})
+	}
+}
+
+func TestFundingAncestryPendingPublicationAndExactRetryStayLive(t *testing.T) {
+	for _, role := range []string{"maker", "taker"} {
+		for _, sell := range []chain.ID{chain.BTC, chain.Blake} {
+			t.Run(role+"/"+string(sell), func(t *testing.T) {
+				e, children, nodes := ancestryGraph(t, role, sell, true)
+				s := children[1]
+				own, raw, _ := localFunding(s)
+				node := nodes[own.Chain]
+				delete(node.transactions, own.TxID)
+				// The pending publication is still within the original agreed funding window.
+				e.clocks = map[chain.ID]uint32{chain.BTC: 100, chain.Blake: 100}
+				all := map[chain.ID]map[string]chain.Observation{chain.BTC: {}, chain.Blake: {}}
+				identity := fundingCustodyHash(s)
+				money := protocol.Digest(e.s.FillRecords[s.ID])
+				if err := e.advanceSwap(context.Background(), s, all); err != nil {
+					t.Fatal("initial exact funding deadlocked on its own confirmation", err)
+				}
+				_, _, sent := localFunding(s)
+				if !sent || len(node.broadcasts) != 1 || node.broadcasts[0] != raw || s.SelfClaim != "" || s.SecretObserved || !s.FundingAncestryHeld {
+					t.Fatal("initial publication changed authority or cleared hold")
+				}
+				if err := e.advanceSwap(context.Background(), s, all); err == nil {
+					t.Fatal("unconfirmed funding became positive settlement proof")
+				}
+				if len(node.broadcasts) != 2 || node.broadcasts[1] != raw || s.SelfClaim != "" || s.RefundLastAttempt != 0 || fundingCustodyHash(s) != identity || protocol.Digest(e.s.FillRecords[s.ID]) != money {
+					t.Fatal("exact retry changed fees, quantity or private settlement authority")
+				}
+				node.errors[own.TxID] = chain.ErrTransactionUnobserved
+				if err := e.advanceSwap(context.Background(), s, all); err == nil || len(node.broadcasts) != 2 {
+					t.Fatal("unknown publication was treated as absent")
+				}
+			})
+		}
+	}
+}
+
+func TestFundingAncestryHoldPreservesPublicSecretRescue(t *testing.T) {
+	for _, role := range []string{"maker", "taker"} {
+		for _, sell := range []chain.ID{chain.BTC, chain.Blake} {
+			t.Run(role+"/"+string(sell), func(t *testing.T) {
+				e, children, nodes := ancestryGraph(t, role, sell)
+				s := children[1]
+				own, _, _ := localFunding(s)
+				incoming := s.Long
+				if role == "taker" {
+					incoming = s.Short
+				}
+				nodes[own.Chain].errors[own.TxID] = context.DeadlineExceeded
+				secret, _ := hex.DecodeString(s.Secret)
+				all := map[chain.ID]map[string]chain.Observation{chain.BTC: {}, chain.Blake: {}}
+				all[own.Chain][chain.OutpointKey(own.TxID, own.Vout)] = recoverySpend(t, e, s, own, false, secret)
+				if err := e.advanceSwap(context.Background(), s, all); err == nil {
+					t.Fatal("ancestry uncertainty was not reported")
+				}
+				if !s.SecretObserved || !s.FundingAncestryHeld || s.SelfClaim == "" || len(nodes[incoming.Chain].broadcasts) != 1 || nodes[incoming.Chain].broadcasts[0] != s.SelfClaim {
+					t.Fatal("funding ancestry held the already public secret rescue")
+				}
+				if len(nodes[own.Chain].broadcasts) != 0 || s.RefundLastAttempt != 0 {
+					t.Fatal("ancestry hold authorized another spend")
+				}
+			})
+		}
+	}
+}
+
+func TestFundingAncestryCompleteCheckpointRejectsMissingOrForgedEdges(t *testing.T) {
+	for _, role := range []string{"maker", "taker"} {
+		for _, mode := range []string{"missing edge", "wrong child", "wrong output", "duplicate edge", "missing index", "wrong index", "extra index"} {
+			t.Run(role+"/"+mode, func(t *testing.T) {
+				e, children, _ := ancestryGraph(t, role, chain.Blake)
+				a, b, d := children[0], children[1], children[3]
+				own, _, _ := localFunding(a)
+				switch mode {
+				case "missing edge":
+					b.FundingParents = nil
+					b.FundingAncestryHeld = false
+				case "wrong child":
+					b.FundingParents[0].SwapID = d.ID
+				case "wrong output":
+					b.FundingParents[0].Vout = own.Vout
+				case "duplicate edge":
+					b.FundingParents = append(b.FundingParents, b.FundingParents[0])
+				case "missing index":
+					delete(e.s.FillKeys, fundingIdentityKey(own.Chain, own.TxID))
+				case "wrong index":
+					e.s.FillKeys[fundingIdentityKey(own.Chain, own.TxID)] = d.ID
+				case "extra index":
+					e.s.FillKeys[fundingIdentityKey(own.Chain, transport.RandomID())] = a.ID
+				}
+				if err := ValidateCompleteFillState(&e.s); err == nil {
+					t.Fatal("incomplete or forged ancestry accepted")
+				}
+			})
+		}
+	}
+}
+
+func TestFundingAncestryCannotRewriteSignedFundingAndDoesNotStarveLaterChild(t *testing.T) {
+	for _, role := range []string{"maker", "taker"} {
+		t.Run(role, func(t *testing.T) {
+			e, children, nodes := ancestryGraph(t, role, chain.Blake)
+			b, c, d := children[1], children[2], children[3]
+			own, _, _ := localFunding(b)
+			node := nodes[own.Chain]
+			node.errors[own.TxID] = context.DeadlineExceeded
+			for i := 0; i < 6; i++ {
+				if err := e.refreshFundingAncestry(context.Background(), b); err == nil {
+					t.Fatal("bad first child accepted")
+				}
+				if err := e.refreshFundingAncestry(context.Background(), c); err != nil || !e.fundingAncestryReady(c) {
+					t.Fatal("later confirmed descendant starved", err)
+				}
+			}
+			before := protocol.Digest(e.s)
+			ownD, raw, _ := localFunding(d)
+			tx, err := contract.Parse(raw)
+			if err != nil {
+				t.Fatal(err)
+			}
+			tx.LockTime++
+			delete(e.s.FillKeys, fundingIdentityKey(ownD.Chain, ownD.TxID))
+			if role == "maker" {
+				d.ShortFunding = contract.Hex(tx)
+				d.Short.TxID = tx.TxHash().String()
+			} else {
+				d.LongFunding = contract.Hex(tx)
+				d.Long.TxID = tx.TxHash().String()
+			}
+			if err := e.save(); err == nil {
+				t.Fatal("saved funding identity could be rewritten")
+			}
+			var saved State
+			if _, err := e.vault.Load(&saved); err != nil || protocol.Digest(saved) != before {
+				t.Fatal("rejected funding rewrite changed committed state", err)
+			}
+		})
+	}
+}
+
+func TestFundingAncestryArchiveRequiresCurrentProofAndColdActivationChecksEdges(t *testing.T) {
+	for _, role := range []string{"maker", "taker"} {
+		t.Run(role, func(t *testing.T) {
+			e, children, _ := ancestryGraph(t, role, chain.BTC)
+			all := ancestryOutcomes(t, e, children)
+			for asset, rows := range all {
+				for key, o := range rows {
+					o.Confirmations = 200
+					o.Height = 300
+					rows[key] = o
+				}
+				if err := e.refreshArchiveCheckpoint(context.Background(), asset); err != nil {
+					t.Fatal(err)
+				}
+			}
+			for _, s := range children {
+				if err := e.advanceSwap(context.Background(), s, all); err != nil {
+					t.Fatal(err)
+				}
+			}
+			b := children[1]
+			// A new scan has no transferable ancestry proof, even though the old
+			// display and old positive hold flag have not yet been refreshed.
+			e.fundingAncestryProofs = nil
+			if err := e.compactArchive(context.Background(), all, nil); err != nil {
+				t.Fatal(err)
+			}
+			if e.s.Swaps[b.ID] == nil {
+				t.Fatal("archived descendant using a preceding scan's funding evidence")
+			}
+			if err := e.save(); err != nil {
+				t.Fatal(err)
+			}
+			if err := e.refreshFundingAncestry(context.Background(), b); err != nil {
+				t.Fatal(err)
+			}
+			if err := e.compactArchive(context.Background(), all, nil); err != nil {
+				t.Fatal(err)
+			}
+			if e.s.Swaps[b.ID] != nil {
+				t.Fatal("current proven settled descendant did not archive")
+			}
+			if err := e.save(); err != nil {
+				t.Fatal(err)
+			}
+			before := protocol.Digest([]any{e.s, e.pendingArchive()})
+			e.archiveRead = func(kind, id string) (storage.ArchiveRecord, bool, error) {
+				row, ok, err := e.vault.ReadArchive(kind, id)
+				if ok && kind == "swaps" && id == b.ID {
+					var core Swap
+					if er := json.Unmarshal(row.Data, &core); er != nil {
+						return row, false, er
+					}
+					core.FundingParents[0].Vout++
+					row.Data, err = json.Marshal(core)
+				}
+				return row, ok, err
+			}
+			if ok, err := e.activateArchived("swaps", b.ID); err == nil || ok {
+				t.Fatal("promoted cold descendant with forged funding edge")
+			}
+			if before != protocol.Digest([]any{e.s, e.pendingArchive()}) {
+				t.Fatal("failed cold edge validation changed ownership")
+			}
+			e.archiveRead = nil
+			if ok, err := e.activateArchived("swaps", b.ID); err != nil || !ok {
+				t.Fatalf("valid cold activation: %v", err)
+			}
+			if e.s.Swaps[children[0].ID] != nil {
+				t.Fatal("activating child also promoted funding ancestor")
+			}
+			if !e.s.Swaps[b.ID].FundingAncestryHeld || e.fundingAncestryReady(e.s.Swaps[b.ID]) {
+				t.Fatal("activation reused prior cold funding evidence")
+			}
+			raw, _ := json.Marshal(map[string]string{"kind": "swap", "id": b.ID, "expected_wallet": e.Config.Name, "expected_network": string(e.Config.Network.Normalized())})
+			detail, err := e.recordDetail(raw)
+			if err != nil || !detail.MonitoringRequired || detail.Swap == nil || !strings.Contains(detail.Swap.Error, "funding ancestry") {
+				t.Fatalf("held detail omitted current monitoring: %+v %v", detail, err)
+			}
+			if err := e.save(); err != nil {
+				t.Fatal(err)
+			}
+		})
+	}
+}
+
+func TestFundingAncestryReopenStartsHeldAndRejectsForgedColdIndex(t *testing.T) {
+	for _, role := range []string{"maker", "taker"} {
+		t.Run(role, func(t *testing.T) {
+			e, children, _ := ancestryGraph(t, role, chain.BTC)
+			b := children[1]
+			if err := e.refreshFundingAncestry(context.Background(), b); err != nil {
+				t.Fatal(err)
+			}
+			for _, s := range children {
+				if err := e.stageArchive("swaps", s.ID); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if err := e.save(); err != nil {
+				t.Fatal(err)
+			}
+			if err := ValidateVaultProtocolState(e.vault, &e.s); err != nil {
+				t.Fatal("valid cold source", err)
+			}
+			// This index is not referenced by a signed child. A complete cold traversal
+			// must still reject it rather than inspect only keys discovered from cores.
+			key := fundingIdentityKey(chain.BTC, protocol.Digest("forged cold funding"))
+			data, _ := json.Marshal(b.ID)
+			row := storage.ArchiveRecord{Kind: "fill_keys", ID: key, Data: data}
+			if err := e.archiveDelta(row, true); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := e.vault.CommitArchive(e.s, storage.ArchiveBatch{Put: []storage.ArchiveRecord{row}}, 0); err != nil {
+				t.Fatal(err)
+			}
+			if err := ValidateVaultProtocolState(e.vault, &e.s); err == nil {
+				t.Fatal("completed reader skipped forged cold funding ownership")
+			}
+			if err := e.archiveDelta(row, false); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := e.vault.CommitArchive(e.s, storage.ArchiveBatch{Delete: []storage.ArchiveKey{{Kind: "fill_keys", ID: key}}}, 0); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := e.activateArchived("swaps", b.ID); err != nil {
+				t.Fatal(err)
+			}
+			if err := e.refreshFundingAncestry(context.Background(), e.s.Swaps[b.ID]); err != nil {
+				t.Fatal(err)
+			}
+			path := filepath.Join(t.TempDir(), "state.db")
+			if err := e.vault.Backup(path); err != nil {
+				t.Fatal(err)
+			}
+			password := filepath.Join(filepath.Dir(path), "password")
+			if err := os.WriteFile(password, []byte("receive-test-password"), 0600); err != nil {
+				t.Fatal(err)
+			}
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { http.Error(w, "offline", http.StatusServiceUnavailable) }))
+			defer server.Close()
+			config := Config{Network: chain.Regtest, Mode: "trader", Name: "ancestry-reopen", DataDir: filepath.Dir(path), PasswordFile: password, Relays: []string{"ws://127.0.0.1:1"}, Nodes: map[chain.ID]NodeConfig{chain.BTC: {URL: server.URL}, chain.Blake: {URL: server.URL}}}
+			reopened, err := Open(context.Background(), config)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer reopened.Close()
+			actual := reopened.s.Swaps[b.ID]
+			if actual == nil || !actual.FundingAncestryHeld || reopened.fundingAncestryReady(actual) {
+				t.Fatal("reopen reused saved positive ancestry evidence")
+			}
+			if fundingCustodyHash(actual) != fundingCustodyHash(b) || actual.Secret != b.Secret {
+				t.Fatal("reopen changed immutable custody")
+			}
+			if reopened.s.Swaps[children[0].ID] != nil {
+				t.Fatal("reopen reactivated cold funding ancestor")
+			}
+			if err := canChangeNetwork(reopened.s); err == nil {
+				t.Fatal("offline reopened ancestry hold allowed network switch")
+			}
+			var saved State
+			if _, err := reopened.vault.Load(&saved); err != nil || !saved.Swaps[b.ID].FundingAncestryHeld {
+				t.Fatal("reopen hold not durable", err)
+			}
 		})
 	}
 }

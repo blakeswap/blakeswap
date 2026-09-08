@@ -176,6 +176,32 @@ their respective evidence resolves. The independence guarantee applies to
 children with unrelated funding ancestry, not descendants. It never erases a
 known secret or changes either child's immutable contracts.
 
+The local maker and taker both retain direct `FundingParents` edges in signed
+input order before publishing funding. Each edge binds the producing local child,
+chain, exact funding transaction and change output. Its `funding/<chain>/<txid>`
+identity index moves atomically with the producing child into encrypted cold
+storage. Validation point-reads direct parents and checks both the core-to-index
+and index-to-core binding. It never materializes the lifetime ancestor graph.
+
+A dependent child requires its own current confirmed funding inclusion before
+first revelation, refund, positive settlement or deep archival. That inclusion
+proves its transaction ancestors under the selected backend's consensus view.
+Each child has an independent bounded check of source generation, captured tip,
+transaction identity and canonical block; an earlier failed child cannot consume
+another child's proof allowance. Unknown evidence persists an explicit monitoring
+hold. A positive contradiction of the child's saved funding inclusion returns a
+maker's Filled/Released allocation to Committed, preserving consumed charges and
+never returning inventory to Available. Fresh positive evidence can clear the
+hold and reconcile that child's outcome again.
+
+A saved hold is not a new authorization. Reopen, import and cold activation require
+fresh proof. The original saved first funding publication and exact authorized
+retry retain their existing guards, avoiding a circular wait for their own
+confirmation. An already public secret can still drive the existing incoming
+claim rescue. Neither exception authorizes a new funding template, first secret
+revelation or refund while ancestry remains uncertain. Cold queries preserve the
+monitoring status without promoting ancestors or publisher authority.
+
 Every child reserves its own funding and settlement/refund fee plan and optional
 tower payout. Parent authorization has hard per-asset monetary fee/bounty caps;
 a maximum accepted-fill count can additionally bound activity but cannot replace
