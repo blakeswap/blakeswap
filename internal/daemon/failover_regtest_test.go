@@ -416,8 +416,13 @@ func TestRealIsolatedTowerWitnessRecovery(t *testing.T) {
 			target, observe := maker.Long, maker.Short
 			h.offline("maker")
 			h.online("taker")
-			h.tick("taker")
-			h.minePending()
+			partialWaitMailbox(h, "confirmed revealing claim before tower isolation", func() bool {
+				peer := h.swap("taker", id)
+				return peer.SelfClaim != "" && peer.IncomingClaimSeen && peer.ShortConfirmations >= 2
+			}, func() {
+				tickUntilConnected(t, h.engines["taker"])
+				h.minePending()
+			})
 			claimID, _ := settlementVariant(h.swap("taker", id).SelfClaims, h.swap("taker", id).ClaimVariant, maker.Long, maker.Short, false)
 			claimRecord, err := h.nodes[observe.Chain].Transaction(h.ctx, claimID)
 			if err != nil || claimRecord.BlockHash == "" {
