@@ -223,7 +223,7 @@ struct TradeEconomicsReview: View {
                             if economics.partialParent {
                                 Text("Parent total \(q.totalSellAmount) · Available \(q.available) · Fill bounds \(q.minFill)–\(q.maxFill) sell sats")
                                 Text("Independently rounded fills can receive a different total from this rate reference.").font(.caption)
-                            } else if q.kind == "taker" { Text("Fill \(q.quantity) maker sell sats · Parent revision \(q.parentRevision)") }
+                            }
                             ForEach(["btc", "blake"], id: \.self) { asset in
                                 Text("\(symbol(asset)) limits: fees \(q.feeBudgets[asset].map(String.init) ?? "Not provided"), conditional bounties \(q.bountyBudgets[asset].map(String.init) ?? "Not provided") sats").font(.caption)
                             }
