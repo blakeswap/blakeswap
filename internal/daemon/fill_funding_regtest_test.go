@@ -37,8 +37,9 @@ const ancestryPrincipal int64 = 1000000
 const ancestryFundingFee int64 = 6500
 
 type ancestryTrade struct {
-	id, parent, maker, taker   string
-	makerConfirm, takerConfirm ConfirmTradeRequest
+	id, parent, maker, taker            string
+	makerConfirm, takerConfirm          ConfirmTradeRequest
+	longPublications, shortPublications map[string]partialPublication
 }
 
 // Only transaction lookup is unavailable. The selected adapter still supplies
@@ -161,6 +162,7 @@ func runRealFundingChangeAncestry(t *testing.T, sell chain.ID, role string) {
 	// invalidated chain: that would reconfirm the descendants being tested.
 	if role == "maker" {
 		h.online(d.taker)
+		partialWaitForPublications(h, d.taker, d.shortPublications, func() { h.tick(d.taker) })
 		ancestryAssertRevealWindow(h, h.swap(d.taker, d.id))
 		partialWait(h, "independent D first claim", func() bool { return h.swap(d.taker, d.id).SelfClaim != "" }, func() { h.tick(d.taker) })
 		ancestryAssertBroadcastClaim(h, d.taker, h.swap(d.taker, d.id))
@@ -174,6 +176,7 @@ func runRealFundingChangeAncestry(t *testing.T, sell chain.ID, role string) {
 		ancestryAssertBroadcastClaim(h, local, h.swap(local, d.id))
 	} else {
 		h.online(d.maker)
+		partialWaitForPublications(h, d.maker, d.longPublications, func() { h.tick(d.maker) })
 		partialWait(h, "independent D incoming funding", func() bool { return h.swap(d.maker, d.id).ShortSent }, func() { h.tick(d.maker) })
 		h.mine(sell, 2) // other chain only; D's own paid chain remains invalidated
 		ancestryAssertRevealWindow(h, h.swap(local, d.id))
@@ -217,7 +220,8 @@ func runRealFundingChangeAncestry(t *testing.T, sell chain.ID, role string) {
 					feeOK = feeOK || leg.c.Amount-tx.TxOut[0].Value == fee
 				}
 			}
-			if !feeOK || !bytes.Equal(tx.TxOut[0].PkScript, h.engines[owner].scripts[leg.c.Chain]) {
+			payout, err := partialRetainedPayout(h.engines[owner], ancestryCore(h, owner, trade.id), leg.c, tx, false, 0)
+			if err != nil || !feeOK || !bytes.Equal(tx.TxOut[0].PkScript, payout) {
 				t.Fatal("actual claim changed the reviewed owner payout or fee ladder")
 			}
 		}
@@ -290,17 +294,22 @@ func ancestryFundTrade(h *harness, local, peer string, sell chain.ID, role strin
 		h.t.Fatal(err)
 	}
 	trade.id, trade.takerConfirm, _ = partialReviewedTake(h, trade.taker, offer, ancestryPrincipal, 0)
-	h.tick(trade.taker)
+	ancestryPublishBeforeOffline(h, trade.taker, trade.id, "request")
 	h.offline(trade.taker)
-	partialWait(h, "maker durably accepts exact child", func() bool { return h.engines[trade.maker].s.Swaps[trade.id] != nil }, func() { h.tick(trade.maker) })
+	partialWaitMailbox(h, "maker durably accepts exact child", func() bool { return h.engines[trade.maker].s.Swaps[trade.id] != nil }, func() { h.tick(trade.maker) })
+	acceptance := ancestryPublishBeforeOffline(h, trade.maker, trade.id, "accepted")
 	h.offline(trade.maker)
 	h.online(trade.taker)
+	partialWaitForPublications(h, trade.taker, acceptance, func() { h.tick(trade.taker) })
 	partialWait(h, "actual long funding broadcast", func() bool { return h.swap(trade.taker, trade.id).LongSent }, func() { h.tick(trade.taker) })
+	trade.longPublications = ancestryPublishBeforeOffline(h, trade.taker, trade.id, "long-funded")
 	h.mine(sell.Other(), 2)
 	h.offline(trade.taker)
 	if role == "maker" || !ownOnly {
 		h.online(trade.maker)
+		partialWaitForPublications(h, trade.maker, trade.longPublications, func() { h.tick(trade.maker) })
 		partialWait(h, "actual short funding broadcast", func() bool { return h.swap(trade.maker, trade.id).ShortSent }, func() { h.tick(trade.maker) })
+		trade.shortPublications = ancestryPublishBeforeOffline(h, trade.maker, trade.id, "short-funded")
 		h.mine(sell, 2)
 		h.offline(trade.maker)
 	}
@@ -309,10 +318,31 @@ func ancestryFundTrade(h *harness, local, peer string, sell chain.ID, role strin
 	return trade
 }
 
+// Keep the recipient offline until the exact saved event has a relay receipt.
+func ancestryPublishBeforeOffline(h *harness, sender, id, kind string) map[string]partialPublication {
+	h.t.Helper()
+	expected, err := partialPublications(h.engines[sender], []string{id}, kind)
+	if err != nil {
+		h.t.Fatal(err)
+	}
+	partialWait(h, "exact ancestry "+kind+" relay publication", func() bool {
+		ready, err := partialPublicationsPublished(h.engines[sender], expected)
+		if err != nil {
+			h.t.Fatal(err)
+		}
+		return ready
+	}, func() { h.tick(sender) })
+	return expected
+}
+
 func ancestryComplete(h *harness, trade ancestryTrade) {
 	h.t.Helper()
 	h.online(trade.maker)
 	h.online(trade.taker)
+	partialWaitForPublications(h, trade.maker, trade.longPublications, func() { h.tick(trade.maker, trade.taker) })
+	if len(trade.shortPublications) > 0 {
+		partialWaitForPublications(h, trade.taker, trade.shortPublications, func() { h.tick(trade.maker, trade.taker) })
+	}
 	partialWait(h, "actual ancestry child completion", func() bool {
 		return h.swap(trade.maker, trade.id).Stage == "completed" && h.swap(trade.taker, trade.id).Stage == "completed"
 	}, func() { h.tick(trade.maker, trade.taker); h.minePending() })
@@ -359,7 +389,12 @@ func ancestryAssertEdge(h *harness, name, id, parentID string) {
 		if len(s.FundingParents) != 1 || s.FundingParents[0] != (FundingParent{SwapID: parentID, Chain: own.Chain, TxID: parentOwn.TxID, Vout: point.Index}) || point.Hash.String() != parentOwn.TxID || point.Index == parentOwn.Vout || point.Index != 1 || len(prev.TxOut) != 2 {
 			h.t.Fatal("selected actual change input does not match exact direct ancestry")
 		}
-		if !bytes.Equal(prev.TxOut[point.Index].PkScript, h.engines[name].scripts[own.Chain]) {
+		retained, err := localFundingTransaction(parent)
+		owned := false
+		for _, entry := range h.engines[name].receiveBook[own.Chain] {
+			owned = owned || bytes.Equal(prev.TxOut[point.Index].PkScript, entry.script)
+		}
+		if err != nil || retained == nil || contract.Hex(retained) != contract.Hex(prev) || !owned {
 			h.t.Fatal("funding ancestor output is not owned change")
 		}
 	}
@@ -486,7 +521,8 @@ func ancestryAssertBroadcastClaim(h *harness, owner string, s *Swap) {
 			feeOK = feeOK || c.Amount-tx.TxOut[0].Value == fee
 		}
 	}
-	if !feeOK || !bytes.Equal(tx.TxOut[0].PkScript, h.engines[owner].scripts[c.Chain]) {
+	payout, err := partialRetainedPayout(h.engines[owner], s, c, tx, false, 0)
+	if err != nil || !feeOK || !bytes.Equal(tx.TxOut[0].PkScript, payout) {
 		h.t.Fatal("independent D claim changed the reviewed owner payout or fee ladder")
 	}
 }

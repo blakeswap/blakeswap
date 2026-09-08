@@ -892,6 +892,13 @@ settlement phase retains its 20-second deadline. It neither resets historical
 cursors nor changes production retry intervals. The ordinary gated-relay
 control also covers a persisted cursor older than a stored acceptance and
 requires its receipt through the normal resweep before funding.
+The ancestry fixture uses the same publication and catch-up boundaries while
+keeping the intentionally withheld peer offline. Settlement checks compare
+confirmed transactions with the exact retained signed owner variant or tower
+job template, since a confirmed receipt advances the current receive address.
+They retain the original principal, fee, bounty, output-count and spend checks.
+Ancestor change must match the retained funding transaction and a derived
+historical receive script.
 
 The matrix cancels only the remaining 600,000 available units, funds both
 accepted children, completes one and refunds the other while its taker stays

@@ -80,12 +80,18 @@ func partialPublications(e *Engine, ids []string, kind string) (map[string]parti
 	expected := map[string]partialPublication{}
 	for _, id := range ids {
 		child := e.s.Swaps[id]
-		if child == nil || child.Terms == nil {
+		if child == nil || (kind != "request" && child.Terms == nil) {
 			return nil, errors.New("partial matrix publication child is unavailable")
 		}
 		recipient, funding := child.Request.Taker, ""
 		var body any = child.Terms
 		switch kind {
+		case "request":
+			if child.Role != "taker" || child.Terms != nil {
+				return nil, errors.New("request has no pending taker sender")
+			}
+			recipient = child.Request.OfferEvent.PubKey.Hex()
+			body = child.Request
 		case "accepted":
 			if child.Role != "maker" {
 				return nil, errors.New("acceptance has no maker sender")
@@ -807,8 +813,8 @@ func partialAssertSettlements(h *harness, names, ids []string, winner int, bps i
 			if (refund && leg.c.Chain == s.Long.Chain) || (!refund && leg.c.Chain == s.Short.Chain) {
 				owner = names[i]
 			}
-			// Winning taker was offline during refunds; opening it here does not
-			// tick or grant a second execution, and exposes its stable payout script.
+			// Opening an offline owner exposes its retained signed authorization;
+			// it does not tick or grant another execution.
 			h.online(owner)
 			bounty := int64(0)
 			if refund && bps > 0 {
@@ -823,8 +829,13 @@ func partialAssertSettlements(h *harness, names, ids []string, winner int, bps i
 			for _, authorized := range protocol.RescueFees {
 				validFee = validFee || fee == authorized
 			}
-			if !validFee || !bytes.Equal(tx.TxOut[0].PkScript, h.engines[owner].scripts[leg.c.Chain]) || tx.TxOut[0].Value != leg.c.Amount-fee-bounty {
-				h.t.Fatal("actual principal/net payout/owner fee mismatch")
+			towerBPS := int64(0)
+			if bounty > 0 {
+				towerBPS = bps
+			}
+			payout, err := partialRetainedPayout(h.engines[owner], h.swap(owner, id), leg.c, tx, refund, towerBPS)
+			if err != nil || !validFee || !bytes.Equal(tx.TxOut[0].PkScript, payout) || tx.TxOut[0].Value != leg.c.Amount-fee-bounty {
+				h.t.Fatal("actual principal/net payout/owner fee mismatch", "fee", fee, "bounty", bounty, "authorization", err)
 			}
 			if bounty == 0 && len(tx.TxOut) != 1 {
 				h.t.Fatal("self settlement paid an unauthorized output")

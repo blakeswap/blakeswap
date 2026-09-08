@@ -32,6 +32,13 @@ func TestPartialMatrixAcceptanceRequiresRelayPublication(t *testing.T) {
 		t.Fatal(err)
 	}
 	id := result.(map[string]string)["id"]
+	requestPublication, err := partialPublications(taker, []string{id}, "request")
+	if err != nil || len(requestPublication) != 1 {
+		t.Fatal("exact durable request publication missing", err)
+	}
+	if ready, err := partialPublicationsPublished(taker, requestPublication); err != nil || ready {
+		t.Fatal("unpublished request permits sender shutdown", err)
+	}
 	for _, delivery := range taker.s.Outbox {
 		if delivery.Type == "request" {
 			if err := maker.receive(delivery.Event); err != nil {
