@@ -319,3 +319,54 @@ func TestStateCutoverChecksPersistedColdProtocolPages(t *testing.T) {
 		})
 	}
 }
+
+func TestStateCutoverValidatesActualQuarantinedOfferCategory(t *testing.T) {
+	for _, version := range []int{1, protocol.Version} {
+		t.Run(strconv.Itoa(version), func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), "state.db")
+			password := []byte("disposable-quarantine-format-credential")
+			event := currentFormatSwap(t, "child").Request.OfferEvent
+			var offer protocol.Offer
+			if err := json.Unmarshal([]byte(event.Content), &offer); err != nil {
+				t.Fatal(err)
+			}
+			offer.Version = version
+			encoded, _ := json.Marshal(offer)
+			event.Content = string(encoded)
+			raw, _ := json.Marshal(event)
+			record := storage.ArchiveRecord{Kind: "quarantined_offers", ID: offer.ID, Data: raw}
+			e := &Engine{s: State{Version: StateVersion, Network: chain.Regtest}}
+			if err := e.archiveDelta(record, true); err != nil {
+				t.Fatal(err)
+			}
+			v, err := storage.Open(path, password)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, err := v.CommitArchive(e.s, storage.ArchiveBatch{Put: []storage.ArchiveRecord{record}}, 0); err != nil {
+				t.Fatal(err)
+			}
+			if err := v.Close(); err != nil {
+				t.Fatal(err)
+			}
+			before, err := os.ReadFile(path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := PreflightStateVersion(path, password); (err == nil) != (version == protocol.Version) {
+				t.Fatalf("quarantine readonly version%d: %v", version, err)
+			}
+			v, _, err = openCurrentStateVault(path, password)
+			if (err == nil) != (version == protocol.Version) {
+				t.Fatalf("quarantine writer version%d: %v", version, err)
+			}
+			if v != nil {
+				v.Close()
+			}
+			after, err := os.ReadFile(path)
+			if err != nil || !bytes.Equal(before, after) {
+				t.Fatal("validation changed quarantined source")
+			}
+		})
+	}
+}

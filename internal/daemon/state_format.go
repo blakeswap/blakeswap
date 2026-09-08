@@ -127,7 +127,14 @@ func ValidateVaultProtocolState(v *storage.Vault, s *State) error {
 	if err := s.ValidateArchiveCheckpoint(stats); err != nil {
 		return err
 	}
-	for _, kind := range []string{"offers", "recovery_offers", "order_records", "swaps", "tower_jobs"} {
+	for kind, fields := range archiveFields {
+		// Derive the category from the registry's actual State field path;
+		// Recovery.Offers is stored as quarantined_offers, not recovery_offers.
+		owned := len(fields) == 1 && (fields[0] == "Offers" || fields[0] == "OrderRecords" || fields[0] == "Swaps" || fields[0] == "TowerJobs")
+		quarantined := len(fields) == 2 && fields[0] == "Recovery" && fields[1] == "Offers"
+		if !owned && !quarantined {
+			continue
+		}
 		cursor := ""
 		for {
 			records, next, err := v.ArchivePage(kind, cursor, 32)
