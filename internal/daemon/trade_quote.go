@@ -266,12 +266,21 @@ func (e *Engine) tradeSnapshot(p TradeQuoteRequest, now int64) (TradeQuoteSnapsh
 	if p.OwnerFeeCap > 0 {
 		ownerMax = p.OwnerFeeCap
 	}
+	refundMax := max(ownerMax, protocol.RescueFees[len(protocol.RescueFees)-1])
+	if p.Kind == "taker" {
+		// These are this taker's exact one-child authorizations, derived from
+		// local policy rather than copied from the remote parent's private caps.
+		// The taker tower can refund its paid leg but cannot make its first
+		// revelation or claim its incoming leg.
+		q.FeeBudgets = map[chain.ID]int64{q.PaidChain: p.FundingFee + refundMax, q.ReceivedChain: ownerMax}
+		q.BountyBudgets = map[chain.ID]int64{q.PaidChain: protocol.Bounty(q.PaidPrincipal, tower.BPS), q.ReceivedChain: 0}
+	}
 	add := func(kind string, id chain.ID, principal, maximum, bps int64) {
 		bounty := protocol.Bounty(principal, bps)
 		q.Outcomes = append(q.Outcomes, TradeOutcome{Kind: kind, Chain: id, Principal: principal, FeeMin: 2000, FeeMax: maximum, Bounty: bounty, NetMin: principal - maximum - bounty, NetMax: principal - 2000 - bounty})
 	}
 	add("owner_claim", q.ReceivedChain, q.ReceivedPrincipal, ownerMax, 0)
-	add("owner_refund", q.PaidChain, q.PaidPrincipal, ownerMax, 0)
+	add("owner_refund", q.PaidChain, q.PaidPrincipal, refundMax, 0)
 	if tower.BPS > 0 {
 		q.TowerCoverage = "refund only; owner must reveal first"
 		if p.Kind == "maker" {
@@ -421,7 +430,10 @@ func (e *Engine) quoteTrade(ctx context.Context, raw json.RawMessage) (TradeQuot
 	s.Quote.Token = transport.RandomID()
 	s.Quote.Revision = protocol.Digest(s)
 	e.tradeQuotes[s.Quote.Token] = s
-	return s.Quote, nil
+	result := s.Quote
+	result.FeeBudgets = maps.Clone(s.Quote.FeeBudgets)
+	result.BountyBudgets = maps.Clone(s.Quote.BountyBudgets)
+	return result, nil
 }
 
 func (e *Engine) confirmTrade(ctx context.Context, raw json.RawMessage) (ConfirmTradeResult, error) {

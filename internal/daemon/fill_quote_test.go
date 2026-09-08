@@ -2,6 +2,8 @@ package daemon
 
 import (
 	"context"
+	"encoding/hex"
+	"fmt"
 	"testing"
 	"time"
 
@@ -21,6 +23,81 @@ func partialQuoteFixture(t *testing.T) (*Engine, TradeQuoteRequest) {
 	}
 	p := TradeQuoteRequest{Kind: "maker", ExpectedWallet: e.Config.Name, ExpectedNetwork: "regtest", Sell: chain.Blake, SellAmount: 900000, BuyAmount: 1170001, FeeSelection: FeeSelection{FundingFee: 6500, OwnerFeeCap: 20000}, FillOrderFields: FillOrderFields{FillPolicy: protocol.FillPolicy{Mode: protocol.FillPartial, Min: 400000, Max: 600000}, FeeBudgets: map[chain.ID]int64{chain.BTC: 100000, chain.Blake: 100000}, BountyBudgets: map[chain.ID]int64{chain.BTC: 0, chain.Blake: 0}}}
 	return e, p
+}
+
+func TestPartialFillTakerQuoteDerivesFrozenPrivateCaps(t *testing.T) {
+	for _, sell := range []chain.ID{chain.BTC, chain.Blake} {
+		for _, cap := range []int64{0, 20000} {
+			for _, bps := range []int64{0, 125} {
+				t.Run(fmt.Sprintf("%s/cap%d/bps%d", sell, cap, bps), func(t *testing.T) {
+					e, p := partialQuoteFixture(t)
+					if sell.Other() == chain.BTC {
+						backend := &sendBackend{receiveBackend: e.nodes[chain.BTC].(*receiveBackend)}
+						backend.coins = []chain.UTXO{{TxID: transport.RandomID(), Amount: 1000000, Script: hex.EncodeToString(e.scripts[chain.BTC]), Confirmations: 2}}
+						e.nodes[chain.BTC] = backend
+						if err := e.refresh(context.Background()); err != nil {
+							t.Fatal(err)
+						}
+					}
+					maker := nostr.Generate()
+					o := protocol.Offer{Version: protocol.Version, Revision: 8, Available: p.SellAmount, FillPolicy: p.FillPolicy, Network: chain.Regtest, ID: transport.RandomID(), Maker: maker.Public().Hex(), Sell: sell, SellAmount: p.SellAmount, BuyAmount: p.BuyAmount, Expires: time.Now().Unix() + 600, Status: "open"}
+					raw, err := o.PublicJSON()
+					if err != nil {
+						t.Fatal(err)
+					}
+					event := nostr.Event{Kind: transport.OfferKind, CreatedAt: nostr.Now(), Tags: nostr.Tags{{"d", o.ID}, {"t", chain.Regtest.Namespace()}}, Content: string(raw)}
+					if err := transport.Sign(&event, maker); err != nil {
+						t.Fatal(err)
+					}
+					e.s.Book[o.Maker+":"+o.ID] = event
+					p.Kind, p.Maker, p.ID, p.Sell = "taker", o.Maker, o.ID, sell
+					p.FillOrderFields = FillOrderFields{}
+					p.Quantity, p.ParentRevision, p.OwnerFeeCap = 400000, 8, cap
+					if bps > 0 {
+						provider, _, _ := sendFixture(t)
+						provider.Config.RescueFeeBPS = bps
+						if err := provider.advertiseTower(); err != nil {
+							t.Fatal(err)
+						}
+						e.ingestTower(provider.s.Towers[provider.identity.Public().Hex()])
+						p.TowerBPS, p.TowerPubKey = bps, provider.identity.Public().Hex()
+					}
+					q := requestQuote(t, e, p)
+					paid := sell.Other()
+					wantClaim := max(int64(2000), cap)
+					wantBounty := protocol.Bounty(520001, bps)
+					if len(q.FeeBudgets) != 2 || len(q.BountyBudgets) != 2 || q.FeeBudgets[paid] != 26500 || q.FeeBudgets[sell] != wantClaim || q.BountyBudgets[paid] != wantBounty || q.BountyBudgets[sell] != 0 {
+						t.Fatal("ready quote lacks exact role-specific one-child caps")
+					}
+					if _, explicit := q.BountyBudgets[sell]; !explicit {
+						t.Fatal("uncovered incoming leg is absent instead of explicit zero")
+					}
+					q.FeeBudgets[paid], q.BountyBudgets[paid] = 1, 999999
+					frozen := e.tradeQuotes[q.Token]
+					if frozen.Quote.FeeBudgets[paid] != 26500 || frozen.Quote.BountyBudgets[paid] != wantBounty || len(frozen.Request.FeeBudgets) != 0 {
+						t.Fatal("returned view mutated saved quote or injected remote parent caps")
+					}
+					confirmation := confirmation(q)
+					result := confirmQuote(t, e, confirmation)
+					var saved State
+					if _, err := e.vault.Load(&saved); err != nil {
+						t.Fatal(err)
+					}
+					retained := saved.TradeReceipts[result.ID].Snapshot.Quote
+					if retained.FeeBudgets[paid] != 26500 || retained.FeeBudgets[sell] != wantClaim || retained.BountyBudgets[paid] != wantBounty || retained.BountyBudgets[sell] != 0 {
+						t.Fatal("confirmed receipt lost exact frozen child authorizations")
+					}
+					if retry := confirmQuote(t, e, confirmation); retry != result {
+						t.Fatal("exact confirmation retry changed child authorization")
+					}
+					p.FeeBudgets = map[chain.ID]int64{chain.BTC: 1, chain.Blake: 1}
+					if _, err := e.tradeSnapshot(p, time.Now().Unix()); err == nil {
+						t.Fatal("taker supplied private parent budgets")
+					}
+				})
+			}
+		}
+	}
 }
 
 func TestPartialFillQuoteSeparatesParentReserveAndRepresentativeChild(t *testing.T) {
