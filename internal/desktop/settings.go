@@ -227,6 +227,9 @@ func loadSettingsWithReader(root string, reader func(string) (string, []byte, er
 			return nil, err
 		}
 	}
+	if err := recoverPreparedProfiles(root, s, reader); err != nil {
+		return nil, err
+	}
 	if err := recoverPreparedImports(root, s, reader); err != nil {
 		return nil, err
 	}

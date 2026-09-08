@@ -37,14 +37,19 @@ func (m *Manager) startAPI(profile string) error {
 // grants API authority; the private endpoint token remains required.
 type runtimeEndpoint struct {
 	api.Endpoint
-	OwnerPID     int    `json:"owner_pid"`
-	OwnerSession string `json:"owner_session,omitempty"`
+	OwnerPID       int    `json:"owner_pid"`
+	CredentialMode string `json:"credential_mode"`
+	OwnerSession   string `json:"owner_session,omitempty"`
 }
 
 func (m *Manager) writeRuntime() error {
 	endpoints := map[string]runtimeEndpoint{}
 	for id, server := range m.servers {
-		endpoints[id] = runtimeEndpoint{Endpoint: server.Endpoint, OwnerPID: os.Getpid(), OwnerSession: m.runtimeSession}
+		mode := "file"
+		if m.credentials != nil {
+			mode = "native"
+		}
+		endpoints[id] = runtimeEndpoint{CredentialMode: mode, Endpoint: server.Endpoint, OwnerPID: os.Getpid(), OwnerSession: m.runtimeSession}
 	}
 	raw, err := json.Marshal(endpoints)
 	if err != nil {
@@ -54,7 +59,7 @@ func (m *Manager) writeRuntime() error {
 }
 
 func (m *Manager) createWallet(ctx context.Context, request *pb.CreateWalletRequest) (*pb.Settings, error) {
-	defer m.beginAction()()
+	defer m.beginInstallation()()
 	if err := validateWalletName(request.Name); err != nil {
 		return nil, status.Error(codes.InvalidArgument, err.Error())
 	}
@@ -87,15 +92,41 @@ func (m *Manager) createWallet(ctx context.Context, request *pb.CreateWalletRequ
 	if err := os.MkdirAll(walletRoot, 0700); err != nil {
 		return nil, err
 	}
-	walletDir := filepath.Join(walletRoot, id)
-	if err := os.Mkdir(walletDir, 0700); err != nil {
+	staging, err := os.MkdirTemp(walletRoot, ".new-")
+	if err != nil {
 		return nil, err
 	}
+	defer m.removeStaging(staging, id)
 	seed, err := wallet.NewMnemonic()
 	if err != nil {
 		return nil, err
 	}
-	if err := m.initializeMaster(ctx, walletDir, id, seed); err != nil {
+	if err := m.initializeMaster(ctx, staging, id, seed); err != nil {
+		return nil, err
+	}
+	identity, err := backupIdentity(seed)
+	if err != nil {
+		return nil, err
+	}
+	marker, err := json.Marshal(preparedProfile{Name: request.Name, Identity: identity})
+	if err != nil {
+		return nil, err
+	}
+	if err = writePrivate(filepath.Join(staging, "profile.json"), marker); err != nil {
+		return nil, err
+	}
+	if err = ctx.Err(); err != nil {
+		return nil, err
+	}
+	walletDir := filepath.Join(walletRoot, id)
+	if _, err := os.Lstat(walletDir); !os.IsNotExist(err) {
+		return nil, fmt.Errorf("generated wallet destination already exists")
+	}
+	if err = os.Rename(staging, walletDir); err != nil {
+		return nil, err
+	}
+	m.unpublishedInstalls.Add(1)
+	if err = syncDirectory(walletRoot); err != nil {
 		return nil, err
 	}
 	if err := m.startAPI(id); err != nil {
@@ -124,5 +155,6 @@ func (m *Manager) createWallet(ctx context.Context, request *pb.CreateWalletRequ
 	// The run loop bootstraps missing profiles without stopping active wallets.
 	committed = true
 	m.publishView()
+	m.unpublishedInstalls.Add(-1)
 	return proto.Clone(saved).(*pb.Settings), nil
 }

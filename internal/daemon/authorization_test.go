@@ -50,6 +50,13 @@ func TestSensitiveDaemonCommandsRequirePrivateConsent(t *testing.T) {
 	}
 }
 func TestNativeConsentBindsTermsAndSignedSendContinuesAfterRevocation(t *testing.T) {
+	for _, closed := range []bool{false, true} {
+		t.Run(map[bool]string{false: "screen-lock", true: "broker-closed"}[closed], func(t *testing.T) {
+			checkSignedSendContinuation(t, closed)
+		})
+	}
+}
+func checkSignedSendContinuation(t *testing.T, closed bool) {
 	e, b, p := sendFixture(t)
 	consentEngine(t, e)
 	broadcasts := 0
@@ -73,7 +80,15 @@ func TestNativeConsentBindsTermsAndSignedSendContinuesAfterRevocation(t *testing
 		t.Fatal("authorized send not durably signed")
 	}
 	original := saved.Raw
-	e.Config.Authorization.Revoke()
+	if closed {
+		done := make(chan struct{})
+		if err := e.Config.Authorization.BindLifetime(done); err != nil {
+			t.Fatal(err)
+		}
+		close(done)
+	} else {
+		e.Config.Authorization.Revoke()
+	}
 	if _, err := e.Command(context.Background(), req); err != nil || broadcasts != 1 {
 		t.Fatal("exact signed retry required new consent", err)
 	}

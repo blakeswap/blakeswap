@@ -157,6 +157,13 @@ func (m *Manager) brokerHandler(ctx context.Context, method string, raw json.Raw
 }
 func (m *Manager) attachBroker(peer *nativebridge.Peer) {
 	if peer != nil {
+		if m.authority == nil || m.authority.BindLifetime(peer.Done()) != nil {
+			if m.authority != nil {
+				m.authority.Close()
+			}
+			return
+		}
 		peer.Handle(m.brokerHandler)
+		go func() { <-peer.Done(); m.authority.Close() }()
 	}
 }

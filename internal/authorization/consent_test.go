@@ -144,3 +144,53 @@ func TestConsentConcurrentConsumptionAndBoundedPending(t *testing.T) {
 		t.Fatal("expired requests blocked new consent", err)
 	}
 }
+
+func TestConsentLifetimeCompletionHasNoWatcherGracePeriod(t *testing.T) {
+	for _, mode := range []string{"pending", "approved", "already-closed", "replacement"} {
+		t.Run(mode, func(t *testing.T) {
+			s, a, _ := fixture(t)
+			done := make(chan struct{})
+			if mode == "already-closed" {
+				close(done)
+				if err := s.BindLifetime(done); !errors.Is(err, ErrChanged) {
+					t.Fatal("closed connection bound", err)
+				}
+				if _, err := s.Prepare(a); !errors.Is(err, ErrChanged) {
+					t.Fatal("closed connection prepared", err)
+				}
+				return
+			}
+			if err := s.BindLifetime(done); err != nil {
+				t.Fatal(err)
+			}
+			if mode == "replacement" {
+				if err := s.BindLifetime(make(chan struct{})); !errors.Is(err, ErrChanged) {
+					t.Fatal("authority rebound", err)
+				}
+			}
+			c, err := s.Prepare(a)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if mode != "pending" {
+				if err := s.Approve(c); err != nil {
+					t.Fatal(err)
+				}
+			}
+			close(done)
+			// No watcher is attached. All operations must enforce completion themselves.
+			if err := s.Consume(WithGrant(context.Background(), c.ID), a); !errors.Is(err, ErrChanged) {
+				t.Fatal("completed connection consumed", err)
+			}
+			if err := s.Approve(c); !errors.Is(err, ErrChanged) {
+				t.Fatal("late reply approved", err)
+			}
+			if _, err := s.Prepare(a); !errors.Is(err, ErrChanged) {
+				t.Fatal("completed connection prepared", err)
+			}
+			if len(s.pending) != 0 {
+				t.Fatal("retired session retained challenges")
+			}
+		})
+	}
+}

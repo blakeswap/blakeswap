@@ -64,11 +64,41 @@ type pending struct {
 }
 
 type Authority struct {
-	mu      sync.Mutex
-	session string
-	now     func() time.Time
-	pending map[string]pending
-	closed  bool
+	mu       sync.Mutex
+	session  string
+	now      func() time.Time
+	pending  map[string]pending
+	closed   bool
+	lifetime <-chan struct{}
+}
+
+// BindLifetime permanently binds this authority to one owned connection. A
+// completed connection is checked synchronously by every permission operation,
+// so scheduler delay in a cleanup watcher cannot extend a previously approved
+// grant. A replacement helper/connection needs a new Authority.
+func (s *Authority) BindLifetime(done <-chan struct{}) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if done == nil || (s.lifetime != nil && s.lifetime != done) || s.closed {
+		return ErrChanged
+	}
+	s.lifetime = done
+	if s.unavailable() {
+		return ErrChanged
+	}
+	return nil
+}
+
+func (s *Authority) unavailable() bool {
+	if s.lifetime != nil {
+		select {
+		case <-s.lifetime:
+			s.closed = true
+			clear(s.pending)
+		default:
+		}
+	}
+	return s.closed
 }
 
 func New(session string, now func() time.Time) (*Authority, error) {
@@ -95,7 +125,7 @@ func (s *Authority) Prepare(action Action) (Challenge, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.prune()
-	if s.closed || !action.valid() {
+	if s.unavailable() || !action.valid() {
 		return Challenge{}, ErrChanged
 	}
 	if len(s.pending) >= MaxPending {
@@ -118,7 +148,7 @@ func (s *Authority) Approve(challenge Challenge) error {
 	defer s.mu.Unlock()
 	s.prune()
 	p, ok := s.pending[challenge.ID]
-	if s.closed || !ok || p.approved || challenge != p.challenge {
+	if s.unavailable() || !ok || p.approved || challenge != p.challenge {
 		return ErrChanged
 	}
 	p.approved = true
@@ -147,7 +177,7 @@ func (s *Authority) Consume(ctx context.Context, action Action) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	if s.closed || !ok || !p.approved || action != p.challenge.Action || p.challenge.Session != s.session {
+	if s.unavailable() || !ok || !p.approved || action != p.challenge.Action || p.challenge.Session != s.session {
 		return ErrChanged
 	}
 	return nil
