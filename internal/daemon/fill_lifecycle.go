@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/blakeswap/blakeswap/internal/chain"
+	"github.com/blakeswap/blakeswap/internal/contract"
 	"github.com/blakeswap/blakeswap/internal/protocol"
 )
 
@@ -32,6 +33,48 @@ func (e *Engine) withdrawParentAvailable(id string, now int64) error {
 	delete(e.s.CoinReservations, "offer/"+id)
 	if event != nil {
 		e.stageOffer(parentPublicOffer(next), *event)
+	}
+	return nil
+}
+
+// Retirement removes new own funding permission, not knowledge of a peer's
+// authenticated late contract. Reconcile only that contract's current outcome;
+// never allocate quantity, consume/credit money, or construct/publish a spend.
+func (e *Engine) observeRetiredMaker(s *Swap, all map[chain.ID]map[string]chain.Observation) error {
+	if s.ShortFunding != "" || s.Short.TxID != "" || s.ShortSent {
+		return errors.New("retired child contains contradictory own funding evidence")
+	}
+	if s.Long.TxID == "" {
+		s.Stage = "expired before maker funding"
+		return nil
+	}
+	if !e.fresh(s.Long.Chain) || all[s.Long.Chain] == nil {
+		if s.LongSpend == "" {
+			s.Stage = "own funding disabled; awaiting peer refund"
+		}
+		return nil // Unknown source cannot erase a previous positive observation.
+	}
+	obs, found := observation(all, s.Long)
+	if !found {
+		s.LongSpend, s.LongConfirmations = "", 0
+		s.Stage = "own funding disabled; awaiting peer refund"
+		return nil
+	}
+	if obs.Tx == nil || obs.Tx.TxHash().String() != obs.TxID {
+		return errors.New("late peer outcome has no matching transaction evidence")
+	}
+	_, claimed := contract.ExtractSecret(s.Long, obs.Tx)
+	if err := contract.VerifySignature(s.Long, obs.Tx, !claimed); err != nil {
+		return err
+	}
+	s.LongSpend, s.LongConfirmations = obs.TxID, obs.Confirmations
+	s.Stage = "own funding disabled; awaiting peer refund"
+	if obs.Confirmations >= e.Config.Network.Confirmations() {
+		if claimed {
+			s.Stage = "peer claim observed after own funding cancellation"
+		} else {
+			s.Stage = "aborted; counterparty refunded"
+		}
 	}
 	return nil
 }

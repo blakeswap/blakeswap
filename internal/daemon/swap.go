@@ -100,7 +100,7 @@ func (e *Engine) advanceSwap(ctx context.Context, s *Swap, all map[chain.ID]map[
 	}
 	if s.Role == "maker" {
 		if child := e.s.FillRecords[s.ID]; child != nil && child.FundingDisabled && !child.Allocation.EverCommitted {
-			return nil // Durable refusal survives late messages and a clock reorg.
+			return e.observeRetiredMaker(s, all)
 		}
 	}
 	if (s.Stage == "expired before maker funding" && s.ShortFunding == "") || (s.Stage == "expired before funding" && s.LongFunding == "") {
