@@ -234,6 +234,10 @@ func TestRealIsolatedWitnessRecoveryAndFirstRevealHold(t *testing.T) {
 			id := h.fundBothFees(sell, 0, 6500, 20000)
 			maker := h.swap("maker", id)
 			incoming, own := maker.Long, maker.Short
+			shortFunding, err := partialPublications(h.engines["maker"], []string{id}, "short-funded")
+			if err != nil {
+				t.Fatal(err)
+			}
 			// The taker's internally generated secret stays private when either chain
 			// is unreachable, despite both funding transactions already being signed.
 			faults[incoming.Chain].setDown(true)
@@ -242,6 +246,12 @@ func TestRealIsolatedWitnessRecoveryAndFirstRevealHold(t *testing.T) {
 			if h.swap("taker", id).SecretExposed || h.swap("taker", id).SelfClaim != "" {
 				t.Fatal("first revelation escaped partial-readiness gate")
 			}
+			partialWaitForPublications(h, "taker", shortFunding, func() {
+				tickDegraded(t, h.engines["taker"])
+				if h.swap("taker", id).SecretExposed || h.swap("taker", id).SelfClaim != "" {
+					t.Fatal("first revelation escaped while receiving funded outpoint")
+				}
+			})
 			// Inject the precise durable crash boundary: both funded outputs exist,
 			// but a locally prepared claim has never reached a node. Neither reopening
 			// nor manually selecting a higher fee may publish it during the outage.
@@ -258,6 +268,9 @@ func TestRealIsolatedWitnessRecoveryAndFirstRevealHold(t *testing.T) {
 			privateClaim, err := contract.Spend(taker.Short, key, takerEngine.scripts[taker.Short.Chain], 2000, false, 0, nil, 0, secret)
 			if err != nil {
 				t.Fatal(err)
+			}
+			if own.TxID == "" || len(privateClaim.TxIn) != 1 || privateClaim.TxIn[0].PreviousOutPoint.Hash.String() != own.TxID || privateClaim.TxIn[0].PreviousOutPoint.Index != own.Vout {
+				t.Fatal("private crash claim does not spend the actual funded outpoint")
 			}
 			taker.SelfClaim, taker.SecretExposed = contract.Hex(privateClaim), true
 			if err := takerEngine.save(); err != nil {
