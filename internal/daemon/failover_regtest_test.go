@@ -277,8 +277,13 @@ func TestRealIsolatedWitnessRecoveryAndFirstRevealHold(t *testing.T) {
 				t.Fatal("private claim was relabeled witnessed")
 			}
 			faults[incoming.Chain].setDown(false)
-			tickUntilConnected(t, h.engines["taker"])
-			h.minePending()
+			partialWaitMailbox(h, "confirmed revealing claim after both chains recover", func() bool {
+				peer := h.swap("taker", id)
+				return peer.IncomingClaimSeen && peer.ShortConfirmations >= 2
+			}, func() {
+				tickUntilConnected(t, h.engines["taker"])
+				h.minePending()
+			})
 			// Maker can learn the actual witness on its outgoing chain while its claim
 			// target is unreachable. Persist that knowledge, then reverse the outage.
 			faults[incoming.Chain].setDown(true)
