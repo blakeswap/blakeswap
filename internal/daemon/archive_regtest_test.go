@@ -3,15 +3,74 @@ package daemon
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
+	"fmt"
+	"io"
+	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
+	"time"
 
 	"github.com/blakeswap/blakeswap/internal/chain"
 	"github.com/blakeswap/blakeswap/internal/storage"
 	"github.com/blakeswap/blakeswap/internal/transport"
 )
+
+// Disconnecting/reconsidering 144 Blake blocks exceeds the ordinary 15s wallet
+// RPC deadline on the private fixture. Only these test administration operations
+// get a separate budget; wallet observation and settlement deadlines stay intact.
+func archiveFixtureBlockCommand(t *testing.T, node *chain.RPC, method, hash string) error {
+	t.Helper()
+	if method != "invalidateblock" && method != "reconsiderblock" {
+		return fmt.Errorf("unsupported fixture operation %s", method)
+	}
+	started := time.Now()
+	defer func() { t.Logf("%s fixture %s block=%s elapsed=%s", node.ID, method, hash, time.Since(started)) }()
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+	body, err := json.Marshal(map[string]any{"jsonrpc": "2.0", "id": 1, "method": method, "params": []string{hash}})
+	if err != nil {
+		return err
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, node.URL, bytes.NewReader(body))
+	if err != nil {
+		return err
+	}
+	cookie, err := os.ReadFile(node.Cookie)
+	if err != nil {
+		return err
+	}
+	defer clear(cookie)
+	user, password, ok := strings.Cut(strings.TrimSpace(string(cookie)), ":")
+	if !ok {
+		return fmt.Errorf("invalid private fixture cookie")
+	}
+	req.SetBasicAuth(user, password)
+	req.Header.Set("Content-Type", "application/json")
+	client := &http.Client{Timeout: 60 * time.Second}
+	defer client.CloseIdleConnections()
+	resp, err := client.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	var reply struct {
+		Error *chain.RPCError `json:"error"`
+	}
+	if err := json.NewDecoder(io.LimitReader(resp.Body, 1<<20)).Decode(&reply); err != nil {
+		return fmt.Errorf("fixture %s HTTP %d: invalid response", method, resp.StatusCode)
+	}
+	if reply.Error != nil {
+		return reply.Error
+	}
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("fixture %s HTTP %d", method, resp.StatusCode)
+	}
+	return nil
+}
 
 // Use a fresh private destination: an old source may already own cold records,
 // and overwriting only its active checkpoint would not model the real installer.
@@ -122,14 +181,21 @@ func TestRealArchiveBoundaryPaymentReorgAndPortableRecovery(t *testing.T) {
 			if err != nil || record.BlockHash == "" {
 				t.Fatal("payment lacks actual confirmed block", err)
 			}
-			if err = h.nodes[id].Call(h.ctx, "invalidateblock", nil, record.BlockHash); err != nil {
-				t.Fatal(err)
-			}
+			// Register exact-block cleanup before the request: a client timeout can
+			// occur after the node has already applied the invalidation.
 			defer func() {
-				if err := h.nodes[id].Call(h.ctx, "reconsiderblock", nil, record.BlockHash); err != nil {
+				if err := archiveFixtureBlockCommand(t, h.nodes[id], "reconsiderblock", record.BlockHash); err != nil {
 					t.Error(err)
+					return
+				}
+				var header struct{ Confirmations int }
+				if err := h.nodes[id].Call(h.ctx, "getblockheader", &header, record.BlockHash, true); err != nil || header.Confirmations < 1 {
+					t.Errorf("fixture cleanup did not restore exact block %s: confirmations=%d error=%v", record.BlockHash, header.Confirmations, err)
 				}
 			}()
+			if err = archiveFixtureBlockCommand(t, h.nodes[id], "invalidateblock", record.BlockHash); err != nil {
+				t.Fatal(err)
+			}
 			tickUntilConnected(t, e)
 			if e.CanChangeNetwork() == nil || e.s.Capacity == nil || !e.s.Capacity.Invalidated["send/"+request.ID] {
 				t.Fatal("known archive-crossing reorg did not hold monitoring")
@@ -154,8 +220,22 @@ func TestRealArchiveBoundaryPaymentReorgAndPortableRecovery(t *testing.T) {
 			assertLineage(e)
 			h.mine(id, uint32(chain.Regtest.Confirmations()))
 			tickUntilConnected(t, e)
-			if e.s.Capacity.Invalidated["send/"+request.ID] || e.CanChangeNetwork() != nil || e.Status().Recovery.State != "ready" {
-				t.Fatal("positive current confirmation did not resolve payment hold")
+			if e.s.Capacity.Invalidated["send/"+request.ID] {
+				t.Fatal("positive current confirmation did not clear archive invalidation")
+			}
+			if got := e.Status().Recovery.State; got != "ready" {
+				t.Fatal("positive current confirmation did not restore recovery readiness", got)
+			}
+			if e.s.Sends[request.ID].Confirmations != chain.Regtest.Confirmations() || e.CanChangeNetwork() == nil {
+				t.Fatal("two-confirmation payment bypassed the six-confirmation network guard")
+			}
+			h.mine(id, uint32(6-chain.Regtest.Confirmations()))
+			tickUntilConnected(t, e)
+			if got := e.s.Sends[request.ID].Confirmations; got != 6 {
+				t.Fatal("payment lacks six positive confirmations", got)
+			}
+			if err := e.CanChangeNetwork(); err != nil {
+				t.Fatal("six-confirmation payment did not release network guard", err)
 			}
 			assertLineage(e)
 			t.Logf("%s retained both signed variants across before/after portable recovery and deep archive-boundary reorg", id)
