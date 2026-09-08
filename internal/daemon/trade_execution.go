@@ -238,7 +238,8 @@ func (e *Engine) takeOffer(ctx context.Context, raw json.RawMessage, receipt *Tr
 	if err != nil {
 		return nil, err
 	}
-	if err := protocol.ValidateRescueAmounts(p.TowerBPS, amounts.Sell, amounts.Buy); err != nil {
+	// Takers authorize a tower refund only on their paid leg.
+	if err := protocol.ValidateRescueAmounts(p.TowerBPS, amounts.Buy); err != nil {
 		return nil, err
 	}
 	tower, err := e.selectProtection(o, p.TowerBPS, p.TowerPubKey, false)
