@@ -26,13 +26,8 @@ func (m *Manager) exportPortable(ctx context.Context, profile, path, password st
 	if !filepath.IsAbs(path) || len(password) < 16 {
 		return result, errors.New("choose an absolute destination and a backup password of at least 16 bytes")
 	}
-	m.mu.Lock()
-	manifest, err := m.backupSnapshotLocked(ctx, profile, all)
+	manifest, err := m.backupSnapshot(ctx, profile, all)
 	defer manifest.close()
-	if m.runtimeCtx != nil && !m.stopped {
-		m.startWorkers(m.runtimeCtx)
-	}
-	m.mu.Unlock()
 	if err != nil {
 		return result, err
 	}

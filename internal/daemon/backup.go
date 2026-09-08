@@ -25,6 +25,27 @@ func (e *Engine) FreezeBackup() (*storage.ReadSnapshot, func(), error) {
 	return view, func() { once.Do(func() { _ = view.Close(); e.activityReaders.Done() }) }, nil
 }
 
+// CaptureBackup freezes one committed checkpoint into a filesystem clone or a
+// generation-fenced page source. The fallback owns a lifetime lease but never
+// keeps a read transaction between callbacks. Release must not acquire mu.
+func (e *Engine) CaptureBackup(path string, allowClone bool) (bool, *storage.PageSnapshot, func(), error) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	if err := e.save(); err != nil {
+		return false, nil, nil, err
+	}
+	cloned, page, err := e.vault.CaptureArchive(path, allowClone)
+	if err != nil {
+		return false, nil, nil, err
+	}
+	if cloned {
+		return true, nil, func() {}, nil
+	}
+	e.activityReaders.Add(1)
+	var once sync.Once
+	return false, page, func() { once.Do(func() { _ = page.Close(); e.activityReaders.Done() }) }, nil
+}
+
 // BackupSnapshot owns a deep copy of the complete durable state. Desktop stops
 // its workers and joins advisory reads first to capture all selected wallets at
 // one lifecycle boundary, then takes this lock to exclude direct commands.

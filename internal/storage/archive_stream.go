@@ -154,6 +154,9 @@ func (v *Vault) ImportArchive(ctx context.Context, state any, expected ArchiveSt
 				stats.Bytes += size
 				stats.Kinds[record.Kind]++
 			}
+			if err := v.advanceArchiveGeneration(tx); err != nil {
+				return err
+			}
 			raw, err := json.Marshal(stats)
 			if err != nil {
 				return err

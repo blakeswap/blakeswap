@@ -238,15 +238,14 @@ func TestPortablePhysicalLargeHistoryAndCoreContinuation(t *testing.T) {
 	active = daemon.State{}
 	runtime.GC()
 	var snapshot backupManifest
-	portableScalePhase(t, "source_snapshot_worker_pause", func() {
-		m.mu.Lock()
-		defer m.mu.Unlock()
+	portableScalePhase(t, "source_snapshot_total", func() {
 		var err error
-		snapshot, err = m.backupSnapshotLocked(ctx, result.ProfileID, false)
+		snapshot, err = m.backupSnapshot(ctx, result.ProfileID, false)
 		if err != nil {
 			t.Fatal(err)
 		}
 	})
+	t.Logf("source_snapshot_worker_pause=%s", snapshot.capturePause)
 	output := filepath.Join(t.TempDir(), "complete-grown-v2.backup")
 	portableScalePhase(t, "export_complete_v2", func() {
 		if err := writeStreamManifest(ctx, output, password, snapshot); err != nil {

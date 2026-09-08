@@ -15,7 +15,8 @@ import (
 // Everything in this manifest is inside the authenticated ciphertext. Source
 // profile identifiers are descriptive only and never become filesystem paths.
 type backupManifest struct {
-	release func()
+	release      func()
+	capturePause time.Duration
 
 	FormatVersion int            `json:"format_version"`
 	CreatedAt     int64          `json:"created_at"`

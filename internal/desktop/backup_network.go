@@ -8,11 +8,18 @@ import (
 	"fmt"
 	"path/filepath"
 
+	"github.com/blakeswap/blakeswap/internal/chain"
 	"github.com/blakeswap/blakeswap/internal/daemon"
 	"github.com/blakeswap/blakeswap/internal/storage"
 )
 
-func (s *portableStaging) saveView(ctx context.Context, active daemon.State, stats storage.ArchiveStats, view *storage.ReadSnapshot) (*backupNetwork, backupMark, error) {
+type backupSourceView interface {
+	Close() error
+	LoadState(any) (storage.ArchiveStats, uint64, error)
+	VisitArchive(context.Context, func(storage.ArchiveRecord) error) error
+}
+
+func (s *portableStaging) saveView(ctx context.Context, active daemon.State, stats storage.ArchiveStats, view backupSourceView) (*backupNetwork, backupMark, error) {
 	mark := backupMark{SemanticToken: daemon.BackupSemanticToken(active)}
 	digest := sha256.New()
 	if err := storage.WriteJSONRecord(ctx, digest, struct {
@@ -137,4 +144,49 @@ func (s *portableStaging) save(state *daemon.State) (*backupNetwork, error) {
 		}
 		return nil
 	})
+}
+
+// A cloned provider is already independently encrypted. Authenticate and validate
+// every record and its exact content digest without copying all history again.
+func (n *backupNetwork) validateSnapshot(ctx context.Context, mnemonic string, network chain.Network) (backupMark, error) {
+	var mark backupMark
+	err := n.withView(func(view *storage.ReadSnapshot) error {
+		var active daemon.State
+		stats, _, err := view.LoadState(&active)
+		if err != nil {
+			return err
+		}
+		if active.Mnemonic != mnemonic || active.Network.Normalized() != network {
+			return errors.New("backup network state does not match its wallet")
+		}
+		if err := validateStreamedActive(&active, stats); err != nil {
+			return err
+		}
+		mark.SemanticToken = daemon.BackupSemanticToken(active)
+		if stats.Count > 0 && mark.SemanticToken == "" {
+			return errors.New("archived snapshot lacks a checked semantic token")
+		}
+		digest := sha256.New()
+		if err := storage.WriteJSONRecord(ctx, digest, struct {
+			Domain  string               `json:"domain"`
+			State   daemon.State         `json:"state"`
+			Archive storage.ArchiveStats `json:"archive"`
+		}{"blakeswap/complete-snapshot/v2", active, stats}); err != nil {
+			return err
+		}
+		if err := view.VisitArchive(ctx, func(record storage.ArchiveRecord) error {
+			if err := validateStreamedRecord(active, record); err != nil {
+				return err
+			}
+			return storage.WriteJSONRecord(ctx, digest, record)
+		}); err != nil {
+			return err
+		}
+		mark.Fingerprint = hex.EncodeToString(digest.Sum(nil))
+		if stats.Count == 0 {
+			mark.Fingerprint, err = daemon.BackupFingerprint(active)
+		}
+		return err
+	})
+	return mark, err
 }

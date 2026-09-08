@@ -609,3 +609,15 @@ The opt-in physical test uses real private files and no chain nodes:
 ```
 
 It writes and imports an accepted near-limit v1 population, creates a physical encrypted cold archive, adds retained core payloads so the complete output exceeds the old v1 envelope, and exports/installs a complete v2 profile. The phase log separates original v1 parsing, cold storage, the **entire source staging/worker-pause interval**, export, and v2 validation/restore. The 20ms sampled Go heap high-water marks are measurements, not strict peak guarantees; `/usr/bin/time -l` records OS peak RSS. Payload growth in this format test is not a claim of actual broadcast protocol validity. Run it without concurrent broad native/Go builds or node integration to make memory and latency results interpretable. A smaller `BLAKESWAP_SCALE_RECORDS=1000` run checks fixture mechanics but does not satisfy the large physical workload.
+
+The snapshot capture regressions force the non-clone fallback even on APFS. They
+exercise concurrent 8 MiB bbolt writer growth from an archive callback, exact
+retry and delete/reinsert generation fences, final-callback mutation, cancellation,
+independent cloned credentials, private cleanup and late semantic freshness.
+`TestPortableCaptureWalletWorkerProgressDuringPreparationAndMaterialization`
+runs the real daemon and wallet worker against disposable HTTP observation
+fixtures and proves chain reads continue during inactive credential preparation
+and a deliberately blocked archive callback. This is scheduling evidence, not a
+real-chain settlement test. The physical fixture reports `source_snapshot_total`
+separately from the complete `source_snapshot_worker_pause`, including worker
+join/save/capture/resume; its large-history measurement remains the latency test.

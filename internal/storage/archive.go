@@ -166,6 +166,7 @@ func (v *Vault) CommitArchive(state any, batch ArchiveBatch, maxBytes uint64) (A
 		if err != nil {
 			return err
 		}
+		mutated := false
 		b, err := tx.CreateBucketIfNotExists(archiveBucket)
 		if err != nil {
 			return err
@@ -186,6 +187,7 @@ func (v *Vault) CommitArchive(state any, batch ArchiveBatch, maxBytes uint64) (A
 				stats.Count--
 				stats.Bytes -= size
 				stats.Kinds[record.Kind]--
+				mutated = true
 				if err = b.Delete(index); err != nil {
 					return err
 				}
@@ -208,6 +210,7 @@ func (v *Vault) CommitArchive(state any, batch ArchiveBatch, maxBytes uint64) (A
 			if stats.Count == math.MaxUint64 || stats.Bytes > math.MaxUint64-size || stats.Kinds[putRecords[index].Kind] == math.MaxUint64 {
 				return errors.New("archive checkpoint accounting overflow")
 			}
+			mutated = true
 			stats.Count++
 			stats.Bytes += size
 			stats.Kinds[putRecords[index].Kind]++
@@ -224,6 +227,17 @@ func (v *Vault) CommitArchive(state any, batch ArchiveBatch, maxBytes uint64) (A
 		}
 		if checkpoint, ok := state.(interface{ ValidateArchiveCheckpoint(ArchiveStats) error }); ok {
 			if err := checkpoint.ValidateArchiveCheckpoint(stats); err != nil {
+				return err
+			}
+		}
+		generation, err := v.archiveGeneration(tx)
+		if err != nil {
+			return err
+		}
+		missingGeneration := len(generation) == 0
+		clear(generation)
+		if mutated || missingGeneration {
+			if err := v.advanceArchiveGeneration(tx); err != nil {
 				return err
 			}
 		}

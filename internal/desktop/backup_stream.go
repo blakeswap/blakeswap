@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 
 	"github.com/blakeswap/blakeswap/internal/chain"
 	"github.com/blakeswap/blakeswap/internal/daemon"
@@ -50,13 +51,15 @@ func (w backupWallet) networkState(n chain.Network) (*daemon.State, error) {
 	return nil, nil
 }
 
-// Temporary snapshots use a fresh random local encryption key and generated
-// filenames. Only one network's decoded state is resident at a time. Every
+// Temporary snapshots use private encrypted clones or a fresh random staging
+// key, with generated filenames. One network is decoded at a time. Every
 // caller owns close(), including cancellation and inspection-only paths.
 type portableStaging struct {
-	root     string
-	password []byte
-	count    int
+	root           string
+	password       []byte
+	count          int
+	clonePasswords [][]byte
+	once           sync.Once
 }
 
 func newPortableStaging(root string) (*portableStaging, error) {
@@ -73,11 +76,20 @@ func newPortableStaging(root string) (*portableStaging, error) {
 	clear(random)
 	return &portableStaging{root: directory, password: password}, nil
 }
-func (s *portableStaging) close() { clear(s.password); _ = os.RemoveAll(s.root) }
+func (s *portableStaging) close() {
+	s.once.Do(func() {
+		clear(s.password)
+		for _, password := range s.clonePasswords {
+			clear(password)
+		}
+		_ = os.RemoveAll(s.root)
+	})
+}
 
 // Called only after acquiring the process's exclusive data-directory lock.
-// These names were never published profiles. Snapshot keys exist only in the
-// prior process memory; interrupted prepared profiles use wallet-* and survive.
+// These names were never published profiles. Clones retain source encryption,
+// so reserved private directories must be cleaned even though the old process
+// lost its copied credentials. Published wallet-* recovery markers survive.
 func cleanupPortableStaging(root string) error {
 	for _, location := range []struct {
 		path     string
