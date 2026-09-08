@@ -21,6 +21,7 @@ func TestStreamedRecoveryRequiresSourceForCompletedCheck(t *testing.T) {
 	if protocol.Digest(s) != before {
 		t.Fatal("missing-source refusal changed staged state")
 	}
+}
 
 // The pinned source deliberately still contains the promoted cores. Only its
 // identity indexes stay cold in the destination; traversal must not count both.
