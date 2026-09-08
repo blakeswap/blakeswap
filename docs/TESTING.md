@@ -17,6 +17,8 @@ BLAKESWAP_REGTEST="$PWD" sh scripts/go.sh test -p=1 ./internal/contract ./intern
 
 Without `BLAKESWAP_REGTEST`, real-node cases explicitly skip; a passing unit run is not evidence of a two-chain integration pass. The complete script initializes actual upstream nodes first. It never substitutes a mock chain or a second unmodified Bitcoin node for Blake2b.
 
+CI divides the expanded ordinary race suite into four deterministic partitions, retaining the default Go package timeout and every test's own deadline. `python3 scripts/test_go_shard.py 0 4` reproduces partition zero; use indexes 0 through 3 for the complete suite. The runner discovers all package tests, examples, and fuzz seed functions, assigns equal names to one partition, and verifies that every selected function starts and finishes exactly once. Each partition still runs packages serially with `-p=1` and includes the pinned NIP-44 vectors. The `go` check requires all four partitions and static checks to pass. This ordinary runner clears `BLAKESWAP_*` flags; actual node and physical scale validation remain separately serialized gates.
+
 ## Invariants
 
 | ID | Invariant / boundary | Evidence |

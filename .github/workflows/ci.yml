@@ -6,7 +6,7 @@ on:
 permissions:
   contents: read
 jobs:
-  go:
+  static:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
@@ -17,9 +17,32 @@ jobs:
         run: sh scripts/go.sh vet ./...
       - name: Local storage reset
         run: make test-reset test-local-nodes test-packaging test-demo
-      - name: Unit, IPC lifecycle, race and NIP-44 vectors
-        run: sh scripts/go.sh test -race -count=1 -p=1 ./... fiatjaf.com/nostr/nip44
+      - name: Test partition coverage
+        run: python3 -m unittest discover -s scripts -p 'test_go_shard_test.py'
       - name: Formatting
         run: |
           sh scripts/go.sh fmt ./...
           git diff --exit-code
+  race:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [0, 1, 2, 3]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - name: Unit, IPC lifecycle, race and NIP-44 vectors
+        run: python3 scripts/test_go_shard.py ${{ matrix.shard }} 4
+  go:
+    runs-on: ubuntu-latest
+    needs: [static, race]
+    if: always()
+    steps:
+      - name: Require all validation partitions
+        env:
+          STATIC_RESULT: ${{ needs.static.result }}
+          RACE_RESULT: ${{ needs.race.result }}
+        run: test "$STATIC_RESULT" = success && test "$RACE_RESULT" = success

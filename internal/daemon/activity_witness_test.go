@@ -21,6 +21,15 @@ import (
 )
 
 func TestActivityNativeWitnessPersistsBeforeFailedMetadata(t *testing.T) {
+	activityNativeWitness(t, false)
+}
+
+func TestActivityNativeWitnessSurvivesCancelledMetadata(t *testing.T) {
+	activityNativeWitness(t, true)
+}
+
+func activityNativeWitness(t *testing.T, cancelAfterWitness bool) {
+	t.Helper()
 	for _, role := range []string{"maker", "taker"} {
 		for _, route := range []string{"receipts", "observations"} {
 			t.Run(role+"/"+route, func(t *testing.T) {
@@ -81,15 +90,46 @@ func TestActivityNativeWitnessPersistsBeforeFailedMetadata(t *testing.T) {
 				if err != nil {
 					t.Fatal(err)
 				}
-				if route == "receipts" {
-					e.watch[incoming.Chain] = rpc
-					e.indexActivityChain(context.Background(), incoming.Chain)
-				} else {
-					e.nodes[incoming.Chain] = rpc
-					e.observeActivityChain(context.Background(), incoming.Chain)
+				var backend chain.Backend = rpc
+				cancelled := &cancelAfterWitnessBackend{RPC: rpc, engine: e, id: incoming.Chain}
+				if cancelAfterWitness {
+					backend = cancelled
 				}
-				if metadata.Load() == 0 || !s.SecretObserved || !s.IncomingClaimSeen || s.LongConfirmations != 0 || s.ShortConfirmations != 0 {
-					t.Fatal("history did not retain facts independently of failed canonicality", metadata.Load(), s)
+				read := func() {
+					if route == "receipts" {
+						e.watch[incoming.Chain] = backend
+						e.indexActivityChain(context.Background(), incoming.Chain)
+					} else {
+						e.nodes[incoming.Chain] = backend
+						e.observeActivityChain(context.Background(), incoming.Chain)
+					}
+				}
+				read()
+				// Durability is required even if the synchronous callback consumes
+				// the rest of this advisory pass's 200ms network budget. Verify the
+				// checkpoint independently, including when metadata never starts.
+				var durable State
+				if found, err := e.vault.Load(&durable); err != nil || !found {
+					t.Fatal("witness checkpoint unavailable", err)
+				}
+				got, tower := durable.Swaps[s.ID], durable.TowerJobs["watch"]
+				if e.fatal != nil || got == nil || tower == nil || !got.SecretObserved || !got.IncomingClaimSeen || !got.SecretExposed || got.Secret != hex.EncodeToString(secret) || tower.Secret != hex.EncodeToString(secret) || got.LongConfirmations != 0 || got.ShortConfirmations != 0 || tower.Confirmed != 0 {
+					t.Fatal("witness facts were not durable independently of canonicality", e.fatal)
+				}
+				if cancelAfterWitness {
+					if cancelled.successful.Load() == 0 || metadata.Load() != 0 {
+						t.Fatal("cancelled witness continued metadata reads", cancelled.successful.Load(), metadata.Load())
+					}
+				} else if metadata.Load() == 0 {
+					// The next normal pass no longer has to save these immutable
+					// facts. Retain the handler's before-metadata durability check.
+					read()
+					if metadata.Load() == 0 {
+						t.Fatal("retry did not exercise metadata failure")
+					}
+				}
+				if e.fatal != nil || !s.SecretObserved || !s.IncomingClaimSeen || s.LongConfirmations != 0 || s.ShortConfirmations != 0 {
+					t.Fatal("history lost facts or granted canonicality", e.fatal)
 				}
 			})
 		}
@@ -261,4 +301,41 @@ func TestActivityFirstWitnessDeliveryRetainsLaterInputsBeforeCancellation(t *tes
 	if got.LongConfirmations != 0 || got.ShortConfirmations != 0 {
 		t.Fatal("witness granted confirmation authority")
 	}
+}
+
+// Use the actual engine sink and native RPC implementation. Cancellation occurs
+// only after the complete callback succeeds; no sleeps or metadata substitutes.
+type cancelAfterWitnessBackend struct {
+	*chain.RPC
+	engine     *Engine
+	id         chain.ID
+	successful atomic.Int32
+}
+
+func (b *cancelAfterWitnessBackend) witnessed(ctx context.Context) (context.Context, context.CancelFunc) {
+	child, cancel := context.WithCancel(ctx)
+	b.engine.mu.Lock()
+	real := b.engine.activityWitnessSink(child, b.id)
+	b.engine.mu.Unlock()
+	return chain.WithSpendWitnessSink(child, func(w chain.SpendWitness) error {
+		if real == nil {
+			return errors.New("missing real witness sink")
+		}
+		if err := real(w); err != nil {
+			return err
+		}
+		b.successful.Add(1)
+		cancel()
+		return nil
+	}), cancel
+}
+func (b *cancelAfterWitnessBackend) AddressHistory(ctx context.Context, address, after string, limit int) (chain.AddressHistoryPage, error) {
+	read, cancel := b.witnessed(ctx)
+	defer cancel()
+	return b.RPC.AddressHistory(read, address, after, limit)
+}
+func (b *cancelAfterWitnessBackend) HistoryTransaction(ctx context.Context, id string, height uint32, block string) (chain.HistoryTransaction, error) {
+	read, cancel := b.witnessed(ctx)
+	defer cancel()
+	return b.RPC.HistoryTransaction(read, id, height, block)
 }
