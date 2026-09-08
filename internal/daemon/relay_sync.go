@@ -219,7 +219,7 @@ func (e *Engine) ingestRelayEvent(event nostr.Event) error {
 	case transport.TowerKind:
 		e.ingestTower(event)
 	case transport.OfferKind:
-		e.ingestOffer(event)
+		return e.ingestOffer(event)
 	default:
 		return e.receive(event)
 	}

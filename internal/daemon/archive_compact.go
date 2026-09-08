@@ -243,6 +243,9 @@ func (e *Engine) compactArchive(ctx context.Context, swaps, towers map[chain.ID]
 		if err := move("offers", id); err != nil {
 			return err
 		}
+		if err := e.archiveOwnOfferView(id, event); err != nil {
+			return err
+		}
 		for _, kind := range []string{"order_records", "offer_towers", "funding_fees"} {
 			key := id
 			if kind == "funding_fees" {
@@ -252,6 +255,9 @@ func (e *Engine) compactArchive(ctx context.Context, swaps, towers map[chain.ID]
 				return err
 			}
 		}
+	}
+	if err := e.compactOwnPublicVersions(&remaining); err != nil {
+		return err
 	}
 	for _, id := range sortedArchiveIDs(e.s.TradeReceipts) {
 		if remaining == 0 {

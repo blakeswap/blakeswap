@@ -519,12 +519,12 @@ func (e *Engine) tickProtocol(ctx context.Context) error {
 	publishErr := e.dispatchPublications()
 	return errors.Join(refreshErr, scanErr, publishErr)
 }
-func (e *Engine) ingestOffer(event nostr.Event) {
+func (e *Engine) ingestOffer(event nostr.Event) error {
 	o, err := protocol.DecodeOffer(event, time.Now().Unix())
 	if err != nil || o.Network.Normalized() != e.Config.Network {
-		return
+		return err
 	}
-	e.retainPublicOffer(event, o)
+	return e.retainPublicOffer(event, o)
 }
 func (e *Engine) queue(to, typ, swapID string, body any) error {
 	raw, err := json.Marshal(body)

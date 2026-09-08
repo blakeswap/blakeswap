@@ -61,7 +61,8 @@ func (s State) ValidateArchiveCheckpoint(stats storage.ArchiveStats) error {
 // Recovery quarantine has separate names so archived offers never acquire live
 // publication authority when a restored record is queried or reactivated.
 var archiveFields = map[string][]string{
-	"sends": {"Sends"}, "swaps": {"Swaps"}, "tower_jobs": {"TowerJobs"},
+	"own_public_versions": {"OwnPublicVersions"},
+	"sends":               {"Sends"}, "swaps": {"Swaps"}, "tower_jobs": {"TowerJobs"},
 	"offers": {"Offers"}, "order_records": {"OrderRecords"}, "seen": {"Seen"}, "seen_semantics": {"SeenSemantics"},
 	"outbox": {"Outbox"}, "trade_receipts": {"TradeReceipts"}, "trade_tokens": {"TradeTokens"},
 	"funding_fees": {"FundingFees"}, "offer_towers": {"OfferTowers"},

@@ -91,6 +91,7 @@ type TowerJob struct {
 }
 type State struct {
 	MakerStrategies             map[string]*MakerStrategy    `json:"maker_strategies,omitempty"`
+	OwnPublicVersions           map[string]PublicVersion     `json:"own_public_versions,omitempty"`
 	PublicVersions              map[string]PublicVersion     `json:"public_versions,omitempty"`
 	PublicLimited               bool                         `json:"public_limited,omitempty"`
 	ActivityTransactions        map[string]string            `json:"activity_transactions,omitempty"`

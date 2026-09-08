@@ -1,6 +1,7 @@
 package daemon
 
 import (
+	"context"
 	"fiatjaf.com/nostr"
 	"github.com/blakeswap/blakeswap/internal/chain"
 	"github.com/blakeswap/blakeswap/internal/protocol"
@@ -77,5 +78,91 @@ func TestPublicCapacityStillAcceptsKnownCancellation(t *testing.T) {
 	e.prunePublicOffers()
 	if len(e.s.Book) != 0 {
 		t.Fatal("capacity discarded a known cancellation")
+	}
+}
+
+func TestOwnPublicOrderingArchivesWithHistoryAndSurvivesRestart(t *testing.T) {
+	e, _ := receiveEngine(t)
+	id := transport.RandomID()
+	key := e.identity.Public().Hex() + ":" + id
+	at := nostr.Now()
+	open := publicRetentionEvent(t, e.identity, id, "open", at-1)
+	cancelled := publicRetentionEvent(t, e.identity, id, "cancelled", at)
+	e.s.Offers = map[string]nostr.Event{id: open}
+	if err := e.ingestOffer(open); err != nil {
+		t.Fatal(err)
+	}
+	e.s.Offers[id] = cancelled
+	if err := e.ingestOffer(cancelled); err != nil {
+		t.Fatal(err)
+	}
+	if err := e.save(); err != nil {
+		t.Fatal(err)
+	}
+	token := BackupSemanticToken(e.s)
+	if err := e.compactArchive(context.Background(), nil, nil); err != nil {
+		t.Fatal(err)
+	}
+	if err := e.save(); err != nil {
+		t.Fatal(err)
+	}
+	if len(e.s.Book) != 0 || len(e.s.OwnPublicVersions) != 0 || len(e.s.PublicVersions) != 0 {
+		t.Fatal("completed own view remained active")
+	}
+	if BackupSemanticToken(e.s) != token {
+		t.Fatal("moving the ordering floor changed freshness")
+	}
+	var saved State
+	if _, err := e.vault.Load(&saved); err != nil {
+		t.Fatal(err)
+	}
+	e.s = saved
+	e.semanticParts = nil
+	if err := e.ingestOffer(open); err != nil {
+		t.Fatal(err)
+	}
+	if len(e.s.Book) != 0 {
+		t.Fatal("old resweep resurrected cold own offer")
+	}
+	// A newly observed signed cancellation advances the durable floor while the
+	// original source remains cold and cannot grant new publication authority.
+	newer := publicRetentionEvent(t, e.identity, id, "cancelled", at+1)
+	if err := e.ingestOffer(newer); err != nil {
+		t.Fatal(err)
+	}
+	if len(e.s.Book) != 0 || len(e.s.Offers) != 0 || e.s.OwnPublicVersions[key].ID != newer.ID.Hex() {
+		t.Fatal("new cold ordering lost its safe projection")
+	}
+	if err := e.save(); err != nil {
+		t.Fatal(err)
+	}
+	changed := BackupSemanticToken(e.s)
+	if changed == token {
+		t.Fatal("new meaningful archived ordering did not stale backup")
+	}
+	if err := e.compactArchive(context.Background(), nil, nil); err != nil {
+		t.Fatal(err)
+	}
+	if err := e.save(); err != nil {
+		t.Fatal(err)
+	}
+	if BackupSemanticToken(e.s) != changed {
+		t.Fatal("ordering compaction changed semantic token")
+	}
+	if err := e.ingestOffer(cancelled); err != nil {
+		t.Fatal(err)
+	}
+	if len(e.s.Book) != 0 {
+		t.Fatal("older cancellation repopulated view")
+	}
+	if err := e.vault.Close(); err != nil {
+		t.Fatal(err)
+	}
+	newest := publicRetentionEvent(t, e.identity, id, "open", at+2)
+	if err := e.ingestRelayEvent(newest); err == nil {
+		t.Fatal("cold ordering read failure masqueraded as successful relay application")
+	}
+	if len(e.s.Book) != 0 {
+		t.Fatal("read failure admitted unverifiable public version")
 	}
 }
