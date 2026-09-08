@@ -189,6 +189,13 @@ func TestRealArchiveBoundaryPaymentReorgAndPortableRecovery(t *testing.T) {
 			if err != nil || record.BlockHash == "" {
 				t.Fatal("payment lacks actual confirmed block", err)
 			}
+			var originalHeader struct {
+				Height        uint32
+				Confirmations int
+			}
+			if err := h.nodes[id].Call(h.ctx, "getblockheader", &originalHeader, record.BlockHash, true); err != nil || originalHeader.Height == 0 || originalHeader.Confirmations < archiveSettlementDepth {
+				t.Fatal("payment block does not cross the actual archive boundary", originalHeader, err)
+			}
 			// Register exact-block cleanup before the request: a client timeout can
 			// occur after the node has already applied the invalidation.
 			defer func() {
@@ -201,8 +208,25 @@ func TestRealArchiveBoundaryPaymentReorgAndPortableRecovery(t *testing.T) {
 					t.Errorf("fixture cleanup did not restore exact block %s: confirmations=%d error=%v", record.BlockHash, header.Confirmations, err)
 				}
 			}()
-			if err = archiveFixtureBlockCommand(t, h.nodes[id], "invalidateblock", record.BlockHash); err != nil {
-				t.Fatal(err)
+			// Disconnect the same full archive-depth suffix in bounded batches.
+			// The wallet retains its old checkpoint until every batch completes;
+			// it must observe and recover the entire deep reorg on its next Tick.
+			for tip := h.height(id); tip >= originalHeader.Height; {
+				batchHeight := originalHeader.Height
+				if tip-originalHeader.Height >= 12 {
+					batchHeight = tip - 11
+				}
+				var batchHash string
+				if err := h.nodes[id].Call(h.ctx, "getblockhash", &batchHash, batchHeight); err != nil {
+					t.Fatal(err)
+				}
+				if err := archiveFixtureBlockCommand(t, h.nodes[id], "invalidateblock", batchHash); err != nil {
+					t.Fatal(err)
+				}
+				tip = h.height(id)
+				if tip != batchHeight-1 {
+					t.Fatal("fixture did not disconnect the exact batch", tip, batchHeight)
+				}
 			}
 			tickUntilConnected(t, e)
 			if e.CanChangeNetwork() == nil || e.s.Capacity == nil || !e.s.Capacity.Invalidated["send/"+request.ID] {
