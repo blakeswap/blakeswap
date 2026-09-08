@@ -157,18 +157,18 @@ func (e *Engine) archiveOwnOfferView(id string, event nostr.Event) error {
 	if err := e.retainOwnPublicVersion(key, PublicVersion{CreatedAt: event.CreatedAt, ID: event.ID.Hex()}); err != nil {
 		return err
 	}
-	// An equal or newer cold floor can stay cold. For the view comparison only,
-	// read that exact floor without creating a second active owner.
-	previous, known := e.s.OwnPublicVersions[key]
-	if !known {
-		if _, err := e.archivedValue("own_public_versions", key, &previous); err != nil {
-			return err
+	// Retiring an older local source cannot retire a newer independently signed
+	// open view. The strongest ordering floor and visible row have distinct jobs.
+	if current, ok := e.s.Book[key]; ok {
+		var offer protocol.Offer
+		invalid := json.Unmarshal([]byte(current.Content), &offer) != nil
+		closed := invalid || offer.Expires <= time.Now().Unix() || offer.Status == "cancelled" || offer.Status == "filled"
+		retired := PublicVersion{CreatedAt: event.CreatedAt, ID: event.ID.Hex()}
+		if closed || !newerPublic(current, retired) {
+			delete(e.s.Book, key)
 		}
 	}
 
-	if current, ok := e.s.Book[key]; ok && !newerPublic(current, previous) {
-		delete(e.s.Book, key)
-	}
 	delete(e.s.PublicVersions, key)
 	if _, ok := e.s.Book[key]; ok {
 		return nil

@@ -316,3 +316,62 @@ func TestLegacyOrphanOwnOrderingMigrationPreservesStrongestFloor(t *testing.T) {
 		})
 	}
 }
+
+func TestNewerOwnViewSurvivesOlderSourceCompaction(t *testing.T) {
+	for _, before := range []bool{false, true} {
+		name := "after"
+		if before {
+			name = "before"
+		}
+		t.Run(name, func(t *testing.T) {
+			e, _ := receiveEngine(t)
+			id := transport.RandomID()
+			key := e.identity.Public().Hex() + ":" + id
+			at := nostr.Now()
+			closed := publicRetentionEvent(t, e.identity, id, "cancelled", at-1)
+			newer := publicRetentionEvent(t, e.identity, id, "open", at)
+			e.s.Offers = map[string]nostr.Event{id: closed}
+			if err := e.ingestOffer(closed); err != nil {
+				t.Fatal(err)
+			}
+			if err := e.save(); err != nil {
+				t.Fatal(err)
+			}
+			if before {
+				if err := e.ingestRelayEvent(newer); err != nil {
+					t.Fatal(err)
+				}
+				if err := e.save(); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if err := e.prunePublicOffers(); err != nil {
+				t.Fatal(err)
+			}
+			if err := e.compactArchive(context.Background(), nil, nil); err != nil {
+				t.Fatal(err)
+			}
+			if err := e.save(); err != nil {
+				t.Fatal(err)
+			}
+			if !before {
+				if err := e.ingestRelayEvent(newer); err != nil {
+					t.Fatal(err)
+				}
+				if err := e.save(); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if len(e.s.Offers) != 0 {
+				t.Fatal("remote view gained publication authority")
+			}
+			// An exact history overlap must not change the result either way.
+			if err := e.ingestRelayEvent(newer); err != nil {
+				t.Fatal(err)
+			}
+			if e.s.Book[key].ID != newer.ID {
+				t.Fatal("newer still-open own view permanently disappeared when older local source archived")
+			}
+		})
+	}
+}
