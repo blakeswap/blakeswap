@@ -383,3 +383,348 @@ func TestObservedMissingScanCannotEnterFundingOrRetirement(t *testing.T) {
 		t.Fatal("complete positive local expiry control failed", err)
 	}
 }
+
+func TestReviewUnknownObservedRefundCannotLeaveActiveCustody(t *testing.T) {
+	for _, issue := range []string{"malformed witness", "unavailable multi-input prevout"} {
+		t.Run(issue, func(t *testing.T) {
+			e, children, secrets := fundedFillPair(t, chain.Blake)
+			s := children[0]
+			all := fillPairOutcomes(t, e, children, secrets, true)
+			if err := e.advanceSwap(context.Background(), s, all); err != nil {
+				t.Fatal(err)
+			}
+			if s.Stage != "refunded" || s.SecretObserved {
+				t.Fatal("original refund setup", s.Stage, s.SecretObserved)
+			}
+			if err := e.save(); err != nil {
+				t.Fatal(err)
+			}
+			c := s.Short
+			point := chain.OutpointKey(c.TxID, c.Vout)
+			obs := all[c.Chain][point]
+			if issue == "malformed witness" {
+				obs.Tx = obs.Tx.Copy()
+				obs.Tx.TxIn[0].Witness[0] = []byte{1, 2}
+			} else {
+				obs, _ = observedMultiInput(t, e, s, c, true, secrets[0])
+			}
+			all[c.Chain][point] = obs
+			for _, id := range []chain.ID{chain.BTC, chain.Blake} {
+				e.nodes[id] = &reviewArchiveEvidenceBackend{Backend: e.nodes[id]}
+				e.heights[id] = 500
+				for k, o := range all[id] {
+					o.Height = 1
+					o.Confirmations = 500
+					all[id][k] = o
+				}
+				if err := e.refreshArchiveCheckpoint(context.Background(), id); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if err := e.advanceSwap(context.Background(), s, all); err == nil {
+				t.Fatal("unknown proof accepted")
+			}
+			if s.Stage != "refunded" {
+				t.Fatal("unknown evidence lost terminal display control", s.Stage)
+			}
+			if e.recoverySwapResolved(s, all) {
+				t.Fatal("unknown proof became resolved")
+			}
+			if err := e.compactArchive(context.Background(), all, nil); err != nil {
+				t.Fatal(err)
+			}
+			if err := e.save(); err != nil {
+				t.Fatal(err)
+			}
+			var saved State
+			if _, err := e.vault.Load(&saved); err != nil {
+				t.Fatal(err)
+			}
+			if saved.Swaps[s.ID] == nil {
+				t.Fatal("unknown current refund proof was archived out of active custody")
+			}
+		})
+	}
+}
+
+type reviewArchiveEvidenceBackend struct{ chain.Backend }
+
+func (b *reviewArchiveEvidenceBackend) BlockHash(context.Context, uint32) (string, error) {
+	return "current-canonical-tip", nil
+}
+func (b *reviewArchiveEvidenceBackend) Transaction(context.Context, string) (chain.Transaction, error) {
+	return chain.Transaction{}, &chain.RPCError{Code: -5, Message: "unavailable fixture prevout"}
+}
+
+func reviewManyInputRefund(t *testing.T, e *Engine, s *Swap, c contract.HTLC, count int) (chain.Observation, []chain.Transaction) {
+	t.Helper()
+	obs := recoverySpend(t, e, s, c, true, nil)
+	tx := obs.Tx.Copy()
+	var inputs []*wire.TxIn
+	var previous []chain.Transaction
+	var spent []*wire.TxOut
+	for i := 0; i < count-1; i++ {
+		prev := wire.NewMsgTx(2)
+		op, _ := contract.Outpoint(transport.RandomID(), 0)
+		prev.AddTxIn(wire.NewTxIn(&op, nil, nil))
+		prev.AddTxOut(wire.NewTxOut(10000, []byte{txscript.OP_TRUE}))
+		inputs = append(inputs, wire.NewTxIn(&wire.OutPoint{Hash: prev.TxHash()}, nil, nil))
+		previous = append(previous, chain.Transaction{TxID: prev.TxHash().String(), Hex: contract.Hex(prev)})
+		spent = append(spent, prev.TxOut[0])
+	}
+	inputs = append(inputs, tx.TxIn[0])
+	tx.TxIn = inputs
+	pk, _ := c.PkScript()
+	script, _ := c.Script()
+	spent = append(spent, wire.NewTxOut(c.Amount, pk))
+	digest, err := contract.Digest(c.Chain, tx, count-1, script, spent)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tx.TxIn[count-1].Witness[0] = append(ecdsa.Sign(isolatedSpendKey(t, e, s, c, true), digest).Serialize(), byte(contract.UnifiedAll))
+	if err := contract.VerifyObservedSpend(c, tx, spent); err != nil {
+		t.Fatal("complete signature proof control", err)
+	}
+	obs.Tx, obs.TxID = tx, tx.TxHash().String()
+	return obs, previous
+}
+
+type reviewEvidenceBudgetBackend struct {
+	chain.Backend
+	records map[string]chain.Transaction
+	missing string
+	calls   int
+}
+
+func (b *reviewEvidenceBudgetBackend) Transaction(ctx context.Context, id string) (chain.Transaction, error) {
+	if v, ok := b.records[id]; ok {
+		b.calls++
+		if id == b.missing {
+			return chain.Transaction{}, &chain.RPCError{Code: -5, Message: "historic raw transaction unavailable"}
+		}
+		return v, nil
+	}
+	return b.Backend.Transaction(ctx, id)
+}
+func TestReviewUnavailableEarlyProofCannotStarveHealthyLaterChild(t *testing.T) {
+	e, children, _ := fundedFillPair(t, chain.Blake)
+	if children[0].ID > children[1].ID {
+		children[0], children[1] = children[1], children[0]
+	}
+	all := map[chain.ID]map[string]chain.Observation{chain.BTC: {}, chain.Blake: {}}
+	b := &reviewEvidenceBudgetBackend{Backend: e.nodes[chain.Blake], records: map[string]chain.Transaction{}}
+	e.nodes[chain.Blake] = b
+	for i, s := range children {
+		for _, c := range []contract.HTLC{s.Long, s.Short} {
+			all[c.Chain][chain.OutpointKey(c.TxID, c.Vout)] = recoverySpend(t, e, s, c, true, nil)
+		}
+		count := 3
+		if i == 0 {
+			count = 128
+		}
+		obs, previous := reviewManyInputRefund(t, e, s, s.Short, count)
+		for _, p := range previous {
+			b.records[p.TxID] = p
+		}
+		if i == 0 {
+			b.missing = previous[len(previous)-1].TxID
+		}
+		all[chain.Blake][chain.OutpointKey(s.Short.TxID, s.Short.Vout)] = obs
+	}
+	for scan := 0; scan < 4; scan++ {
+		e.resetObservedSpendWork()
+		before := b.calls
+		for _, s := range children {
+			_ = e.advanceSwap(context.Background(), s, all)
+		}
+		if b.calls-before > observedPrevoutReads {
+			t.Fatalf("per-scan proof read bound exceeded: reads=%d", b.calls-before)
+		}
+		bad := children[0]
+		if e.s.FillRecords[bad.ID].Allocation.Disposition != FillCommitted || e.validateContractObservation(bad.Short, all[chain.Blake][chain.OutpointKey(bad.Short.TxID, bad.Short.Vout)]) == nil {
+			t.Fatal("unavailable first child proof became settlement evidence")
+		}
+	}
+	healthy := children[1]
+	if e.s.FillRecords[healthy.ID].Allocation.Disposition != FillReleased {
+		t.Fatalf("healthy later child's complete refund proof starved across four scans: %s / %v", e.s.FillRecords[healthy.ID].Allocation.Disposition, e.validateContractObservation(healthy.Short, all[chain.Blake][chain.OutpointKey(healthy.Short.TxID, healthy.Short.Vout)]))
+	}
+}
+
+type observedArchiveTipBackend struct{ chain.Backend }
+
+func (*observedArchiveTipBackend) BlockHash(context.Context, uint32) (string, error) {
+	return "current-canonical-tip", nil
+}
+
+func TestObservedQualifiedRefundStillArchives(t *testing.T) {
+	for _, multi := range []bool{false, true} {
+		t.Run(map[bool]string{false: "single input", true: "multiple inputs"}[multi], func(t *testing.T) {
+			e, children, secrets := fundedFillPair(t, chain.Blake)
+			s := children[0]
+			all := fillPairOutcomes(t, e, children, secrets, true)
+			if multi {
+				obs, previous := observedMultiInput(t, e, s, s.Short, true, nil)
+				all[chain.Blake][chain.OutpointKey(s.Short.TxID, s.Short.Vout)] = obs
+				e.nodes[chain.Blake] = &observedPrevoutBackend{Backend: e.nodes[chain.Blake], previous: previous}
+			}
+			for _, id := range []chain.ID{chain.BTC, chain.Blake} {
+				e.nodes[id] = &observedArchiveTipBackend{Backend: e.nodes[id]}
+				e.heights[id] = 500
+				for key, obs := range all[id] {
+					obs.Height, obs.Confirmations = 1, 500
+					all[id][key] = obs
+				}
+				if err := e.refreshArchiveCheckpoint(context.Background(), id); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if err := e.advanceSwap(context.Background(), s, all); err != nil || s.Stage != "refunded" {
+				t.Fatal("positive refund control", err, s.Stage)
+			}
+			if err := e.compactArchive(context.Background(), all, nil); err != nil {
+				t.Fatal(err)
+			}
+			if err := e.save(); err != nil {
+				t.Fatal(err)
+			}
+			var saved State
+			if _, err := e.vault.Load(&saved); err != nil {
+				t.Fatal(err)
+			}
+			if saved.Swaps[s.ID] != nil || saved.Swaps[children[1].ID] == nil {
+				t.Fatal("qualified refund or unrelated active child had wrong placement")
+			}
+			var cold Swap
+			if found, err := e.archivedValue("swaps", s.ID, &cold); err != nil || !found || cold.Stage != "refunded" {
+				t.Fatal("qualified refund lost cold custody", err)
+			}
+		})
+	}
+}
+
+func TestObservedDeferredTurnCannotOutliveItsWitness(t *testing.T) {
+	for _, change := range []string{"missing observation", "changed witness"} {
+		t.Run(change, func(t *testing.T) {
+			e, children, _ := fundedFillPair(t, chain.Blake)
+			all := map[chain.ID]map[string]chain.Observation{chain.Blake: {}}
+			b := &reviewEvidenceBudgetBackend{Backend: e.nodes[chain.Blake], records: map[string]chain.Transaction{}}
+			e.nodes[chain.Blake] = b
+			for i, s := range children {
+				count := 3
+				if i == 0 {
+					count = 128
+				}
+				obs, previous := reviewManyInputRefund(t, e, s, s.Short, count)
+				for _, p := range previous {
+					b.records[p.TxID] = p
+				}
+				if i == 0 {
+					b.missing = previous[len(previous)-1].TxID
+				}
+				all[chain.Blake][chain.OutpointKey(s.Short.TxID, s.Short.Vout)] = obs
+				e.prepareObservedSpends(context.Background(), s, all)
+			}
+			first := children[0]
+			firstObs, _ := observation(all, first.Short)
+			if e.validateContractObservation(first.Short, firstObs) == nil {
+				t.Fatal("missing original evidence was accepted")
+			}
+			point := chain.OutpointKey(children[1].Short.TxID, children[1].Short.Vout)
+			if change == "missing observation" {
+				delete(all[chain.Blake], point)
+			} else {
+				obs := all[chain.Blake][point]
+				obs.Tx = obs.Tx.Copy()
+				obs.Tx.TxIn[len(obs.Tx.TxIn)-1].Witness[0] = []byte{1, 2}
+				all[chain.Blake][point] = obs
+			}
+			b.missing = ""
+			e.resetObservedSpendWork()
+			before := b.calls
+			e.prepareObservedSpends(context.Background(), first, all)
+			if e.validateContractObservation(first.Short, firstObs) != nil || b.calls-before > observedPrevoutReads {
+				t.Fatal("obsolete deferred witness held current complete proof")
+			}
+		})
+	}
+}
+
+func TestObservedOversizedResponseEndsPassWithoutStarvingSibling(t *testing.T) {
+	e, children, _ := fundedFillPair(t, chain.Blake)
+	all := map[chain.ID]map[string]chain.Observation{chain.BTC: {}, chain.Blake: {}}
+	b := &reviewEvidenceBudgetBackend{Backend: e.nodes[chain.Blake], records: map[string]chain.Transaction{}}
+	e.nodes[chain.Blake] = b
+	for i, s := range children {
+		all[chain.BTC][chain.OutpointKey(s.Long.TxID, s.Long.Vout)] = recoverySpend(t, e, s, s.Long, true, nil)
+		obs, previous := reviewManyInputRefund(t, e, s, s.Short, 2)
+		if i == 0 {
+			previous[0].Hex = strings.Repeat("00", observedPrevoutBytes+1)
+		}
+		b.records[previous[0].TxID] = previous[0]
+		all[chain.Blake][chain.OutpointKey(s.Short.TxID, s.Short.Vout)] = obs
+	}
+	for scan := 0; scan < 3; scan++ {
+		e.resetObservedSpendWork()
+		before := b.calls
+		for _, s := range children {
+			_ = e.advanceSwap(context.Background(), s, all)
+		}
+		if scan == 0 && b.calls-before != 1 {
+			t.Fatal("oversized response allowed further reads beyond this pass's byte budget", b.calls-before)
+		}
+	}
+	if e.s.FillRecords[children[0].ID].Allocation.Disposition != FillCommitted || e.s.FillRecords[children[1].ID].Allocation.Disposition != FillReleased {
+		t.Fatal("oversized early evidence starved or falsely resolved a child")
+	}
+}
+
+func TestObservedDeferredTurnRotatesPastMultipleFailures(t *testing.T) {
+	e, children, _ := fundedFillPair(t, chain.Blake)
+	original := children[0]
+	all := map[chain.ID]map[string]chain.Observation{chain.Blake: {}}
+	b := &reviewEvidenceBudgetBackend{Backend: &fundingLookupBackend{err: context.DeadlineExceeded}, records: map[string]chain.Transaction{}}
+	e.nodes[chain.Blake] = b
+	// This tests only bounded proof scheduling. Copies keep the real signing
+	// authority and unique outpoints; no incomplete copied graph is persisted.
+	e.s.Swaps = map[string]*Swap{}
+	var candidates []*Swap
+	for i := 0; i < 3; i++ {
+		s := *original
+		s.ID, s.Short.TxID = transport.RandomID(), transport.RandomID()
+		e.s.Swaps[s.ID] = &s
+		candidates = append(candidates, &s)
+		count := 128
+		if i == 2 {
+			count = 3
+		}
+		obs, previous := reviewManyInputRefund(t, e, original, s.Short, count)
+		for j, p := range previous {
+			if i < 2 && j == len(previous)-1 {
+				continue
+			}
+			b.records[p.TxID] = p
+		}
+		all[chain.Blake][chain.OutpointKey(s.Short.TxID, s.Short.Vout)] = obs
+	}
+	for scan := 0; scan < 4; scan++ {
+		e.resetObservedSpendWork()
+		for _, s := range candidates {
+			e.prepareObservedSpends(context.Background(), s, all)
+		}
+		if e.observedSpendReads > observedPrevoutReads {
+			t.Fatal("proof scheduler exceeded the per-pass read budget", e.observedSpendReads)
+		}
+		for _, s := range candidates[:2] {
+			obs, _ := observation(all, s.Short)
+			if e.validateContractObservation(s.Short, obs) == nil {
+				t.Fatal("unavailable ancestor input became qualified evidence")
+			}
+		}
+	}
+	healthy := candidates[2]
+	obs, _ := observation(all, healthy.Short)
+	if err := e.validateContractObservation(healthy.Short, obs); err != nil {
+		t.Fatal("two failed prefixes starved the third candidate across four scans", err)
+	}
+}

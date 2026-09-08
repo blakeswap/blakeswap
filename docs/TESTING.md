@@ -913,6 +913,11 @@ hash checked before selecting its output. The daemon bounds this work to 128
 reads and 4 MiB per scan, with a 500 ms enrichment slice, and retains only compact
 active-contract verification results bound to the witness hash and source
 generation. Missing evidence stays unknown and retries on a later scan.
+Deferred witnesses rotate through later candidates before retrying an earlier
+prefix; tests cover two unavailable prefixes followed by a healthy child, and
+an oversized response that consumes the pass's remaining byte quota. A changed
+or missing witness cannot keep its previous priority. No raw previous-output
+vector is retained between passes.
 
 `observed_spend_test.go` covers mixed multi-input child outcomes, both directions
 and restored wallets; malformed/missing/oversized/slow previous transactions;
@@ -924,6 +929,9 @@ That path cannot fund, refund, release quantity, or make a first revelation.
 Unverified target spends cannot authorize the mempool replacement exception or
 suppress rescue as if they were confirmed. Missing complete scan maps remain
 distinct from current empty scans, including before funding or retirement.
+Archival also requires qualified current spend evidence: unknown refunds stay
+in active custody, while valid single-input and multi-input refunds can archive
+without moving an unrelated active sibling.
 
 The unchanged peer-sequence regressions in `fill_reorg_test.go` independently
 execute the Bitcoin witness script before checking ordinary/restored accounting

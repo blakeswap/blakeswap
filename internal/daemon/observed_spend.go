@@ -22,6 +22,14 @@ type observedSpendProof struct {
 	err        error
 }
 
+type observedSpendTurn struct {
+	contract   contract.HTLC
+	witness    chainhash.Hash
+	generation uint64
+}
+
+var errObservedWorkDeferred = errors.New("observed spend proof deferred by this scan's work budget")
+
 const observedPrevoutReads = 128
 const observedPrevoutBytes = 4 << 20
 
@@ -29,8 +37,8 @@ const observedPrevoutBytes = 4 << 20
 // transactions and complete prevout vectors live for a single bounded check.
 // Successful signatures remain immutable across scans; canonicality is always
 // checked against the current observation separately. Failed reads retry on the
-// next scan. Retaining successes also prevents a large set of children from
-// repeatedly consuming the read budget before later children get a turn.
+// next scan. A deferred witness gets the first work turn on the next scan, so
+// a repeatedly unavailable early transaction cannot starve a later child.
 func (e *Engine) resetObservedSpendWork() {
 	live := make(map[contract.HTLC]bool, 2*len(e.s.Swaps))
 	for _, s := range e.s.Swaps {
@@ -41,7 +49,44 @@ func (e *Engine) resetObservedSpendWork() {
 			delete(e.observedSpendProofs, c)
 		}
 	}
+	e.observedSpendPriority = e.observedSpendNext
+	if e.observedSpendPriority == nil {
+		e.observedSpendPriority = e.observedSpendBefore
+	}
+	e.observedSpendNext, e.observedSpendBefore = nil, nil
+	if p := e.observedSpendPriority; p != nil && !live[p.contract] {
+		e.observedSpendPriority = nil
+	}
 	e.observedSpendReads, e.observedSpendBytes = 0, 0
+}
+
+func (e *Engine) deferObservedSpend(c contract.HTLC, o chain.Observation) {
+	next := &e.observedSpendNext
+	if e.observedSpendPriority != nil {
+		// Candidates skipped before this pass's reserved turn wait until the
+		// suffix has had its turns; otherwise two failed prefixes can alternate
+		// forever while starving every candidate after them.
+		next = &e.observedSpendBefore
+	}
+	if *next == nil {
+		*next = &observedSpendTurn{contract: c, witness: o.Tx.WitnessHash(), generation: e.chainGeneration[c.Chain]}
+	}
+}
+
+func (e *Engine) observedSpendTurn(c contract.HTLC, all map[chain.ID]map[string]chain.Observation) error {
+	p := e.observedSpendPriority
+	if p == nil {
+		return nil
+	}
+	o, found := observation(all, p.contract)
+	proof, proven := e.observedSpendProofs[p.contract]
+	if !found || o.Tx == nil || !e.fresh(p.contract.Chain) || p.generation != e.chainGeneration[p.contract.Chain] || o.Tx.TxHash().String() != o.TxID || o.Tx.WitnessHash() != p.witness || !needsObservedPrevouts(p.contract, o.Tx) || (proven && proof.err == nil && proof.witness == p.witness && proof.generation == p.generation) || p.contract == c {
+		// A disappeared, changed, stale or already proven candidate cannot hold
+		// the queue. Only the exact current witness consumes its priority turn.
+		e.observedSpendPriority = nil
+		return nil
+	}
+	return errObservedWorkDeferred
 }
 
 func (e *Engine) validateContractObservation(c contract.HTLC, o chain.Observation) error {
@@ -96,7 +141,18 @@ func (e *Engine) prepareObservedSpends(ctx context.Context, s *Swap, all map[cha
 			continue
 		}
 		generation := e.chainGeneration[c.Chain]
-		spent, err := e.observedPrevouts(ctx, c, o.Tx)
+		var spent []*wire.TxOut
+		usedReads, usedBytes := e.observedSpendReads, e.observedSpendBytes
+		err := e.observedSpendTurn(c, all)
+		attempted := err == nil
+		if err == nil {
+			spent, err = e.observedPrevouts(ctx, c, o.Tx)
+		}
+		if errors.Is(err, errObservedWorkDeferred) && (!attempted || usedReads > 0 || usedBytes > 0) {
+			// An observation that already failed with the entire fresh quota
+			// must not reserve first place again ahead of waiting children.
+			e.deferObservedSpend(c, o)
+		}
 		if err == nil {
 			err = contract.VerifyObservedSpend(c, o.Tx, spent)
 		}
@@ -113,6 +169,9 @@ func (e *Engine) prepareObservedSpends(ctx context.Context, s *Swap, all map[cha
 func (e *Engine) observedPrevouts(ctx context.Context, c contract.HTLC, tx *wire.MsgTx) ([]*wire.TxOut, error) {
 	if len(tx.TxIn) > observedPrevoutReads || e.nodes[c.Chain] == nil {
 		return nil, errors.New("observed spend exceeds available prevout evidence")
+	}
+	if len(tx.TxIn)-1 > observedPrevoutReads-e.observedSpendReads {
+		return nil, errObservedWorkDeferred
 	}
 	op, err := contract.Outpoint(c.TxID, c.Vout)
 	if err != nil {
@@ -137,8 +196,11 @@ func (e *Engine) observedPrevouts(ctx context.Context, c contract.HTLC, tx *wire
 		if err := ctx.Err(); err != nil {
 			return nil, err
 		}
-		if !e.fresh(c.Chain) || e.observedSpendReads >= observedPrevoutReads || e.observedSpendBytes >= observedPrevoutBytes {
+		if !e.fresh(c.Chain) {
 			return nil, errors.New("observed prevout evidence unavailable in this pass")
+		}
+		if e.observedSpendReads >= observedPrevoutReads || e.observedSpendBytes >= observedPrevoutBytes {
+			return nil, errObservedWorkDeferred
 		}
 		e.observedSpendReads++
 		previous, err := e.nodes[c.Chain].Transaction(ctx, in.PreviousOutPoint.Hash.String())
@@ -149,7 +211,10 @@ func (e *Engine) observedPrevouts(ctx context.Context, c contract.HTLC, tx *wire
 			return nil, err
 		}
 		if len(previous.Hex)/2 > observedPrevoutBytes-e.observedSpendBytes {
-			return nil, errors.New("observed previous transaction exceeds byte budget")
+			// Charge a rejected oversized response too. Further inputs must
+			// wait; a provider cannot cause repeated oversized reads this pass.
+			e.observedSpendBytes = observedPrevoutBytes
+			return nil, errObservedWorkDeferred
 		}
 		e.observedSpendBytes += len(previous.Hex) / 2
 		raw, err := contract.Parse(previous.Hex)

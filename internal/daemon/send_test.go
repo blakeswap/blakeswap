@@ -364,7 +364,7 @@ func TestMakerReservationExpiresWhenTakerNeverFunds(t *testing.T) {
 		e.heights[c] = swap.Long.RefundHeight + 100
 		e.clocks[c] = e.heights[c]
 	}
-	if err := e.advanceSwap(context.Background(), swap, nil); err != nil {
+	if err := e.advanceSwap(context.Background(), swap, map[chain.ID]map[string]chain.Observation{chain.BTC: {}, chain.Blake: {}}); err != nil {
 		t.Fatal("unfunded child retirement failed", err)
 	}
 	child, parent := e.s.FillRecords[id], e.s.ParentOrders[offer.ID]

@@ -27,6 +27,9 @@ import (
 var errEngineClosed = errors.New("engine closed")
 
 type Engine struct {
+	observedSpendPriority    *observedSpendTurn
+	observedSpendNext        *observedSpendTurn
+	observedSpendBefore      *observedSpendTurn
 	observedSpendProofs      map[contract.HTLC]observedSpendProof
 	observedSpendReads       int
 	observedSpendBytes       int

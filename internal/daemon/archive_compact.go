@@ -192,6 +192,13 @@ func (e *Engine) compactArchive(ctx context.Context, swaps, towers map[chain.ID]
 		obs, ok := observation(all, c)
 		return c.TxID != "" && valid[c.Chain] && ok && obs.Tx != nil && obs.Height > 0 && obs.Height <= e.archiveCurrent[c.Chain].Height && obs.Confirmations >= archiveSettlementDepth
 	}
+	// A retained terminal display is not current spend proof. In particular,
+	// unknown refund evidence must remain actively monitored even without a
+	// public preimage that would put the swap on the isolated claim path.
+	settledSwap := func(c contract.HTLC) bool {
+		obs, ok := observation(swaps, c)
+		return ok && e.fresh(c.Chain) && settled(swaps, c) && e.validateContractObservation(c, obs) == nil
+	}
 	for _, id := range sortedArchiveIDs(e.s.Swaps) {
 		swap := e.s.Swaps[id]
 		if remaining == 0 {
@@ -207,12 +214,12 @@ func (e *Engine) compactArchive(ctx context.Context, swaps, towers map[chain.ID]
 				if swap.Role == "maker" {
 					incoming = swap.Long
 				}
-				if !settled(swaps, incoming) || !e.recoverySwapResolved(swap, swaps) {
+				if !settledSwap(incoming) || !e.recoverySwapResolved(swap, swaps) {
 					continue
 				}
 				chains = []chain.ID{incoming.Chain}
 			} else {
-				if !settled(swaps, swap.Long) || !settled(swaps, swap.Short) {
+				if !settledSwap(swap.Long) || !settledSwap(swap.Short) {
 					continue
 				}
 				chains = []chain.ID{chain.BTC, chain.Blake}
