@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -218,7 +219,39 @@ func TestRealArchiveBoundaryPaymentReorgAndPortableRecovery(t *testing.T) {
 				t.Fatal("mempool evidence released reorg hold")
 			}
 			assertLineage(e)
+			// Deep block disconnection need not re-add its old transactions to the
+			// mempool. Permit the normal 30s exact retry before mining, and prove
+			// actual admission instead of mistaking an orphan's count=0 for it.
+			retryCtx, cancelRetry := context.WithTimeout(h.ctx, 45*time.Second)
+			defer cancelRetry()
+			for {
+				if err := e.Tick(retryCtx); err != nil {
+					t.Fatal("retry observation failed", err)
+				}
+				if e.s.Sends[request.ID] == nil || e.s.Sends[request.ID].Confirmations != 0 || !e.s.Capacity.Invalidated["send/"+request.ID] || e.CanChangeNetwork() == nil {
+					t.Fatal("unconfirmed automatic retry cleared the archive/network obligation")
+				}
+				err := h.nodes[id].Call(retryCtx, "getmempoolentry", nil, bumped.TxID)
+				if err == nil {
+					break
+				}
+				var rpcErr *chain.RPCError
+				if !errors.As(err, &rpcErr) || rpcErr.Code != -5 {
+					t.Fatal("cannot verify exact retry in the fixture mempool", err)
+				}
+				select {
+				case <-retryCtx.Done():
+					t.Fatal("ordinary signed retry did not reach the actual mempool", retryCtx.Err())
+				case <-time.After(100 * time.Millisecond):
+				}
+			}
+			cancelRetry()
+			assertLineage(e)
 			h.mine(id, uint32(chain.Regtest.Confirmations()))
+			confirmed, err := h.nodes[id].Transaction(h.ctx, bumped.TxID)
+			if err != nil || confirmed.Confirmations != chain.Regtest.Confirmations() {
+				t.Fatal("fixture did not positively reconfirm the exact payment twice", confirmed.Confirmations, err)
+			}
 			tickUntilConnected(t, e)
 			if e.s.Capacity.Invalidated["send/"+request.ID] {
 				t.Fatal("positive current confirmation did not clear archive invalidation")
@@ -230,6 +263,10 @@ func TestRealArchiveBoundaryPaymentReorgAndPortableRecovery(t *testing.T) {
 				t.Fatal("two-confirmation payment bypassed the six-confirmation network guard")
 			}
 			h.mine(id, uint32(6-chain.Regtest.Confirmations()))
+			confirmed, err = h.nodes[id].Transaction(h.ctx, bumped.TxID)
+			if err != nil || confirmed.Confirmations != 6 {
+				t.Fatal("fixture did not positively confirm the exact payment six times", confirmed.Confirmations, err)
+			}
 			tickUntilConnected(t, e)
 			if got := e.s.Sends[request.ID].Confirmations; got != 6 {
 				t.Fatal("payment lacks six positive confirmations", got)
