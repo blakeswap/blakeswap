@@ -60,6 +60,77 @@ private func nativeConsentFixture(_ t: XCTestCase, owner: OwnerAuthenticator) th
 
 final class NativeConsentTests: XCTestCase {
     @MainActor
+    func testRemoteEOFRejectsReplyBeforeMainActorLossNotification() async throws {
+        let (security, _, helper, endpoint) = try nativeConsentFixture(self, owner: IsolatedOwnerAuthenticator())
+        defer { security.closeConnection(); helper.close() }
+        let id = try await security.authorize(endpoint: endpoint, profile: "alice", method: "onboarding.get", payload: Data("{}".utf8))
+        let before = security.generation
+        let permission = NativeSecurityRegistry.Permission(id: try XCTUnwrap(id), security: security, generation: before)
+        let loss = expectation(description: "native loss published")
+        security.onConnectionLoss = { loss.fulfill() }
+        helper.close()
+        // Keep the main actor occupied while the read queue observes EOF. The
+        // reply must fail without relying on a scheduled UI notification.
+        func observeEOF() {
+            let limit = Date().addingTimeInterval(2)
+            while security.connectionOpen && Date() < limit { Thread.sleep(forTimeInterval: 0.001) }
+        }
+        observeEOF()
+        XCTAssertFalse(security.connectionOpen)
+        XCTAssertEqual(security.generation, before)
+        XCTAssertThrowsError(try permission.validateReply())
+        await fulfillment(of: [loss], timeout: 2)
+        XCTAssertGreaterThan(security.generation, before)
+        XCTAssertTrue(security.initialAuthorized)
+    }
+    @MainActor
+    func testRemoteEOFCancelsPendingPromptAndClearsRecoveryDisplays() async throws {
+        let owner = PendingOwner(), began = expectation(description: "prompt began"), ended = expectation(description: "prompt retired")
+        owner.onBegin = { began.fulfill() }
+        let (security, probe, helper, endpoint) = try nativeConsentFixture(self, owner: owner)
+        defer { security.closeConnection(); helper.close() }
+        let model = AppModel(daemon: DaemonProcess(root: "/isolated-eof-model", security: security))
+        var settings = AppSettings(); settings.activeNetwork = "regtest"; settings.revision = 1
+        var status = DaemonStatus(); status.name = "alice"; status.network = "regtest"
+        XCTAssertTrue(model.acceptSnapshot(status, settings: settings, profile: "alice", generation: model.generation))
+        model.recovery = "synthetic recovery display"; model.setupWallet = Blakeswap_V1_FirstWallet()
+        let before = model.generation
+        let pending = Task {
+            do { _ = try await security.authorize(endpoint: endpoint, profile: "alice", method: "onboarding.get", payload: Data("{}".utf8)); XCTFail("Disconnected prompt approved") }
+            catch {}
+            ended.fulfill()
+        }
+        await fulfillment(of: [began], timeout: 2)
+        helper.close()
+        await fulfillment(of: [ended], timeout: 2)
+        pending.cancel(); owner.cancel(); await pending.value
+        XCTAssertGreaterThan(model.generation, before)
+        XCTAssertNil(model.recovery); XCTAssertNil(model.setupWallet); XCTAssertNil(model.status)
+        XCTAssertEqual(model.connectionError, NativeSecurityError.closed.localizedDescription)
+        XCTAssertFalse(model.acceptSnapshot(status, settings: settings, profile: "alice", generation: before))
+        let approvals = await probe.approvals
+        XCTAssertEqual(approvals, 0)
+        XCTAssertTrue(security.initialAuthorized, "Private loss must not request key eviction or helper shutdown")
+    }
+    @MainActor
+    func testQueuedOldOwnerClosureCannotRevokeReplacementSession() async throws {
+        let (security, _, oldHelper, oldEndpoint) = try nativeConsentFixture(self, owner: IsolatedOwnerAuthenticator())
+        let incoming = Pipe(), outgoing = Pipe(), session = UUID().uuidString
+        let probe = ConsentProtocolProbe(session: session)
+        let helper = NativePeer(input: outgoing.fileHandleForReading, output: incoming.fileHandleForWriting, session: session) { method, raw in try await probe.handle(method, raw) }
+        defer { security.closeConnection(); oldHelper.close(); helper.close() }
+        let id = try await security.authorize(endpoint: oldEndpoint, profile: "alice", method: "onboarding.get", payload: Data("{}".utf8))
+        let old = NativeSecurityRegistry.Permission(id: try XCTUnwrap(id), security: security, generation: security.generation)
+        oldHelper.close()
+        try security.attach(root: "/isolated-native-replacement", session: session, pid: 4321, input: incoming.fileHandleForReading, output: outgoing.fileHandleForWriting)
+        let before = security.generation
+        let endpoint = DaemonEndpoint(socket: "/isolated", http: "", token: "", ownerPID: 4321, ownerSession: session, credentialMode: "native")
+        let next = try await security.authorize(endpoint: endpoint, profile: "alice", method: "onboarding.get", payload: Data("{}".utf8))
+        XCTAssertNotNil(next)
+        XCTAssertEqual(security.generation, before)
+        XCTAssertThrowsError(try old.validateReply())
+    }
+    @MainActor
     func testInjectedLockDuringPromptCannotApproveOrResume() async throws {
         let owner = PendingOwner(),began = expectation(description:"OS prompt began"),locked = expectation(description:"lock delivered")
         owner.onBegin = { began.fulfill() }

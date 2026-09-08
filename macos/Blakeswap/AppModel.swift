@@ -30,6 +30,11 @@ final class AppModel: ObservableObject {
         root = self.daemon.root
  monitoring = MonitoringModel(root:self.daemon.root)
  monitoring.navigate = { [weak self] route in self?.openMonitoring(route) }
+        self.daemon.security.onConnectionLoss = { [weak self] in
+            self?.lockNewActions()
+            self?.connectionError = NativeSecurityError.closed.localizedDescription
+            self?.monitoring.unavailable()
+        }
     }
     private var refreshing = false
     @Published private(set) var swapRefreshGeneration: UInt64?

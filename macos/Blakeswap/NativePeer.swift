@@ -1,5 +1,6 @@
 import Foundation
 import Security
+import Darwin
 
 // Only an app-owned anonymous pipe pair is accepted. This is not a socket and
 // exposes no network approval endpoint. Framing and queues are bounded on both
@@ -14,23 +15,63 @@ final class NativePeer: @unchecked Sendable {
     private let reads = DispatchQueue(label: "org.blakeswap.private-read")
     private var pending: [String: CheckedContinuation<Data, Error>] = [:]
     private var incoming: [String: Task<Void, Never>] = [:]
+    private struct Write {
+        var bytes: Data
+        var offset = 0
+        let id: String
+        let kind: String
+        let deadline = ProcessInfo.processInfo.systemUptime + 45
+    }
+    private var outgoing: [Write] = []
+    private var outgoingBytes = 0
+    private var writing = false
+    private var startedRequests: Set<String> = []
+    static let maxQueuedWrites = 32
+    static let maxQueuedBytes = maxQueuedWrites * (131_072 + 4)
+    var queuedWrites: (count: Int, bytes: Int) { lock.lock(); defer { lock.unlock() }; return (outgoing.count, outgoingBytes) }
     private var closed = false
     var isClosed: Bool { lock.lock(); defer { lock.unlock() }; return closed }
     private let handler: Handler
-    init(input: FileHandle, output: FileHandle, session: String, handler: @escaping Handler) {
+    private let onClose: @Sendable (NativePeer) -> Void
+    private struct Closure {
+        let replies: [String: CheckedContinuation<Data, Error>]
+        let tasks: [String: Task<Void, Never>]
+    }
+    init(input: FileHandle, output: FileHandle, session: String, onClose: @escaping @Sendable (NativePeer) -> Void = { _ in }, handler: @escaping Handler) {
         self.input = input; self.output = output; self.session = session; self.handler = handler
+        self.onClose = onClose
+        let descriptor = output.fileDescriptor
+        let flags = fcntl(descriptor, F_GETFL)
+        guard flags >= 0, fcntl(descriptor, F_SETFL, flags | O_NONBLOCK) == 0,
+              fcntl(descriptor, F_SETNOSIGPIPE, 1) == 0 else { close(); return }
         reads.async { [weak self] in self?.readLoop() }
     }
     func close() {
         lock.lock()
-        guard !closed else { lock.unlock(); return }
+        let cleanup = closeLocked()
+        lock.unlock()
+        finishClose(cleanup)
+    }
+    private func closeLocked() -> Closure? {
+        guard !closed else { return nil }
         closed = true
         let replies = pending; pending.removeAll()
         let tasks = incoming; incoming.removeAll()
-        lock.unlock()
-        try? input.close(); try? output.close()
-        for task in tasks.values { task.cancel() }
-        for reply in replies.values { reply.resume(throwing: NativeSecurityError.closed) }
+        startedRequests.removeAll()
+        for index in outgoing.indices { outgoing[index].bytes.resetBytes(in: 0..<outgoing[index].bytes.count) }
+        outgoing.removeAll(); outgoingBytes = 0
+        // Writes are nonblocking and hold this same lock only for write(2), so
+        // closure joins any active syscall before releasing its descriptor or
+        // owned payload. No blocked DispatchQueue closure retains a frame.
+        try? output.close()
+        return Closure(replies: replies, tasks: tasks)
+    }
+    private func finishClose(_ cleanup: Closure?) {
+        guard let cleanup else { return }
+        onClose(self)
+        try? input.close()
+        for task in cleanup.tasks.values { task.cancel() }
+        for reply in cleanup.replies.values { reply.resume(throwing: NativeSecurityError.closed) }
     }
     func call(_ method: String, payload: Data) async throws -> Data {
         guard !method.isEmpty, method.utf8.count <= 64, payload.count < 131_072 else { throw NativeSecurityError.invalid }
@@ -51,24 +92,75 @@ final class NativePeer: @unchecked Sendable {
         }, onCancel: { [weak self] in self?.fail(id, error: NativeSecurityError.cancelled) })
     }
     private func fail(_ id: String, error: Error) {
-        lock.lock(); let reply = pending.removeValue(forKey: id); lock.unlock()
+        lock.lock()
+        let reply = pending.removeValue(forKey: id)
+        let started = startedRequests.remove(id) != nil
+        let partial = retireWrite(id, kind: "request")
+        let cleanup = partial ? closeLocked() : nil
+        lock.unlock()
+        finishClose(cleanup)
         if let reply {
+            // Removing an unsent frame keeps this stream usable. A partially
+            // written frame cannot be followed by a cancel frame safely.
             reply.resume(throwing: error)
-            try? send(["version": 1, "session": session, "id": id, "kind": "cancel"])
+            if started && !partial { try? send(["version": 1, "session": session, "id": id, "kind": "cancel"]) }
         }
     }
+    // Caller holds lock. Return true when the frame already entered the pipe.
+    private func retireWrite(_ id: String, kind: String) -> Bool {
+        guard let index = outgoing.firstIndex(where: { $0.id == id && $0.kind == kind }) else { return false }
+        let partial = outgoing[index].offset > 0
+        outgoingBytes -= outgoing[index].bytes.count
+        outgoing[index].bytes.resetBytes(in: 0..<outgoing[index].bytes.count)
+        outgoing.remove(at: index)
+        return partial
+    }
     private func send(_ frame: [String: Any]) throws {
-        let bytes = try JSONSerialization.data(withJSONObject: frame, options: [.sortedKeys])
+        var bytes = try JSONSerialization.data(withJSONObject: frame, options: [.sortedKeys])
+        defer { bytes.resetBytes(in: 0..<bytes.count) }
         guard !bytes.isEmpty, bytes.count <= 131_072 else { throw NativeSecurityError.invalid }
-        lock.lock(); let isClosed = closed; lock.unlock()
-        guard !isClosed else { throw NativeSecurityError.closed }
-        writes.async { [weak self] in
-            guard let self else { return }
-            var size = UInt32(bytes.count).bigEndian
-            do {
-                try withUnsafeBytes(of: &size) { try self.output.write(contentsOf: $0) }
-                try self.output.write(contentsOf: bytes)
-            } catch { self.close() }
+        guard let id = frame["id"] as? String, let kind = frame["kind"] as? String else { throw NativeSecurityError.invalid }
+        var size = UInt32(bytes.count).bigEndian
+        var packet = withUnsafeBytes(of: &size) { Data($0) }
+        packet.append(bytes)
+        lock.lock()
+        guard !closed else { lock.unlock(); packet.resetBytes(in: 0..<packet.count); throw NativeSecurityError.closed }
+        if (kind == "request" && pending[id] == nil) || (kind == "response" && incoming[id]?.isCancelled == true) {
+            lock.unlock(); packet.resetBytes(in: 0..<packet.count); return
+        }
+        guard outgoing.count < Self.maxQueuedWrites, packet.count <= Self.maxQueuedBytes - outgoingBytes else {
+            let cleanup = closeLocked()
+            lock.unlock(); packet.resetBytes(in: 0..<packet.count); finishClose(cleanup); throw NativeSecurityError.closed
+        }
+        outgoing.append(Write(bytes: packet, id: id, kind: kind)); outgoingBytes += packet.count
+        let begin = !writing; writing = true
+        lock.unlock()
+        if begin { writes.async { [weak self] in self?.writeAvailable() } }
+    }
+    private func writeAvailable() {
+        while true {
+            lock.lock()
+            guard !closed, !outgoing.isEmpty else { writing = false; lock.unlock(); return }
+            guard ProcessInfo.processInfo.systemUptime < outgoing[0].deadline else { lock.unlock(); close(); return }
+            let offset = outgoing[0].offset, descriptor = output.fileDescriptor
+            let written = outgoing[0].bytes.withUnsafeBytes { raw in
+                Darwin.write(descriptor, raw.baseAddress!.advanced(by: offset), raw.count - offset)
+            }
+            let failure = errno
+            if written > 0 {
+                outgoing[0].offset += written
+                if outgoing[0].kind == "request", pending[outgoing[0].id] != nil { startedRequests.insert(outgoing[0].id) }
+                if outgoing[0].offset == outgoing[0].bytes.count {
+                    _ = retireWrite(outgoing[0].id, kind: outgoing[0].kind)
+                }
+                lock.unlock()
+            } else if written < 0 && failure == EINTR { lock.unlock() }
+            else if written < 0 && (failure == EAGAIN || failure == EWOULDBLOCK) {
+                lock.unlock()
+                // Exactly one pump is scheduled, capturing no frame bytes.
+                writes.asyncAfter(deadline: .now() + .milliseconds(10)) { [weak self] in self?.writeAvailable() }
+                return
+            } else { lock.unlock(); close(); return }
         }
     }
     private func readExactly(_ size: Int) throws -> Data {
@@ -97,11 +189,16 @@ final class NativePeer: @unchecked Sendable {
                 case "response":
                     let code = frame["error"] as? String ?? ""
                     guard code.count <= 48, code.allSatisfy({ $0.isASCII && ($0.isLowercase || $0 == "_") }) else { throw NativeSecurityError.invalid }
-                    lock.lock(); let reply = pending.removeValue(forKey: id); lock.unlock()
+                    lock.lock(); let reply = pending.removeValue(forKey: id); startedRequests.remove(id); lock.unlock()
                     if code.isEmpty { reply?.resume(returning: payload) }
                     else { reply?.resume(throwing: NativeSecurityError(rawValue: code) ?? .unavailable) }
                 case "cancel":
-                    lock.lock(); let task = incoming[id]; lock.unlock(); task?.cancel()
+                    lock.lock()
+                    incoming[id]?.cancel()
+                    let partial = retireWrite(id, kind: "response")
+                    let cleanup = partial ? closeLocked() : nil
+                    lock.unlock()
+                    finishClose(cleanup)
                 case "request":
                     guard let method = frame["method"] as? String, !method.isEmpty, method.utf8.count <= 64 else { throw NativeSecurityError.invalid }
                     lock.lock()

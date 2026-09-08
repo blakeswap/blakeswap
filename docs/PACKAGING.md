@@ -119,11 +119,19 @@ signals whose availability can vary by macOS version; returning/unlocking never
 approves or resurrects a request. Each new sensitive action still needs fresh OS
 authentication. The helper keeps already-loaded keys and advances accepted trades,
 raw signed retries and already-reviewed bounded automatic policies while the app
-remains open. Closing the private consent connection retires new approvals without
-stopping these obligations. A disconnected owner must reopen the app to establish
+remains open. Closing the private consent connection retires new approvals, rejects
+in-flight sensitive replies, and clears recovery displays without stopping these
+obligations. A disconnected owner must reopen the app to establish
 a new private session; normal Quit still performs the all-wallet shutdown check.
 This is a hot-wallet session, not hardware-wallet protection or key eviction on
 screen lock. See [Risks](RISKS.md).
+
+The private pipe accepts frames up to 128 KiB, at most 32 pending calls and 32
+incoming handlers. Outgoing work has a separate 32-frame / 4,194,432-byte bound
+(including framing), and a 45-second write deadline. Cancelling an unsent frame
+discards its owned bytes; cancelling a partially written frame closes the
+connection so it cannot be misread as a different message. No stalled reader can
+grow an unbounded queue of credential or consent replies.
 
 A portable backup contains durable wallet state encrypted under its chosen backup
 password. It contains no original Keychain reference or ephemeral permission.

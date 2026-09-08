@@ -33,6 +33,8 @@ final class NativeSecurity {
     private var session: String?
     private var ownerPID: Int32?
     private var installation: String?
+    var onConnectionLoss: (() -> Void)?
+    var connectionOpen: Bool { peer?.isClosed == false }
     private(set) var credentialFailure: NativeSecurityError?
     init(store: CredentialStore = KeychainCredentialStore(), authenticator: OwnerAuthenticator? = nil, initiallyAuthorized: Bool = false) {
         self.store = store; self.authenticator = authenticator ?? SystemOwnerAuthenticator()
@@ -56,7 +58,9 @@ final class NativeSecurity {
         closeConnection(requiresUnlock: false)
         self.root = root; self.session = session; ownerPID = pid
         let store = self.store
-        peer = NativePeer(input: input, output: output, session: session) { [weak self] method, raw in
+        peer = NativePeer(input: input, output: output, session: session, onClose: { [weak self] closed in
+            Task { @MainActor in self?.connectionLost(closed, session: session) }
+        }) { [weak self] method, raw in
             guard let self else { throw NativeSecurityError.closed }
             do {
             let request = try JSONDecoder().decode(NativeCredentialRequest.self, from: raw)
@@ -86,6 +90,19 @@ final class NativeSecurity {
             }
         }
         NativeSecurityRegistry.register(self, root: root, session: session)
+    }
+    private func connectionLost(_ closed: NativePeer, session: String) {
+        // A queued close from a replaced owner cannot revoke its successor.
+        guard peer === closed, self.session == session else { return }
+        generation &+= 1; authenticator.cancel()
+        onConnectionLoss?()
+    }
+    fileprivate var replyConnection: (NativePeer?, String?) { (peer, session) }
+    fileprivate func validateReply(generation expected: UInt64, peer expectedPeer: NativePeer?, session expectedSession: String?) throws {
+        // Check the peer's synchronized terminal state even before its main
+        // actor notification can invalidate displays or cancel an OS prompt.
+        guard generation == expected, let expectedPeer, peer === expectedPeer,
+              session == expectedSession, !expectedPeer.isClosed else { throw NativeSecurityError.changed }
     }
     private func recordCredentialFailure(_ error: NativeSecurityError?, session: String) {
         guard self.session == session else { return }
@@ -165,9 +182,15 @@ enum NativeSecurityRegistry {
         let id: String
         private weak var security: NativeSecurity?
         private let generation: UInt64
-        init(id: String, security: NativeSecurity, generation: UInt64) { self.id = id; self.security = security; self.generation = generation }
+        private weak var peer: NativePeer?
+        private let session: String?
+        init(id: String, security: NativeSecurity, generation: UInt64) {
+            self.id = id; self.security = security; self.generation = generation
+            (peer, session) = security.replyConnection
+        }
         func validateReply() throws {
-            guard let security, security.generation == generation else { throw NativeSecurityError.changed }
+            guard let security else { throw NativeSecurityError.changed }
+            try security.validateReply(generation: generation, peer: peer, session: session)
         }
     }
     private final class Entry { weak var security: NativeSecurity?; init(_ security: NativeSecurity) { self.security = security } }
