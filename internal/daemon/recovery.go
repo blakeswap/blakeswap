@@ -25,6 +25,12 @@ func (e *Engine) recoveryTradingReady() error {
 	return nil
 }
 func (e *Engine) recoveryOwnerPolicy(s *Swap, refund bool) error {
+	// This guard is repeated at the publication boundary, including after a
+	// backend changes. Only a claim reusing a public secret is independent of
+	// the local funding proof; refunds and first revelation remain held.
+	if (refund || !s.SecretObserved) && !e.fundingAncestryReady(s) {
+		return errFundingAncestry
+	}
 	if !e.restoredSwap(s.ID) {
 		return nil
 	}

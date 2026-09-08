@@ -131,6 +131,14 @@ func (e *Engine) bumpTransaction(ctx context.Context, raw json.RawMessage) (Bump
 			return BumpResult{}, err
 		}
 	}
+	// Manual settlement needs the same current child-funding proof as a tick.
+	// Observe witnesses first so an already public secret can still authorize
+	// target-only rescue even when the local funding ancestry is unavailable.
+	if p.Kind == "refund" || !s.SecretObserved {
+		if err := e.refreshFundingAncestry(ctx, s); err != nil {
+			return BumpResult{}, err
+		}
+	}
 	if err := e.recoveryOwnerPolicy(s, p.Kind == "refund"); err != nil {
 		return BumpResult{}, err
 	}
