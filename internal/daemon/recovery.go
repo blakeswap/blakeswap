@@ -83,6 +83,15 @@ func (e *Engine) advanceRestoredSwap(ctx context.Context, s *Swap, all map[chain
 	if err := s.Terms.Validate(); err != nil {
 		return err
 	}
+	// Retain any already-proven settlement contradiction before ancestry IO.
+	if err := e.reconcileFillContradiction(s, all); err != nil {
+		if _, proofOnly := err.(observationEvidenceError); !proofOnly {
+			return err
+		}
+	}
+	if err := e.refreshFundingAncestry(ctx, s); err != nil {
+		return e.holdFundingAncestry(ctx, s, all, err)
+	}
 	if err := e.reconcileObservedSwap(ctx, s, all); err != nil {
 		return e.holdObservedSpend(ctx, s, all, err)
 	}
@@ -163,7 +172,7 @@ func (e *Engine) recoverySwapResolved(s *Swap, all map[chain.ID]map[string]chain
 	if e.recoverySwapInactive(s) {
 		return true
 	}
-	if s == nil || s.Terms == nil || !e.fresh(chain.BTC) || !e.fresh(chain.Blake) || all[chain.BTC] == nil || all[chain.Blake] == nil {
+	if s == nil || !e.fundingAncestryReady(s) || s.Terms == nil || !e.fresh(chain.BTC) || !e.fresh(chain.Blake) || all[chain.BTC] == nil || all[chain.Blake] == nil {
 		return false
 	}
 	own, incoming := s.Long, s.Short

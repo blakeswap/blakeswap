@@ -148,7 +148,10 @@ func prepareRecoveryActive(s *State, snapshotAt int64, legacy bool) error {
 	if r.Outbox == nil {
 		r.Outbox = map[string]*Delivery{}
 	}
-	for id := range s.Swaps {
+	for id, swap := range s.Swaps {
+		if swap != nil && len(swap.FundingParents) > 0 {
+			swap.FundingAncestryHeld = true
+		}
 		r.Swaps[id] = true
 	}
 	for id := range s.Sends {

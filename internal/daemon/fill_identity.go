@@ -25,12 +25,27 @@ func swapIdentityKeys(s *Swap) ([]string, error) {
 		if protocol.Digest(s.Terms.Request) != protocol.Digest(s.Request) || len(s.Terms.MakerKeys) != 2 {
 			return nil, errors.New("retained terms changed child identity")
 		}
-		return fillIdentityKeys(s.Request, s.Terms.MakerKeys)
+		var err error
+		keys, err = fillIdentityKeys(s.Request, s.Terms.MakerKeys)
+		if err != nil {
+			return nil, err
+		}
+	}
+	funding, err := localFundingTransaction(s)
+	if err != nil {
+		return nil, err
+	}
+	if funding != nil {
+		own, _, _ := localFunding(s)
+		keys = append(keys, fundingIdentityKey(own.Chain, own.TxID))
 	}
 	return keys, nil
 }
 
 func validateFillIdentityRecord(key, childID string) error {
+	if protocol.Hex32(childID) && validFundingIdentityKey(key) {
+		return nil
+	}
 	kind, value, ok := strings.Cut(key, "/")
 	if !ok || !protocol.Hex32(childID) || (kind != "hash" && kind != "key") || (kind == "hash" && !protocol.Hex32(value)) || (kind == "key" && !protocol.ValidKey(value)) {
 		return errors.New("invalid retained child identity index")

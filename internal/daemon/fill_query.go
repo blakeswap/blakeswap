@@ -58,7 +58,7 @@ func (e *Engine) fillSummary(s *Swap, archived bool) (FillSummary, error) {
 	if err != nil {
 		return FillSummary{}, err
 	}
-	row := FillSummary{ID: s.ID, ParentMaker: offer.Maker, ParentID: offer.ID, ParentRevision: s.Request.Revision, Quantity: s.Request.Quantity, BuyAmount: buy, Stage: s.Stage, Archived: archived, MonitoringRequired: e.archivedObligationHeld("swap/" + s.ID)}
+	row := FillSummary{ID: s.ID, ParentMaker: offer.Maker, ParentID: offer.ID, ParentRevision: s.Request.Revision, Quantity: s.Request.Quantity, BuyAmount: buy, Stage: s.Stage, Archived: archived, MonitoringRequired: s.FundingAncestryHeld || e.archivedObligationHeld("swap/"+s.ID)}
 	if s.Role == "maker" {
 		child, err := e.retainedFillRecord(s.ID)
 		if err != nil {

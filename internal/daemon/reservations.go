@@ -22,6 +22,9 @@ type CoinReservation struct {
 
 func pointKey(p CoinOutpoint) string { return chain.OutpointKey(p.TxID, p.Vout) }
 func terminalSwap(s *Swap) bool {
+	if s.FundingAncestryHeld {
+		return false
+	}
 	switch s.Stage {
 	case "completed", "refunded", "rejected", "expired before acceptance", "expired before funding", "expired before maker funding", "aborted; counterparty refunded":
 		return true

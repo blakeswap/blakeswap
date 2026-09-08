@@ -168,5 +168,10 @@ func ArchiveMonitoring(state State) ArchiveMonitoringState {
 	return result
 }
 func (e *Engine) archivedObligationHeld(id string) bool {
+	if len(id) > 5 && id[:5] == "swap/" {
+		if s := e.s.Swaps[id[5:]]; s != nil && s.FundingAncestryHeld {
+			return true
+		}
+	}
 	return e.s.Capacity != nil && (e.s.Capacity.Reactivating || e.s.Capacity.Invalidated[id]) || e.s.Recovery != nil && e.s.Recovery.InvalidatedSettlements[id]
 }

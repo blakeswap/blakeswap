@@ -39,7 +39,7 @@ func canChangeNetwork(s State) error {
 		}
 	}
 	for _, swap := range s.Swaps {
-		if !terminalSwapStage(swap.Stage) {
+		if swap.FundingAncestryHeld || !terminalSwapStage(swap.Stage) {
 			return fmt.Errorf("swap %s must finish before changing networks", swap.ID)
 		}
 	}

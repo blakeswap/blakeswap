@@ -139,6 +139,9 @@ func (e *Engine) status() Status {
 }
 func (e *Engine) publicSwap(swap *Swap) PublicSwap {
 	p := PublicSwap{ID: swap.ID, Role: swap.Role, Stage: swap.Stage, Error: swap.Error, Long: swap.Long, Short: swap.Short, LongSpend: swap.LongSpend, ShortSpend: swap.ShortSpend, LongConfirmations: swap.LongConfirmations, ShortConfirmations: swap.ShortConfirmations, TowerPaid: swap.TowerPaid, TowerReady: towerReady(swap), SecretRevealed: swap.SecretExposed}
+	if swap.FundingAncestryHeld {
+		p.Error = errFundingAncestry.Error() + ". " + p.Error
+	}
 	p.OwnerFeeCap = swap.OwnerFeeCap
 	if selection, found := e.s.FundingFees["swap/"+swap.ID]; found {
 		p.FundingFee = selection.FundingFee

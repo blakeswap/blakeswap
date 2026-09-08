@@ -38,6 +38,9 @@ func (e *Engine) makeJob(s *Swap, c contract.HTLC, kind string, observe *contrac
 	return job, job.Validate(s.protection().Scripts, job.BPS)
 }
 func (e *Engine) prepare(s *Swap, own contract.HTLC) error {
+	if err := e.retainFundingParents(s); err != nil {
+		return err
+	}
 	key, err := e.swapKey(own.Chain, s.ID)
 	if err != nil {
 		return err
@@ -107,6 +110,16 @@ func (e *Engine) advanceSwap(ctx context.Context, s *Swap, all map[chain.ID]map[
 			return e.observeRetiredMaker(s, all)
 		}
 	}
+	// Retain any already-proven settlement contradiction before ancestry IO.
+	if err := e.reconcileFillContradiction(s, all); err != nil {
+		if _, proofOnly := err.(observationEvidenceError); !proofOnly {
+			return err
+		}
+	}
+	ancestryErr := e.refreshFundingAncestry(ctx, s)
+	if ancestryErr != nil && (!pendingAncestryPublication(s, all) || !e.fresh(chain.BTC) || !e.fresh(chain.Blake) || all[chain.BTC] == nil || all[chain.Blake] == nil) {
+		return e.holdFundingAncestry(ctx, s, all, ancestryErr)
+	}
 	if err := e.reconcileObservedSwap(ctx, s, all); err != nil {
 		return e.holdObservedSpend(ctx, s, all, err)
 	}
@@ -147,6 +160,9 @@ func (e *Engine) advanceSwap(ctx context.Context, s *Swap, all map[chain.ID]map[
 				return err
 			}
 		}
+	}
+	if ancestryErr != nil && !pendingAncestryPublication(s, all) {
+		return e.holdFundingAncestry(ctx, s, all, ancestryErr)
 	}
 	longObs, longSpent := observation(all, s.Long)
 	shortObs, shortSpent := observation(all, s.Short)
