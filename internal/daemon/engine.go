@@ -543,6 +543,9 @@ func (e *Engine) tickProtocol(ctx context.Context) error {
 		e.lastError = "archive: " + archiveErr.Error()
 	}
 	e.reconcileArchiveHolds(observations, towerObservations)
+	if err := e.publishPendingParents(); err != nil {
+		return err
+	}
 	if err = e.save(); err != nil {
 		return err
 	}
@@ -587,9 +590,24 @@ func (e *Engine) queue(to, typ, swapID string, body any) error {
 		}
 		return errors.New("archived delivery has no acknowledgment evidence")
 	}
-	pub, err := nostr.PubKeyFromHex(to)
+	delivery, err := e.prepareDelivery(to, typ, swapID, raw)
 	if err != nil {
 		return err
+	}
+	if e.s.Outbox == nil {
+		e.s.Outbox = map[string]*Delivery{}
+	}
+	e.s.Outbox[id] = delivery
+	return nil
+}
+
+// prepareDelivery signs and encrypts without granting or publishing authority.
+// Callers can commit this exact event with its allocation in one transaction.
+func (e *Engine) prepareDelivery(to, typ, swapID string, raw json.RawMessage) (*Delivery, error) {
+	id := protocol.Digest([]string{to, typ, swapID, string(raw)})
+	pub, err := nostr.PubKeyFromHex(to)
+	if err != nil {
+		return nil, err
 	}
 	m := transport.Message{Version: transport.MessageVersion, ID: id, Type: typ, SwapID: swapID, Body: raw}
 	var event nostr.Event
@@ -602,7 +620,7 @@ func (e *Engine) queue(to, typ, swapID string, body any) error {
 			}
 		}
 		if pending >= 256 {
-			return errors.New("discovery queue capacity reached")
+			return nil, errors.New("discovery queue capacity reached")
 		}
 		expires = time.Now().Unix() + 900
 		event, err = transport.WrapExpiringFor(e.Config.Network.Namespace(), e.identity, pub, m, expires)
@@ -610,14 +628,13 @@ func (e *Engine) queue(to, typ, swapID string, body any) error {
 		event, err = transport.WrapFor(e.Config.Network.Namespace(), e.identity, pub, m)
 	}
 	if err != nil {
-		return err
+		return nil, err
 	}
-	e.s.Outbox[id] = &Delivery{Expires: expires, Type: typ, Event: event, To: to, MessageID: id, Digest: protocol.Digest(m), IsAck: typ == "ack"}
-	return nil
+	return &Delivery{Version: transport.MessageVersion, Network: e.Config.Network, SwapID: swapID, Expires: expires, Type: typ, Event: event, To: to, MessageID: id, Digest: protocol.Digest(m), IsAck: typ == "ack"}, nil
 }
 func (e *Engine) queueEvent(event nostr.Event) {
 	id := event.ID.Hex()
-	e.s.Outbox[id] = &Delivery{Event: event, MessageID: id, IsAck: true}
+	e.s.Outbox[id] = &Delivery{Version: transport.MessageVersion, Network: e.Config.Network, Event: event, MessageID: id, IsAck: true}
 }
 func (e *Engine) flush(ctx context.Context) error {
 	now := time.Now().Unix()
@@ -752,6 +769,9 @@ func (e *Engine) receive(event nostr.Event) error {
 	return e.save()
 }
 func (e *Engine) publishOffer(o protocol.Offer) error {
+	if e.s.ParentOrders[o.ID] != nil {
+		return e.publishParent(o.ID)
+	}
 	at := nostr.Now()
 	if at <= e.s.EventTime {
 		at = e.s.EventTime + 1
@@ -812,12 +832,18 @@ func (e *Engine) fund(ctx context.Context, c contract.HTLC) (*wire.MsgTx, error)
 	return e.fundReserved(ctx, c, "")
 }
 func (e *Engine) fundReserved(ctx context.Context, c contract.HTLC, owner string) (*wire.MsgTx, error) {
-	coins := e.knownCoins(c.Chain)
+	coins, err := e.assignedFundingCoins(c.Chain, owner)
+	if err != nil {
+		return nil, err
+	}
 	reserved := e.reservedCoins(c.Chain, owner)
 	var selected []chain.UTXO
 	var total int64
 	for _, coin := range coins {
 		if coin.Confirmations < e.Config.Network.Confirmations() || reserved[chain.OutpointKey(coin.TxID, coin.Vout)] {
+			if owner != "" {
+				return nil, errors.New("assigned funding input is unavailable; ownership remains held")
+			}
 			continue
 		}
 		out, err := e.nodes[c.Chain].Output(ctx, coin.TxID, coin.Vout)
@@ -825,6 +851,9 @@ func (e *Engine) fundReserved(ctx context.Context, c contract.HTLC, owner string
 			return nil, err
 		}
 		if out == nil || out.Value != coin.Amount || out.Script.Hex != coin.Script || out.Confirmations < e.Config.Network.Confirmations() {
+			if owner != "" {
+				return nil, errors.New("assigned funding input lost positive confirmation; ownership remains held")
+			}
 			continue
 		}
 		selected = append(selected, coin)

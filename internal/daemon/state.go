@@ -35,16 +35,19 @@ type Config struct {
 	Tower               TowerConfig              `json:"tower"`
 }
 type Delivery struct {
-	Acknowledged bool        `json:"acknowledged,omitempty"`
-	Expires      int64       `json:"expires,omitempty"`
-	Type         string      `json:"type,omitempty"`
-	Event        nostr.Event `json:"event"`
-	To           string      `json:"to"`
-	MessageID    string      `json:"message_id"`
-	Digest       string      `json:"digest"`
-	IsAck        bool        `json:"is_ack"`
-	LastAttempt  int64       `json:"last_attempt"`
-	Published    bool        `json:"published"`
+	Version      int           `json:"version"`
+	Network      chain.Network `json:"network"`
+	SwapID       string        `json:"swap_id,omitempty"`
+	Acknowledged bool          `json:"acknowledged,omitempty"`
+	Expires      int64         `json:"expires,omitempty"`
+	Type         string        `json:"type,omitempty"`
+	Event        nostr.Event   `json:"event"`
+	To           string        `json:"to"`
+	MessageID    string        `json:"message_id"`
+	Digest       string        `json:"digest"`
+	IsAck        bool          `json:"is_ack"`
+	LastAttempt  int64         `json:"last_attempt"`
+	Published    bool          `json:"published"`
 }
 type Swap struct {
 	ClaimVariant       int                         `json:"claim_variant,omitempty"`
@@ -96,6 +99,9 @@ type TowerJob struct {
 	Error       string       `json:"error,omitempty"`
 }
 type State struct {
+	ParentOrders                map[string]*ParentOrder      `json:"parent_orders,omitempty"`
+	FillRecords                 map[string]*FillRecord       `json:"fill_records,omitempty"`
+	FillKeys                    map[string]string            `json:"fill_keys,omitempty"`
 	MakerStrategies             map[string]*MakerStrategy    `json:"maker_strategies,omitempty"`
 	OwnPublicVersions           map[string]PublicVersion     `json:"own_public_versions,omitempty"`
 	PublicVersions              map[string]PublicVersion     `json:"public_versions,omitempty"`

@@ -257,8 +257,11 @@ func (e *Engine) advanceSwap(ctx context.Context, s *Swap, all map[chain.ID]map[
 			s.Stage = "awaiting taker funding"
 			return nil
 		}
-		tx, err := e.fundReserved(ctx, s.Short, "offer/"+s.Terms.Offer().ID)
+		tx, err := e.fundReserved(ctx, s.Short, "swap/"+s.ID)
 		if err != nil {
+			return err
+		}
+		if err := e.commitMakerFill(s, tx); err != nil {
 			return err
 		}
 		s.ShortFunding = contract.Hex(tx)

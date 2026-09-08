@@ -32,6 +32,28 @@ func ValidateProtocolState(s *State) error {
 	if err := ValidateStateVersion(s); err != nil {
 		return err
 	}
+	for id, delivery := range s.Outbox {
+		if err := validateDeliveryFormat(s.Network, id, delivery); err != nil {
+			return err
+		}
+	}
+	if s.Recovery != nil {
+		for id, delivery := range s.Recovery.Outbox {
+			if err := validateDeliveryFormat(s.Network, id, delivery); err != nil {
+				return err
+			}
+		}
+	}
+	for id, parent := range s.ParentOrders {
+		if err := validateParentOrder(id, parent); err != nil {
+			return err
+		}
+	}
+	for id, child := range s.FillRecords {
+		if err := validateFillRecord(id, child); err != nil {
+			return err
+		}
+	}
 	checkOffer := func(o protocol.Offer) error {
 		if o.Version != protocol.Version || o.Revision == 0 || o.Network.Normalized() != s.Network.Normalized() {
 			return errors.New("incompatible owned offer format")
@@ -130,8 +152,8 @@ func ValidateVaultProtocolState(v *storage.Vault, s *State) error {
 	for kind, fields := range archiveFields {
 		// Derive the category from the registry's actual State field path;
 		// Recovery.Offers is stored as quarantined_offers, not recovery_offers.
-		owned := len(fields) == 1 && (fields[0] == "Offers" || fields[0] == "OrderRecords" || fields[0] == "Swaps" || fields[0] == "TowerJobs")
-		quarantined := len(fields) == 2 && fields[0] == "Recovery" && fields[1] == "Offers"
+		owned := len(fields) == 1 && (fields[0] == "Outbox" || fields[0] == "ParentOrders" || fields[0] == "FillRecords" || fields[0] == "Offers" || fields[0] == "OrderRecords" || fields[0] == "Swaps" || fields[0] == "TowerJobs")
+		quarantined := len(fields) == 2 && fields[0] == "Recovery" && (fields[1] == "Offers" || fields[1] == "Outbox")
 		if !owned && !quarantined {
 			continue
 		}
