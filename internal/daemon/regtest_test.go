@@ -98,6 +98,11 @@ func newHarness(t *testing.T, bps int64) *harness {
 			}
 		}
 	})
+	// Open may return while an initial observation is still unavailable.
+	// Fixture deposits require real receiving addresses on both chains.
+	for _, name := range []string{"maker", "taker", "tower"} {
+		tickUntilConnected(t, h.engines[name])
+	}
 	for _, name := range []string{"maker", "taker"} {
 		for _, id := range []chain.ID{chain.BTC, chain.Blake} {
 			h.command(name, "regtest.faucet", map[string]any{"chain": id, "amount": 100000000})

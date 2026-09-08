@@ -224,6 +224,7 @@ func partialFixtureWallet(h *harness, name string, deposits map[chain.ID][]int64
 			}
 		}
 	})
+	tickUntilConnected(h.t, h.engines[name])
 	for _, id := range []chain.ID{chain.BTC, chain.Blake} {
 		for _, amount := range deposits[id] {
 			h.command(name, "regtest.faucet", map[string]any{"chain": id, "amount": amount})
