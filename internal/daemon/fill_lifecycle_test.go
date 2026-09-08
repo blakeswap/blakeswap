@@ -41,7 +41,7 @@ func TestParentFillRetirementReturnsOnlyUnfundedChildAndCannotRevive(t *testing.
 			}
 			e.clocks[s.Long.Chain] = s.Terms.Long.RefundHeight
 			e.clocks[s.Short.Chain] = s.Terms.Short.RefundHeight
-			if err := e.advanceSwap(context.Background(), s, map[chain.ID]map[string]chain.Observation{}); err != nil {
+			if err := e.advanceSwap(context.Background(), s, map[chain.ID]map[string]chain.Observation{chain.BTC: {}, chain.Blake: {}}); err != nil {
 				t.Fatal(err)
 			}
 			if !f.FundingDisabled || f.Allocation.EverCommitted || p.Quantities.Reserved != 0 || p.Fees[chain.Blake].Reserved != 0 || p.Fees[chain.Blake].Consumed != 0 || len(e.s.CoinReservations["swap/"+s.ID].Inputs) != 0 {
@@ -70,7 +70,7 @@ func TestParentFillRetirementReturnsOnlyUnfundedChildAndCannotRevive(t *testing.
 			e.clocks[chain.BTC], e.clocks[chain.Blake] = 200, 200
 			s.Stage = "late peer funding"
 			before := protocol.Digest(*p)
-			if err := e.advanceSwap(context.Background(), s, nil); err != nil || s.ShortFunding != "" || protocol.Digest(*p) != before {
+			if err := e.advanceSwap(context.Background(), s, map[chain.ID]map[string]chain.Observation{chain.BTC: {}, chain.Blake: {}}); err != nil || s.ShortFunding != "" || protocol.Digest(*p) != before {
 				t.Fatal("returned child regained own funding after clock reorg")
 			}
 			if err := applyFillRequest(t, e, r, now); err != nil || protocol.Digest(*p) != before {
@@ -134,7 +134,7 @@ func TestParentFillRetiredMakerKeepsLatePeerObservationsAcrossReload(t *testing.
 			}
 			s, f := e.s.Swaps[r.ID], e.s.FillRecords[r.ID]
 			e.clocks[s.Long.Chain], e.clocks[s.Short.Chain] = s.Long.RefundHeight, s.Short.RefundHeight
-			if err := e.advanceSwap(context.Background(), s, map[chain.ID]map[string]chain.Observation{}); err != nil {
+			if err := e.advanceSwap(context.Background(), s, map[chain.ID]map[string]chain.Observation{chain.BTC: {}, chain.Blake: {}}); err != nil {
 				t.Fatal(err)
 			}
 			if !f.FundingDisabled || f.Allocation.currentQuantity() != 0 {
@@ -193,7 +193,7 @@ func TestParentFillRetiredMakerKeepsLatePeerObservationsAcrossReload(t *testing.
 				t.Fatal("reload lost late observation or irreversible refusal")
 			}
 			e.chainFresh[s.Long.Chain] = false
-			if err := e.advanceSwap(context.Background(), s, nil); err != nil || s.LongSpend != obs.TxID || s.Stage != "aborted; counterparty refunded" {
+			if err := e.advanceSwap(context.Background(), s, map[chain.ID]map[string]chain.Observation{chain.BTC: {}, chain.Blake: {}}); err != nil || s.LongSpend != obs.TxID || s.Stage != "aborted; counterparty refunded" {
 				t.Fatal("unknown source erased saved positive peer outcome")
 			}
 			e.chainFresh[s.Long.Chain] = true

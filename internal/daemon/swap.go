@@ -84,6 +84,9 @@ func observation(all map[chain.ID]map[string]chain.Observation, c contract.HTLC)
 	return o, ok
 }
 func (e *Engine) advanceSwap(ctx context.Context, s *Swap, all map[chain.ID]map[string]chain.Observation) error {
+	if e.fatal != nil {
+		return e.fatal
+	}
 	if e.restoredSwap(s.ID) {
 		return e.advanceRestoredSwap(ctx, s, all)
 	}
@@ -100,24 +103,18 @@ func (e *Engine) advanceSwap(ctx context.Context, s *Swap, all map[chain.ID]map[
 	}
 	if s.Role == "maker" {
 		if child := e.s.FillRecords[s.ID]; child != nil && child.FundingDisabled && !child.Allocation.EverCommitted {
+			e.prepareObservedSpends(ctx, s, all)
 			return e.observeRetiredMaker(s, all)
 		}
 	}
-	if err := e.reconcileFillContradiction(s, all); err != nil {
-		return err
+	if err := e.reconcileObservedSwap(ctx, s, all); err != nil {
+		return e.holdObservedSpend(ctx, s, all, err)
 	}
 	if (s.Stage == "expired before maker funding" && s.ShortFunding == "") || (s.Stage == "expired before funding" && s.LongFunding == "") {
 		return nil // Safe expiry is final even if a reorg moves the clock back.
 	}
-	if !e.fresh(chain.BTC) || !e.fresh(chain.Blake) {
+	if !e.fresh(chain.BTC) || !e.fresh(chain.Blake) || all[chain.BTC] == nil || all[chain.Blake] == nil {
 		return e.advanceIsolatedSwap(ctx, s, all)
-	}
-	for _, c := range []contract.HTLC{s.Long, s.Short} {
-		if obs, found := observation(all, c); found {
-			if err := validateContractObservation(c, obs); err != nil {
-				return err
-			}
-		}
 	}
 	// Reconcile prepared transactions even in older snapshots whose broadcast
 	// succeeded before the sent flag was saved. Lookup errors are not absence.

@@ -459,11 +459,11 @@ func TestManualRefundAccelerationRechecksBothSettlements(t *testing.T) {
 					if err != nil {
 						t.Fatal(err)
 					}
-					scanner.observations[chain.OutpointKey(target.TxID, target.Vout)] = chain.Observation{Tx: claim}
+					scanner.observations[chain.OutpointKey(target.TxID, target.Vout)] = chain.Observation{Tx: claim, TxID: claim.TxHash().String()}
 				case "confirmed_refund":
-					ownScan.observations[chain.OutpointKey(own.TxID, own.Vout)] = chain.Observation{Tx: base, Confirmations: 1}
+					ownScan.observations[chain.OutpointKey(own.TxID, own.Vout)] = chain.Observation{Tx: base, TxID: base.TxHash().String(), Confirmations: 1}
 				case "pending_refund":
-					ownScan.observations[chain.OutpointKey(own.TxID, own.Vout)] = chain.Observation{Tx: base}
+					ownScan.observations[chain.OutpointKey(own.TxID, own.Vout)] = chain.Observation{Tx: base, TxID: base.TxHash().String()}
 				case "unknown":
 					incomingScan.err = context.DeadlineExceeded
 				}

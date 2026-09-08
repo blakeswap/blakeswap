@@ -902,3 +902,30 @@ preserved. Callers are in `regtest_test.go`, `fees_regtest_test.go`,
 `recovery_regtest_test.go`; their actual assertions remain separate required
 regressions. Direct create/take callers elsewhere also require current fields;
 there is no legacy execution fallback.
+
+## Observed peer spend evidence
+
+Observed peer spends are verified against their actual input position, witness,
+sequence and signature mode. The strict local signer and tower templates retain
+their own fixed policy. Multi-input Blake UnifiedAll observations require the
+complete input-aligned previous-output vector: each additional transaction is
+hash checked before selecting its output. The daemon bounds this work to 128
+reads and 4 MiB per scan, with a 500 ms enrichment slice, and retains only compact
+active-contract verification results bound to the witness hash and source
+generation. Missing evidence stays unknown and retries on a later scan.
+
+`observed_spend_test.go` covers mixed multi-input child outcomes, both directions
+and restored wallets; malformed/missing/oversized/slow previous transactions;
+witness and generation changes; aggregate work bounds without evicting earlier
+child proofs; and persistence failure before any proof lookup. Already-known
+contradictions are saved before enrichment. An unrelated uncertain proof can
+still permit the exact incoming claim with a durably witnessed public preimage.
+That path cannot fund, refund, release quantity, or make a first revelation.
+Unverified target spends cannot authorize the mempool replacement exception or
+suppress rescue as if they were confirmed. Missing complete scan maps remain
+distinct from current empty scans, including before funding or retirement.
+
+The unchanged peer-sequence regressions in `fill_reorg_test.go` independently
+execute the Bitcoin witness script before checking ordinary/restored accounting
+and live rescue. Actual-node partial-fill and funding-ancestry matrices remain
+separate from these deterministic controls.

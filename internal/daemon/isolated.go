@@ -99,6 +99,10 @@ func (e *Engine) observeSwapSpends(s *Swap, all map[chain.ID]map[string]chain.Ob
 			continue
 		}
 		o, ok := observation(all, c)
+		if ok && e.validateContractObservation(c, o) != nil {
+			terminalStable = false
+			continue // Unknown proof cannot overwrite a known spend or mean absence.
+		}
 		previous := s.ShortSpend
 		if c.Chain == s.Long.Chain {
 			previous = s.LongSpend
@@ -130,21 +134,42 @@ func (e *Engine) observeSwapSpends(s *Swap, all map[chain.ID]map[string]chain.Ob
 // saved before its first broadcast is insufficient. Refunds and funding wait for
 // fresh observations of BOTH chains, including the incoming-spend scan.
 func (e *Engine) advanceIsolatedSwap(ctx context.Context, s *Swap, all map[chain.ID]map[string]chain.Observation) error {
+	if e.fatal != nil {
+		return e.fatal
+	}
 	if err := e.rememberSwapWitnesses(s, all); err != nil {
 		return err
 	}
-	incoming := s.Short
-	if s.Role == "maker" {
-		incoming = s.Long
+	if s.Terms == nil {
+		return errors.New("isolated claim lacks accepted terms")
 	}
-	if err := e.reconcileFillContradiction(s, all); err != nil {
+	if err := s.Terms.Validate(); err != nil {
 		return err
+	}
+	if s.Role == "maker" {
+		if child := e.s.FillRecords[s.ID]; child != nil && child.FundingDisabled && !child.Allocation.EverCommitted {
+			e.prepareObservedSpends(ctx, s, all)
+			return e.observeRetiredMaker(s, all)
+		}
+	}
+	if err := e.reconcileObservedSwap(ctx, s, all); err != nil {
+		return e.holdObservedSpend(ctx, s, all, err)
 	}
 	terminalStable := e.observeSwapSpends(s, all)
 	if terminalStable {
 		// An unrelated outage is not a reorg. Keep completed history terminal;
 		// readiness separately identifies the peer observation as stale.
 		return nil
+	}
+	return e.claimObservedSecret(ctx, s, all)
+}
+
+// This tail has no funding, refund or first-revelation transition. It can run
+// despite unrelated proof uncertainty only after witnesses were durably saved.
+func (e *Engine) claimObservedSecret(ctx context.Context, s *Swap, all map[chain.ID]map[string]chain.Observation) error {
+	incoming := s.Short
+	if s.Role == "maker" {
+		incoming = s.Long
 	}
 	s.Stage = "chain unavailable; funding, revelation and refunds held"
 	if !s.SecretObserved || !e.fresh(incoming.Chain) {
@@ -154,7 +179,8 @@ func (e *Engine) advanceIsolatedSwap(ctx context.Context, s *Swap, all map[chain
 		return errors.New("target-chain spend scan unavailable")
 	}
 	targetObs, targetSpent := observation(all, incoming)
-	if targetSpent && targetObs.Confirmations >= e.Config.Network.Confirmations() {
+	targetQualified := targetSpent && e.validateContractObservation(incoming, targetObs) == nil
+	if targetQualified && targetObs.Confirmations >= e.Config.Network.Confirmations() {
 		return nil
 	}
 	// Verify the exact agreed unspent target, without asking the unavailable peer
@@ -165,7 +191,7 @@ func (e *Engine) advanceIsolatedSwap(ctx context.Context, s *Swap, all map[chain
 		return err
 	}
 	mempoolClaim := false
-	if targetSpent && targetObs.Tx != nil && targetObs.Confirmations == 0 {
+	if targetQualified && targetObs.Confirmations == 0 {
 		_, mempoolClaim = contract.ExtractSecret(incoming, targetObs.Tx)
 	}
 	if out == nil && !mempoolClaim {

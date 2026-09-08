@@ -64,7 +64,7 @@ func (e *Engine) observeRetiredMaker(s *Swap, all map[chain.ID]map[string]chain.
 		return errors.New("late peer outcome has no matching transaction evidence")
 	}
 	_, claimed := contract.ExtractSecret(s.Long, obs.Tx)
-	if err := contract.VerifySignature(s.Long, obs.Tx, !claimed); err != nil {
+	if err := e.validateContractObservation(s.Long, obs); err != nil {
 		return err
 	}
 	s.LongSpend, s.LongConfirmations = obs.TxID, obs.Confirmations

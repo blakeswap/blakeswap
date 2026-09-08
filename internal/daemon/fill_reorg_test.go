@@ -14,6 +14,8 @@ import (
 	"github.com/blakeswap/blakeswap/internal/protocol"
 	"github.com/blakeswap/blakeswap/internal/storage"
 	"github.com/blakeswap/blakeswap/internal/transport"
+	"github.com/btcsuite/btcd/btcec/v2/ecdsa"
+	"github.com/btcsuite/btcd/txscript"
 	"github.com/btcsuite/btcd/wire"
 )
 
@@ -433,6 +435,113 @@ func TestParentFillRestoredPrecommitChargesOnlyOnPositiveOwnProof(t *testing.T) 
 			}
 			if protocol.Digest([]any{p.Quantities, p.Fees, p.Bounties, e.s.FillRecords}) != before {
 				t.Fatal("same proof consumed imported authorization twice")
+			}
+		})
+	}
+}
+
+func TestReviewFillAcceptsConsensusValidPeerSequence(t *testing.T) {
+	for _, restored := range []bool{false, true} {
+		name := "ordinary"
+		if restored {
+			name = "restored"
+		}
+		t.Run(name, func(t *testing.T) {
+			e, children, secrets := fundedFillPair(t, chain.BTC)
+			s := children[0]
+			all := fillPairOutcomes(t, e, children, secrets, false)
+			target := s.Short // BTC own contract, claimed by the counterparty.
+			point := chain.OutpointKey(target.TxID, target.Vout)
+			obs := all[target.Chain][point]
+			tx := obs.Tx.Copy()
+			tx.TxIn[0].Sequence = wire.MaxTxInSequenceNum - 1
+			script, err := target.Script()
+			if err != nil {
+				t.Fatal(err)
+			}
+			pk, err := target.PkScript()
+			if err != nil {
+				t.Fatal(err)
+			}
+			key := isolatedSpendKey(t, e, s, target, false)
+			spent := wire.NewTxOut(target.Amount, pk)
+			digest, err := contract.Digest(target.Chain, tx, 0, script, []*wire.TxOut{spent})
+			if err != nil {
+				t.Fatal(err)
+			}
+			tx.TxIn[0].Witness[0] = append(ecdsa.Sign(key, digest).Serialize(), byte(txscript.SigHashAll))
+			fetch := txscript.NewCannedPrevOutputFetcher(pk, target.Amount)
+			hashes := txscript.NewTxSigHashes(tx, fetch)
+			vm, err := txscript.NewEngine(pk, tx, 0, txscript.StandardVerifyFlags, nil, hashes, target.Amount, fetch)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err = vm.Execute(); err != nil {
+				t.Fatal("fixture is not consensus-valid", err)
+			}
+			obs.Tx, obs.TxID = tx, tx.TxHash().String()
+			all[target.Chain][point] = obs
+			if restored {
+				markRestored(t, e)
+			}
+			err = e.advanceSwap(context.Background(), s, all)
+			if err != nil || s.Stage != "completed" || e.s.FillRecords[s.ID].Allocation.Disposition != FillFilled {
+				t.Fatalf("valid confirmed spend permanently rejected: err=%v stage=%q allocation=%s", err, s.Stage, e.s.FillRecords[s.ID].Allocation.Disposition)
+			}
+		})
+	}
+}
+
+func TestReviewPeerSequenceCannotSuppressMakerRescue(t *testing.T) {
+	for _, restored := range []bool{false} {
+		name := "ordinary"
+		if restored {
+			name = "restored"
+		}
+		t.Run(name, func(t *testing.T) {
+			e, children, secrets := fundedFillPair(t, chain.BTC)
+			s := children[0]
+			all := fillPairOutcomes(t, e, children, secrets, false)
+			target := s.Short // BTC own contract, claimed by the counterparty.
+			point := chain.OutpointKey(target.TxID, target.Vout)
+			obs := all[target.Chain][point]
+			tx := obs.Tx.Copy()
+			tx.TxIn[0].Sequence = wire.MaxTxInSequenceNum - 1
+			script, err := target.Script()
+			if err != nil {
+				t.Fatal(err)
+			}
+			pk, err := target.PkScript()
+			if err != nil {
+				t.Fatal(err)
+			}
+			key := isolatedSpendKey(t, e, s, target, false)
+			spent := wire.NewTxOut(target.Amount, pk)
+			digest, err := contract.Digest(target.Chain, tx, 0, script, []*wire.TxOut{spent})
+			if err != nil {
+				t.Fatal(err)
+			}
+			tx.TxIn[0].Witness[0] = append(ecdsa.Sign(key, digest).Serialize(), byte(txscript.SigHashAll))
+			fetch := txscript.NewCannedPrevOutputFetcher(pk, target.Amount)
+			hashes := txscript.NewTxSigHashes(tx, fetch)
+			vm, err := txscript.NewEngine(pk, tx, 0, txscript.StandardVerifyFlags, nil, hashes, target.Amount, fetch)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err = vm.Execute(); err != nil {
+				t.Fatal("fixture is not consensus-valid", err)
+			}
+			obs.Tx, obs.TxID = tx, tx.TxHash().String()
+			all[target.Chain][point] = obs
+			delete(all[s.Long.Chain], chain.OutpointKey(s.Long.TxID, s.Long.Vout))
+			backend := &fundingLookupBackend{}
+			e.nodes[s.Long.Chain] = backend
+			if restored {
+				markRestored(t, e)
+			}
+			err = e.advanceSwap(context.Background(), s, all)
+			if err != nil || s.SelfClaim == "" || len(backend.broadcasts) == 0 {
+				t.Fatalf("peer claim suppressed maker rescue: err=%v secret_observed=%v claim_saved=%v broadcasts=%d", err, s.SecretObserved, s.SelfClaim != "", len(backend.broadcasts))
 			}
 		})
 	}

@@ -19,7 +19,7 @@ func TestParentFillRecoveryHoldsPublisherAndPreservesEveryQuantityAndCharge(t *t
 		s, f := e.s.Swaps[r.ID], e.s.FillRecords[r.ID]
 		if retired {
 			e.clocks[s.Long.Chain], e.clocks[s.Short.Chain] = s.Long.RefundHeight, s.Short.RefundHeight
-			if err := e.advanceSwap(context.Background(), s, nil); err != nil {
+			if err := e.advanceSwap(context.Background(), s, map[chain.ID]map[string]chain.Observation{chain.BTC: {}, chain.Blake: {}}); err != nil {
 				t.Fatal(err)
 			}
 		}

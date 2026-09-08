@@ -161,7 +161,7 @@ func TestParentFillColdWholeMarketPreservesExactParentAndChildWithoutActivation(
 	}
 	s := e.s.Swaps[request.ID]
 	e.clocks[s.Long.Chain], e.clocks[s.Short.Chain] = s.Long.RefundHeight, s.Short.RefundHeight
-	if err := e.advanceSwap(context.Background(), s, nil); err != nil {
+	if err := e.advanceSwap(context.Background(), s, map[chain.ID]map[string]chain.Observation{chain.BTC: {}, chain.Blake: {}}); err != nil {
 		t.Fatal(err)
 	}
 	if err := e.retainOrderSettlement(s); err != nil {
@@ -279,7 +279,7 @@ func TestParentFillRetiredWholeChildCannotEraseLaterTerminalLink(t *testing.T) {
 	}
 	old := e.s.Swaps[first.ID]
 	e.clocks[old.Long.Chain], e.clocks[old.Short.Chain] = old.Long.RefundHeight, old.Short.RefundHeight
-	if err := e.advanceSwap(context.Background(), old, nil); err != nil {
+	if err := e.advanceSwap(context.Background(), old, map[chain.ID]map[string]chain.Observation{chain.BTC: {}, chain.Blake: {}}); err != nil {
 		t.Fatal(err)
 	}
 	if !e.s.FillRecords[first.ID].FundingDisabled || e.s.FillRecords[first.ID].Allocation.currentQuantity() != 0 {

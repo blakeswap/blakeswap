@@ -53,7 +53,7 @@ func (e *Engine) acceptRecoveryRefund(s *Swap, all map[chain.ID]map[string]chain
 		incoming = s.Long
 	}
 	obs, ok := observation(all, incoming)
-	if !ok || obs.Tx == nil || obs.Confirmations < e.Config.Network.Confirmations() {
+	if !ok || obs.Tx == nil || obs.Confirmations < e.Config.Network.Confirmations() || e.validateContractObservation(incoming, obs) != nil {
 		return false
 	}
 	if _, claimed := contract.ExtractSecret(incoming, obs.Tx); claimed {
@@ -68,6 +68,9 @@ func (e *Engine) acceptRecoveryRefund(s *Swap, all map[chain.ID]map[string]chain
 // target-only recovery claim. Absence cannot establish that an old snapshot never
 // learned or published something later.
 func (e *Engine) advanceRestoredSwap(ctx context.Context, s *Swap, all map[chain.ID]map[string]chain.Observation) error {
+	if e.fatal != nil {
+		return e.fatal
+	}
 	if err := e.rememberSwapWitnesses(s, all); err != nil {
 		return err
 	}
@@ -80,8 +83,8 @@ func (e *Engine) advanceRestoredSwap(ctx context.Context, s *Swap, all map[chain
 	if err := s.Terms.Validate(); err != nil {
 		return err
 	}
-	if err := e.reconcileFillContradiction(s, all); err != nil {
-		return err
+	if err := e.reconcileObservedSwap(ctx, s, all); err != nil {
+		return e.holdObservedSpend(ctx, s, all, err)
 	}
 	terminalStable := e.observeSwapSpends(s, all)
 	if e.recoverySwapResolved(s, all) {
@@ -175,7 +178,7 @@ func (e *Engine) recoverySwapResolved(s *Swap, all map[chain.ID]map[string]chain
 			return false
 		}
 		_, claimed := contract.ExtractSecret(c, obs.Tx)
-		return !claimed && contract.VerifySignature(c, obs.Tx, true) == nil
+		return !claimed && e.validateContractObservation(c, obs) == nil
 	}
 	if e.recoverySwapOwnInactive(s) {
 		return refunded(incoming)
@@ -185,7 +188,7 @@ func (e *Engine) recoverySwapResolved(s *Swap, all map[chain.ID]map[string]chain
 	}
 	for _, c := range []contract.HTLC{s.Long, s.Short} {
 		obs, ok := observation(all, c)
-		if c.TxID == "" || !ok || obs.Confirmations < e.Config.Network.Confirmations() || validateContractObservation(c, obs) != nil {
+		if c.TxID == "" || !ok || obs.Confirmations < e.Config.Network.Confirmations() || e.validateContractObservation(c, obs) != nil {
 			return false
 		}
 	}

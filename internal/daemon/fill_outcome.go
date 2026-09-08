@@ -7,14 +7,6 @@ import (
 	"github.com/blakeswap/blakeswap/internal/contract"
 )
 
-func validateContractObservation(c contract.HTLC, o chain.Observation) error {
-	if o.Tx == nil || o.Tx.TxHash().String() != o.TxID {
-		return errors.New("contract observation lacks matching transaction evidence")
-	}
-	_, claim := contract.ExtractSecret(c, o.Tx)
-	return contract.VerifySignature(c, o.Tx, !claim)
-}
-
 // A complete, current scan can contradict this child's saved positive outcome.
 // An outage, missing map, or another child's reorg cannot. Persist the demotion
 // before a funding lookup or other later IO can fail; neither this transition
@@ -41,7 +33,7 @@ func (e *Engine) reconcileFillContradiction(s *Swap, all map[chain.ID]map[string
 		}
 		o, found := observation(all, c)
 		if found {
-			if err := validateContractObservation(c, o); err != nil {
+			if err := e.validateContractObservation(c, o); err != nil {
 				proofError = errors.Join(proofError, err)
 				continue
 			}
@@ -60,7 +52,10 @@ func (e *Engine) reconcileFillContradiction(s *Swap, all map[chain.ID]map[string
 		}
 	}
 	if len(contradicted) == 0 {
-		return proofError
+		if proofError != nil {
+			return observationEvidenceError{proofError}
+		}
+		return nil
 	}
 	p := e.s.ParentOrders[f.ParentID]
 	if p == nil {
@@ -72,7 +67,13 @@ func (e *Engine) reconcileFillContradiction(s *Swap, all map[chain.ID]map[string
 	}
 	*p, *f = next, child
 	s.Stage = "settlement contradicted; awaiting current child evidence"
-	return errors.Join(e.save(), proofError)
+	if err := e.save(); err != nil {
+		return err
+	}
+	if proofError != nil {
+		return observationEvidenceError{proofError}
+	}
+	return nil
 }
 
 // A restored accepted child may have been funded after the exported checkpoint.
@@ -87,7 +88,7 @@ func (e *Engine) settleRestoredMakerFill(s *Swap, to FillDisposition, all map[ch
 		return errors.New("restored accounting requires current exact settlement evidence")
 	}
 	own, found := observation(all, s.Short)
-	if !found || own.Confirmations < e.Config.Network.Confirmations() || validateContractObservation(s.Short, own) != nil {
+	if !found || own.Confirmations < e.Config.Network.Confirmations() || e.validateContractObservation(s.Short, own) != nil {
 		return errors.New("restored accounting lacks positive own-output proof")
 	}
 	f := e.s.FillRecords[s.ID]

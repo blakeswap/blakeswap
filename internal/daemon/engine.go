@@ -27,6 +27,9 @@ import (
 var errEngineClosed = errors.New("engine closed")
 
 type Engine struct {
+	observedSpendProofs      map[contract.HTLC]observedSpendProof
+	observedSpendReads       int
+	observedSpendBytes       int
 	authorizationEpoch       string
 	strategyVerifiedSwaps    map[string]bool
 	strategyReporting        atomic.Bool
@@ -989,6 +992,7 @@ func (e *Engine) funded(ctx context.Context, c contract.HTLC) (bool, error) {
 	return true, nil
 }
 func (e *Engine) scan(ctx context.Context) (map[chain.ID]map[string]chain.Observation, error) {
+	e.resetObservedSpendWork()
 	points := map[chain.ID][]string{}
 	starts := map[chain.ID]uint32{chain.BTC: e.heights[chain.BTC], chain.Blake: e.heights[chain.Blake]}
 	add := func(c contract.HTLC, start uint32) {
