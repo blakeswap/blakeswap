@@ -52,7 +52,7 @@ final class FillHistoryModel: ObservableObject {
                   page.parentMaker == context.maker, page.parentID == context.parentID,
                   !page.revision.isEmpty, expected.isEmpty || (page.revision == expected && page.total == total),
                   page.records.count <= Int(limit), end <= UInt64(page.total),
-                  page.nextOffset == UInt32(end), page.more == (end < UInt64(page.total)),
+                  page.nextOffset == (page.more ? UInt32(end) : 0), page.more == (end < UInt64(page.total)),
                   !page.more || !page.records.isEmpty,
                   Set(page.records.map(\.id)).count == page.records.count,
                   page.records.map(\.id) == page.records.map(\.id).sorted(),

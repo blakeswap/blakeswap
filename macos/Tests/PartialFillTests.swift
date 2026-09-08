@@ -121,13 +121,13 @@ final class PartialFillTests: XCTestCase {
         resume?.resume(returning: try stale.serializedData()); await old.value
         XCTAssertEqual(model.rows, latest); XCTAssertNil(model.error)
     }
-    private func page(_ request: Blakeswap_V2_FillQuery) -> Blakeswap_V2_FillPage {
-        var page = Blakeswap_V2_FillPage(); page.wallet = wallet.profile; page.network = wallet.network; page.parentMaker = "maker"; page.parentID = "parent"; page.revision = "frozen"; page.total = 1001
+    private func page(_ request: Blakeswap_V2_FillQuery, total: UInt32 = 1001) -> Blakeswap_V2_FillPage {
+        var page = Blakeswap_V2_FillPage(); page.wallet = wallet.profile; page.network = wallet.network; page.parentMaker = "maker"; page.parentID = "parent"; page.revision = "frozen"; page.total = total
         let end = min(request.offset + request.limit, page.total)
         page.records = (request.offset..<end).map { number in
             var row = Blakeswap_V2_FillSummary(); row.id = String(format: "child-%04d", number); row.parentMaker = "maker"; row.parentID = "parent"; row.quantity = 400000; row.allocatedQuantity = 400000; row.allocationKnown = true; row.disposition = "released"; row.archived = number.isMultiple(of: 2); row.monitoringRequired = row.archived; return row
         }
-        page.nextOffset = end; page.more = end < page.total; return page
+        page.more = end < page.total; page.nextOffset = page.more ? end : 0; return page
     }
     func testFillHistoryBoundedPagesAndExactDetail() async throws {
         var requests: [Blakeswap_V2_FillQuery] = []
@@ -170,4 +170,74 @@ final class PartialFillTests: XCTestCase {
             await model.next(current: { wallet }); XCTAssertEqual(model.rows, original); XCTAssertNotNil(model.error)
         }
     }
+    func testFillHistoryTerminalPageUsesDaemonZeroOffset() async throws {
+        for total: UInt32 in [0, 1, 100] {
+            let model = FillHistoryModel(context: ParentFillContext(wallet: wallet, maker: "maker", parentID: "parent")) { _, raw in
+                let request = try Blakeswap_V2_FillQuery(jsonUTF8Data: raw)
+                return try self.page(request, total: total).serializedData()
+            }
+            await model.load(current: { wallet })
+            XCTAssertNil(model.error, "terminal total \(total)")
+            XCTAssertEqual(model.rows.count, Int(total)); XCTAssertEqual(model.total, total)
+            XCTAssertEqual(model.offset, 0); XCTAssertFalse(model.more)
+        }
+    }
+    func testFillHistoryFinalMultiPageUsesDaemonZeroOffset() async throws {
+        for total: UInt32 in [101, 200, 201] {
+            var offsets: [UInt32] = []
+            let model = FillHistoryModel(context: ParentFillContext(wallet: wallet, maker: "maker", parentID: "parent")) { _, raw in
+                let request = try Blakeswap_V2_FillQuery(jsonUTF8Data: raw); offsets.append(request.offset)
+                XCTAssertTrue(request.offset == 0 || request.revision == "frozen")
+                return try self.page(request, total: total).serializedData()
+            }
+            await model.load(current: { wallet })
+            while model.more { await model.next(current: { wallet }); XCTAssertLessThanOrEqual(model.rows.count, 100) }
+            let finalOffset = ((total - 1) / 100) * 100
+            XCTAssertNil(model.error, "terminal total \(total)")
+            XCTAssertEqual(model.rows.count, Int(total - finalOffset)); XCTAssertEqual(model.offset, finalOffset)
+            XCTAssertEqual(model.total, total); XCTAssertFalse(model.more)
+            XCTAssertEqual(offsets, Array(stride(from: UInt32(0), through: finalOffset, by: 100)))
+            await model.previous(current: { wallet }); XCTAssertNil(model.error)
+            XCTAssertEqual(model.offset, finalOffset - 100); XCTAssertTrue(model.more)
+        }
+    }
+    func testFillHistoryRefusesMalformedContinuationAndTerminalPages() async throws {
+        for alteration in ["continuation zero", "continuation backward", "continuation forward", "terminal offset", "terminal end", "terminal more", "wallet", "network", "maker", "parent", "revision", "total", "duplicate", "order", "empty id", "row maker", "row parent"] {
+            let initialFailure = alteration.hasPrefix("continuation")
+            var calls = 0
+            let model = FillHistoryModel(context: ParentFillContext(wallet: wallet, maker: "maker", parentID: "parent")) { _, raw in
+                let request = try Blakeswap_V2_FillQuery(jsonUTF8Data: raw); calls += 1
+                var result = self.page(request, total: 102)
+                if initialFailure || calls > 1 {
+                    switch alteration {
+                    case "continuation zero": result.nextOffset = 0
+                    case "continuation backward": result.nextOffset = 99
+                    case "continuation forward": result.nextOffset = 101
+                    case "terminal offset": result.nextOffset = 1
+                    case "terminal end": result.nextOffset = 102
+                    case "terminal more": result.more = true
+                    case "wallet": result.wallet = "other"
+                    case "network": result.network = "other"
+                    case "maker": result.parentMaker = "other"
+                    case "parent": result.parentID = "other"
+                    case "revision": result.revision = "other"
+                    case "total": result.total += 1
+                    case "duplicate": result.records[1].id = result.records[0].id
+                    case "order": result.records.reverse()
+                    case "empty id": result.records[0].id = ""
+                    case "row maker": result.records[0].parentMaker = "other"
+                    default: result.records[0].parentID = "other"
+                    }
+                }
+                return try result.serializedData()
+            }
+            await model.load(current: { wallet })
+            if initialFailure { XCTAssertNotNil(model.error, alteration); XCTAssertTrue(model.rows.isEmpty); continue }
+            let previous = model.rows
+            await model.next(current: { wallet })
+            XCTAssertNotNil(model.error, alteration); XCTAssertEqual(model.rows, previous, alteration)
+            XCTAssertEqual(model.offset, 0); XCTAssertEqual(model.total, 102); XCTAssertFalse(model.more)
+        }
+    }
+
 }
