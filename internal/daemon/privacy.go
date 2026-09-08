@@ -77,8 +77,8 @@ func (e *Engine) selectProtection(o protocol.Offer, bps int64, pubkey string, ma
 	return tower, nil
 }
 
-// Withdraw cached offers from the retired public schema before relay IO. This
-// is cache hygiene, not protocol negotiation or support for legacy swaps.
+// Refuse incompatible owned offers before relay IO. Foreign cache cleanup is
+// advisory only; an owned legacy event is never rewritten as upgraded authority.
 func (e *Engine) scrubOfferCache() error {
 	if e.s.OfferTowers == nil {
 		e.s.OfferTowers = map[string]protocol.Tower{}
@@ -87,16 +87,7 @@ func (e *Engine) scrubOfferCache() error {
 		if !retiredOfferContent(event.Content) {
 			continue
 		}
-		var o protocol.Offer
-		if err := json.Unmarshal([]byte(event.Content), &o); err != nil {
-			return err
-		}
-		o.Status = "cancelled"
-		delete(e.s.OfferTowers, o.ID)
-		delete(e.s.CoinReservations, "offer/"+o.ID)
-		if err := e.publishOffer(o); err != nil {
-			return err
-		}
+		return errors.New("incompatible saved offer; preserve this development profile and create a separate protocol-2 profile")
 	}
 	for id, d := range e.s.Outbox {
 		if d.Event.Kind != transport.OfferKind {
@@ -119,5 +110,9 @@ func retiredOfferContent(content string) bool {
 	if json.Unmarshal([]byte(content), &fields) != nil {
 		return true
 	}
-	return fields["tower"] != nil || fields["tower_bps"] != nil || fields["version"] != nil
+	var version int
+	if json.Unmarshal(fields["version"], &version) != nil || version != protocol.Version {
+		return true
+	}
+	return fields["tower"] != nil || fields["tower_bps"] != nil
 }

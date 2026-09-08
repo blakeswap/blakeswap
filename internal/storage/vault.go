@@ -26,19 +26,33 @@ type Vault struct {
 }
 
 func Open(path string, password []byte) (*Vault, error) {
+	return openVault(path, password, false)
+}
+
+// OpenReadOnly authenticates an existing vault without creating directories,
+// buckets, salts or empty state. It is suitable for source-preserving format
+// preflight and offline projections; callers must revalidate after acquiring a
+// writer before activating a profile that could have changed in between.
+func OpenReadOnly(path string, password []byte) (*Vault, error) {
+	return openVault(path, password, true)
+}
+
+func openVault(path string, password []byte, readOnly bool) (*Vault, error) {
 	if len(password) < 16 {
 		return nil, errors.New("vault password must be at least 16 bytes")
 	}
-	if e := os.MkdirAll(filepath.Dir(path), 0700); e != nil {
-		return nil, e
+	if !readOnly {
+		if e := os.MkdirAll(filepath.Dir(path), 0700); e != nil {
+			return nil, e
+		}
 	}
-	db, e := bolt.Open(path, 0600, &bolt.Options{Timeout: time.Second})
+	db, e := bolt.Open(path, 0600, &bolt.Options{Timeout: time.Second, ReadOnly: readOnly})
 	if e != nil {
 		return nil, e
 	}
 	fail := func(err error) (*Vault, error) { db.Close(); return nil, err }
 	var salt []byte
-	e = db.Update(func(tx *bolt.Tx) error {
+	initialize := func(tx *bolt.Tx) error {
 		b, e := tx.CreateBucketIfNotExists(bucket)
 		if e != nil {
 			return e
@@ -55,7 +69,22 @@ func Open(path string, password []byte) (*Vault, error) {
 			return errors.New("corrupt salt")
 		}
 		return nil
-	})
+	}
+	if readOnly {
+		e = db.View(func(tx *bolt.Tx) error {
+			b := tx.Bucket(bucket)
+			if b == nil {
+				return errors.New("existing file has no encrypted vault")
+			}
+			salt = append([]byte(nil), b.Get([]byte("salt"))...)
+			if len(salt) != 32 {
+				return errors.New("existing vault has no valid salt")
+			}
+			return nil
+		})
+	} else {
+		e = db.Update(initialize)
+	}
 	if e != nil {
 		return fail(e)
 	}
@@ -81,6 +110,9 @@ func Open(path string, password []byte) (*Vault, error) {
 		return fail(errors.New("vault password incorrect or state corrupted"))
 	}
 	if !exists {
+		if readOnly {
+			return fail(errors.New("existing vault has no authenticated state"))
+		}
 		if e = v.Save(map[string]any{}); e != nil {
 			return fail(e)
 		}

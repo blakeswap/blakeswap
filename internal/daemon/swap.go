@@ -20,7 +20,7 @@ func (e *Engine) makeJob(s *Swap, c contract.HTLC, kind string, observe *contrac
 	if err != nil {
 		return protocol.Job{}, err
 	}
-	job := protocol.Job{Network: e.Config.Network, SwapID: s.ID, Owner: e.identity.Public().Hex(), TermsHash: protocol.Digest(s.Terms), Kind: kind, Target: c, Observe: observe, ScanFrom: 1, Lock: lock, BPS: s.protection().BPS, Payout: hex.EncodeToString(e.scripts[c.Chain]), TowerScript: hex.EncodeToString(towerScript)}
+	job := protocol.Job{Version: protocol.Version, Network: e.Config.Network, SwapID: s.ID, Owner: e.identity.Public().Hex(), TermsHash: protocol.Digest(s.Terms), Kind: kind, Target: c, Observe: observe, ScanFrom: 1, Lock: lock, BPS: s.protection().BPS, Payout: hex.EncodeToString(e.scripts[c.Chain]), TowerScript: hex.EncodeToString(towerScript)}
 	if e.Config.Network != chain.Regtest {
 		job.ScanFrom = s.Terms.StartHeights[c.Chain]
 		if observe != nil {
@@ -73,7 +73,7 @@ func (e *Engine) prepare(s *Swap, own contract.HTLC) error {
 }
 func towerReady(s *Swap) bool {
 	for _, job := range s.Jobs {
-		if receipt, ok := s.Receipts[job.ID]; !ok || receipt.Digest != protocol.Digest(job) {
+		if receipt, ok := s.Receipts[job.ID]; !ok || receipt.Validate() != nil || receipt.Digest != protocol.Digest(job) {
 			return false
 		}
 	}

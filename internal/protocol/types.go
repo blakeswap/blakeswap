@@ -1,4 +1,4 @@
-// Package protocol defines immutable, authenticated v1 swap terms and safety gates.
+// Package protocol defines immutable, authenticated swap terms and safety gates.
 package protocol
 
 import (
@@ -17,6 +17,7 @@ import (
 
 const Confirmations = 2
 const FundingFee int64 = 2000
+const Version = 2
 
 var RescueFees = []int64{2000, 6000, 20000}
 
@@ -27,6 +28,10 @@ const RevealBlocks uint32 = 24
 const RefundGrace uint32 = 6
 
 type Offer struct {
+	Version int `json:"version"`
+	FillPolicy
+	Revision    uint64        `json:"revision"`
+	Available   int64         `json:"available"`
 	Tower       *Tower        `json:"tower,omitempty"`
 	Network     chain.Network `json:"network,omitempty"`
 	ID          string        `json:"id"`
@@ -41,8 +46,15 @@ type Offer struct {
 }
 
 func (o Offer) Validate(now int64) error {
-	if !o.Network.Valid() || !Hex32(o.ID) || !Hex32(o.Maker) || !o.Sell.Valid() || o.SellAmount < 100000 || o.BuyAmount < 100000 || o.SellAmount > 10000000000 || o.BuyAmount > 10000000000 {
-		return errors.New("invalid order bounds (v1: 100,000 to 10 billion sats per leg)")
+	if o.Version != Version || o.Network == "" || !o.Network.Valid() || !Hex32(o.ID) || !Hex32(o.Maker) || !o.Sell.Valid() || o.SellAmount < MinPrincipal || o.BuyAmount < MinPrincipal || o.SellAmount > MaxPrincipal || o.BuyAmount > MaxPrincipal {
+		return errors.New("invalid protocol-2 order identity or principal bounds")
+	}
+	m, max, err := o.FillPolicy.Interval(o.SellAmount, o.BuyAmount)
+	if err != nil {
+		return err
+	}
+	if o.Revision == 0 || o.Available < 0 || o.Available > o.SellAmount || !Partitionable(o.Available, m, max) || (o.Status == "open" && o.Available == 0) || (o.Status != "open" && o.Available != 0) {
+		return errors.New("invalid order availability revision")
 	}
 	if o.Expires <= now || o.Expires > now+7*24*3600 {
 		return errors.New("order expired or too far in future")
@@ -86,7 +98,7 @@ func DecodeOffer(event nostr.Event, now int64) (Offer, error) {
 	_ = json.Unmarshal([]byte(event.Content), &fields)
 	for field := range fields {
 		switch field {
-		case "network", "id", "maker", "sell", "sell_amount", "buy_amount", "expires", "status", "reservation":
+		case "version", "fill_mode", "min_fill", "max_fill", "revision", "available", "network", "id", "maker", "sell", "sell_amount", "buy_amount", "expires", "status":
 		default:
 			return o, errors.New("unsupported public offer field")
 		}
@@ -125,6 +137,9 @@ func Digest(v any) string {
 }
 
 type Request struct {
+	Version    int                 `json:"version"`
+	Revision   uint64              `json:"revision"`
+	Quantity   int64               `json:"quantity"`
 	ID         string              `json:"id"`
 	OfferEvent nostr.Event         `json:"offer_event"`
 	Taker      string              `json:"taker"`
@@ -137,10 +152,21 @@ func (r Request) Validate(now int64) (Offer, error) {
 	if e != nil {
 		return o, e
 	}
-	if !Hex32(r.ID) || !Hex32(r.Hash) || !Hex32(r.Taker) || r.Taker == o.Maker || !ValidKey(r.Keys[chain.BTC]) || !ValidKey(r.Keys[chain.Blake]) || len(r.Keys) != 2 || r.Keys[chain.BTC] == r.Keys[chain.Blake] || o.Status != "open" {
+	if r.Version != Version || r.Revision != o.Revision || !Hex32(r.ID) || !Hex32(r.Hash) || !Hex32(r.Taker) || r.Taker == o.Maker || !ValidKey(r.Keys[chain.BTC]) || !ValidKey(r.Keys[chain.Blake]) || len(r.Keys) != 2 || r.Keys[chain.BTC] == r.Keys[chain.Blake] || o.Status != "open" {
 		return o, errors.New("invalid swap request")
 	}
+	if _, err := o.FillPolicy.Quote(o.SellAmount, o.BuyAmount, o.Available, r.Quantity); err != nil {
+		return o, err
+	}
 	return o, nil
+}
+
+func (r Request) Amounts() (FillAmounts, error) {
+	o, err := r.Validate(int64(r.OfferEvent.CreatedAt))
+	if err != nil {
+		return FillAmounts{}, err
+	}
+	return o.FillPolicy.Quote(o.SellAmount, o.BuyAmount, o.Available, r.Quantity)
 }
 
 type Terms struct {
@@ -166,9 +192,13 @@ func NewTermsWithClocks(r Request, makerKeys map[chain.ID]string, heights, clock
 	scale := o.Network.HorizonScale()
 	longID := o.Sell.Other()
 	shortID := o.Sell
-	terms := Terms{Version: 1, Request: r, MakerKeys: makerKeys, Takeover: heights[longID] + TakeoverBlocks*scale, RevealBefore: heights[longID] + RevealBlocks*scale, Domains: map[chain.ID]string{chain.BTC: o.Network.Domain(chain.BTC), chain.Blake: o.Network.Domain(chain.Blake)}}
-	terms.Long = contract.HTLC{Chain: longID, Hash: r.Hash, ClaimKey: makerKeys[longID], RefundKey: r.Keys[longID], RefundHeight: heights[longID] + LongBlocks*scale, Amount: o.BuyAmount}
-	terms.Short = contract.HTLC{Chain: shortID, Hash: r.Hash, ClaimKey: r.Keys[shortID], RefundKey: makerKeys[shortID], RefundHeight: heights[shortID] + ShortBlocks*scale, Amount: o.SellAmount}
+	amounts, e := r.Amounts()
+	if e != nil {
+		return Terms{}, e
+	}
+	terms := Terms{Version: Version, Request: r, MakerKeys: makerKeys, Takeover: heights[longID] + TakeoverBlocks*scale, RevealBefore: heights[longID] + RevealBlocks*scale, Domains: map[chain.ID]string{chain.BTC: o.Network.Domain(chain.BTC), chain.Blake: o.Network.Domain(chain.Blake)}}
+	terms.Long = contract.HTLC{Chain: longID, Hash: r.Hash, ClaimKey: makerKeys[longID], RefundKey: r.Keys[longID], RefundHeight: heights[longID] + LongBlocks*scale, Amount: amounts.Buy}
+	terms.Short = contract.HTLC{Chain: shortID, Hash: r.Hash, ClaimKey: r.Keys[shortID], RefundKey: makerKeys[shortID], RefundHeight: heights[shortID] + ShortBlocks*scale, Amount: amounts.Sell}
 	if o.Network.Normalized() != chain.Regtest {
 		if err := publicClocks(clocks); err != nil {
 			return Terms{}, err
@@ -194,7 +224,7 @@ func (t Terms) Validate() error {
 	if e != nil {
 		return e
 	}
-	if t.Version != 1 || !Hex32(t.Request.ID) || !Hex32(t.Request.Taker) || !Hex32(t.Request.Hash) || len(t.MakerKeys) != 2 || len(t.Request.Keys) != 2 {
+	if t.Version != Version || !Hex32(t.Request.ID) || !Hex32(t.Request.Taker) || !Hex32(t.Request.Hash) || len(t.MakerKeys) != 2 || len(t.Request.Keys) != 2 {
 		return errors.New("invalid terms")
 	}
 	for _, id := range []chain.ID{chain.BTC, chain.Blake} {
@@ -203,7 +233,11 @@ func (t Terms) Validate() error {
 		}
 
 	}
-	if t.Long.Chain != o.Sell.Other() || t.Short.Chain != o.Sell || t.Long.Hash != t.Request.Hash || t.Short.Hash != t.Request.Hash || t.Long.ClaimKey != t.MakerKeys[t.Long.Chain] || t.Long.RefundKey != t.Request.Keys[t.Long.Chain] || t.Short.ClaimKey != t.Request.Keys[t.Short.Chain] || t.Short.RefundKey != t.MakerKeys[t.Short.Chain] || t.Long.Amount != o.BuyAmount || t.Short.Amount != o.SellAmount || t.Long.TxID != "" || t.Short.TxID != "" || t.Long.Vout != 0 || t.Short.Vout != 0 {
+	amounts, e := t.Request.Amounts()
+	if e != nil {
+		return e
+	}
+	if t.Long.Chain != o.Sell.Other() || t.Short.Chain != o.Sell || t.Long.Hash != t.Request.Hash || t.Short.Hash != t.Request.Hash || t.Long.ClaimKey != t.MakerKeys[t.Long.Chain] || t.Long.RefundKey != t.Request.Keys[t.Long.Chain] || t.Short.ClaimKey != t.Request.Keys[t.Short.Chain] || t.Short.RefundKey != t.MakerKeys[t.Short.Chain] || t.Long.Amount != amounts.Buy || t.Short.Amount != amounts.Sell || t.Long.TxID != "" || t.Short.TxID != "" || t.Long.Vout != 0 || t.Short.Vout != 0 {
 		return errors.New("contract differs from agreed order/keys")
 	}
 	if _, e = t.Long.Script(); e != nil {
@@ -289,14 +323,31 @@ func (t Terms) String() string {
 // enter signed offers, including cancellation and fill notifications.
 func (o Offer) PublicJSON() ([]byte, error) {
 	return json.Marshal(struct {
-		Network     chain.Network `json:"network"`
-		ID          string        `json:"id"`
-		Maker       string        `json:"maker"`
-		Sell        chain.ID      `json:"sell"`
-		SellAmount  int64         `json:"sell_amount"`
-		BuyAmount   int64         `json:"buy_amount"`
-		Expires     int64         `json:"expires"`
-		Status      string        `json:"status"`
-		Reservation string        `json:"reservation,omitempty"`
-	}{o.Network, o.ID, o.Maker, o.Sell, o.SellAmount, o.BuyAmount, o.Expires, o.Status, o.Reservation})
+		Version int `json:"version"`
+		FillPolicy
+		Revision   uint64        `json:"revision"`
+		Available  int64         `json:"available"`
+		Network    chain.Network `json:"network"`
+		ID         string        `json:"id"`
+		Maker      string        `json:"maker"`
+		Sell       chain.ID      `json:"sell"`
+		SellAmount int64         `json:"sell_amount"`
+		BuyAmount  int64         `json:"buy_amount"`
+		Expires    int64         `json:"expires"`
+		Status     string        `json:"status"`
+	}{o.Version, o.FillPolicy, o.Revision, o.Available, o.Network, o.ID, o.Maker, o.Sell, o.SellAmount, o.BuyAmount, o.Expires, o.Status})
+}
+
+// EconomicsDigest excludes availability and all private protection fields.
+// Updating a parent revision cannot change any signed economic field.
+func (o Offer) EconomicsDigest() string {
+	return Digest(struct {
+		Version               int
+		Network               chain.Network
+		ID, Maker             string
+		Sell                  chain.ID
+		SellAmount, BuyAmount int64
+		FillPolicy            FillPolicy
+		Expires               int64
+	}{o.Version, o.Network, o.ID, o.Maker, o.Sell, o.SellAmount, o.BuyAmount, o.FillPolicy, o.Expires})
 }

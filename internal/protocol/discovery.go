@@ -19,6 +19,7 @@ const DefaultTowerBPS int64 = 50
 // Tower is a provider-authenticated quote. Event preserves its proof in an offer
 // so a later settings change cannot redirect either party's rescue payments.
 type Tower struct {
+	Version int                 `json:"version"`
 	Public  bool                `json:"public,omitempty"`
 	PubKey  string              `json:"pubkey"`
 	Scripts map[chain.ID]string `json:"scripts"`
@@ -59,7 +60,7 @@ func DecodeTower(event nostr.Event, network chain.Network, now int64) (Tower, er
 	if err := json.Unmarshal([]byte(event.Content), &tower); err != nil {
 		return tower, err
 	}
-	if tower.Event != "" || tower.Network != network.Normalized() || tower.PubKey != event.PubKey.Hex() || tower.Npub != nip19.EncodeNpub(event.PubKey) || tower.Expires <= now || tower.Expires <= int64(event.CreatedAt) || tower.Expires > int64(event.CreatedAt)+TowerLifetime || transport.Tag(event, "expiration") != strconv.FormatInt(tower.Expires, 10) || len(tower.Name) > 80 || tower.BPS < 1 || tower.BPS > 1000 || len(tower.Scripts) != 2 {
+	if tower.Version != Version || tower.Event != "" || tower.Network != network.Normalized() || tower.PubKey != event.PubKey.Hex() || tower.Npub != nip19.EncodeNpub(event.PubKey) || tower.Expires <= now || tower.Expires <= int64(event.CreatedAt) || tower.Expires > int64(event.CreatedAt)+TowerLifetime || transport.Tag(event, "expiration") != strconv.FormatInt(tower.Expires, 10) || len(tower.Name) > 80 || tower.BPS < 1 || tower.BPS > 1000 || len(tower.Scripts) != 2 {
 		return tower, errors.New("invalid watchtower identity or quote")
 	}
 	for _, id := range []chain.ID{chain.BTC, chain.Blake} {

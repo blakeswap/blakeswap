@@ -52,7 +52,10 @@ const recoveryCoverage = "Recovery checks the obligations recorded in this file.
 // vault. It intentionally never erases signed transactions, secret knowledge,
 // receipts, pending payments or earlier recovery holds.
 func PrepareRecovery(s *State, snapshotAt int64, legacy bool) error {
-	if s == nil || (s.Version != 1 && s.Version != 2) || snapshotAt <= 0 {
+	if err := ValidateStateVersion(s); err != nil {
+		return err
+	}
+	if snapshotAt <= 0 {
 		return errors.New("invalid recovery snapshot")
 	}
 	if err := ValidateArchiveState(*s); err != nil {
@@ -72,7 +75,10 @@ func PrepareRecovery(s *State, snapshotAt int64, legacy bool) error {
 // Every core obligation must have been promoted before this call; advisory and
 // quarantined history may stay cold. No cold lookup grants publication authority.
 func PrepareStreamedRecovery(s *State, stats storage.ArchiveStats, snapshotAt int64, legacy bool) error {
-	if s == nil || (s.Version != 1 && s.Version != 2) || snapshotAt <= 0 || len(s.Archive) != 0 {
+	if err := ValidateProtocolState(s); err != nil {
+		return err
+	}
+	if snapshotAt <= 0 || len(s.Archive) != 0 {
 		return errors.New("invalid streamed recovery snapshot")
 	}
 	if err := s.ValidateArchiveCheckpoint(stats); err != nil {

@@ -16,7 +16,7 @@ import (
 
 func (e *Engine) ownTower() protocol.Tower {
 	pub := e.identity.Public()
-	tower := protocol.Tower{PubKey: pub.Hex(), Npub: nip19.EncodeNpub(pub), Name: e.Config.Name, Network: e.Config.Network, Public: e.Config.PublicWatchtower, BPS: protocol.DefaultTowerBPS, Scripts: map[chain.ID]string{}}
+	tower := protocol.Tower{Version: protocol.Version, PubKey: pub.Hex(), Npub: nip19.EncodeNpub(pub), Name: e.Config.Name, Network: e.Config.Network, Public: e.Config.PublicWatchtower, BPS: protocol.DefaultTowerBPS, Scripts: map[chain.ID]string{}}
 	if e.Config.Mode == "tower" {
 		tower.BPS = e.Config.Tower.BPS
 	} else if e.Config.RescueFeeBPS != 0 {

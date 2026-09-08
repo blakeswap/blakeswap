@@ -9,7 +9,7 @@ import (
 
 func TestGiftWrapAuthenticationAndPrivacy(t *testing.T) {
 	alice, bob, eve := nostr.Generate(), nostr.Generate(), nostr.Generate()
-	m := Message{Version: 1, ID: RandomID(), Type: "test", SwapID: RandomID(), Body: json.RawMessage(`{"sensitive":"test-only secret"}`)}
+	m := Message{Version: MessageVersion, ID: RandomID(), Type: "test", SwapID: RandomID(), Body: json.RawMessage(`{"sensitive":"test-only secret"}`)}
 	event, e := Wrap(alice, bob.Public(), m)
 	if e != nil {
 		t.Fatal(e)
@@ -50,6 +50,28 @@ func TestGiftWrapAuthenticationAndPrivacy(t *testing.T) {
 	_, received, e := Unwrap(bob, again)
 	if e != nil || received.ID != got.ID {
 		t.Fatal("application message identity unstable")
+	}
+}
+
+func TestGiftWrapHardCutoverRefusesLegacyEnvelopeAndNamespace(t *testing.T) {
+	sender, recipient := nostr.Generate(), nostr.Generate()
+	for _, version := range []int{0, 1, 3} {
+		message := Message{Version: version, ID: RandomID(), Type: "request", SwapID: RandomID(), Body: json.RawMessage(`{}`)}
+		event, err := Wrap(sender, recipient.Public(), message)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, _, err := Unwrap(recipient, event); err == nil {
+			t.Fatal("incompatible private envelope accepted")
+		}
+	}
+	message := Message{Version: MessageVersion, ID: RandomID(), Type: "request", SwapID: RandomID(), Body: json.RawMessage(`{}`)}
+	event, err := WrapFor("blakeswap-regtest-v1", sender, recipient.Public(), message)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := Unwrap(recipient, event); err == nil {
+		t.Fatal("retired namespace accepted")
 	}
 }
 func TestRejectMismatchedRumorAuthor(t *testing.T) {
@@ -94,15 +116,15 @@ func FuzzUnwrap(f *testing.F) {
 
 func TestMailboxesRejectForeignNetworkBindings(t *testing.T) {
 	sender, recipient := nostr.Generate(), nostr.Generate()
-	message := Message{Version: 1, ID: RandomID(), Type: "request", Body: json.RawMessage(`{}`)}
-	event, err := WrapFor("blakeswap-mainnet-v1", sender, recipient.Public(), message)
+	message := Message{Version: MessageVersion, ID: RandomID(), Type: "request", Body: json.RawMessage(`{}`)}
+	event, err := WrapFor("blakeswap-mainnet-v2", sender, recipient.Public(), message)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, _, err = UnwrapFor("blakeswap-testnet-v1", recipient, event); err == nil {
+	if _, _, err = UnwrapFor("blakeswap-testnet-v2", recipient, event); err == nil {
 		t.Fatal("foreign network message accepted")
 	}
-	if _, _, err = UnwrapFor("blakeswap-mainnet-v1", recipient, event); err != nil {
+	if _, _, err = UnwrapFor("blakeswap-mainnet-v2", recipient, event); err != nil {
 		t.Fatal(err)
 	}
 }

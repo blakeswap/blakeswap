@@ -22,6 +22,15 @@ embedded state version. Rejecting old state must preserve the source; a user
 may explicitly create a separate development profile. The application never
 silently resets or deletes a rejected profile.
 
+Existing-file preflight opens the encrypted vault read-only with a one-second
+writer-lock timeout and authenticates its state before any source cleanup or
+write. Activation repeats validation under exclusive writer ownership. First
+initialization writes a complete current-format state in a private sibling
+directory and atomically links it into an absent final path. Failed writes or
+interruption before publication leave that final path absent; interruption after
+publication leaves complete State3. A competing existing destination is never
+overwritten. An arbitrary preexisting empty database is still incompatible.
+
 After T10 integration, credential acquisition authenticates and checks the
 existing state format **before** the credential migration journal begins or a
 new Keychain item is created. Activation repeats identity/format verification.

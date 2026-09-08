@@ -125,39 +125,49 @@ func Open(ctx context.Context, c Config) (*Engine, error) {
 		return nil, e
 	}
 	defer clear(password)
-	v, e := storage.Open(filepath.Join(c.DataDir, "state.db"), password)
-	if e != nil {
-		return nil, e
+	statePath := filepath.Join(c.DataDir, "state.db")
+	_, statErr := os.Stat(statePath)
+	newVault := errors.Is(statErr, os.ErrNotExist)
+	if statErr != nil && !newVault {
+		return nil, statErr
 	}
-	en := &Engine{chainFresh: map[chain.ID]bool{}, chainObserved: map[chain.ID]int64{}, chainErrors: map[chain.ID]string{}, chainGeneration: map[chain.ID]uint64{}, Config: c, vault: v, nodes: map[chain.ID]chain.Backend{}, watch: map[chain.ID]chain.Backend{}, scanners: map[chain.ID]chain.SpendScanner{}, addresses: map[chain.ID]string{}, scripts: map[chain.ID][]byte{}, heights: map[chain.ID]uint32{}, clocks: map[chain.ID]uint32{}, balances: map[chain.ID]int64{}}
-	fail := func(err error) (*Engine, error) { en.Close(); return nil, err }
-	if err := storage.CleanupSortedRows(v.PrivateDirectory()); err != nil {
-		return fail(err)
-	}
-	if _, e = v.Load(&en.s); e != nil {
-		return fail(e)
-	}
-	if en.s.Version == 0 {
+	if !newVault {
+		if err := PreflightStateVersion(statePath, password); err != nil {
+			return nil, err
+		}
+	} else {
 		m := c.InitialMnemonic
-		var e error
 		if m == "" {
 			m, e = wallet.NewMnemonic()
 		} else {
 			_, e = wallet.FromMnemonic(m)
 		}
 		if e != nil {
-			return fail(e)
+			return nil, e
 		}
-		en.s = State{Version: 1, Network: c.Network, Mnemonic: m, Offers: map[string]nostr.Event{}, Book: map[string]nostr.Event{}, Swaps: map[string]*Swap{}, Outbox: map[string]*Delivery{}, Seen: map[string]string{}, TowerJobs: map[string]*TowerJob{}}
-		if e = v.Save(en.s); e != nil {
-			return fail(e)
+		initial := State{Version: StateVersion, Network: c.Network, Mnemonic: m, Offers: map[string]nostr.Event{}, Book: map[string]nostr.Event{}, Swaps: map[string]*Swap{}, Outbox: map[string]*Delivery{}, Seen: map[string]string{}, TowerJobs: map[string]*TowerJob{}}
+		if err := storage.Initialize(statePath, password, initial); err != nil {
+			return nil, err
 		}
+	}
+	v, e := storage.Open(statePath, password)
+	if e != nil {
+		return nil, e
+	}
+	en := &Engine{chainFresh: map[chain.ID]bool{}, chainObserved: map[chain.ID]int64{}, chainErrors: map[chain.ID]string{}, chainGeneration: map[chain.ID]uint64{}, Config: c, vault: v, nodes: map[chain.ID]chain.Backend{}, watch: map[chain.ID]chain.Backend{}, scanners: map[chain.ID]chain.SpendScanner{}, addresses: map[chain.ID]string{}, scripts: map[chain.ID][]byte{}, heights: map[chain.ID]uint32{}, clocks: map[chain.ID]uint32{}, balances: map[chain.ID]int64{}}
+	fail := func(err error) (*Engine, error) { en.Close(); return nil, err }
+	_, e = v.Load(&en.s)
+	if e != nil {
+		return fail(e)
 	}
 	if c.InitialMnemonic != "" && c.InitialMnemonic != en.s.Mnemonic {
 		return fail(errors.New("wallet seed differs from this profile"))
 	}
-	if en.s.Version != 1 && en.s.Version != 2 {
-		return fail(errors.New("unsupported state version"))
+	if err := ValidateProtocolState(&en.s); err != nil {
+		return fail(err)
+	}
+	if err := storage.CleanupSortedRows(v.PrivateDirectory()); err != nil {
+		return fail(err)
 	}
 	if en.s.Network.Normalized() != c.Network {
 		return fail(errors.New("state belongs to a different network; use its own data directory"))
@@ -587,7 +597,7 @@ func (e *Engine) queue(to, typ, swapID string, body any) error {
 	if err != nil {
 		return err
 	}
-	m := transport.Message{Version: 1, ID: id, Type: typ, SwapID: swapID, Body: raw}
+	m := transport.Message{Version: transport.MessageVersion, ID: id, Type: typ, SwapID: swapID, Body: raw}
 	var event nostr.Event
 	var expires int64
 	if discoveryMessage(typ) {

@@ -54,6 +54,10 @@ func (e *Engine) restoreActiveFundingFees() error {
 // before any protocol caller acknowledges the action. A failed commit stops the
 // engine; reopen sees the preceding complete checkpoint.
 func (e *Engine) archiveDelta(record storage.ArchiveRecord, add bool) error {
+	// Archive placement cannot downgrade the hard-cutover state format.
+	if err := ValidateStateVersion(&e.s); err != nil {
+		return err
+	}
 	encoded, err := json.Marshal(record)
 	if err != nil {
 		return err
@@ -80,7 +84,6 @@ func (e *Engine) archiveDelta(record storage.ArchiveRecord, add bool) error {
 		c.Archived.Kinds[record.Kind]--
 	}
 	c.Revision++
-	e.s.Version = 2 // Older readers must refuse state requiring archive buckets.
 	return nil
 }
 

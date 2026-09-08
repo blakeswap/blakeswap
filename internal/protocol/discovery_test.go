@@ -17,7 +17,7 @@ func signedTower(t *testing.T) (nostr.Event, Tower) {
 	t.Helper()
 	key := nostr.Generate()
 	now := time.Now().Unix()
-	tower := Tower{PubKey: key.Public().Hex(), Npub: nip19.EncodeNpub(key.Public()), Name: "Provider", Network: chain.Regtest, Expires: now + TowerLifetime, BPS: 50, Public: true, Scripts: map[chain.ID]string{chain.BTC: "0014" + strings.Repeat("11", 20), chain.Blake: "0014" + strings.Repeat("22", 20)}}
+	tower := Tower{Version: Version, PubKey: key.Public().Hex(), Npub: nip19.EncodeNpub(key.Public()), Name: "Provider", Network: chain.Regtest, Expires: now + TowerLifetime, BPS: 50, Public: true, Scripts: map[chain.ID]string{chain.BTC: "0014" + strings.Repeat("11", 20), chain.Blake: "0014" + strings.Repeat("22", 20)}}
 	raw, _ := json.Marshal(tower)
 	event := nostr.Event{Kind: transport.TowerKind, CreatedAt: nostr.Timestamp(now), Tags: nostr.Tags{{"d", chain.Regtest.Namespace()}, {"t", chain.Regtest.Namespace()}, {"expiration", strconv.FormatInt(tower.Expires, 10)}}, Content: string(raw)}
 	if err := transport.Sign(&event, key); err != nil {

@@ -37,6 +37,9 @@ func bindFunding(c contract.HTLC, raw string) (contract.HTLC, error) {
 	return c, nil
 }
 func (e *Engine) handle(from string, m transport.Message) error {
+	if m.Version != transport.MessageVersion {
+		return errors.New("incompatible private protocol message")
+	}
 	if m.Type == "tower-query" {
 		if err := e.recoveryTradingReady(); err != nil {
 			return err
@@ -80,7 +83,7 @@ func (e *Engine) handle(from string, m transport.Message) error {
 				if archived.Job.Owner != from || protocol.Digest(archived.Job) != protocol.Digest(job) {
 					return errors.New("job ID collision")
 				}
-				return e.queue(from, "tower-receipt", m.SwapID, protocol.Receipt{JobID: job.ID, Digest: protocol.Digest(job)})
+				return e.queue(from, "tower-receipt", m.SwapID, protocol.Receipt{Version: protocol.Version, JobID: job.ID, Digest: protocol.Digest(job)})
 			}
 		}
 		bps := e.ownTower().BPS
@@ -113,7 +116,7 @@ func (e *Engine) handle(from string, m transport.Message) error {
 				return err
 			}
 		}
-		return e.queue(from, "tower-receipt", m.SwapID, protocol.Receipt{JobID: job.ID, Digest: protocol.Digest(job)})
+		return e.queue(from, "tower-receipt", m.SwapID, protocol.Receipt{Version: protocol.Version, JobID: job.ID, Digest: protocol.Digest(job)})
 	}
 	if e.Config.Mode != "trader" {
 		return errors.New("tower does not trade")
@@ -253,6 +256,9 @@ func (e *Engine) handle(from string, m transport.Message) error {
 		}
 		var receipt protocol.Receipt
 		if err := json.Unmarshal(m.Body, &receipt); err != nil {
+			return err
+		}
+		if err := receipt.Validate(); err != nil {
 			return err
 		}
 		for _, job := range s.Jobs {
