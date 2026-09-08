@@ -580,7 +580,12 @@ func isolatedFixture(t *testing.T, role string, policies ...FeeSelection) (*Engi
 // never erase a previously accepted maker from a running wallet to model it.
 func isolatedTowerFixture(t *testing.T) (*Engine, *Swap, *sendBackend, []byte) {
 	t.Helper()
-	participant, s, backend, secret := isolatedFixture(t, "maker")
+	return isolatedTowerFixtureSell(t, chain.BTC)
+}
+
+func isolatedTowerFixtureSell(t *testing.T, sell chain.ID) (*Engine, *Swap, *sendBackend, []byte) {
+	t.Helper()
+	participant, s, backend, secret := isolatedFixtureSell(t, "maker", sell)
 	state := State{Version: StateVersion, Network: participant.s.Network, Mnemonic: participant.s.Mnemonic, ReceiveIndexes: map[chain.ID]uint32{chain.BTC: participant.s.ReceiveIndexes[chain.BTC], chain.Blake: participant.s.ReceiveIndexes[chain.Blake]}}
 	e := conservationRestoredEngine(t, participant, state)
 	e.receiveBook = participant.receiveBook

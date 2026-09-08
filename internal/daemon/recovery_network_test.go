@@ -32,7 +32,7 @@ func TestRestoredTowerNetworkGuardAfterKnownReorg(t *testing.T) {
 				label = string(sell) + "/known-reorg"
 			}
 			t.Run(label, func(t *testing.T) {
-				e, s, b, _ := isolatedFixtureSell(t, "maker", sell)
+				e, s, b, _ := isolatedTowerFixtureSell(t, sell)
 				tower := e.ownTower()
 				s.Protection = &tower
 				target := s.Short
@@ -41,7 +41,6 @@ func TestRestoredTowerNetworkGuardAfterKnownReorg(t *testing.T) {
 					t.Fatal(err)
 				}
 				state := &TowerJob{Job: job, FundingSeen: true}
-				e.s.Swaps = map[string]*Swap{}
 				e.s.TowerJobs = map[string]*TowerJob{job.ID: state}
 				markRestored(t, e)
 				cb := &settlementCheckpointBackend{Backend: b, hash: "prior-history"}
@@ -76,7 +75,7 @@ func TestRestoredTowerNetworkGuardAfterKnownReorg(t *testing.T) {
 					t.Fatal(err)
 				}
 				e.reconcileRecovery(map[chain.ID]map[string]chain.Observation{chain.BTC: {}, chain.Blake: {}}, all)
-				live, offline := settlementNetworkGuards(t, e)
+				live, offline := settlementNetworkGuards(t, e, "independent conservation restore")
 				t.Logf("reorg=%v checkpoint=%s confirmed=%d state=%s liveGuard=%v storedGuard=%v targetError=%s", reorg, e.recoveryCheckpoints[target.Chain].Hash, state.Confirmed, e.s.Recovery.Status.State, live, offline, state.Error)
 				if reorg && (live == nil || offline == nil) {
 					t.Error("known reorg with unfinished target scan allowed disabling monitoring")
@@ -105,7 +104,7 @@ func TestRestoredTowerNetworkGuardAfterKnownReorg(t *testing.T) {
 				if err := e.save(); err != nil {
 					t.Fatal(err)
 				}
-				live, offline = settlementNetworkGuards(t, e)
+				live, offline = settlementNetworkGuards(t, e, "independent conservation restore")
 				if live != nil || offline != nil || e.s.Recovery.Status.State == "ready" {
 					t.Fatal("positive target evidence did not independently clear hold during peer outage", live, offline, e.s.Recovery.Status)
 				}
@@ -114,13 +113,17 @@ func TestRestoredTowerNetworkGuardAfterKnownReorg(t *testing.T) {
 	}
 }
 
-func settlementNetworkGuards(t *testing.T, e *Engine) (error, error) {
+func settlementNetworkGuards(t *testing.T, e *Engine, passwords ...string) (error, error) {
 	t.Helper()
 	// No save here: a later failing Tick must not erase the checkpoint hold.
 	live := e.CanChangeNetwork()
 	dir := t.TempDir()
 	password := filepath.Join(dir, "vault.password")
-	if err := os.WriteFile(password, []byte("receive-test-password"), 0600); err != nil {
+	fixturePassword := "receive-test-password"
+	if len(passwords) > 0 {
+		fixturePassword = passwords[0]
+	}
+	if err := os.WriteFile(password, []byte(fixturePassword), 0600); err != nil {
 		t.Fatal(err)
 	}
 	if err := e.vault.Backup(filepath.Join(dir, "state.db")); err != nil {

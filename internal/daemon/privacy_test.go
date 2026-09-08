@@ -10,6 +10,7 @@ import (
 
 	"fiatjaf.com/nostr"
 	"github.com/blakeswap/blakeswap/internal/chain"
+	"github.com/blakeswap/blakeswap/internal/contract"
 	"github.com/blakeswap/blakeswap/internal/protocol"
 	"github.com/blakeswap/blakeswap/internal/transport"
 )
@@ -158,7 +159,17 @@ func TestPrivateProtectionDoesNotReachCounterparty(t *testing.T) {
 			}
 			// Jobs travel only to the selected provider; the peer cannot decrypt them.
 			ms = maker.s.Swaps[id]
-			ms.Long.TxID, ms.Short.TxID = transport.RandomID(), transport.RandomID()
+			ms.Long.TxID = transport.RandomID()
+			// The local refund/job bundle belongs to actual signed funding of
+			// the accepted child and its permanently charged exact inputs.
+			funding, err := maker.fundReserved(context.Background(), ms.Short, "swap/"+ms.ID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := maker.commitMakerFill(ms, funding); err != nil {
+				t.Fatal(err)
+			}
+			ms.ShortFunding, ms.Short.TxID = contract.Hex(funding), funding.TxHash().String()
 			if err := maker.prepare(ms, ms.Short); err != nil {
 				t.Fatal(err)
 			}
