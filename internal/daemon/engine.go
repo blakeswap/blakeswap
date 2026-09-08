@@ -15,6 +15,7 @@ import (
 	"github.com/blakeswap/blakeswap/internal/wallet"
 	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/btcsuite/btcd/wire"
+	"os"
 	"path/filepath"
 	"sort"
 	"strconv"

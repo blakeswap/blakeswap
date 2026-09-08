@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"testing"
 	"time"
 
@@ -75,11 +76,13 @@ func TestStateCutoverPreservesExistingVersionZeroAndLegacyVaults(t *testing.T) {
 				t.Fatal(err)
 			}
 			c := Config{Network: chain.Regtest, Mode: "trader", Name: "cutover", DataDir: root, PasswordFile: passwordPath, Relays: []string{"ws://127.0.0.1:1"}}
-			ctx, cancel := context.WithCancel(context.Background())
-			cancel() // No network activity is necessary to reject an old format.
+			ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+			defer cancel() // No configured nodes; require the actual format refusal.
 			if engine, err := Open(ctx, c); err == nil {
 				_ = engine.Close()
 				t.Fatal("incompatible existing state was initialized or opened")
+			} else if !strings.Contains(err.Error(), "incompatible development wallet state") {
+				t.Fatalf("did not reach the format boundary: %v", err)
 			}
 			if err := CheckStoredNetwork(c); err == nil {
 				t.Fatal("offline network guard accepted incompatible state")
@@ -122,8 +125,8 @@ func TestStateCutoverOnlyAbsentFileInitializesNewState(t *testing.T) {
 		t.Fatal(err)
 	}
 	c := Config{Network: chain.Regtest, Mode: "trader", Name: "new-cutover", DataDir: root, PasswordFile: passwordPath, Relays: []string{"ws://127.0.0.1:1"}}
-	ctx, cancel := context.WithCancel(context.Background())
-	cancel()
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
 	engine, _ := Open(ctx, c) // Deliberately absent nodes cannot affect local initialization.
 	if engine != nil {
 		_ = engine.Close()
