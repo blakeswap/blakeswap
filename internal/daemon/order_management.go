@@ -90,6 +90,42 @@ func (e *Engine) validateWholeOrderLink(parent *ParentOrder, record OrderRecord)
 	return nil
 }
 
+// The terminal convenience link is written during deep archival. Until then,
+// current hot evidence can identify the same whole refund without creating or
+// promoting history metadata. Returned zero-allocation children cannot supply
+// the outcome of a later allocation of the parent's quantity.
+func (e *Engine) hotWholeOrderRefund(parent *ParentOrder) (bool, error) {
+	matched := false
+	for id, core := range e.s.Swaps {
+		if core == nil || core.Role != "maker" || core.Stage != "refunded" {
+			continue
+		}
+		var offer protocol.Offer
+		if json.Unmarshal([]byte(core.Request.OfferEvent.Content), &offer) != nil || offer.ID != parent.Offer.ID || offer.Maker != parent.Offer.Maker {
+			continue
+		}
+		row, err := e.fillSummary(core, false)
+		if err != nil {
+			return false, err
+		}
+		if row.AllocatedQuantity == 0 {
+			continue
+		}
+		child, err := e.retainedFillRecord(id)
+		if err != nil {
+			return false, err
+		}
+		if row.Disposition != FillReleased || !child.Allocation.EverCommitted || matched {
+			return false, errors.New("whole refund conflicts with retained child allocation")
+		}
+		if err := e.validateWholeOrderLink(parent, OrderRecord{Settlements: map[string]string{id: core.Stage}}); err != nil {
+			return false, err
+		}
+		matched = true
+	}
+	return matched, nil
+}
+
 func (e *Engine) finishedOrderChecked(id string) (string, error) {
 	record, ok := e.s.OrderRecords[id]
 	if !ok {
@@ -110,7 +146,16 @@ func (e *Engine) finishedOrderChecked(id string) (string, error) {
 		}
 	}
 	status := e.finishedParentOrder(parent)
-	if status == "cancelled" && parent.Offer.Mode == protocol.FillWhole && parent.Quantities.Released == parent.Quantities.Total && parent.Quantities.Withdrawn == 0 && len(record.Settlements) == 1 {
+	if status == "cancelled" && parent.Offer.Mode == protocol.FillWhole && parent.Quantities.Released == parent.Quantities.Total && parent.Quantities.Withdrawn == 0 {
+		if len(record.Settlements) == 0 {
+			refunded, err := e.hotWholeOrderRefund(parent)
+			if err != nil {
+				return "", err
+			}
+			if refunded {
+				return "refunded", nil
+			}
+		}
 		for childID, stage := range record.Settlements {
 			if live := e.s.Swaps[childID]; live != nil {
 				stage = live.Stage
