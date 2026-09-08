@@ -137,11 +137,18 @@ func (e *Engine) status() Status {
 	sort.Slice(s.Sends, func(i, j int) bool { return s.Sends[i].ID < s.Sends[j].ID })
 	return s
 }
-func (e *Engine) publicSwap(swap *Swap) PublicSwap {
-	p := PublicSwap{ID: swap.ID, Role: swap.Role, Stage: swap.Stage, Error: swap.Error, Long: swap.Long, Short: swap.Short, LongSpend: swap.LongSpend, ShortSpend: swap.ShortSpend, LongConfirmations: swap.LongConfirmations, ShortConfirmations: swap.ShortConfirmations, TowerPaid: swap.TowerPaid, TowerReady: towerReady(swap), SecretRevealed: swap.SecretExposed}
+
+// Fee lookup failures are separate from the child's retained error and current
+// ancestry hold. A successful cold fee lookup can reuse this exact composition.
+func swapPublicError(swap *Swap) string {
 	if swap.FundingAncestryHeld {
-		p.Error = errFundingAncestry.Error() + ". " + p.Error
+		return errFundingAncestry.Error() + ". " + swap.Error
 	}
+	return swap.Error
+}
+
+func (e *Engine) publicSwap(swap *Swap) PublicSwap {
+	p := PublicSwap{ID: swap.ID, Role: swap.Role, Stage: swap.Stage, Error: swapPublicError(swap), Long: swap.Long, Short: swap.Short, LongSpend: swap.LongSpend, ShortSpend: swap.ShortSpend, LongConfirmations: swap.LongConfirmations, ShortConfirmations: swap.ShortConfirmations, TowerPaid: swap.TowerPaid, TowerReady: towerReady(swap), SecretRevealed: swap.SecretExposed}
 	p.OwnerFeeCap = swap.OwnerFeeCap
 	if selection, found := e.s.FundingFees["swap/"+swap.ID]; found {
 		p.FundingFee = selection.FundingFee
