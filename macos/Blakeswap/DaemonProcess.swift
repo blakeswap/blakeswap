@@ -2,6 +2,7 @@ import AppKit
 import Foundation
 import SwiftUI
 import Darwin
+import Security
 
 @MainActor
 final class DaemonProcess {
@@ -12,9 +13,11 @@ final class DaemonProcess {
     private let executable: URL?
     private var log: FileHandle?
     private let shutdownTimeout: TimeInterval
+    let security: NativeSecurity
  var isRunning: Bool { child?.isRunning == true }
  let root: String
-    init(root: String? = nil, executable: URL? = nil, shutdownTimeout: TimeInterval = 8) {
+    init(root: String? = nil, executable: URL? = nil, shutdownTimeout: TimeInterval = 8, security: NativeSecurity? = nil) {
+        self.security = security ?? NativeSecurity()
  self.shutdownTimeout = shutdownTimeout
         self.executable = executable
         if let root { self.root = root; return }
@@ -22,23 +25,49 @@ final class DaemonProcess {
         if let index = args.firstIndex(of: "--data-dir"), args.count > index + 1 { self.root = args[index + 1] }
         else { self.root = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appendingPathComponent("Blakeswap").path }
     }
+    func unlockAndStart(retry: Bool = false) async throws {
+        if stopping || child?.isRunning == true { return }
+        if child != nil { security.closeConnection(); child = nil; childSession = nil }
+        try await security.unlock(retry: retry)
+        try start()
+    }
+    func revokeConsent() { security.revoke() }
+    private func verifyBundledHelper(_ helper: URL) throws {
+        // Custom executables are an explicit injected test dependency. Normal
+        // app launches validate the complete signed bundle and bundled helper.
+        guard executable == nil else { return }
+        guard helper.standardizedFileURL == Bundle.main.resourceURL?.appendingPathComponent("blakeswap").standardizedFileURL,
+              Bundle.main.bundleURL.pathExtension == "app" else { throw NativeSecurityError.unavailable }
+        for url in [Bundle.main.bundleURL, helper] {
+            var code: SecStaticCode?
+            guard SecStaticCodeCreateWithPath(url as CFURL, [], &code) == errSecSuccess, let code,
+                  SecStaticCodeCheckValidity(code, SecCSFlags(rawValue: kSecCSStrictValidate | kSecCSCheckAllArchitectures), nil) == errSecSuccess else { throw NativeSecurityError.unavailable }
+        }
+    }
     func start() throws {
         if stopping || child?.isRunning == true { return }
+        if let prior = child, !prior.isRunning { security.closeConnection(); child = nil; childSession = nil }
+        guard security.initialAuthorized else { throw NativeSecurityError.denied }
         try? log?.close(); log = nil
         guard let helper = executable ?? Bundle.main.resourceURL?.appendingPathComponent("blakeswap") else { throw RPCError.message("App resources are missing.") }
+        try verifyBundledHelper(helper)
         try FileManager.default.createDirectory(atPath: root, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
         let path = "\(root)/desktop.log"
         if !FileManager.default.fileExists(atPath: path) { FileManager.default.createFile(atPath: path, contents: nil, attributes: [.posixPermissions: 0o600]) }
         log = try FileHandle(forWritingTo: URL(fileURLWithPath: path)); try log?.seekToEnd()
         let process = Process()
         process.executableURL = helper
-        process.arguments = ["desktop", "--data-dir", root, "--parent-pid", String(ProcessInfo.processInfo.processIdentifier)]
+        process.arguments = ["desktop", "--data-dir", root, "--parent-pid", String(ProcessInfo.processInfo.processIdentifier), "--credential-mode", "native"]
         let session = UUID().uuidString
         var environment = ProcessInfo.processInfo.environment
         environment["BLAKESWAP_DESKTOP_SESSION"] = session
         process.environment = environment
-        process.standardOutput = log; process.standardError = log
+        let requests = Pipe(), replies = Pipe()
+        process.standardInput = requests; process.standardOutput = replies; process.standardError = log
         try process.run(); child = process; childSession = session
+        do { try security.attach(root: root, session: session, pid: process.processIdentifier, input: replies.fileHandleForReading, output: requests.fileHandleForWriting) }
+        catch { process.terminate(); process.waitUntilExit(); child = nil; childSession = nil; throw error }
+        try? requests.fileHandleForReading.close(); try? replies.fileHandleForWriting.close()
     }
     func waitUntilReady(profile: String, timeout: TimeInterval = 15) async throws {
         let deadline = ProcessInfo.processInfo.systemUptime + timeout
@@ -47,6 +76,7 @@ final class DaemonProcess {
             guard !stopping else { throw CancellationError() }
             guard let process = child else { throw RPCError.message("The wallet service has not been started.") }
             guard process.isRunning else {
+                if let failure = security.credentialFailure { throw failure }
                 throw RPCError.message("The wallet service exited during startup (code \(process.terminationStatus)). Reopen Blakeswap or check desktop.log for details.")
             }
             do {
@@ -71,6 +101,7 @@ final class DaemonProcess {
     }
     func stop() async {
         stopping = true
+        security.closeConnection()
         guard let process = child else { return }
         let runtime = URL(fileURLWithPath: root).appendingPathComponent("runtime.json")
         let runtimeData = try? Data(contentsOf: runtime)
@@ -127,10 +158,12 @@ final class ShutdownCoordinator {
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private var coordinator: ShutdownCoordinator?
     private var observers: [NSObjectProtocol] = []
+    private var securityEvents: SessionRevocations?
     private var terminating = false
     func configure(model: AppModel) {
         guard coordinator == nil else { return }
         coordinator = ShutdownCoordinator(daemon: .shared, summary: { try await model.actionSummary() }, decision: Self.confirmQuit)
+        securityEvents = SessionRevocations { model.lockNewActions() }
         let center = NSWorkspace.shared.notificationCenter
         observers.append(center.addObserver(forName: NSWorkspace.willSleepNotification, object: nil, queue: .main) { _ in Task { @MainActor in model.monitoring.interruption() } })
         observers.append(center.addObserver(forName: NSWorkspace.didWakeNotification, object: nil, queue: .main) { _ in Task { @MainActor in model.monitoring.interruption(); await model.refreshMonitoring(refresh: true) } })

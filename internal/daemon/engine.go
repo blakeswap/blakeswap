@@ -1,7 +1,6 @@
 package daemon
 
 import (
-	"bytes"
 	"context"
 	"encoding/hex"
 	"encoding/json"
@@ -16,7 +15,6 @@ import (
 	"github.com/blakeswap/blakeswap/internal/wallet"
 	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/btcsuite/btcd/wire"
-	"os"
 	"path/filepath"
 	"sort"
 	"strconv"
@@ -28,6 +26,7 @@ import (
 var errEngineClosed = errors.New("engine closed")
 
 type Engine struct {
+	authorizationEpoch       string
 	strategyVerifiedSwaps    map[string]bool
 	strategyReporting        atomic.Bool
 	activityGrowth           uint64
@@ -121,12 +120,12 @@ func Open(ctx context.Context, c Config) (*Engine, error) {
 	if len(c.Relays) < 1 || len(c.Relays) > 3 {
 		return nil, errors.New("configure one to three relay URLs")
 	}
-	password, e := os.ReadFile(c.PasswordFile)
+	password, e := c.acquirePassword(ctx)
 	if e != nil {
 		return nil, e
 	}
 	defer clear(password)
-	v, e := storage.Open(filepath.Join(c.DataDir, "state.db"), bytes.TrimSpace(password))
+	v, e := storage.Open(filepath.Join(c.DataDir, "state.db"), password)
 	if e != nil {
 		return nil, e
 	}
@@ -170,6 +169,9 @@ func Open(ctx context.Context, c Config) (*Engine, error) {
 		return fail(err)
 	}
 	if err := ValidateAutomationState(&en.s); err != nil {
+		return fail(err)
+	}
+	if err := en.restoreActiveFundingFees(); err != nil {
 		return fail(err)
 	}
 	en.invalidateActivitySession()

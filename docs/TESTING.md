@@ -722,3 +722,90 @@ required fresh target chain, retained archive/recovery/network holds, and durabl
 identity/interval after reopen. Prepared maker/taker funding and unseen tower
 registration controls keep unknown observation separate from positive funding or
 explicit absence.
+
+## Native credentials and sensitive actions
+
+Credential/provider tests use isolated generated wallets and owned byte buffers.
+The journal suite injects faults at creation, storage, verification, activation and
+file removal; desktop controls cover all-network identity preservation, denial,
+no file fallback, separate-install portable restore and interrupted publication.
+Direct gRPC/HTTP tests distinguish bearer authentication from exact one-use native
+consent, including stale payloads, replay and private-peer teardown. The daemon
+checks signed-send continuation after consent revocation; real funded claim/refund
+continuation requires the explicit two-chain scenario and is not implied by a
+skipped regtest suite.
+
+Native archive integration tests use non-trimmable synthetic credential bytes
+with 130 encrypted cold records. They exercise cloned and forced fallback
+captures, clearing of acquired and copied bytes, denied future reads,
+cancellation, and streamed restoration with a separate installation/provider.
+Migration rejects inconsistent authenticated ownership checkpoints before
+activation and preserves all encrypted key/value records and the password file.
+Cold signed-send and accepted-receipt controls require exact identities; unknown,
+changed, unsigned or pending records cannot authorize new work, and failed cold
+reads cannot promote old authority.
+
+Recent maker swaps retain their selected fee until the last active child
+archives; the terminal parent can archive independently. Regression tests
+exercise a refunded child at two confirmations,
+its later archival, and reorg reactivation while preserving the 6,500-satoshi
+funding fee in status, activity and detail without adding a network-change hold
+after settlement. Reopening an older split archive
+layout loads only the exact missing fee records before activity projection;
+it does not resume the old offer publisher. Malformed or unreadable fee evidence
+rejects startup without discarding the retained records.
+
+The actual native-authorization API suite uses generated wallets and an injected
+credential provider. It revokes the private session and locks further credential
+acquisition after funding, then checks both claim directions and both-leg refund
+settlement, exact accepted terms, actual node fees and persisted receipts. Its
+saved-send case injects a pre-publication broadcast refusal on each chain, waits
+for normal endpoint readiness before the next new authorization, and verifies
+that the exact persisted bytes confirm after revocation using the existing
+30-second retry interval. It also rejects bearer-only and changed/replayed grants.
+
+The loopback Electrum bridge prepares its existing block index before exposing
+an endpoint, within a separate one-minute fixture setup budget. Wallet readiness,
+RPC deadlines and retry assertions remain unchanged. Synthetic controls block
+initial indexing and verify that no endpoint is returned until it completes;
+cancellation and RPC failure return without a listener. Existing reorg controls
+still verify incremental canonical-prefix reuse and mempool reconciliation.
+
+Run on an exclusively owned local fixture, once with RPC and once with
+`BLAKESWAP_TEST_ELECTRUM=1`:
+
+```sh
+BLAKESWAP_REGTEST=/path/to/isolated-fixture \
+  BLAKESWAP_BTC_RPC_PORT=39443 BLAKESWAP_BLAKE_RPC_PORT=49443 \
+  sh scripts/go.sh test -race -count=1 -p 1 ./internal/api \
+  -run '^TestRealNativeRevocation' -v
+```
+
+The isolated daemon controls also cover full policy edits, stale strategy reviews
+after a breaker trip, preserved imported uncertainty and previously authorized
+bounded automation continuing after native permission revocation.
+
+Native protocol tests inject an authenticator and credential store, including
+cancellation/unavailability, lock during a prompt, lock after approval, stale
+session/reply refusal and bounded pipe framing. With a freshly built helper,
+`BLAKESWAP_TEST_HELPER` enables actual owned-helper startup/restart and public API
+consumption tests. Ordinary native tests do not touch the login Keychain.
+
+Run the separate native Keychain integration only with the freshly signed app:
+
+```sh
+BLAKESWAP_KEYCHAIN_TEST_APP="$PWD/bin/Blakeswap.app/Contents/MacOS/Blakeswap" \
+  swift test --package-path macos --scratch-path .cache/swift-build \
+  --cache-path .cache/swift-cache -c release --filter KeychainIntegrationTests
+```
+
+This test invokes the app's explicit pre-startup test command in three independent
+processes. It uses the fixed `org.blakeswap.test.credential.v1` service, internally
+generated unique accounts and synthetic bytes. It verifies creation, duplicate
+refusal, wrong-record absence, same signed-app restart readback and owned-item
+deletion. Its private temporary record contains only the synthetic account and
+hash; it is retained if OS denial prevents cleanup. No production Keychain service,
+wallet password, helper startup or developer wallet is accessed. A skipped test
+is not native Keychain evidence. Ad-hoc rebuilds can change the app's trusted code
+identity; verify release identity behavior separately rather than enabling a file
+fallback or broadening the Keychain access list.

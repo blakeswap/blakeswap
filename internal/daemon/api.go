@@ -164,6 +164,9 @@ func (e *Engine) publicSwap(swap *Swap) PublicSwap {
 }
 
 func (e *Engine) Command(ctx context.Context, req Request) (any, error) {
+	if err := e.authorizeCommand(ctx, req); err != nil {
+		return nil, err
+	}
 	if req.Method == "strategy.report" {
 		return e.strategyReport(ctx, req.Params)
 	}

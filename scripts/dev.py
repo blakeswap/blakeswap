@@ -42,7 +42,7 @@ def config(name, mode, tower):
     if not password.exists():
         fd=os.open(password,os.O_WRONLY|os.O_CREAT|os.O_EXCL,0o600)
         with os.fdopen(fd,"w") as f:f.write(secrets.token_hex(32))
-    cfg={"name":name,"mode":mode,"data_dir":str(data),"password_file":str(password),"socket":str(data/"daemon.sock"),"relays":["ws://127.0.0.1:7447","ws://127.0.0.1:7448"],"nodes":{id:{"url":f"http://127.0.0.1:{port}","cookie":str(LOCAL/id/"regtest"/".cookie")} for id,(_,port) in NODES.items()},"tower":tower}
+    cfg={"name":name,"mode":mode,"credential_mode":"file","data_dir":str(data),"password_file":str(password),"socket":str(data/"daemon.sock"),"relays":["ws://127.0.0.1:7447","ws://127.0.0.1:7448"],"nodes":{id:{"url":f"http://127.0.0.1:{port}","cookie":str(LOCAL/id/"regtest"/".cookie")} for id,(_,port) in NODES.items()},"tower":tower}
     path=data/"config.json";path.write_text(json.dumps(cfg,indent=2)+"\n");os.chmod(path,0o600)
     return path
 

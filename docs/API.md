@@ -40,6 +40,26 @@ no-store, and strict origin/Host checks. Tokens never appear in status or logs.
 The token and file permissions do not protect against a compromised local user
 account that can read those files.
 
+## Native sensitive-action consent
+
+For native desktop profiles, the bearer token alone cannot authorize a new send,
+trade, recovery disclosure/export, wallet install, or spending/settings policy
+change. This includes compatibility methods and automation disable/strategy stop.
+The signed app performs fresh OS authentication for the exact typed request through
+its private inherited-pipe broker. The public gRPC call carries the resulting
+opaque ID in `x-blakeswap-consent`; HTTP uses `X-Blakeswap-Consent`. It is single-use,
+short-lived and bound to wallet/key, network, installation, helper/engine/settings
+context and exact normalized payload. Public APIs cannot prepare or approve a
+grant. A copied bearer token, a boolean, stale approval or changed request cannot
+substitute for it. Ordinary CLI calls to a native sensitive method are refused.
+
+Read-only status, settings, review, quote, history and supplied-backup inspection
+remain bearer-authenticated reads. Exact lookups of an already signed send or
+nonpending trade receipt return its saved result without new signing. Internal
+settlement and persisted bounded policy execution retain their existing authority.
+Explicit operator-selected file mode has no native consent broker; treat its
+bearer token as full local wallet authority. See [Packaging](PACKAGING.md#credentials-and-authentication).
+
 ## Methods
 
 | RPC | HTTP | Purpose |

@@ -1,12 +1,12 @@
 package desktop
 
 import (
-	"bytes"
 	"context"
 	"errors"
 	"os"
 	"path/filepath"
 
+	pb "github.com/blakeswap/blakeswap/api/gen/blakeswap/v1"
 	"github.com/blakeswap/blakeswap/internal/daemon"
 	"github.com/blakeswap/blakeswap/internal/storage"
 )
@@ -21,12 +21,33 @@ type portableExportResult struct {
 
 // Snapshot under the lifecycle lock; encrypt the immutable copy after restarting
 // workers. A completed archive is useful even if recording its reminder fails.
-func (m *Manager) exportPortable(ctx context.Context, profile, path, password string, all bool) (portableExportResult, error) {
+type exportConsent struct {
+	method string
+	input  any
+}
+
+func (m *Manager) exportPortable(ctx context.Context, profile, path, password string, all bool, consent ...exportConsent) (portableExportResult, error) {
 	result := portableExportResult{}
 	if !filepath.IsAbs(path) || len(password) < 16 {
 		return result, errors.New("choose an absolute destination and a backup password of at least 16 bytes")
 	}
-	manifest, err := m.backupSnapshot(ctx, profile, all)
+	m.mu.Lock()
+	action := exportConsent{"backup.export", &pb.ExportPortableBackupRequest{Path: path, Password: password, AllWallets: all}}
+	if len(consent) == 1 {
+		action = consent[0]
+	}
+	if err := m.consumeDirectLocked(ctx, action.method, action.input); err != nil {
+		m.mu.Unlock()
+		return result, err
+	}
+	// Capture the exact authorized wallet set before releasing the lifecycle
+	// lock. Long validation and encryption run after workers have resumed.
+	capture, err := m.captureBackupLocked(ctx, profile, all)
+	m.mu.Unlock()
+	if err != nil {
+		return result, err
+	}
+	manifest, err := capture.materialize()
 	defer manifest.close()
 	if err != nil {
 		return result, err
@@ -57,7 +78,7 @@ func (m *Manager) recordPortableLocked(manifest backupManifest) error {
 	m.stopOpening()
 	for _, profile := range manifest.Wallets {
 		root := filepath.Join(m.root, "wallets", profile.ID)
-		mnemonic, password, err := readMaster(root)
+		mnemonic, password, err := m.readMaster(root)
 		if err != nil {
 			return err
 		}
@@ -90,7 +111,7 @@ func (m *Manager) recordPortableLocked(manifest backupManifest) error {
 				} else if err != nil {
 					return err
 				}
-				vault, err := storage.Open(path, bytes.TrimSpace(password))
+				vault, err := storage.Open(path, password)
 				if err != nil {
 					return err
 				}

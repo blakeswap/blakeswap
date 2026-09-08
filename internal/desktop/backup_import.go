@@ -72,6 +72,9 @@ func (m *Manager) importPortable(ctx context.Context, request portableImportRequ
 	}
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	if err := m.consumeDirectLocked(ctx, "backup.import", &pb.ImportBackupRequest{Path: request.Path, Password: request.Password, SourceWalletId: request.SourceWallet, Name: request.Name, Revision: request.Revision}); err != nil {
+		return result, err
+	}
 	if err = ctx.Err(); err != nil {
 		return result, err
 	}
@@ -104,8 +107,8 @@ func (m *Manager) importPortable(ctx context.Context, request portableImportRequ
 	if err != nil {
 		return result, err
 	}
-	defer os.RemoveAll(staging)
-	metadata, err := prepareImportedProfile(ctx, staging, *selected, name, manifest.CreatedAt, legacy)
+	defer m.removeStaging(staging, id)
+	metadata, err := m.prepareImportedProfile(ctx, staging, id, *selected, name, manifest.CreatedAt, legacy)
 	if err != nil {
 		return result, err
 	}
@@ -163,17 +166,19 @@ func (m *Manager) importPortable(ctx context.Context, request portableImportRequ
 }
 
 func prepareImportedProfile(ctx context.Context, staging string, entry backupWallet, name string, snapshotAt int64, legacy bool) (preparedImport, error) {
+	return (&Manager{}).prepareImportedProfile(ctx, staging, "", entry, name, snapshotAt, legacy)
+}
+func (m *Manager) prepareImportedProfile(ctx context.Context, staging, profile string, entry backupWallet, name string, snapshotAt int64, legacy bool) (preparedImport, error) {
+	var metadata preparedImport
+	err := m.initializeProfile(ctx, staging, profile, entry.Mnemonic, func(password []byte) error {
+		var err error
+		metadata, err = writeImportedProfile(ctx, staging, entry, name, snapshotAt, legacy, password)
+		return err
+	})
+	return metadata, err
+}
+func writeImportedProfile(ctx context.Context, staging string, entry backupWallet, name string, snapshotAt int64, legacy bool, password []byte) (preparedImport, error) {
 	metadata := preparedImport{Name: name, Identity: entry.Identity}
-	var random [32]byte
-	if _, err := rand.Read(random[:]); err != nil {
-		return metadata, err
-	}
-	password := []byte(hex.EncodeToString(random[:]))
-	clear(random[:])
-	defer clear(password)
-	if err := writePrivate(filepath.Join(staging, "vault.password"), password); err != nil {
-		return metadata, err
-	}
 	if err := saveVault(filepath.Join(staging, "master.db"), password, struct {
 		Mnemonic string `json:"mnemonic"`
 	}{entry.Mnemonic}); err != nil {
@@ -217,7 +222,11 @@ func prepareImportedProfile(ctx context.Context, staging string, entry backupWal
 
 // Called before any wallet engines start. A crash after the atomic directory
 // rename but before Settings publication leaves a complete gated profile here.
-func recoverPreparedImports(root string, settings *pb.Settings) error {
+func recoverPreparedImports(root string, settings *pb.Settings, readers ...func(string) (string, []byte, error)) error {
+	reader := readMaster
+	if len(readers) == 1 {
+		reader = readers[0]
+	}
 	if settings.OnboardingStage != "" {
 		return nil
 	}
@@ -249,7 +258,7 @@ func recoverPreparedImports(root string, settings *pb.Settings) error {
 	}
 	identities := map[string]bool{}
 	for _, profile := range settings.Wallets {
-		seed, password, err := readMaster(filepath.Join(root, "wallets", profile.Id))
+		seed, password, err := reader(filepath.Join(root, "wallets", profile.Id))
 		clear(password)
 		if err != nil {
 			return errors.New("cannot verify an installed wallet identity before finishing import")
@@ -277,7 +286,7 @@ func recoverPreparedImports(root string, settings *pb.Settings) error {
 		if len(raw) > 4096 || json.Unmarshal(raw, &marker) != nil || validateWalletName(marker.Name) != nil || len(marker.Networks) != 3 {
 			return errors.New("invalid interrupted wallet import")
 		}
-		seed, password, err := readMaster(path)
+		seed, password, err := reader(path)
 		if err != nil {
 			return err
 		}
@@ -288,7 +297,7 @@ func recoverPreparedImports(root string, settings *pb.Settings) error {
 		}
 		// Each network was committed before the marker. Re-authenticate the complete
 		// profile, including the gate, rather than trusting plaintext marker claims.
-		if err = validateInstalledRecovery(path, seed, marker.Networks); err != nil {
+		if err = validateInstalledRecovery(path, seed, marker.Networks, reader); err != nil {
 			return err
 		}
 		if len(settings.Wallets) >= 20 {
@@ -306,20 +315,24 @@ func recoverPreparedImports(root string, settings *pb.Settings) error {
 	return nil
 }
 
-func validateInstalledRecovery(root, seed string, networks []chain.Network) error {
+func validateInstalledRecovery(root, seed string, networks []chain.Network, readers ...func(string) (string, []byte, error)) error {
+	reader := readMaster
+	if len(readers) == 1 {
+		reader = readers[0]
+	}
 	seen := map[chain.Network]bool{}
 	for _, network := range networks {
 		if network == "" || !network.Valid() || seen[network] {
 			return errors.New("invalid interrupted import network")
 		}
 		seen[network] = true
-		_, password, err := readMaster(root)
+		_, password, err := reader(root)
 		if err != nil {
 			return err
 		}
 		// Authenticate a private copy with the same bound enforced before atomic
 		// installation. The legacy source's 64 MiB policy does not apply here.
-		err = withPrivateStateBackup(root, filepath.Join(root, string(network), "state.db"), string(password), portableVaultLimit, func(vault *storage.Vault) error {
+		err = withPrivateStateBackupBytes(root, filepath.Join(root, string(network), "state.db"), password, portableVaultLimit, func(vault *storage.Vault) error {
 			view, err := vault.Freeze()
 			if err != nil {
 				return err

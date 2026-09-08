@@ -60,7 +60,16 @@ gift-wrap writes, so providers requiring authenticated publication are unsupport
 
 ## Wallet and local-machine risks
 
-The wallet is a hot software signer. Malware or another process running as the same user may read its memory, access its socket, or read both the vault and its local password file. File permissions and encryption protect different boundaries; they do not defend a compromised user account. The desktop and test launcher store passwords in files rather than macOS Keychain, and the app has no hardware-wallet or biometric signing policy.
+The wallet remains a hot software signer. Desktop credentials use the app's
+Keychain access list and sensitive new requests require exact-action native OS
+authentication at the helper boundary. Explicit headless file mode retains a
+password file and grants its authenticated clients ordinary spending authority.
+Keys already loaded by an unlocked helper remain available for accepted settlement
+and previously reviewed bounded automation while the screen locks. Memory access,
+code injection, a compromised app build or a compromised user account can defeat
+this boundary; it is not hardware-wallet protection. Notification availability is
+not a positive authentication signal. Keychain denial never selects a file fallback,
+and deleting a migrated password file does not erase snapshots or prior copies.
 
 The mnemonic restores derivation keys. Current encrypted state also preserves monotonically increasing receive indexes. Phrase or older-backup recovery scans confirmed receipt history until an unused address; it cannot recover address-use history erased by a reorg or omitted by an observation source. Pending preimages, exact negotiated terms, prepared refunds, fallback signatures, receipts, and reliable-message state also need the encrypted database. Restore the matching password with a backup. Restoring an old snapshot and blindly resuming may reuse stale order state or omit an already disclosed secret. Reconcile both chains and counterparties before resuming from a stale backup; rollback-safe production recovery is not implemented.
 

@@ -1,7 +1,7 @@
 package daemon
 
 import (
-	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -67,12 +67,12 @@ func CheckStoredNetwork(c Config) error {
 	if _, err := os.Stat(path); errors.Is(err, os.ErrNotExist) {
 		return nil
 	}
-	password, err := os.ReadFile(c.PasswordFile)
+	password, err := c.acquirePassword(context.Background())
 	if err != nil {
 		return err
 	}
 	defer clear(password)
-	vault, err := storage.Open(path, bytes.TrimSpace(password))
+	vault, err := storage.Open(path, password)
 	if err != nil {
 		return err
 	}

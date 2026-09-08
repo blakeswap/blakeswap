@@ -17,6 +17,7 @@ import (
 )
 
 type Service struct {
+	Context        func(context.Context) context.Context
 	PortableExport func(context.Context, *pb.ExportPortableBackupRequest) (*pb.PortableBackupResult, error)
 	BackupInspect  func(context.Context, *pb.InspectBackupRequest) (*pb.BackupContents, error)
 	BackupImport   func(context.Context, *pb.ImportBackupRequest) (*pb.ImportBackupResult, error)

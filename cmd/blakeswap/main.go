@@ -6,8 +6,10 @@ import (
 	"flag"
 	"fmt"
 	"github.com/blakeswap/blakeswap/internal/api"
+	"github.com/blakeswap/blakeswap/internal/authorization"
 	"github.com/blakeswap/blakeswap/internal/daemon"
 	"github.com/blakeswap/blakeswap/internal/desktop"
+	"github.com/blakeswap/blakeswap/internal/nativebridge"
 	"github.com/blakeswap/blakeswap/internal/relay"
 	"log"
 	"net"
@@ -35,8 +37,39 @@ func run() error {
 		f := flag.NewFlagSet("desktop", flag.ExitOnError)
 		root := f.String("data-dir", "", "application data directory")
 		parent := f.Int("parent-pid", 0, "owning GUI process ID")
+		credentialMode := f.String("credential-mode", "native", "native app credentials, or explicit operator-controlled file mode")
 		_ = f.Parse(os.Args[2:])
-		return desktop.Run(ctx, *root, *parent)
+		if *credentialMode == "file" {
+			return desktop.Run(ctx, *root, *parent, desktop.RunOptions{CredentialMode: "file"})
+		}
+		if *credentialMode != "native" {
+			return fmt.Errorf("unknown credential mode")
+		}
+		session := os.Getenv("BLAKESWAP_DESKTOP_SESSION")
+		if *parent <= 0 || session == "" {
+			return fmt.Errorf("native desktop requires its app-owned security connection; use --credential-mode=file for explicit headless operation")
+		}
+		for _, pipe := range []*os.File{os.Stdin, os.Stdout} {
+			info, err := pipe.Stat()
+			if err != nil || info.Mode()&os.ModeNamedPipe == 0 {
+				return fmt.Errorf("native security requires inherited anonymous pipes")
+			}
+		}
+		privateCtx, cancel := context.WithCancel(ctx)
+		defer cancel()
+		peer, err := nativebridge.New(privateCtx, session, os.Stdin, os.Stdout)
+		if err != nil {
+			return err
+		}
+		defer peer.Close()
+		// Broker loss retires new-action consent inside Manager; accepted
+		// settlement remains live until explicit app shutdown or parent death.
+		authority, err := authorization.New(session, nil)
+		if err != nil {
+			return err
+		}
+		defer authority.Close()
+		return desktop.Run(privateCtx, *root, *parent, desktop.RunOptions{CredentialMode: "native", Store: nativebridge.Store{Peer: peer}, Broker: peer, Authority: authority})
 	case "daemon":
 		f := flag.NewFlagSet("daemon", flag.ExitOnError)
 		path := f.String("config", "", "config JSON")
@@ -48,6 +81,9 @@ func run() error {
 		var cfg daemon.Config
 		if err = json.Unmarshal(raw, &cfg); err != nil {
 			return err
+		}
+		if cfg.CredentialMode != "file" {
+			return fmt.Errorf("headless daemon configuration requires explicit credential_mode: file")
 		}
 		engine, err := daemon.Open(ctx, cfg)
 		if err != nil {

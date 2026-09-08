@@ -13,6 +13,7 @@ import (
 	"net"
 	"sync"
 	"testing"
+	"time"
 
 	"crypto/sha256"
 	"github.com/blakeswap/blakeswap/internal/chain"
@@ -38,10 +39,29 @@ type ElectrumBridge struct {
 	Transform func(string, any) any
 }
 
+// Prepare the fixture's historical index before clients can connect. Genesis
+// indexing belongs to service setup; normal wallet calls keep their existing
+// deadlines and only synchronize incremental canonical or mempool changes.
+func listenPreparedElectrumBridge(ctx context.Context, rpc *chain.RPC) (*ElectrumBridge, net.Listener, error) {
+	b := &ElectrumBridge{rpc: rpc, txs: map[string]indexedTx{}}
+	if err := b.sync(ctx); err != nil {
+		return nil, nil, fmt.Errorf("prepare Electrum fixture index: %w", err)
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, nil, err
+	}
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		return nil, nil, err
+	}
+	return b, listener, nil
+}
+
 func NewElectrumBridge(t *testing.T, rpc *chain.RPC) (*ElectrumBridge, string) {
 	t.Helper()
-	b := &ElectrumBridge{rpc: rpc, txs: map[string]indexedTx{}}
-	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	setup, finishSetup := context.WithTimeout(context.Background(), time.Minute)
+	b, listener, err := listenPreparedElectrumBridge(setup, rpc)
+	finishSetup()
 	if err != nil {
 		t.Fatal(err)
 	}

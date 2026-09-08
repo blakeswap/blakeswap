@@ -192,6 +192,7 @@ func (e *Engine) compactArchive(ctx context.Context, swaps, towers map[chain.ID]
 		obs, ok := observation(all, c)
 		return c.TxID != "" && valid[c.Chain] && ok && obs.Tx != nil && obs.Height > 0 && obs.Height <= e.archiveCurrent[c.Chain].Height && obs.Confirmations >= archiveSettlementDepth
 	}
+	retiredMakerParents := map[string]bool{}
 	for _, id := range sortedArchiveIDs(e.s.Swaps) {
 		swap := e.s.Swaps[id]
 		if remaining == 0 {
@@ -213,12 +214,25 @@ func (e *Engine) compactArchive(ctx context.Context, swaps, towers map[chain.ID]
 		if err := move("swaps", id, chains...); err != nil {
 			return err
 		}
+		if e.s.Swaps[id] == nil && swap.Role == "maker" && swap.Terms != nil {
+			retiredMakerParents[swap.Terms.Offer().ID] = true
+		}
 		for _, kind := range []string{"recovery_swaps", "funding_fees"} {
 			key := id
 			if kind == "funding_fees" {
 				key = "swap/" + id
 			}
 			if err := e.stageArchive(kind, key); err != nil {
+				return err
+			}
+		}
+	}
+	activeMakerParents := e.activeMakerParents()
+	for _, id := range sortedArchiveIDs(retiredMakerParents) {
+		// The parent can already be cold in a repaired older checkpoint. Once
+		// its final hot child retires, the retained fee can follow that child.
+		if _, parentHot := e.s.Offers[id]; !parentHot && !activeMakerParents[id] {
+			if err := e.stageArchive("funding_fees", "offer/"+id); err != nil {
 				return err
 			}
 		}
@@ -264,6 +278,11 @@ func (e *Engine) compactArchive(ctx context.Context, swaps, towers map[chain.ID]
 		for _, kind := range []string{"order_records", "offer_towers", "funding_fees"} {
 			key := id
 			if kind == "funding_fees" {
+				// Recent children still project this exact fee. Retain only the
+				// fee, not a terminal parent's old reserved/publication state.
+				if activeMakerParents[id] {
+					continue
+				}
 				key = "offer/" + id
 			}
 			if err := e.stageArchive(kind, key); err != nil {

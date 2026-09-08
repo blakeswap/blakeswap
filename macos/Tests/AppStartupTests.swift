@@ -20,7 +20,7 @@ final class AppStartupTests: XCTestCase {
         exec \(quotedHelper) "$@"
         """.utf8).write(to: script)
         try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: script.path)
-        let daemon = DaemonProcess(root: directory.path, executable: script)
+        let daemon = DaemonProcess(root: directory.path, executable: script, security: isolatedNativeSecurity())
         addTeardownBlock { await daemon.stop(); try? FileManager.default.removeItem(at: directory) }
         let model = AppModel(daemon: daemon)
         let refresh = Task { await model.refresh() }
@@ -47,7 +47,7 @@ final class AppStartupTests: XCTestCase {
         let script = root.appendingPathComponent("helper")
         try Data(("#!/bin/sh\n" + contents + "\n").utf8).write(to: script)
         try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: script.path)
-        let daemon = DaemonProcess(root: root.path, executable: script)
+        let daemon = DaemonProcess(root: root.path, executable: script, security: isolatedNativeSecurity())
         addTeardownBlock { await daemon.stop(); try? FileManager.default.removeItem(at: root) }
         return (root, daemon)
     }
@@ -107,7 +107,7 @@ final class AppStartupTests: XCTestCase {
     @MainActor
     func testLaunchFailureIsNotOverwrittenByRuntimeFileError() async throws {
         let (root, _) = try fixture()
-        let daemon = DaemonProcess(root: root.path, executable: root.appendingPathComponent("missing-helper"))
+        let daemon = DaemonProcess(root: root.path, executable: root.appendingPathComponent("missing-helper"), security: isolatedNativeSecurity())
         addTeardownBlock { await daemon.stop() }
         var expected: String?
         do { try daemon.start(); XCTFail("Missing helper started") }

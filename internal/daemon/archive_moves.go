@@ -3,12 +3,51 @@ package daemon
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"reflect"
 
 	"github.com/blakeswap/blakeswap/internal/storage"
 )
 
 func archiveMoveKey(kind, id string) string { return kind + "\x00" + id }
+
+// A local maker child still needs its parent's fee after terminal settlement,
+// while its recent evidence remains in the hot set.
+func (e *Engine) activeMakerParents() map[string]bool {
+	parents := map[string]bool{}
+	for _, swap := range e.s.Swaps {
+		if swap != nil && swap.Role == "maker" && swap.Terms != nil {
+			parents[swap.Terms.Offer().ID] = true
+		}
+	}
+	return parents
+}
+
+// Older archive checkpoints could split a recent child from its parent's fee.
+// Repair only these bounded exact fee companions before startup consumers run;
+// this never reactivates an offer, receipt or publication authority.
+func (e *Engine) restoreActiveFundingFees() error {
+	owners := map[string]bool{}
+	for _, swap := range e.s.Swaps {
+		if swap == nil {
+			continue
+		}
+		owner := "swap/" + swap.ID
+		if swap.Role == "maker" && swap.Terms != nil {
+			owner = "offer/" + swap.Terms.Offer().ID
+		}
+		owners[owner] = true
+	}
+	for _, owner := range sortedArchiveIDs(owners) {
+		if _, present := e.s.FundingFees[owner]; present {
+			continue
+		}
+		if _, err := e.activateArchived("funding_fees", owner); err != nil {
+			return fmt.Errorf("cannot restore retained funding fee: %w", err)
+		}
+	}
+	return nil
+}
 
 // Stage ownership changes in memory while the engine lock is held. persistState
 // commits their encrypted bucket records and active state in one transaction,

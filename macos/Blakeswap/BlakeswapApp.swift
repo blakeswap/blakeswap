@@ -2,6 +2,13 @@ import SwiftUI
 import AppKit
 
 @main
+enum BlakeswapMain {
+    static func main() {
+        if let result = KeychainIntegration.runIfRequested(CommandLine.arguments) { exit(result) }
+        BlakeswapApp.main()
+    }
+}
+
 struct BlakeswapApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
     @StateObject private var model = AppModel()
@@ -89,7 +96,10 @@ struct AppRootView: View {
                 VStack(spacing: 18) {
                     ProgressView()
                     Text("Opening Blakeswap").font(.title3.weight(.semibold))
-                    if let error = model.connectionError { Text(error).font(.callout).foregroundStyle(.secondary) }
+                    if let error = model.connectionError {
+                        Text(error).font(.callout).foregroundStyle(.secondary)
+                        Button("Unlock wallet service") { Task { await model.retryUnlock() } }
+                    }
                 }.frame(maxWidth: .infinity, maxHeight: .infinity)
             }
         }
@@ -118,6 +128,7 @@ struct ContentView: View {
                             VStack(alignment: .leading, spacing: 12) {
                                 Label("Reconnecting to your wallet", systemImage: "network.slash").font(.headline)
                                 Text(error).foregroundStyle(.secondary)
+                                Button("Unlock wallet service") { Task { await model.retryUnlock() } }
                             }.padding(24).frame(maxWidth: .infinity, alignment: .leading).background(panel, in: RoundedRectangle(cornerRadius: 16))
                         }
                         MonitoringView(model: model.monitoring, open: model.openMonitoring)

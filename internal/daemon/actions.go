@@ -1,7 +1,7 @@
 package daemon
 
 import (
-	"bytes"
+	"context"
 	"errors"
 	"github.com/blakeswap/blakeswap/internal/storage"
 	"os"
@@ -331,12 +331,12 @@ func LoadStoredActions(c Config) (WalletActions, error) {
 		if err != nil {
 			return WalletActions{}, err
 		}
-		password, err := os.ReadFile(c.PasswordFile)
+		password, err := c.acquirePassword(context.Background())
 		if err != nil {
 			return WalletActions{}, err
 		}
 		defer clear(password)
-		vault, err := storage.Open(path, bytes.TrimSpace(password))
+		vault, err := storage.Open(path, password)
 		if err != nil {
 			return WalletActions{}, err
 		}

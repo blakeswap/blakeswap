@@ -30,13 +30,18 @@ final class AppModel: ObservableObject {
         root = self.daemon.root
  monitoring = MonitoringModel(root:self.daemon.root)
  monitoring.navigate = { [weak self] route in self?.openMonitoring(route) }
+        self.daemon.security.onConnectionLoss = { [weak self] in
+            self?.lockNewActions()
+            self?.connectionError = NativeSecurityError.closed.localizedDescription
+            self?.monitoring.unavailable()
+        }
     }
     private var refreshing = false
     @Published private(set) var swapRefreshGeneration: UInt64?
     var checkingSwaps: Bool { swapRefreshGeneration == generation }
     var network: String { settings?.activeNetwork ?? status?.network ?? "mainnet" }
     var isRegtest: Bool { network == "regtest" }
-    func invalidateSnapshot() { generation &+= 1; snapshot.status = nil; recovery = nil; activityDestination = nil; monitoringDestination = nil }
+    func invalidateSnapshot() { daemon.revokeConsent(); generation &+= 1; snapshot.status = nil; recovery = nil; activityDestination = nil; monitoringDestination = nil }
     func selectProfile(_ name: String) { invalidateSnapshot(); profile = name; notice = nil }
 
     @discardableResult
@@ -44,6 +49,7 @@ final class AppModel: ObservableObject {
         guard expected == generation, selected == profile,
               nextSettings.revision >= (settings?.revision ?? 0) else { return false }
         if nextSettings.revision != settings?.revision || nextSettings.activeNetwork != settings?.activeNetwork {
+            daemon.revokeConsent()
             generation &+= 1
             recovery = nil
         }
@@ -57,7 +63,7 @@ final class AppModel: ObservableObject {
         guard !refreshing, !checkingSwaps else { return }; refreshing = true; defer { refreshing = false }
         let selected = profile, expected = generation
         do {
-            try daemon.start() // Idempotent while running; restarts an exited helper automatically.
+            try await daemon.unlockAndStart() // Initial OS unlock is outside helper/manager locks.
             try await daemon.waitUntilReady(profile: selected)
             let raw = try await DaemonRPC.call(root: root, profile: selected, method: "status")
             let next = try DaemonStatus(serializedBytes: raw)
@@ -74,6 +80,11 @@ final class AppModel: ObservableObject {
             }
         }
     }
+    func retryUnlock() async {
+        do { try await daemon.unlockAndStart(retry: true); await refresh() }
+        catch { connectionError = error.localizedDescription }
+    }
+    func lockNewActions() { invalidateSnapshot(); setupWallet = nil }
     func openMonitoring(_ route: AlertDestination) {
         guard route.network == network, settings?.wallets.contains(where: { $0.id == route.wallet }) == true else { notice = "This notification belongs to another saved network. Select that network in Settings to inspect it."; return }
         selectProfile(route.wallet)
@@ -129,9 +140,11 @@ final class AppModel: ObservableObject {
     }
     func saveSettings(_ draft: AppSettings) async {
         guard !busy else { return }; busy = true; invalidateSnapshot()
+        let selected = profile, expected = generation
         defer { busy = false; invalidateSnapshot() }
         do {
-            let raw = try await DaemonRPC.call(root: root, profile: profile, method: "settings.update", payload: draft.jsonUTF8Data())
+            let raw = try await DaemonRPC.call(root: root, profile: selected, method: "settings.update", payload: draft.jsonUTF8Data())
+            guard selected == profile, expected == generation else { return }
             let next = try AppSettings(serializedBytes: raw)
             acceptSnapshot(nil, settings: next, profile: profile, generation: generation)
             notice = "Settings saved. Connecting."
@@ -140,12 +153,14 @@ final class AppModel: ObservableObject {
     func createWallet(name: String) async {
         guard !busy, let current = settings else { return }
         busy = true; invalidateSnapshot()
+        let selected = profile, expected = generation
         defer { busy = false }
         do {
             var request = Blakeswap_V1_CreateWalletRequest()
             request.name = name.trimmingCharacters(in: .whitespacesAndNewlines)
             request.revision = current.revision
-            let raw = try await DaemonRPC.call(root: root, profile: profile, method: "wallet.create", payload: request.jsonUTF8Data())
+            let raw = try await DaemonRPC.call(root: root, profile: selected, method: "wallet.create", payload: request.jsonUTF8Data())
+            guard selected == profile, expected == generation else { return }
             let next = try AppSettings(serializedBytes: raw)
             acceptSnapshot(nil, settings: next, profile: profile, generation: generation)
             if let created = next.wallets.last { selectProfile(created.id) }
@@ -155,9 +170,11 @@ final class AppModel: ObservableObject {
     func setupAction<M: Message>(_ method: String, request: M) async -> Bool {
         guard !busy else { return false }
         busy = true; notice = nil; invalidateSnapshot()
+        let selected = profile, expected = generation
         defer { busy = false }
         do {
-            let raw = try await DaemonRPC.call(root: root, profile: profile, method: method, payload: request.jsonUTF8Data())
+            let raw = try await DaemonRPC.call(root: root, profile: selected, method: method, payload: request.jsonUTF8Data())
+            guard selected == profile, expected == generation else { return false }
             if method == "onboarding.prepare" || method == "onboarding.get" {
                 let first = try Blakeswap_V1_FirstWallet(serializedBytes: raw)
                 acceptSnapshot(nil, settings: first.settings, profile: profile, generation: generation)
@@ -171,7 +188,7 @@ final class AppModel: ObservableObject {
             }
             connectionError = nil
             return true
-        } catch { notice = error.localizedDescription; return false }
+        } catch { if selected == profile && expected == generation { notice = error.localizedDescription }; return false }
     }
     func checkNode(network: String, chain: String, node: NodeSettings) async -> String {
         do {
@@ -230,7 +247,7 @@ final class AppModel: ObservableObject {
     }
     func command(_ method: String, _ params: [String: Any] = [:]) async -> Bool {
         guard !busy else { return false }; busy = true; notice = nil
-        let selected = profile
+        let selected = profile, expected = generation
         defer { busy = false }
         do {
             var bound = params
@@ -238,7 +255,7 @@ final class AppModel: ObservableObject {
                 bound["expected_network"] = status?.network ?? network
             }
             let raw = try await DaemonRPC.call(root: root, profile: selected, method: method, params: bound)
-            if selected == profile {
+            if selected == profile && expected == generation {
                 if method == "wallet.recovery" { recovery = try Blakeswap_V1_Recovery(serializedBytes: raw).mnemonic }
                 if method == "wallet.backup" {
                     let path = try Blakeswap_V1_Backup(serializedBytes: raw).path
