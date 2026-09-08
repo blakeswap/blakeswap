@@ -11,15 +11,18 @@ import (
 	"github.com/blakeswap/blakeswap/internal/storage"
 )
 
-// Only the preceding active components are cached. Unchanged lifetime bodies
-// stay cold. Cold inputs are retained only while they represent live unresolved
-// obligations, never for terminal history. This cache is not serialized.
+// Only preceding active components are cached in memory. Exact input ownership
+// uses an independently encrypted disposable index, never a lifetime Go map.
+// Neither representation is serialized or exported as wallet authority.
 type fillValidationCheckpoint struct {
-	parents    map[string]*ParentOrder
-	children   map[string]*FillRecord
-	cores      map[string]string
-	coreTerms  map[string]string
-	coldInputs map[string]string
+	parents      map[string]*ParentOrder
+	children     map[string]*FillRecord
+	cores        map[string]string
+	coreTerms    map[string]string
+	reservations map[string]CoinReservation
+	inputs       *storage.PrivateIndex
+	pending      *storage.PrivateIndexTx
+	freshInputs  bool
 }
 
 func fillCoreValidationHash(s *Swap, fee FeeSelection) string {
@@ -39,8 +42,8 @@ func fillCoreValidationHash(s *Swap, fee FeeSelection) string {
 		Fee         FeeSelection
 	}{s.Role, s.Request, s.Terms, s.Long, s.Short, s.ShortFunding, s.ShortSent, s.OwnerFeeCap, s.SelfRefunds, s.Jobs, fee})
 }
-func captureFillValidation(s *State, cold map[string]string) *fillValidationCheckpoint {
-	c := &fillValidationCheckpoint{parents: map[string]*ParentOrder{}, children: map[string]*FillRecord{}, cores: map[string]string{}, coreTerms: map[string]string{}, coldInputs: cold}
+func captureFillValidation(s *State, inputs *storage.PrivateIndex) *fillValidationCheckpoint {
+	c := &fillValidationCheckpoint{parents: map[string]*ParentOrder{}, children: map[string]*FillRecord{}, cores: map[string]string{}, coreTerms: map[string]string{}, reservations: map[string]CoinReservation{}, inputs: inputs}
 	for id, p := range s.ParentOrders {
 		if p != nil {
 			value := p.clone()
@@ -60,6 +63,10 @@ func captureFillValidation(s *State, cold map[string]string) *fillValidationChec
 			value.Inputs = append([]CoinOutpoint(nil), f.Inputs...)
 			c.children[id] = &value
 		}
+	}
+	for owner, reservation := range s.CoinReservations {
+		reservation.Inputs = append([]CoinOutpoint(nil), reservation.Inputs...)
+		c.reservations[owner] = reservation
 	}
 	for id, core := range s.Swaps {
 		if core != nil && core.Role == "maker" {
@@ -114,15 +121,7 @@ func (r engineFillReader) VisitArchive(ctx context.Context, visit func(storage.A
 func (e *Engine) prepareFillValidation() (*fillValidationCheckpoint, error) {
 	reader := engineFillReader{e}
 	if e.fillValidation == nil {
-		directory := ""
-		if e.vault != nil {
-			directory = e.vault.PrivateDirectory()
-		}
-		cold, err := validateFillConservation(context.Background(), &e.s, reader, directory)
-		if err != nil {
-			return nil, err
-		}
-		return captureFillValidation(&e.s, cold), nil
+		return e.prepareFillInputIndex(reader, nil)
 	}
 	previous := e.fillValidation
 	oldState := State{Version: e.s.Version, Network: e.s.Network, ParentOrders: previous.parents, FillRecords: previous.children}
@@ -131,6 +130,16 @@ func (e *Engine) prepareFillValidation() (*fillValidationCheckpoint, error) {
 		oldReader = vaultFillReader{e.vault}
 	}
 	ids := map[string]bool{}
+	for owner, reservation := range previous.reservations {
+		if id := fillOwnerID(owner); id != "" && !reflect.DeepEqual(reservation, e.s.CoinReservations[owner]) {
+			ids[id] = true
+		}
+	}
+	for owner, reservation := range e.s.CoinReservations {
+		if id := fillOwnerID(owner); id != "" && !reflect.DeepEqual(reservation, previous.reservations[owner]) {
+			ids[id] = true
+		}
+	}
 	parents := map[string]bool{}
 	cores := map[string]bool{}
 	for id := range previous.children {
@@ -174,20 +183,9 @@ func (e *Engine) prepareFillValidation() (*fillValidationCheckpoint, error) {
 	for _, record := range e.archivePuts {
 		include(record.Kind, record.ID)
 	}
-	type change struct{ old, next *FillRecord }
-	changes := map[string]change{}
-	cold := maps.Clone(previous.coldInputs)
-	if cold == nil {
-		var err error
-		directory := ""
-		if e.vault != nil {
-			directory = e.vault.PrivateDirectory()
-		}
-		cold, err = validateFillConservation(context.Background(), &e.s, reader, directory)
-		if err != nil {
-			return nil, err
-		}
-	}
+	changes := map[string]fillInputChange{}
+	inputChanges := map[string]fillInputChange{}
+
 	for id := range ids {
 		before, err := fillValue[FillRecord](&oldState, oldReader, "fill_records", id)
 		if err != nil {
@@ -212,36 +210,13 @@ func (e *Engine) prepareFillValidation() (*fillValidationCheckpoint, error) {
 			if !reflect.DeepEqual(a, b) || before.Allocation.EverCommitted && !after.Allocation.EverCommitted || before.FundingDisabled && !after.FundingDisabled {
 				return nil, errors.New("write changed immutable child custody or permanent commitment")
 			}
-			for _, point := range before.Inputs {
-				for _, asset := range []chain.ID{chain.BTC, chain.Blake} {
-					key := string(asset) + "/" + pointKey(point)
-					if cold[key] == "swap/"+id {
-						delete(cold, key)
-					}
-				}
-			}
 		}
 		if !reflect.DeepEqual(before, after) {
-			changes[id] = change{before, after}
+			changes[id] = fillInputChange{before, after}
 			parents[after.ParentID] = true
 			cores[id] = true
 		}
-		if e.s.FillRecords[id] == nil && (after.Allocation.Disposition == FillReserved || after.Allocation.Disposition == FillCommitted) {
-			p, err := fillValue[ParentOrder](&e.s, reader, "parent_orders", after.ParentID)
-			if err != nil {
-				return nil, err
-			}
-			if p == nil {
-				return nil, errors.New("cold child parent is missing")
-			}
-			for _, point := range after.Inputs {
-				key := string(p.Offer.Sell) + "/" + pointKey(point)
-				if other := cold[key]; other != "" && other != "swap/"+id {
-					return nil, errors.New("cold children share live input")
-				}
-				cold[key] = "swap/" + id
-			}
-		}
+		inputChanges[id] = fillInputChange{before, after}
 	}
 	expected := map[string]fillTotals{}
 	for id := range parents {
@@ -358,52 +333,5 @@ func (e *Engine) prepareFillValidation() (*fillValidationCheckpoint, error) {
 			}
 		}
 	}
-	owners := maps.Clone(cold)
-	add := func(key, owner string) error {
-		if old := owners[key]; old != "" && old != owner {
-			return errors.New("live owners share assigned inputs")
-		}
-		owners[key] = owner
-		return nil
-	}
-	for id, f := range e.s.FillRecords {
-		if f == nil {
-			return nil, errors.New("null child")
-		}
-		if f.Allocation.Disposition != FillReserved && f.Allocation.Disposition != FillCommitted {
-			continue
-		}
-		p, err := fillValue[ParentOrder](&e.s, reader, "parent_orders", f.ParentID)
-		if err != nil {
-			return nil, err
-		}
-		if p == nil {
-			return nil, errors.New("live child parent missing")
-		}
-		for _, point := range f.Inputs {
-			if err = add(string(p.Offer.Sell)+"/"+pointKey(point), "swap/"+id); err != nil {
-				return nil, err
-			}
-		}
-		if r, ok := e.s.CoinReservations["swap/"+id]; ok && (r.Chain != p.Offer.Sell || !reflect.DeepEqual(r.Inputs, f.Inputs)) {
-			return nil, errors.New("live maker assignment changed")
-		}
-	}
-	for owner, r := range e.s.CoinReservations {
-		if !r.Chain.Valid() {
-			return nil, errors.New("invalid reservation chain")
-		}
-		seen := map[string]bool{}
-		for _, point := range r.Inputs {
-			key := string(r.Chain) + "/" + pointKey(point)
-			if !protocol.Hex32(point.TxID) || seen[key] {
-				return nil, errors.New("invalid duplicate reservation input")
-			}
-			seen[key] = true
-			if err := add(key, owner); err != nil {
-				return nil, err
-			}
-		}
-	}
-	return captureFillValidation(&e.s, cold), nil
+	return e.prepareFillInputIndex(reader, inputChanges)
 }

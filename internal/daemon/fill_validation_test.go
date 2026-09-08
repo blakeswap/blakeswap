@@ -162,7 +162,7 @@ func TestFillConservationRetiredZeroAndParentWithdrawal(t *testing.T) {
 			}
 			e.clocks[core.Long.Chain] = core.Terms.Long.RefundHeight
 			e.clocks[core.Short.Chain] = core.Terms.Short.RefundHeight
-			if err := e.advanceSwap(context.Background(), core, map[chain.ID]map[string]chain.Observation{}); err != nil {
+			if err := e.advanceSwap(context.Background(), core, map[chain.ID]map[string]chain.Observation{chain.BTC: {}, chain.Blake: {}}); err != nil {
 				t.Fatal(err)
 			}
 			if err := ValidateVaultProtocolState(e.vault, &e.s); err != nil {
@@ -287,9 +287,11 @@ func TestFillConservationUnchangedDeltaDoesNotReadColdHistory(t *testing.T) {
 		t.Fatal("unchanged save read a cold companion")
 		return storage.ArchiveRecord{}, false, errors.New("unexpected read")
 	}
-	if _, err := e.prepareFillValidation(); err != nil {
+	checkpoint, err := e.prepareFillValidation()
+	if err != nil {
 		t.Fatal(err)
 	}
+	checkpoint.abort()
 }
 
 func TestFillConservationCancellationCleansEncryptedScratch(t *testing.T) {
@@ -437,11 +439,175 @@ func TestFillConservationCheckpointOwnsNestedReviewedPolicy(t *testing.T) {
 	e, parentID, _ := conservationFixture(t)
 	parent := e.s.ParentOrders[parentID]
 	parent.Offer.Tower = &protocol.Tower{Scripts: map[chain.ID]string{chain.BTC: "reviewed payout"}}
-	checkpoint := captureFillValidation(&e.s, map[string]string{})
+	checkpoint := captureFillValidation(&e.s, nil)
 	before := protocol.Digest(checkpoint.parents[parentID])
 	parent.Offer.Tower.Scripts[chain.BTC] = "changed payout"
 	parent.Offer.Tower.BPS++
 	if protocol.Digest(checkpoint.parents[parentID]) != before {
 		t.Fatal("live mutation changed previously reviewed nested policy")
+	}
+}
+
+func TestFillConservationColdOwnersUseExactEncryptedIndex(t *testing.T) {
+	e, _, ids := conservationFixture(t)
+	raw, err := json.Marshal(e.s)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var imported State
+	if err = json.Unmarshal(raw, &imported); err != nil {
+		t.Fatal(err)
+	}
+	imported.CoinReservations = map[string]CoinReservation{}
+	for _, id := range ids {
+		f := imported.FillRecords[id]
+		f.Inputs = nil
+		for i := 0; i < 50; i++ {
+			f.Inputs = append(f.Inputs, CoinOutpoint{TxID: protocol.Digest(fmt.Sprintf("separate imported assignment/%s/%d", id, i))})
+		}
+	}
+	// A new authenticated imported checkpoint has no preceding local active grant.
+	// Structural validation establishes only custody; these are not chain proofs.
+	if err := ValidateCompleteFillState(&imported); err != nil {
+		t.Fatal("valid imported active graph", err)
+	}
+	imported.Archive = nil
+	appendRecord := func(kind, id string, v any) {
+		b, err := json.Marshal(v)
+		if err != nil {
+			t.Fatal(err)
+		}
+		imported.Archive = append(imported.Archive, storage.ArchiveRecord{Kind: kind, ID: id, Data: b})
+	}
+	for id, p := range imported.ParentOrders {
+		appendRecord("parent_orders", id, p)
+	}
+	for id, f := range imported.FillRecords {
+		appendRecord("fill_records", id, f)
+	}
+	for id, c := range imported.Swaps {
+		appendRecord("swaps", id, c)
+	}
+	for id, f := range imported.FundingFees {
+		appendRecord("funding_fees", id, f)
+	}
+	imported.ParentOrders = nil
+	imported.FillRecords = nil
+	imported.Swaps = nil
+	imported.FundingFees = nil
+	stats := storage.ArchiveStats{Kinds: map[string]uint64{}}
+	for _, r := range imported.Archive {
+		b, _ := json.Marshal(r)
+		stats.Count++
+		stats.Kinds[r.Kind]++
+		stats.Bytes += uint64(len(b) + 1)
+	}
+	imported.Capacity.Archived = stats
+	path := filepath.Join(t.TempDir(), "imported.db")
+	if err := storage.Initialize(path, []byte("separate synthetic imported custody"), imported); err != nil {
+		t.Fatal(err)
+	}
+	v, state, err := openCurrentStateVault(path, []byte("separate synthetic imported custody"))
+	if err != nil {
+		t.Fatal("valid completed cold checkpoint", err)
+	}
+	defer v.Close()
+
+	// The same valid 100-owner cold population must not leave a retained map or
+	// scratch index behind a standalone completed validation.
+	scratch := t.TempDir()
+	if err := ValidateFillConservation(context.Background(), &state, vaultFillReader{v}, scratch); err != nil {
+		t.Fatal(err)
+	}
+	if entries, err := os.ReadDir(scratch); err != nil || len(entries) != 0 {
+		t.Fatal("standalone validation retained ownership", err)
+	}
+	engine := &Engine{s: state, vault: v}
+	checkpoint, err := engine.prepareFillValidation()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := checkpoint.commit(); err != nil {
+		t.Fatal(err)
+	}
+	engine.fillValidation = checkpoint
+	verifyOwner := func(point, owner string) {
+		t.Helper()
+		tx, err := checkpoint.inputs.Begin(context.Background())
+		if err != nil {
+			t.Fatal(err)
+		}
+		value, found, err := tx.Get(point)
+		tx.Rollback()
+		defer clear(value)
+		if err != nil || !found || string(value) != owner {
+			t.Fatal("exact cold owner lost", found, err)
+		}
+	}
+	for _, id := range ids {
+		for i := 0; i < 50; i++ {
+			point := "btc/" + pointKey(CoinOutpoint{TxID: protocol.Digest(fmt.Sprintf("separate imported assignment/%s/%d", id, i))})
+			verifyOwner(point, "swap/"+id)
+		}
+	}
+	point := CoinOutpoint{TxID: protocol.Digest(fmt.Sprintf("separate imported assignment/%s/%d", ids[0], 0))}
+	engine.s.CoinReservations = map[string]CoinReservation{"send/new": {Chain: chain.BTC, Inputs: []CoinOutpoint{point}}}
+	if next, err := engine.prepareFillValidation(); err == nil {
+		next.abort()
+		t.Fatal("new active owner collided with untouched cold authority")
+	}
+	verifyOwner("btc/"+pointKey(point), "swap/"+ids[0])
+	// A candidate discarded before authoritative publication must leave no entry.
+	fresh := CoinOutpoint{TxID: protocol.Digest("independent prospective input")}
+	engine.s.CoinReservations = map[string]CoinReservation{"send/new": {Chain: chain.BTC, Inputs: []CoinOutpoint{fresh}}}
+	next, err := engine.prepareFillValidation()
+	if err != nil {
+		t.Fatal(err)
+	}
+	next.abort()
+	tx, err := checkpoint.inputs.Begin(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	value, found, err := tx.Get("btc/" + pointKey(fresh))
+	tx.Rollback()
+	clear(value)
+	if err != nil || found {
+		t.Fatal("discarded candidate changed input index", found, err)
+	}
+}
+
+func TestFillConservationFailedVaultCommitRollsBackOwnershipIndex(t *testing.T) {
+	e, _, ids := conservationFixture(t)
+	point := CoinOutpoint{TxID: protocol.Digest("prospective signed-send input")}
+	e.s.CoinReservations["send/prospective"] = CoinReservation{Chain: chain.BTC, Inputs: []CoinOutpoint{point}}
+	// Inject a storage rejection after the graph/index preparation, without
+	// closing the vault (which also owns the disposable index lifetime).
+	e.archivePuts = map[string]storage.ArchiveRecord{"invalid": {Kind: "unrelated", ID: "invalid", Data: json.RawMessage("not JSON")}}
+	if err := e.save(); err == nil || e.fatal == nil {
+		t.Fatal("expected authoritative commit rejection", err)
+	}
+	var saved State
+	if _, err := e.vault.Load(&saved); err != nil {
+		t.Fatal(err)
+	}
+	if _, exists := saved.CoinReservations["send/prospective"]; exists {
+		t.Fatal("failed vault commit published prospective input")
+	}
+	tx, err := e.fillValidation.inputs.Begin(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer tx.Rollback()
+	value, found, err := tx.Get("btc/" + pointKey(point))
+	clear(value)
+	if err != nil || found {
+		t.Fatal("failed vault commit changed ownership index", found, err)
+	}
+	prior := saved.FillRecords[ids[0]].Inputs[0]
+	value, found, err = tx.Get("btc/" + pointKey(prior))
+	defer clear(value)
+	if err != nil || !found || string(value) != "swap/"+ids[0] {
+		t.Fatal("failed commit lost prior ownership", found, err)
 	}
 }

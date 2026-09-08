@@ -289,6 +289,9 @@ func (e *Engine) Close() error {
 		}
 	}
 	e.activitySnapshots = nil
+	if e.fillValidation != nil && e.fillValidation.inputs != nil {
+		_ = e.fillValidation.inputs.Close()
+	}
 	e.mu.Unlock()
 	for _, r := range e.nodes {
 		_ = r.Close()
@@ -320,6 +323,7 @@ func (e *Engine) persistState() error {
 		e.fatal = fmt.Errorf("fill custody validation failed; execution stopped: %w", err)
 		return e.fatal
 	}
+	defer fillCheckpoint.abort()
 	parts, err := stateSemanticParts(e.s)
 	if err != nil {
 		return err
@@ -344,6 +348,10 @@ func (e *Engine) persistState() error {
 	}
 	if err != nil {
 		e.fatal = fmt.Errorf("durability failure; execution stopped: %w", err)
+		return e.fatal
+	}
+	if err := fillCheckpoint.commit(); err != nil {
+		e.fatal = fmt.Errorf("fill validation index failed; execution stopped: %w", err)
 		return e.fatal
 	}
 	e.fillValidation = fillCheckpoint

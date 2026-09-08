@@ -250,24 +250,23 @@ type fillInputRow struct{ Point, Owner string }
 // one parent aggregate and at most 32 output rows are decoded at a time, without
 // a lifetime parent/child map. directory is private disposable scratch storage.
 func ValidateFillConservation(ctx context.Context, s *State, reader FillStateReader, directory string) error {
-	_, err := validateFillConservation(ctx, s, reader, directory)
-	return err
+	return validateFillConservation(ctx, s, reader, directory, nil)
 }
-func validateFillConservation(ctx context.Context, s *State, reader FillStateReader, directory string) (map[string]string, error) {
+func validateFillConservation(ctx context.Context, s *State, reader FillStateReader, directory string, input func(fillInputRow) error) error {
 	if err := ValidateStateVersion(s); err != nil {
-		return nil, err
+		return err
 	}
 	if len(s.Archive) != 0 {
-		return nil, errors.New("completed conservation requires separated archive custody")
+		return errors.New("completed conservation requires separated archive custody")
 	}
 	totals, err := storage.NewRowSorter(ctx, directory, func(a, b []byte) bool { return bytes.Compare(a, b) < 0 })
 	if err != nil {
-		return nil, err
+		return err
 	}
 	defer totals.Close()
 	inputs, err := storage.NewRowSorter(ctx, directory, func(a, b []byte) bool { return bytes.Compare(a, b) < 0 })
 	if err != nil {
-		return nil, err
+		return err
 	}
 	defer inputs.Close()
 	addTotal := func(row fillTotalRow) error {
@@ -283,8 +282,7 @@ func validateFillConservation(ctx context.Context, s *State, reader FillStateRea
 		defer clear(raw)
 		return inputs.Add([]byte(point), raw)
 	}
-	coldInputs := map[string]string{}
-	visit := func(kind, id string, cold bool) error {
+	visit := func(kind, id string) error {
 		if err := ctx.Err(); err != nil {
 			return err
 		}
@@ -319,12 +317,6 @@ func validateFillConservation(ctx context.Context, s *State, reader FillStateRea
 					if err = addInput(key, owner); err != nil {
 						return err
 					}
-					if cold {
-						if other := coldInputs[key]; other != "" && other != owner {
-							return errors.New("cold live children share an input")
-						}
-						coldInputs[key] = owner
-					}
 				}
 			}
 		case "swaps":
@@ -350,12 +342,12 @@ func validateFillConservation(ctx context.Context, s *State, reader FillStateRea
 	for _, kind := range []string{"parent_orders", "fill_records", "swaps"} {
 		group, err := archiveMap(s, kind, false)
 		if err != nil {
-			return nil, err
+			return err
 		}
 		if group.IsValid() {
 			for _, key := range group.MapKeys() {
-				if err = visit(kind, key.String(), false); err != nil {
-					return nil, err
+				if err = visit(kind, key.String()); err != nil {
+					return err
 				}
 			}
 		}
@@ -368,24 +360,24 @@ func validateFillConservation(ctx context.Context, s *State, reader FillStateRea
 			if _, err := ValidateArchiveRecordAgainstState(*s, record); err != nil {
 				return err
 			}
-			return visit(record.Kind, record.ID, true)
+			return visit(record.Kind, record.ID)
 		}); err != nil {
-			return nil, err
+			return err
 		}
 	}
 	for owner, r := range s.CoinReservations {
 		if !r.Chain.Valid() {
-			return nil, errors.New("input reservation has invalid chain")
+			return errors.New("input reservation has invalid chain")
 		}
 		seen := map[string]bool{}
 		for _, p := range r.Inputs {
 			point := string(r.Chain) + "/" + pointKey(p)
 			if !protocol.Hex32(p.TxID) || seen[point] {
-				return nil, errors.New("invalid reserved input")
+				return errors.New("invalid reserved input")
 			}
 			seen[point] = true
 			if err = addInput(point, owner); err != nil {
-				return nil, err
+				return err
 			}
 		}
 	}
@@ -423,10 +415,10 @@ func validateFillConservation(ctx context.Context, s *State, reader FillStateRea
 		}
 		return sum.add(row.Totals, 1)
 	}); err != nil {
-		return nil, err
+		return err
 	}
 	if err = finish(); err != nil {
-		return nil, err
+		return err
 	}
 	var previous fillInputRow
 	if err = visitFillSorted(ctx, inputs, func(raw []byte) error {
@@ -434,15 +426,21 @@ func validateFillConservation(ctx context.Context, s *State, reader FillStateRea
 		if err := json.Unmarshal(raw, &row); err != nil {
 			return err
 		}
-		if previous.Point == row.Point && previous.Owner != row.Owner {
-			return errors.New("live owners share an assigned funding input")
+		if previous.Point == row.Point {
+			if previous.Owner != row.Owner {
+				return errors.New("live owners share an assigned funding input")
+			}
+			return nil
 		}
 		previous = row
+		if input != nil {
+			return input(row)
+		}
 		return nil
 	}); err != nil {
-		return nil, err
+		return err
 	}
-	return coldInputs, ctx.Err()
+	return ctx.Err()
 }
 func visitFillSorted(ctx context.Context, sorter *storage.RowSorter, visit func([]byte) error) error {
 	rows, err := sorter.Finish()

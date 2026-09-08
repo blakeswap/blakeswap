@@ -231,10 +231,15 @@ live input assignments. Single streamed rows receive structural validation only;
 the authoritative graph check runs after all records arrive and before the private
 copy becomes installable. Existing-vault preflight and activation repeat the same
 check without repairing a rejected source. Encrypted external sorting bounds
-working memory rather than assembling lifetime child arrays. Ordinary saves use
-previously validated parent totals plus exact changed-child contributions and
-point reads for touched cold companions; they do not rescan lifetime history on
-each tick. Validation does not establish chain finality or clear imported holds.
+working memory rather than assembling lifetime child arrays. Standalone checks
+retain no input-owner collection. Live engines build an independently keyed,
+encrypted disposable exact-key input index in bounded batches, including cold
+unresolved owners. Ordinary saves use previously validated parent totals plus
+exact changed-child contributions and point reads for touched cold companions;
+they stage affected index changes until the authoritative vault commit succeeds.
+They do not scan or copy the cold ownership population on each tick. Closing the
+engine or its vault removes the index; restart rebuilds it from authenticated
+custody. Validation does not establish chain finality or clear imported holds.
 
 The quote/confirmation API and native review bind wallet, network, signed parent
 event/revision, q, derived b, min/max/remaining, effective rate, net proceeds and

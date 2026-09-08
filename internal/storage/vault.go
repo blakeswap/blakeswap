@@ -13,16 +13,22 @@ import (
 	"golang.org/x/crypto/scrypt"
 	"os"
 	"path/filepath"
+	"sync"
 	"time"
 )
 
 var bucket = []byte("vault-v1")
 
 type Vault struct {
-	path       string
-	db         *bolt.DB
-	aead       cipher.AEAD
-	archiveKey []byte
+	privateMu      sync.Mutex
+	privateClosed  bool
+	privateIndexes []*PrivateIndex
+	closeOnce      sync.Once
+	closeErr       error
+	path           string
+	db             *bolt.DB
+	aead           cipher.AEAD
+	archiveKey     []byte
 }
 
 func Open(path string, password []byte) (*Vault, error) {
@@ -180,7 +186,20 @@ func (v *Vault) Save(state any) error {
 	_, err := v.CommitArchive(state, ArchiveBatch{Put: records}, 0)
 	return err
 }
-func (v *Vault) Close() error { return v.db.Close() }
+func (v *Vault) Close() error {
+	v.closeOnce.Do(func() {
+		v.privateMu.Lock()
+		v.privateClosed = true
+		indexes := v.privateIndexes
+		v.privateIndexes = nil
+		v.privateMu.Unlock()
+		for _, index := range indexes {
+			v.closeErr = errors.Join(v.closeErr, index.Close())
+		}
+		v.closeErr = errors.Join(v.closeErr, v.db.Close())
+	})
+	return v.closeErr
+}
 func (v *Vault) Backup(path string) error {
 	return v.db.View(func(tx *bolt.Tx) error { return tx.CopyFile(path, 0600) })
 }
