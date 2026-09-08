@@ -92,6 +92,9 @@ func PrepareStreamedRecovery(s *State, stats storage.ArchiveStats, snapshotAt in
 			return errors.New("streamed recovery retains live publication archive")
 		}
 	}
+	if err := ValidateCompleteFillState(s); err != nil {
+		return err
+	}
 	return prepareRecoveryActive(s, snapshotAt, legacy)
 }
 

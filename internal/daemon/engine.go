@@ -33,6 +33,7 @@ type Engine struct {
 	observedSpendProofs      map[contract.HTLC]observedSpendProof
 	observedSpendReads       int
 	observedSpendBytes       int
+	fillValidation           *fillValidationCheckpoint
 	authorizationEpoch       string
 	strategyVerifiedSwaps    map[string]bool
 	strategyReporting        atomic.Bool
@@ -164,6 +165,7 @@ func Open(ctx context.Context, c Config) (*Engine, error) {
 	en := &Engine{chainFresh: map[chain.ID]bool{}, chainObserved: map[chain.ID]int64{}, chainErrors: map[chain.ID]string{}, chainGeneration: map[chain.ID]uint64{}, Config: c, vault: v, nodes: map[chain.ID]chain.Backend{}, watch: map[chain.ID]chain.Backend{}, scanners: map[chain.ID]chain.SpendScanner{}, addresses: map[chain.ID]string{}, scripts: map[chain.ID][]byte{}, heights: map[chain.ID]uint32{}, clocks: map[chain.ID]uint32{}, balances: map[chain.ID]int64{}}
 	fail := func(err error) (*Engine, error) { en.Close(); return nil, err }
 	en.s = state
+	en.fillValidation = captureFillValidation(&state, nil)
 	if c.InitialMnemonic != "" && c.InitialMnemonic != en.s.Mnemonic {
 		return fail(errors.New("wallet seed differs from this profile"))
 	}
@@ -313,6 +315,11 @@ func (e *Engine) persistState() error {
 	if e.fatal != nil && !errors.Is(e.fatal, errEngineClosed) {
 		return e.fatal
 	}
+	fillCheckpoint, err := e.prepareFillValidation()
+	if err != nil {
+		e.fatal = fmt.Errorf("fill custody validation failed; execution stopped: %w", err)
+		return e.fatal
+	}
 	parts, err := stateSemanticParts(e.s)
 	if err != nil {
 		return err
@@ -339,6 +346,7 @@ func (e *Engine) persistState() error {
 		e.fatal = fmt.Errorf("durability failure; execution stopped: %w", err)
 		return e.fatal
 	}
+	e.fillValidation = fillCheckpoint
 	e.archivePuts, e.archiveDeletes, e.archiveOrigins = nil, nil, nil
 	e.semanticParts = &parts
 	e.backupFingerprint, e.stateBytes = parts.Complete, stateBytes

@@ -76,6 +76,9 @@ func (n *backupNetwork) restore(ctx context.Context, path string, password []byt
 				return write(cold)
 			})
 		})
+		if err == nil {
+			err = daemon.ValidateVaultProtocolStateContext(ctx, vault, &active)
+		}
 		closeErr := vault.Close()
 		if err == nil {
 			err = closeErr

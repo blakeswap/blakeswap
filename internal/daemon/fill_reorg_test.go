@@ -383,7 +383,9 @@ func TestParentFillRestoredPrecommitChargesOnlyOnPositiveOwnProof(t *testing.T) 
 				}
 				earlier.Short = bound // Public outpoint knowledge, no saved own signing permission.
 			}
-			e.s = restored
+			// Install the exported checkpoint in an independent private vault;
+			// rewinding a live funded Engine would erase permanent local charges.
+			e = conservationRestoredEngine(t, e, restored)
 			markRestored(t, e)
 			p := e.s.ParentOrders[e.s.FillRecords[children[0].ID].ParentID]
 			for _, problem := range []string{"absence", "incomplete", "mempool", "bad signature"} {

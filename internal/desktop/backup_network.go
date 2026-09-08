@@ -117,6 +117,9 @@ func (s *portableStaging) saveStream(ctx context.Context, active daemon.State, s
 			return write(record)
 		})
 	})
+	if err == nil {
+		err = daemon.ValidateVaultProtocolStateContext(ctx, vault, &active)
+	}
 	closeErr := vault.Close()
 	if err == nil {
 		err = closeErr
@@ -180,6 +183,9 @@ func (n *backupNetwork) validateSnapshot(ctx context.Context, mnemonic string, n
 			}
 			return storage.WriteJSONRecord(ctx, digest, record)
 		}); err != nil {
+			return err
+		}
+		if err := daemon.ValidateFillConservation(ctx, &active, view, ""); err != nil {
 			return err
 		}
 		mark.Fingerprint = hex.EncodeToString(digest.Sum(nil))

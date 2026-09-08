@@ -166,6 +166,9 @@ func CompleteState(state State) (State, error) {
 	if err := ValidateProtocolState(&complete); err != nil {
 		return State{}, err
 	}
+	if err := ValidateCompleteFillState(&complete); err != nil {
+		return State{}, err
+	}
 	if complete.Capacity != nil {
 		complete.Capacity.Archived = storage.ArchiveStats{Kinds: map[string]uint64{}}
 	}
@@ -180,7 +183,7 @@ func ValidateArchiveState(state State) error {
 		if state.Capacity != nil && state.Capacity.Archived.Count != 0 {
 			return errors.New("backup omits its declared archived recovery records")
 		}
-		return nil
+		return ValidateCompleteFillState(&state)
 	}
 	if state.Capacity == nil {
 		return errors.New("unsupported archived wallet state")
@@ -219,6 +222,9 @@ func (s State) VaultSnapshot() (any, []storage.ArchiveRecord, error) {
 		return nil, nil, err
 	}
 	if len(s.Archive) == 0 {
+		if err := ValidateCompleteFillState(&s); err != nil {
+			return nil, nil, err
+		}
 		return s, nil, nil
 	}
 	if _, err := CompleteState(s); err != nil {

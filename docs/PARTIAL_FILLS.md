@@ -224,6 +224,18 @@ bounded active aggregate metadata, but a location change cannot change bins,
 lose exact duplicate responses or resume old publication. Streamed restore
 cross-checks parent/child ownership before installation and holds publishers.
 
+Completed-state validation joins exact active and archived parent, child, core
+and fee companions. It reconciles every child-owned bin, parent withdrawals,
+reserved and permanent per-asset charges, immutable accepted terms and conflicting
+live input assignments. Single streamed rows receive structural validation only;
+the authoritative graph check runs after all records arrive and before the private
+copy becomes installable. Existing-vault preflight and activation repeat the same
+check without repairing a rejected source. Encrypted external sorting bounds
+working memory rather than assembling lifetime child arrays. Ordinary saves use
+previously validated parent totals plus exact changed-child contributions and
+point reads for touched cold companions; they do not rescan lifetime history on
+each tick. Validation does not establish chain finality or clear imported holds.
+
 The quote/confirmation API and native review bind wallet, network, signed parent
 event/revision, q, derived b, min/max/remaining, effective rate, net proceeds and
 per-child costs. A stale asynchronous response or persisted confirmation retry

@@ -1,6 +1,7 @@
 package daemon
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 
@@ -147,6 +148,15 @@ func PreflightStateVersion(path string, password []byte) error {
 // so all bounded pages belong to the same committed file. Activation repeats
 // this check under writer ownership after a read-only preflight releases it.
 func ValidateVaultProtocolState(v *storage.Vault, s *State) error {
+	return ValidateVaultProtocolStateContext(context.Background(), v, s)
+}
+
+// ValidateVaultProtocolStateContext keeps cancellation attached to completed
+// private import/snapshot validation, including the final external-sort pass.
+func ValidateVaultProtocolStateContext(ctx context.Context, v *storage.Vault, s *State) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	if err := ValidateProtocolState(s); err != nil {
 		return err
 	}
@@ -158,6 +168,9 @@ func ValidateVaultProtocolState(v *storage.Vault, s *State) error {
 		return err
 	}
 	for _, swap := range s.Swaps {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
 		if err := validateVaultSwapIdentity(v, s, swap); err != nil {
 			return err
 		}
@@ -172,6 +185,9 @@ func ValidateVaultProtocolState(v *storage.Vault, s *State) error {
 		}
 		cursor := ""
 		for {
+			if err := ctx.Err(); err != nil {
+				return err
+			}
 			records, next, err := v.ArchivePage(kind, cursor, 32)
 			if err != nil {
 				return err
@@ -196,7 +212,7 @@ func ValidateVaultProtocolState(v *storage.Vault, s *State) error {
 			cursor = next
 		}
 	}
-	return nil
+	return ValidateFillConservation(ctx, s, vaultFillReader{v}, v.PrivateDirectory())
 }
 
 // openCurrentStateVault returns an exclusively owned current-format checkpoint.
