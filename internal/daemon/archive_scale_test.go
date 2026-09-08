@@ -23,11 +23,27 @@ func TestArchiveLifetimeWorkloadAndMailboxSettlementBudget(t *testing.T) {
 	if os.Getenv("BLAKESWAP_ARCHIVE_SCALE") != "1" {
 		t.Skip("explicit combined engine scale acceptance")
 	}
-	const completed = 1001
-	const messages = 10017
+	archiveScaleWorkload(t, 1001, 10017)
+}
+
+func TestArchiveScaleCurrentFixture(t *testing.T) {
+	t.Run("original_mini", func(t *testing.T) { archiveScaleWorkload(t, 3, 3) })
+	t.Run("batch_boundary", func(t *testing.T) { archiveScaleWorkload(t, 17, 65) })
+}
+
+func archiveScaleWorkload(t *testing.T, completed, messages int) {
 	ctx := context.Background()
-	e, s, _, _ := isolatedFixture(t, "maker")
+	e, s, _, _ := isolatedTowerFixture(t)
+	t.Cleanup(func() {
+		e.nodes = nil // In-memory backends have no transport Close implementation.
+		if err := e.Close(); err != nil {
+			t.Error(err)
+		}
+	})
 	e.Config.Mode = "trader"
+	e.Config.Name = "archive-scale"
+	// This separately initialized installation has no participant custody.
+	// Allocate its optional maps without clearing the participant's saved state.
 	e.s.Swaps = map[string]*Swap{}
 	e.s.Sends = map[string]*WalletSend{}
 	e.s.TowerJobs = map[string]*TowerJob{}
@@ -88,20 +104,14 @@ func TestArchiveLifetimeWorkloadAndMailboxSettlementBudget(t *testing.T) {
 			t.Fatal(err)
 		}
 		e.s.TowerJobs[id] = &TowerJob{Job: job, Confirmed: 200}
-		offer := protocol.Offer{ID: id, Maker: e.identity.Public().Hex(), Sell: chainID, SellAmount: 1000000, BuyAmount: 2000000, Expires: time.Now().Unix() + 3600, Status: "filled"}
-		event, err := e.signOffer(offer, nostr.Now())
-		if err != nil {
-			t.Fatal(err)
-		}
-		e.s.Offers[id] = event
-		e.s.Book[offer.Maker+":"+id] = event
+		scaleCompletedOrder(t, e, chainID, 1000000, 2000000)
 	}
 	if err := e.save(); err != nil {
 		t.Fatal(err)
 	}
 	start := time.Now()
 	cycles := 0
-	for len(e.s.Sends)+len(e.s.TowerJobs)+len(e.s.Offers) != 0 {
+	for len(e.s.Sends)+len(e.s.TowerJobs)+len(e.s.Offers)+len(e.s.ParentOrders) != 0 {
 		if err := e.compactArchive(ctx, nil, observations); err != nil {
 			t.Fatal(err)
 		}
@@ -117,6 +127,18 @@ func TestArchiveLifetimeWorkloadAndMailboxSettlementBudget(t *testing.T) {
 	if len(e.s.Book) > 100 || len(e.Status().Orders) > 100 {
 		t.Fatalf("completed own offers remain in the active public/status view: book=%d status=%d", len(e.s.Book), len(e.Status().Orders))
 	}
+	if err := ValidateVaultProtocolState(e.vault, &e.s); err != nil {
+		t.Fatal(err)
+	}
+	for _, kind := range []string{"sends", "offers", "tower_jobs", "parent_orders", "fill_records", "swaps"} {
+		if e.s.Capacity.Archived.Kinds[kind] != uint64(completed) {
+			t.Fatal("physical compaction lost retained population", kind)
+		}
+	}
+	page := scaleFilledMarket(t, e)
+	if page.Total != completed || len(page.Records) != 1 {
+		t.Fatal("physically archived filled orders lost exact custody", page.Total)
+	}
 	if err := e.admitWork("send"); err != nil {
 		t.Fatal("finished lifetime history blocked new work", err)
 	}
@@ -126,7 +148,7 @@ func TestArchiveLifetimeWorkloadAndMailboxSettlementBudget(t *testing.T) {
 	for i := range events {
 		id := fmt.Sprintf("%064x", i+100000)
 		body, _ := json.Marshal(map[string]string{"id": id, "digest": id})
-		message := transport.Message{Version: 1, ID: id, Type: "ack", SwapID: s.ID, Body: body}
+		message := transport.Message{Version: transport.MessageVersion, ID: id, Type: "ack", SwapID: s.ID, Body: body}
 		event, err := transport.WrapFor(e.Config.Network.Namespace(), peer, e.identity.Public(), message)
 		if err != nil {
 			t.Fatal(err)
@@ -145,7 +167,7 @@ func TestArchiveLifetimeWorkloadAndMailboxSettlementBudget(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	if e.s.Capacity.Archived.Kinds["seen"] != messages {
+	if e.s.Capacity.Archived.Kinds["seen"] != uint64(messages) {
 		t.Fatal("processed mailbox identity lost")
 	}
 	e.relayCancel = func() {}
@@ -209,4 +231,41 @@ func TestArchiveLifetimeWorkloadAndMailboxSettlementBudget(t *testing.T) {
 	if maxTick > 2*time.Second || maxStatus > 250*time.Millisecond {
 		t.Fatal("local scale execution budget exceeded", maxTick, maxStatus)
 	}
+}
+
+// Construct already-settled query custody with exact signed parent/child
+// identities and the reviewed pure allocation transitions. Explicitly placing
+// the child cold is setup, not evidence of chain finality or hot-swap compaction.
+// The caller still exercises ordinary compaction of the retained parent offer.
+func scaleCompletedOrder(t *testing.T, e *Engine, sell chain.ID, sellAmount, buyAmount int64) protocol.Offer {
+	t.Helper()
+	btc, blake := sellAmount, buyAmount
+	if sell == chain.Blake {
+		btc, blake = buyAmount, sellAmount
+	}
+	offer := marketOffer(t, e, true, sell, btc, blake, "filled", time.Now().Unix()+3600)
+	event := e.s.Offers[offer.ID]
+	// Model only this completed offer's drained publication; never discard an
+	// unrelated pending message or an established child's durable authority.
+	delete(e.s.Outbox, event.ID.Hex())
+	record := e.s.OrderRecords[offer.ID]
+	if len(record.Settlements) != 1 {
+		t.Fatal("completed whole order must retain exactly one allocated child")
+	}
+	for id := range record.Settlements {
+		if err := e.stageArchive("swaps", id); err != nil {
+			t.Fatal(err)
+		}
+	}
+	return offer
+}
+
+func scaleFilledMarket(t *testing.T, e *Engine) MarketPage {
+	t.Helper()
+	raw, _ := json.Marshal(MarketQuery{ExpectedWallet: e.Config.Name, ExpectedNetwork: string(e.Config.Network), Owner: "mine", Status: "filled", Limit: 1})
+	result, err := e.historyCommand(context.Background(), Request{Method: "market.list", Params: raw})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return result.(MarketPage)
 }
