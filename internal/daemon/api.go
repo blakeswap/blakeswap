@@ -140,9 +140,18 @@ func (e *Engine) status() Status {
 func (e *Engine) publicSwap(swap *Swap) PublicSwap {
 	p := PublicSwap{ID: swap.ID, Role: swap.Role, Stage: swap.Stage, Error: swap.Error, Long: swap.Long, Short: swap.Short, LongSpend: swap.LongSpend, ShortSpend: swap.ShortSpend, LongConfirmations: swap.LongConfirmations, ShortConfirmations: swap.ShortConfirmations, TowerPaid: swap.TowerPaid, TowerReady: towerReady(swap), SecretRevealed: swap.SecretExposed}
 	p.OwnerFeeCap = swap.OwnerFeeCap
-	p.FundingFee = e.fundingFee("swap/" + swap.ID)
-	if swap.Role == "maker" && swap.Terms != nil {
-		p.FundingFee = e.fundingFee("offer/" + swap.Terms.Offer().ID)
+	if selection, found := e.s.FundingFees["swap/"+swap.ID]; found {
+		p.FundingFee = selection.FundingFee
+	} else {
+		p.Error = "Exact child funding fee is unavailable. " + p.Error
+	}
+	var parent protocol.Offer
+	if json.Unmarshal([]byte(swap.Request.OfferEvent.Content), &parent) == nil {
+		p.ParentID, p.ParentMaker = parent.ID, parent.Maker
+		p.ParentRevision, p.Quantity = swap.Request.Revision, swap.Request.Quantity
+	}
+	if child := e.s.FillRecords[swap.ID]; swap.Role == "maker" && child != nil {
+		p.Allocation, p.AllocatedQuantity, p.AllocationKnown = child.Allocation.Disposition, child.Allocation.currentQuantity(), true
 	}
 	p.ClaimVariants = transactionIDs(swap.SelfClaims)
 	p.ClaimTxID, p.ClaimFee = settlementVariant(swap.SelfClaims, swap.ClaimVariant, swap.Long, swap.Short, swap.Role == "maker")

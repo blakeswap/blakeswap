@@ -249,25 +249,29 @@ func (e *Engine) syncActivity() {
 		if json.Unmarshal([]byte(s.Request.OfferEvent.Content), &o) != nil {
 			continue
 		}
-		paid, principal, received, receive := o.Sell, o.SellAmount, o.Sell.Other(), o.BuyAmount
+		buy, err := protocol.RoundedBuy(o.SellAmount, o.BuyAmount, s.Request.Quantity)
+		if err != nil {
+			continue
+		}
+		paid, principal, received, receive := o.Sell, s.Request.Quantity, o.Sell.Other(), buy
 		if s.Role == "taker" {
 			paid, principal, received, receive = received, receive, paid, principal
 		}
 		group := activityID("swap", id)
 		e.putActivity(Activity{ID: group, GroupID: group, Kind: "swap", Chain: paid, Direction: "info", Principal: principal, CounterChain: received, CounterAmount: receive, OrderID: o.ID, SwapID: id, LocalStatus: s.Stage, Status: s.Stage, Label: "Swap " + s.Role}, backfill)
 		own, incoming, ownRaw, ownSent, ownSpend, incomingSpend := s.Short, s.Long, s.ShortFunding, s.ShortSent, s.ShortSpend, s.LongSpend
-		owner := "offer/" + o.ID
+		owner := "swap/" + id
 		if s.Role == "taker" {
 			own, incoming, ownRaw, ownSent, ownSpend, incomingSpend = s.Long, s.Short, s.LongFunding, s.LongSent, s.LongSpend, s.ShortSpend
-			owner = "swap/" + id
 		}
 		if ownRaw != "" {
 			status := "prepared"
 			if ownSent {
 				status = "broadcast"
 			}
-			fee := e.fundingFee(owner)
-			e.putActivity(Activity{ID: group + "/funding", GroupID: group, Kind: "swap_funding", Chain: own.Chain, Direction: "outgoing", Movement: true, Amount: own.Amount + fee, Principal: own.Amount, Fee: fee, FeeKnown: true, FeePayer: "wallet", OrderID: o.ID, SwapID: id, TxID: own.TxID, Variants: []string{own.TxID}, Outpoints: []CoinOutpoint{{TxID: own.TxID, Vout: own.Vout}}, LocalStatus: status, Status: status, Label: "Swap funding"}, backfill)
+			selection, known := e.s.FundingFees[owner]
+			fee := selection.FundingFee
+			e.putActivity(Activity{ID: group + "/funding", GroupID: group, Kind: "swap_funding", Chain: own.Chain, Direction: "outgoing", Movement: true, Amount: own.Amount + fee, Principal: own.Amount, Fee: fee, FeeKnown: known && fee > 0, FeePayer: "wallet", OrderID: o.ID, SwapID: id, TxID: own.TxID, Variants: []string{own.TxID}, Outpoints: []CoinOutpoint{{TxID: own.TxID, Vout: own.Vout}}, LocalStatus: status, Status: status, Label: "Swap funding"}, backfill)
 		}
 		claimRaw := append([]string{}, s.SelfClaims...)
 		if s.SelfClaim != "" {

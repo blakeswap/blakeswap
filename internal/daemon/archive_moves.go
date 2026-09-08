@@ -6,13 +6,13 @@ import (
 	"fmt"
 	"reflect"
 
+	"github.com/blakeswap/blakeswap/internal/protocol"
 	"github.com/blakeswap/blakeswap/internal/storage"
 )
 
 func archiveMoveKey(kind, id string) string { return kind + "\x00" + id }
 
-// A local maker child still needs its parent's fee after terminal settlement,
-// while its recent evidence remains in the hot set.
+// A parent ledger stays hot while any local maker child can update its bins.
 func (e *Engine) activeMakerParents() map[string]bool {
 	parents := map[string]bool{}
 	for _, swap := range e.s.Swaps {
@@ -23,9 +23,8 @@ func (e *Engine) activeMakerParents() map[string]bool {
 	return parents
 }
 
-// Older archive checkpoints could split a recent child from its parent's fee.
-// Repair only these bounded exact fee companions before startup consumers run;
-// this never reactivates an offer, receipt or publication authority.
+// Repair only exact child fee companions before startup consumers run; this
+// never reactivates an offer, receipt or publication authority.
 func (e *Engine) restoreActiveFundingFees() error {
 	owners := map[string]bool{}
 	for _, swap := range e.s.Swaps {
@@ -33,9 +32,6 @@ func (e *Engine) restoreActiveFundingFees() error {
 			continue
 		}
 		owner := "swap/" + swap.ID
-		if swap.Role == "maker" && swap.Terms != nil {
-			owner = "offer/" + swap.Terms.Offer().ID
-		}
 		owners[owner] = true
 	}
 	for _, owner := range sortedArchiveIDs(owners) {
@@ -90,6 +86,9 @@ func (e *Engine) archiveDelta(record storage.ArchiveRecord, add bool) error {
 func (e *Engine) stageArchive(kind, id string) error {
 	if kind == "swaps" && e.s.Swaps[id] != nil {
 		if err := e.retainSwapIdentity(e.s.Swaps[id]); err != nil {
+			return err
+		}
+		if err := e.stageArchive("fill_records", id); err != nil {
 			return err
 		}
 	}
@@ -187,8 +186,34 @@ func (e *Engine) collectArchiveActivation(kind, id string, visited map[string]bo
 		if err := json.Unmarshal(record.Data, &swap); err != nil {
 			return false, err
 		}
-		if swap.Role == "maker" && swap.Terms != nil {
-			companions = append(companions, storage.ArchiveKey{Kind: "funding_fees", ID: "offer/" + swap.Terms.Offer().ID})
+		if swap.Role == "maker" {
+			fill, err := e.fillSummary(&swap, true)
+			if err != nil {
+				return false, err
+			}
+			parent := e.s.ParentOrders[fill.ParentID]
+			if parent == nil {
+				var cold ParentOrder
+				found, err := e.archivedValue("parent_orders", fill.ParentID, &cold)
+				if err != nil {
+					return false, err
+				}
+				if !found {
+					return false, errors.New("retained maker child has no parent ledger")
+				}
+				parent = &cold
+			}
+			var offered protocol.Offer
+			if err := json.Unmarshal([]byte(swap.Request.OfferEvent.Content), &offered); err != nil {
+				return false, err
+			}
+			if err := validateParentOrder(fill.ParentID, parent); err != nil {
+				return false, err
+			}
+			if parent.Offer.Maker != fill.ParentMaker || parent.Economics != offered.EconomicsDigest() {
+				return false, errors.New("retained child belongs to another parent ledger")
+			}
+			companions = append(companions, storage.ArchiveKey{Kind: "parent_orders", ID: fill.ParentID}, storage.ArchiveKey{Kind: "fill_records", ID: id})
 		}
 	case "sends":
 		companions = append(companions, storage.ArchiveKey{Kind: "recovery_sends", ID: id})
