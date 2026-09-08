@@ -246,14 +246,8 @@ func (e *Engine) validateStrategyEdit(q StrategyEdit) error {
 	if err := e.tradeBinding(c.Wallet, string(c.Network)); err != nil {
 		return err
 	}
-	if !protocol.Hex32(c.ID) {
-		return errors.New("strategy requires a new 32-byte ID")
-	}
-	if c.MinSpreadBPS < 1 || c.MaxSpreadBPS > 2000 || c.MinSpreadBPS > c.SpreadBPS || c.SpreadBPS > c.MaxSpreadBPS || c.SkewBPS < 0 || c.SkewBPS > c.MaxSpreadBPS-c.MinSpreadBPS {
-		return errors.New("review ordered 1–2000 bps spread bounds and a bounded inventory skew")
-	}
-	if c.MaxConsecutiveFailures < 1 || c.MaxConsecutiveFailures > 20 || c.MaxReplacementFailures < 1 || c.MaxReplacementFailures > 20 || c.FailureRateBPS < 1 || c.FailureRateBPS > 10000 {
-		return errors.New("review 1–20 consecutive/replacement failures and a 1–10000 bps failure-rate breaker")
+	if err := validateStrategyConfig(c, e.identity.Public().Hex()); err != nil {
+		return err
 	}
 	old := e.s.MakerStrategies[c.ID]
 	if old == nil {
@@ -264,10 +258,6 @@ func (e *Engine) validateStrategyEdit(q StrategyEdit) error {
 		return errors.New("strategy changed; reopen current wallet authorization")
 	}
 	for _, id := range []chain.ID{chain.BTC, chain.Blake} {
-		s := c.side(id)
-		if s.MinimumReserve < 0 || s.Target <= s.MinimumReserve || s.Target > contract.MaxMoney || s.MaxExposure < s.MaxOffer || s.MaxExposure > contract.MaxMoney || s.MinOffer < 100000 || s.MinOffer > s.MaxOffer {
-			return errors.New("each asset needs ordered target/reserve, exposure and whole-offer limits")
-		}
 		child := e.s.Automations[strategyPolicyID(c.ID, id)]
 		revision := uint64(0)
 		if child != nil {
@@ -289,6 +279,35 @@ func (e *Engine) validateStrategyEdit(q StrategyEdit) error {
 	}
 	return nil
 }
+
+// Validate the complete reviewed configuration without reading runtime state or
+// authorizing imported records. Preview may evaluate disabled policies, so every
+// arithmetic/reference invariant must already hold before they are installed.
+func validateStrategyConfig(c StrategyConfig, walletKey string) error {
+	if c.Wallet == "" || c.Network == "" || !c.Network.Valid() || !protocol.Hex32(walletKey) {
+		return errors.New("strategy requires a valid wallet identity and explicit network")
+	}
+	if !protocol.Hex32(c.ID) {
+		return errors.New("strategy requires a new 32-byte ID")
+	}
+	if c.MinSpreadBPS < 1 || c.MaxSpreadBPS > 2000 || c.MinSpreadBPS > c.SpreadBPS || c.SpreadBPS > c.MaxSpreadBPS || c.SkewBPS < 0 || c.SkewBPS > c.MaxSpreadBPS-c.MinSpreadBPS {
+		return errors.New("review ordered 1–2000 bps spread bounds and a bounded inventory skew")
+	}
+	if c.MaxConsecutiveFailures < 1 || c.MaxConsecutiveFailures > 20 || c.MaxReplacementFailures < 1 || c.MaxReplacementFailures > 20 || c.FailureRateBPS < 1 || c.FailureRateBPS > 10000 {
+		return errors.New("review 1–20 consecutive/replacement failures and a 1–10000 bps failure-rate breaker")
+	}
+	for _, id := range []chain.ID{chain.BTC, chain.Blake} {
+		s := c.side(id)
+		if s.MinimumReserve < 0 || s.Target <= s.MinimumReserve || s.Target > contract.MaxMoney || s.MaxExposure < s.MaxOffer || s.MaxExposure > contract.MaxMoney || s.MinOffer < 100000 || s.MinOffer > s.MaxOffer {
+			return errors.New("each asset needs ordered target/reserve, exposure and whole-offer limits")
+		}
+		if err := validateAutomationConfig(c.policy(id), walletKey); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 func strategyDigest(q StrategyEdit, key string) string {
 	q.ReviewDigest = ""
 	return protocol.Digest(struct {
@@ -726,7 +745,10 @@ func (e *Engine) strategyFailure(child *AutomationPolicy, replacement bool, err 
 			failures++
 		}
 	}
-	if p.ConsecutiveFailures >= p.Config.MaxConsecutiveFailures || p.ReplacementFailures >= p.Config.MaxReplacementFailures || (len(p.Outcomes) >= 5 && int64(failures*10000) >= p.Config.FailureRateBPS*int64(len(p.Outcomes))) {
+	if !p.Tripped && (p.ConsecutiveFailures >= p.Config.MaxConsecutiveFailures || p.ReplacementFailures >= p.Config.MaxReplacementFailures || (len(p.Outcomes) >= 5 && int64(failures*10000) >= p.Config.FailureRateBPS*int64(len(p.Outcomes)))) {
+		// Invalidate every review/report/stop identity issued before this trip.
+		// A fresh complete review is required to grant future authority again.
+		p.Revision++
 		p.Tripped = true
 		p.Enabled = false
 		p.Decision = "circuit breaker: " + p.Decision + "; review authorization to resume"
@@ -801,9 +823,15 @@ func (e *Engine) strategyReceipt(p *AutomationPolicy, r *TradeReceipt) error {
 }
 
 func validateStrategyState(s *State) error {
+	if len(s.MakerStrategies) > 1 {
+		return errors.New("invalid durable maker strategy count")
+	}
 	for id, p := range s.MakerStrategies {
-		if p == nil || p.Config.ID != id || !protocol.Hex32(id) || p.Config.BTC.Target <= 0 || p.Config.Blake.Target <= 0 || len(p.Outcomes) > 20 || !p.Config.Rate.valid() || !p.Config.MinRate.valid() || !p.Config.MaxRate.valid() {
+		if p == nil || p.Config.ID != id || p.Revision == 0 || len(p.Outcomes) > 20 || p.Config.Network != s.Network.Normalized() {
 			return errors.New("invalid durable maker strategy")
+		}
+		if err := validateStrategyConfig(p.Config, p.WalletKey); err != nil {
+			return fmt.Errorf("invalid durable maker strategy: %w", err)
 		}
 		for _, sell := range []chain.ID{chain.BTC, chain.Blake} {
 			c := s.Automations[strategyPolicyID(id, sell)]

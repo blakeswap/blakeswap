@@ -81,12 +81,17 @@ funding-fee caps, reserve/exposure limits and exhausted allowances prevent new
 quotes and withdraw eligible old quotes. Configure consecutive failure and
 replacement failure limits (1–20), plus a failure-rate threshold over the last
 20 attempted actions (applied after five attempts). Crossing a threshold disables
-both children and requires a new complete review to resume. Ordinary unchanged
+both children and advances the strategy revision, invalidating reviews opened
+before the trip. Resuming requires a new complete review. A final quote rejected
+after its fresh fee check counts as one attempted failure and retains its rejected
+receipt identity. Ordinary unchanged
 quote checks are not failures. The daemon schedules from the current time,
 persists pending request/successor IDs and performs at most one automatic action
 per tick; offline time never creates a catch-up burst.
 
-Portable and legacy imports hold and disable strategies before installation.
+Portable and legacy imports validate the full strategy configuration before
+installation, then hold and disable valid strategies. Invalid reference, arithmetic
+or limit settings return an error without installing or repairing the saved state.
 Known accepted/funded obligations still recover using the original signed terms.
 Current chain recovery alone cannot resume trading: review limits for the new
 profile and explicitly acknowledge that an older backup may omit later spending.

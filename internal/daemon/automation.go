@@ -225,6 +225,33 @@ func (e *Engine) validateAutomationEditInternal(p AutomationEdit, strategy bool)
 	if err := e.tradeBinding(c.Wallet, string(c.Network)); err != nil {
 		return err
 	}
+	if err := validateAutomationConfig(c, e.identity.Public().Hex()); err != nil {
+		return err
+	}
+	old := e.s.Automations[c.ID]
+	if old == nil {
+		if p.ExpectedRevision != 0 || len(e.s.Automations) >= 32 {
+			return errors.New("unknown revision or automation capacity reached")
+		}
+	} else {
+		if old.Revision != p.ExpectedRevision || old.Config.Sell != c.Sell || old.WalletKey != e.identity.Public().Hex() {
+			return errors.New("policy revision, wallet or direction changed; reopen its authorization")
+		}
+		u := e.automationUsage(old, "")
+		if c.VolumeLimit < u.ReservedVolume+u.CommittedVolume || c.BTCFeeBudget < u.ReservedBTCFees+u.CommittedBTCFees || c.BlakeFeeBudget < u.ReservedBlakeFees+u.CommittedBlakeFees {
+			return errors.New("new limits cannot erase reserved or committed authorization")
+		}
+		if old.RestoreHold && p.Enabled && !p.AcknowledgeRestoredBudget {
+			return errors.New("restored policy may omit later spending; explicitly review and authorize its remaining limits before enabling")
+		}
+	}
+	_, err := automationAmounts(c, c.Rate)
+	return err
+}
+
+// Intrinsic limits apply before durable strategy records enter import/load,
+// as well as before a live authorization. This does not enable any policy.
+func validateAutomationConfig(c AutomationConfig, walletKey string) error {
 	if !protocol.Hex32(c.ID) || !c.Sell.Valid() || c.SellAmount < 100000 || c.SellAmount > 10000000000 || c.VolumeLimit < c.SellAmount || c.VolumeLimit > contract.MaxMoney {
 		return errors.New("policy needs a new 32-byte ID, valid direction and exact bounded size/total sell volume")
 	}
@@ -249,32 +276,16 @@ func (e *Engine) validateAutomationEditInternal(p AutomationEdit, strategy bool)
 		}
 		seen := map[string]bool{}
 		for _, maker := range c.ReferenceMakers {
-			if !protocol.Hex32(maker) || maker == e.identity.Public().Hex() || seen[maker] {
+			if !protocol.Hex32(maker) || maker == walletKey || seen[maker] {
 				return errors.New("reference makers must be distinct external identities")
 			}
 			seen[maker] = true
 		}
 	}
-	old := e.s.Automations[c.ID]
-	if old == nil {
-		if p.ExpectedRevision != 0 || len(e.s.Automations) >= 32 {
-			return errors.New("unknown revision or automation capacity reached")
-		}
-	} else {
-		if old.Revision != p.ExpectedRevision || old.Config.Sell != c.Sell || old.WalletKey != e.identity.Public().Hex() {
-			return errors.New("policy revision, wallet or direction changed; reopen its authorization")
-		}
-		u := e.automationUsage(old, "")
-		if c.VolumeLimit < u.ReservedVolume+u.CommittedVolume || c.BTCFeeBudget < u.ReservedBTCFees+u.CommittedBTCFees || c.BlakeFeeBudget < u.ReservedBlakeFees+u.CommittedBlakeFees {
-			return errors.New("new limits cannot erase reserved or committed authorization")
-		}
-		if old.RestoreHold && p.Enabled && !p.AcknowledgeRestoredBudget {
-			return errors.New("restored policy may omit later spending; explicitly review and authorize its remaining limits before enabling")
-		}
-	}
 	_, err := automationAmounts(c, c.Rate)
 	return err
 }
+
 func automationEditDigest(p AutomationEdit, key string) string {
 	p.ReviewDigest = ""
 	return protocol.Digest(struct {
@@ -410,7 +421,13 @@ func automationAmounts(c AutomationConfig, rate AutomationRate) (int64, error) {
 
 func (e *Engine) automationPrice(c AutomationConfig, now int64) (AutomationRate, []string, error) {
 	if c.Reference == "fixed" {
+		if !c.Rate.valid() {
+			return AutomationRate{}, nil, errors.New("invalid fixed reference ratio")
+		}
 		return c.Rate, nil, nil
+	}
+	if c.Reference != "orderbook" || len(c.ReferenceMakers) < 3 || len(c.ReferenceMakers) > 16 {
+		return AutomationRate{}, nil, errors.New("invalid orderbook reference quorum")
 	}
 	if !e.marketAllRelays || e.marketObservedAt > now || now-e.marketObservedAt > c.ReferenceFreshness {
 		return AutomationRate{}, nil, errors.New("reference relay view is incomplete or stale")
@@ -751,6 +768,9 @@ func (e *Engine) runAutomations(ctx context.Context) {
 		r.Result.Error = err.Error()
 		p.Pending = nil
 		p.Decision = err.Error()
+		if p.Config.StrategyID != "" {
+			e.strategyFailure(p, r.Snapshot.Request.OrderAction == "replace", err)
+		}
 	}
 	if saveErr := e.save(); saveErr != nil {
 		e.mu.Unlock()

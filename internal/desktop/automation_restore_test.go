@@ -13,6 +13,7 @@ import (
 	pb "github.com/blakeswap/blakeswap/api/gen/blakeswap/v1"
 	"github.com/blakeswap/blakeswap/internal/chain"
 	"github.com/blakeswap/blakeswap/internal/daemon"
+	"github.com/blakeswap/blakeswap/internal/protocol"
 	"github.com/blakeswap/blakeswap/internal/storage"
 	"github.com/blakeswap/blakeswap/internal/wallet"
 	"google.golang.org/protobuf/proto"
@@ -87,7 +88,7 @@ func TestImportedAutomationNeverResumesOldSpendingAuthority(t *testing.T) {
 
 func TestAutomationMalformedBackupRejectedBeforeInstallation(t *testing.T) {
 	for _, format := range []string{"legacy", "portable"} {
-		for _, mode := range []string{"nil-policy", "nil-charge-map", "nil-charge"} {
+		for _, mode := range []string{"nil-policy", "nil-charge-map", "nil-charge", "strategy-empty-reference"} {
 			t.Run(format+"/"+mode, func(t *testing.T) {
 				m := setupManager(t)
 				state := daemon.State{Version: 1, Network: chain.Regtest, Mnemonic: "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about", Automations: map[string]*daemon.AutomationPolicy{"policy": {Config: daemon.AutomationConfig{ID: "policy"}, Charges: map[string]*daemon.AutomationCharge{}}}}
@@ -98,6 +99,26 @@ func TestAutomationMalformedBackupRejectedBeforeInstallation(t *testing.T) {
 					state.Automations["policy"].Charges = nil
 				case "nil-charge":
 					state.Automations["policy"].Charges["offer"] = nil
+				case "strategy-empty-reference":
+					side := daemon.StrategySide{Target: 2000000, MinimumReserve: 500000, MaxExposure: 1000000, MinOffer: 100000, MaxOffer: 200000, VolumeLimit: 1000000, FundingFee: 2000, MaxFundingFee: 4000}
+					c := daemon.StrategyConfig{ID: strings.Repeat("a", 64), Wallet: "alice", Network: chain.Regtest, BTC: side, Blake: side, Rate: daemon.AutomationRate{Numerator: 1, Denominator: 1}, MinRate: daemon.AutomationRate{Numerator: 1, Denominator: 2}, MaxRate: daemon.AutomationRate{Numerator: 2, Denominator: 1}, SpreadBPS: 100, MinSpreadBPS: 50, MaxSpreadBPS: 200, SkewBPS: 50, Lifetime: 120, Cadence: 60, MaxConcurrent: 4, BTCFeeBudget: 300000, BlakeFeeBudget: 300000, Reference: "fixed", MaxConsecutiveFailures: 3, MaxReplacementFailures: 2, FailureRateBPS: 8000}
+					parent := &daemon.MakerStrategy{Config: c, WalletKey: strings.Repeat("1", 64), Revision: 1, Enabled: true}
+					state.MakerStrategies = map[string]*daemon.MakerStrategy{c.ID: parent}
+					state.Automations = map[string]*daemon.AutomationPolicy{}
+					for _, sell := range []chain.ID{chain.BTC, chain.Blake} {
+						id := protocol.Digest([]string{"maker-strategy-v1", c.ID, string(sell)})
+						child := daemon.AutomationConfig{ID: id, StrategyID: c.ID, Wallet: c.Wallet, Network: c.Network, Sell: sell, SellAmount: side.MaxOffer, VolumeLimit: side.VolumeLimit, Rate: c.Rate, MinRate: c.MinRate, MaxRate: c.MaxRate, Lifetime: c.Lifetime, Cadence: c.Cadence, MaxOpen: c.MaxConcurrent, FundingFee: side.FundingFee, MaxFundingFee: side.MaxFundingFee, BTCFeeBudget: c.BTCFeeBudget, BlakeFeeBudget: c.BlakeFeeBudget, Reference: c.Reference}
+						state.Automations[id] = &daemon.AutomationPolicy{Config: child, WalletKey: parent.WalletKey, Revision: 1, Enabled: true, Charges: map[string]*daemon.AutomationCharge{}}
+					}
+					if err := daemon.ValidateAutomationState(&state); err != nil {
+						t.Fatal("valid strategy control", err)
+					}
+					parent.Config.Reference = "orderbook"
+					parent.Config.ReferenceFreshness, parent.Config.ReferenceSpreadBPS = 60, 20
+					for _, child := range state.Automations {
+						child.Config.Reference = "orderbook"
+						child.Config.ReferenceFreshness, child.Config.ReferenceSpreadBPS = 60, 20
+					}
 				}
 				path := filepath.Join(t.TempDir(), "invalid.blakeswap")
 				password := []byte("malformed archive test password")
@@ -135,7 +156,7 @@ func TestAutomationMalformedBackupRejectedBeforeInstallation(t *testing.T) {
 				}
 				// Post-onboarding import uses the same validator before creating a new
 				// profile; a bad archive cannot disturb the already installed wallet.
-				if format == "portable" && mode == "nil-charge" {
+				if format == "portable" && (mode == "nil-charge" || mode == "strategy-empty-reference") {
 					existing := installedManager(t)
 					before = proto.Clone(existing.settings)
 					seed, secret, err := readMaster(filepath.Join(existing.root, "wallets", "alice"))
