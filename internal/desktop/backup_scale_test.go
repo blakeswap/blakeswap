@@ -2,21 +2,29 @@ package desktop
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
 	"runtime"
 	"strconv"
-	"strings"
 	"sync/atomic"
 	"syscall"
 	"testing"
 	"time"
 
 	"github.com/blakeswap/blakeswap/internal/chain"
+	"github.com/blakeswap/blakeswap/internal/contract"
 	"github.com/blakeswap/blakeswap/internal/daemon"
 	"github.com/blakeswap/blakeswap/internal/storage"
+	"github.com/blakeswap/blakeswap/internal/wallet"
+	"github.com/btcsuite/btcd/btcec/v2"
+	"github.com/btcsuite/btcd/btcec/v2/ecdsa"
+	"github.com/btcsuite/btcd/btcutil"
+	"github.com/btcsuite/btcd/txscript"
+	"github.com/btcsuite/btcd/wire"
 )
 
 type portableScaleCounter uint64
@@ -131,14 +139,7 @@ func TestPortablePhysicalLargeHistoryAndCoreContinuation(t *testing.T) {
 		}
 		state.Activities[id] = a
 	}
-	for i := 0; i < core; i++ {
-		id := fmt.Sprintf("%064x", i+1)
-		child := fixtureSwap(t, chain.Regtest, state.Mnemonic, "maker")
-		child.ID, child.Request.ID = id, id
-		child.Stage, child.SelfRefunds = "awaiting peer evidence", []string{"original retained refund bytes"}
-		state.Swaps[id] = child
-	}
-	fixtureIndexSwaps(t, state)
+	portableScaleCores(t, state, core)
 	var plain portableScaleCounter
 	if err := storage.WriteJSONRecord(ctx, &plain, manifest); err != nil {
 		t.Fatal(err)
@@ -190,9 +191,7 @@ func TestPortablePhysicalLargeHistoryAndCoreContinuation(t *testing.T) {
 	// A recorded obligation can gain additional durable transaction evidence after
 	// a near-limit old backup. All bytes must remain exportable; no count heuristic
 	// from old runtime admission caps can shrink this authenticated population.
-	for _, swap := range active.Swaps {
-		swap.ShortFunding = strings.Repeat("ab", 12000)
-	}
+	funding := portableScaleGrowFunding(t, &active)
 	stats := storage.ArchiveStats{Kinds: map[string]uint64{"activities": uint64(len(history))}, Count: uint64(len(history))}
 	visit := func(write func(storage.ArchiveRecord) error) error {
 		for id, a := range history {
@@ -296,7 +295,8 @@ func TestPortablePhysicalLargeHistoryAndCoreContinuation(t *testing.T) {
 		t.Fatal("complete cold/core population changed", actual, err)
 	}
 	for _, swap := range got.Swaps {
-		if len(swap.ShortFunding) != 24000 || swap.SelfRefunds[0] != "original retained refund bytes" || !got.Recovery.Swaps[swap.ID] {
+		want, found := funding[swap.ID]
+		if !found || want.Bytes < 24000 || len(swap.ShortFunding) != want.Bytes || sha256.Sum256([]byte(swap.ShortFunding)) != want.Digest || swap.SelfRefunds[0] != "original retained refund bytes" || !got.Recovery.Swaps[swap.ID] {
 			t.Fatal("core continuation/recovery fact omitted")
 		}
 	}
@@ -309,6 +309,129 @@ func TestPortablePhysicalLargeHistoryAndCoreContinuation(t *testing.T) {
 		var a daemon.Activity
 		if err = json.Unmarshal(record.Data, &a); err != nil || len(a.History) != 4 || a.Amount != 100000 {
 			t.Fatal("cold history changed", err)
+		}
+	}
+}
+
+// This replaces the manifest's single sample with an explicit population, before
+// any installation. Each whole child has its own signed parent and disjoint
+// retained input; no index helper invents custody for incomplete records.
+func portableScaleCores(t *testing.T, state *daemon.State, count int) {
+	t.Helper()
+	state.Swaps = map[string]*daemon.Swap{}
+	state.ParentOrders, state.FillRecords, state.FundingFees, state.CoinReservations = nil, nil, nil, nil
+	maker := fixtureIdentity(t, state.Network, state.Mnemonic)
+	for i := 0; i < count; i++ {
+		id := fmt.Sprintf("%064x", i+1)
+		child := fixtureSwap(t, state.Network, state.Mnemonic, "maker")
+		_, event := fixtureOffer(t, state.Network, fmt.Sprintf("%064x", count+i+1), maker)
+		child.ID, child.Request.ID, child.Request.OfferEvent = id, id, event
+		child.Stage, child.SelfRefunds = "awaiting peer evidence", []string{"original retained refund bytes"}
+		state.Swaps[id] = child
+		fixtureMakerCustody(t, state, child, true)
+	}
+	fixtureIndexSwaps(t, state)
+}
+
+type portableFundingExpectation struct {
+	Bytes  int
+	Digest [32]byte
+}
+
+// Many ordinary change outputs provide the retained-byte growth of the original
+// format fixture without putting arbitrary hex in an authenticated funding field.
+// Inputs/keys here are synthetic and never sent to a node. The exact transaction
+// still spends its retained input, pays the agreed HTLC and fee, and passes the
+// witness script interpreter after signing all of its actual outputs.
+func portableScaleGrowFunding(t *testing.T, state *daemon.State) map[string]portableFundingExpectation {
+	t.Helper()
+	expected := map[string]portableFundingExpectation{}
+	for id, child := range state.Swaps {
+		fill := state.FillRecords[id]
+		if child.Role != "maker" || child.Terms == nil || child.Terms.Short.Chain != chain.BTC || fill == nil || len(fill.Inputs) != 1 || !fill.Allocation.EverCommitted {
+			t.Fatal("scale growth requires exact committed BTC maker custody")
+		}
+		key, err := btcec.NewPrivateKey()
+		if err != nil {
+			t.Fatal(err)
+		}
+		_, script, err := wallet.Address(key.PubKey())
+		if err != nil {
+			t.Fatal(err)
+		}
+		const changes = 381
+		amount := child.Terms.Short.Amount + fill.FundingPolicy.FundingFee + changes*contract.Dust
+		coin := chain.UTXO{TxID: fill.Inputs[0].TxID, Vout: fill.Inputs[0].Vout, Amount: chain.Coins(amount), Script: hex.EncodeToString(script), Confirmations: 6}
+		tx, err := contract.Fund(child.Terms.Short, []chain.UTXO{coin}, key, fill.FundingPolicy.FundingFee)
+		if err != nil || len(tx.TxOut) != 2 {
+			t.Fatal("valid initial funding", err)
+		}
+		tx.TxOut[1].Value = contract.Dust
+		for n := 1; n < changes; n++ {
+			tx.AddTxOut(wire.NewTxOut(contract.Dust, append([]byte(nil), script...)))
+		}
+		pub := key.PubKey().SerializeCompressed()
+		code, err := txscript.NewScriptBuilder().AddOp(txscript.OP_DUP).AddOp(txscript.OP_HASH160).AddData(btcutil.Hash160(pub)).AddOp(txscript.OP_EQUALVERIFY).AddOp(txscript.OP_CHECKSIG).Script()
+		if err != nil {
+			t.Fatal(err)
+		}
+		spent := []*wire.TxOut{wire.NewTxOut(amount, script)}
+		digest, err := contract.Digest(chain.BTC, tx, 0, code, spent)
+		if err != nil {
+			t.Fatal(err)
+		}
+		tx.TxIn[0].Witness = wire.TxWitness{append(ecdsa.Sign(key, digest).Serialize(), byte(txscript.SigHashAll)), pub}
+		fetcher := txscript.NewCannedPrevOutputFetcher(script, amount)
+		vm, err := txscript.NewEngine(script, tx, 0, txscript.StandardVerifyFlags, nil, txscript.NewTxSigHashes(tx, fetcher), amount, fetcher)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err = vm.Execute(); err != nil {
+			t.Fatal("grown funding signature is invalid", err)
+		}
+		var total int64
+		for _, output := range tx.TxOut {
+			total += output.Value
+		}
+		if amount-total != fill.FundingPolicy.FundingFee {
+			t.Fatal("growth changed exact authorized funding fee")
+		}
+		child.ShortFunding = contract.Hex(tx)
+		child.Short.TxID, child.Short.Vout = tx.TxHash().String(), 0
+		if len(child.ShortFunding) < 24000 {
+			t.Fatal("valid funding did not preserve original retained-byte growth")
+		}
+		expected[id] = portableFundingExpectation{len(child.ShortFunding), sha256.Sum256([]byte(child.ShortFunding))}
+	}
+	return expected
+}
+
+func TestPortableScaleFixtureHasValidExactCustodyAndSignedGrowth(t *testing.T) {
+	manifest := portableManifest(t)
+	state := manifest.Wallets[0].Networks[chain.Regtest]
+	portableScaleCores(t, state, 2)
+	if len(state.Swaps) != 2 || len(state.FillRecords) != 2 || len(state.ParentOrders) != 2 {
+		t.Fatal("explicit fixture population changed")
+	}
+	if err := daemon.ValidateCompleteFillState(state); err != nil {
+		t.Fatal("initial complete custody", err)
+	}
+	before, err := json.Marshal(state.ParentOrders)
+	if err != nil {
+		t.Fatal(err)
+	}
+	funding := portableScaleGrowFunding(t, state)
+	if err := daemon.ValidateCompleteFillState(state); err != nil {
+		t.Fatal("grown complete custody", err)
+	}
+	after, _ := json.Marshal(state.ParentOrders)
+	if string(before) != string(after) {
+		t.Fatal("growth changed current bins or permanent monetary charges")
+	}
+	for id, swap := range state.Swaps {
+		want := funding[id]
+		if want.Bytes < 24000 || len(swap.ShortFunding) != want.Bytes || sha256.Sum256([]byte(swap.ShortFunding)) != want.Digest || swap.SelfRefunds[0] != "original retained refund bytes" {
+			t.Fatal("growth lost exact funding or retained refund payload")
 		}
 	}
 }
