@@ -65,7 +65,7 @@ func (n Network) Params() *chaincfg.Params {
 		return &chaincfg.RegressionNetParams
 	}
 }                                   // Testnet4 uses the same address encoding as Testnet3.
-func (n Network) Namespace() string { return "blakeswap-" + string(n.Normalized()) + "-v2" }
+func (n Network) Namespace() string { return "blakeswap-" + string(n.Normalized()) + "-v1" }
 func (n Network) KeyContext(context string) string {
 	if n.Normalized() == Regtest {
 		return context

@@ -12,7 +12,7 @@ import (
 	"sync/atomic"
 	"testing"
 
-	pb "github.com/blakeswap/blakeswap/api/gen/blakeswap/v2"
+	pb "github.com/blakeswap/blakeswap/api/gen/blakeswap/v1"
 	"github.com/blakeswap/blakeswap/internal/chain"
 	"github.com/blakeswap/blakeswap/internal/daemon"
 	"github.com/blakeswap/blakeswap/internal/protocol"
@@ -89,7 +89,7 @@ func TestPartialFillCreationAndQuoteMapping(t *testing.T) {
 			in.BountyBudgets = map[string]int64{"btc": 0}
 		}
 		out, err := service.CreateOffer(context.Background(), in)
-		if err != nil || out.GetVersion() != 2 || out.Revision != exactParentRevision || out.Available != exactFillAmount || out.FillMode != "whole" || out.MinFill != exactFillAmount || out.MaxFill != exactFillAmount {
+		if err != nil || out.GetVersion() != 1 || out.Revision != exactParentRevision || out.Available != exactFillAmount || out.FillMode != "whole" || out.MinFill != exactFillAmount || out.MaxFill != exactFillAmount {
 			t.Fatal("public order projection lost cutover fields", out, err)
 		}
 	}
@@ -147,8 +147,8 @@ func TestPartialFillTakeAndOwnedQuantityMapping(t *testing.T) {
 	}
 }
 
-func TestV2FillTransportAndLegacyRouteRefusal(t *testing.T) {
-	dir, err := os.MkdirTemp("", "bs-v2-api-")
+func TestV1FillTransportAndUnsupportedRouteRefusal(t *testing.T) {
+	dir, err := os.MkdirTemp("", "bs-v1-api-")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -200,7 +200,7 @@ func TestV2FillTransportAndLegacyRouteRefusal(t *testing.T) {
 		t.Fatal("fill row lost fields", got)
 	}
 	body, _ := protojson.Marshal(query)
-	r, _ := http.NewRequest("POST", server.Endpoint.HTTP+"/v2/orders/fills/query", bytes.NewReader(body))
+	r, _ := http.NewRequest("POST", server.Endpoint.HTTP+"/v1/orders/fills/query", bytes.NewReader(body))
 	r.Header.Set("Authorization", "Bearer "+server.Endpoint.Token)
 	r.Header.Set("Content-Type", "application/json")
 	resp, err := http.DefaultClient.Do(r)
@@ -229,10 +229,10 @@ func TestV2FillTransportAndLegacyRouteRefusal(t *testing.T) {
 		t.Fatal("stale history silently refreshed", err)
 	}
 	before := calls.Load()
-	if err = conn.Invoke(ctx, "/blakeswap.v1.DaemonService/GetStatus", &emptypb.Empty{}, &pb.Status{}); status.Code(err) != codes.Unimplemented {
-		t.Fatal("v1 gRPC still registered", err)
+	if err = conn.Invoke(ctx, "/blakeswap.v2.DaemonService/GetStatus", &emptypb.Empty{}, &pb.Status{}); status.Code(err) != codes.Unimplemented {
+		t.Fatal("unsupported gRPC registered", err)
 	}
-	for _, legacy := range []struct{ method, path string }{{"GET", "/v1/status"}, {"POST", "/v1/swaps"}, {"POST", "/v1/orders/fills/query"}} {
+	for _, legacy := range []struct{ method, path string }{{"GET", "/v2/status"}, {"POST", "/v2/swaps"}, {"POST", "/v2/orders/fills/query"}} {
 		r, _ = http.NewRequest(legacy.method, server.Endpoint.HTTP+legacy.path, bytes.NewReader(body))
 		r.Header.Set("Authorization", "Bearer "+server.Endpoint.Token)
 		r.Header.Set("Content-Type", "application/json")
@@ -242,7 +242,7 @@ func TestV2FillTransportAndLegacyRouteRefusal(t *testing.T) {
 		}
 		resp.Body.Close()
 		if resp.StatusCode != http.StatusNotFound {
-			t.Fatal("v1 HTTP route survived", legacy.path, resp.StatusCode)
+			t.Fatal("unsupported HTTP route registered", legacy.path, resp.StatusCode)
 		}
 	}
 	if calls.Load() != before {
@@ -255,12 +255,12 @@ func TestV2FillTransportAndLegacyRouteRefusal(t *testing.T) {
 	if err = json.Unmarshal(OpenAPI, &schema); err != nil {
 		t.Fatal(err)
 	}
-	if schema.Info.Version != "2.0" || len(schema.Paths) == 0 {
+	if schema.Info.Version != "1.0" || len(schema.Paths) == 0 {
 		t.Fatal("wrong API version", schema.Info)
 	}
 	for path := range schema.Paths {
-		if !strings.HasPrefix(path, "/v2/") {
-			t.Fatal("non-v2 generated route", path)
+		if !strings.HasPrefix(path, "/v1/") {
+			t.Fatal("non-v1 generated route", path)
 		}
 	}
 }
@@ -303,7 +303,7 @@ func TestPartialFillHTTPExactReviewedInputAndRejection(t *testing.T) {
 		{"unknown field", strings.TrimSuffix(input, "}") + `,"reservation":"old"}`, http.StatusBadRequest},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			r, _ := http.NewRequest("POST", server.Endpoint.HTTP+"/v2/trades/quote", strings.NewReader(test.body))
+			r, _ := http.NewRequest("POST", server.Endpoint.HTTP+"/v1/trades/quote", strings.NewReader(test.body))
 			r.Header.Set("Authorization", "Bearer "+server.Endpoint.Token)
 			r.Header.Set("Content-Type", "application/json")
 			response, err := http.DefaultClient.Do(r)

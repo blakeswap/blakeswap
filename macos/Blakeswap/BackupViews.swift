@@ -23,7 +23,7 @@ struct WalletBackupControls: View {
 }
 
 struct RecoveryProgressView: View {
-    let progress: Blakeswap_V2_RecoveryProgress
+    let progress: Blakeswap_V1_RecoveryProgress
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             Label(progress.state == "ready" ? "Ready to trade" : "Recovery in progress", systemImage: progress.state == "ready" ? "checkmark.shield" : "clock.arrow.circlepath")
@@ -88,7 +88,7 @@ struct PortableImportView: View {
     @State private var password = ""
     @State private var name = ""
     @State private var selected = ""
-    @State private var contents: Blakeswap_V2_BackupContents?
+    @State private var contents: Blakeswap_V1_BackupContents?
     var body: some View {
         VStack(alignment: .leading, spacing: 18) {
             Text("Import a wallet backup").font(.title2.bold())

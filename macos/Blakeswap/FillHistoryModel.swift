@@ -10,7 +10,7 @@ struct ParentFillContext: Identifiable {
     let parentID: String
 }
 
-extension Blakeswap_V2_FillSummary {
+extension Blakeswap_V1_FillSummary {
     var allocationLabel: String {
         allocationKnown ? "\(disposition.capitalized): \(allocatedQuantity) sell sats currently allocated" : "Current maker allocation unknown"
     }
@@ -18,13 +18,13 @@ extension Blakeswap_V2_FillSummary {
 
 @MainActor
 final class FillHistoryModel: ObservableObject {
-    @Published private(set) var rows: [Blakeswap_V2_FillSummary] = []
+    @Published private(set) var rows: [Blakeswap_V1_FillSummary] = []
     @Published private(set) var busy = false
     @Published private(set) var error: String?
     @Published private(set) var total: UInt32 = 0
     @Published private(set) var offset: UInt32 = 0
     @Published private(set) var more = false
-    @Published private(set) var selected: Blakeswap_V2_RecordDetail?
+    @Published private(set) var selected: Blakeswap_V1_RecordDetail?
     let context: ParentFillContext
     let limit: UInt32 = 100
     private var revision = ""
@@ -39,13 +39,13 @@ final class FillHistoryModel: ObservableObject {
         let id = UUID(); attempt = id; busy = true; error = nil; selected = nil
         defer { if id == attempt { busy = false } }
         let expected = refresh ? "" : revision
-        var request = Blakeswap_V2_FillQuery()
+        var request = Blakeswap_V1_FillQuery()
         request.expectedWallet = context.wallet.profile; request.expectedNetwork = context.wallet.network
         request.parentMaker = context.maker; request.parentID = context.parentID
         request.offset = refresh ? 0 : requested; request.limit = limit; request.revision = expected
         do {
             let data = try await call("fills.list", request.jsonUTF8Data())
-            let page = try Blakeswap_V2_FillPage(serializedBytes: data)
+            let page = try Blakeswap_V1_FillPage(serializedBytes: data)
             guard !Task.isCancelled, id == attempt, context.wallet.matches(current()) else { return }
             let end = UInt64(request.offset) + UInt64(page.records.count)
             guard page.wallet == request.expectedWallet, page.network == request.expectedNetwork,
@@ -69,15 +69,15 @@ final class FillHistoryModel: ObservableObject {
     }
     func next(current: () -> TradeContext) async { guard !busy, more else { return }; await load(offset: nextOffset, current: current) }
     func previous(current: () -> TradeContext) async { guard !busy, offset > 0 else { return }; await load(offset: offset > limit ? offset-limit : 0, current: current) }
-    func select(_ row: Blakeswap_V2_FillSummary, current: () -> TradeContext) async {
+    func select(_ row: Blakeswap_V1_FillSummary, current: () -> TradeContext) async {
         guard !busy, rows.contains(row), context.wallet.matches(current()) else { return }
         let id = UUID(); attempt = id; busy = true; error = nil; selected = nil
         defer { if id == attempt { busy = false } }
-        var request = Blakeswap_V2_RecordQuery()
+        var request = Blakeswap_V1_RecordQuery()
         request.kind = "swap"; request.id = row.id; request.expectedWallet = context.wallet.profile; request.expectedNetwork = context.wallet.network
         do {
             let data = try await call("record.get", request.jsonUTF8Data())
-            let detail = try Blakeswap_V2_RecordDetail(serializedBytes: data)
+            let detail = try Blakeswap_V1_RecordDetail(serializedBytes: data)
             guard !Task.isCancelled, id == attempt, context.wallet.matches(current()) else { return }
             guard detail.kind == "swap", detail.id == row.id, detail.hasSwap,
                   detail.swap.id == row.id, detail.swap.parentID == context.parentID, detail.swap.parentMaker == context.maker else { throw RPCError.message("Child detail does not belong to this parent.") }

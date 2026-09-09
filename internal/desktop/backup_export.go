@@ -6,7 +6,7 @@ import (
 	"os"
 	"path/filepath"
 
-	pb "github.com/blakeswap/blakeswap/api/gen/blakeswap/v2"
+	pb "github.com/blakeswap/blakeswap/api/gen/blakeswap/v1"
 	"github.com/blakeswap/blakeswap/internal/daemon"
 	"github.com/blakeswap/blakeswap/internal/storage"
 )

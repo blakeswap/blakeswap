@@ -87,7 +87,7 @@ func (e *Engine) scrubOfferCache() error {
 		if !retiredOfferContent(event.Content) {
 			continue
 		}
-		return errors.New("incompatible saved offer; preserve this development profile and create a separate protocol-2 profile")
+		return errors.New("incompatible saved offer; preserve this development profile and create a separate v1 profile")
 	}
 	for id, d := range e.s.Outbox {
 		if d.Event.Kind != transport.OfferKind {

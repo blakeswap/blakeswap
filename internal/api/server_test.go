@@ -11,7 +11,7 @@ import (
 	"sync/atomic"
 	"testing"
 
-	pb "github.com/blakeswap/blakeswap/api/gen/blakeswap/v2"
+	pb "github.com/blakeswap/blakeswap/api/gen/blakeswap/v1"
 	"github.com/blakeswap/blakeswap/internal/chain"
 	"github.com/blakeswap/blakeswap/internal/contract"
 	"github.com/blakeswap/blakeswap/internal/daemon"
@@ -100,10 +100,10 @@ func TestGRPCAndGatewayAuthenticationAndExactIntegers(t *testing.T) {
 		name, token, origin, host, path string
 		want                            int
 	}{
-		{name: "missing auth", path: "/v2/status", want: 401},
-		{name: "foreign origin", token: server.Endpoint.Token, origin: "https://evil.example", path: "/v2/status", want: 403},
-		{name: "host rebinding", token: server.Endpoint.Token, host: "evil.example", path: "/v2/status", want: 403},
-		{name: "status", token: server.Endpoint.Token, path: "/v2/status", want: 200},
+		{name: "missing auth", path: "/v1/status", want: 401},
+		{name: "foreign origin", token: server.Endpoint.Token, origin: "https://evil.example", path: "/v1/status", want: 403},
+		{name: "host rebinding", token: server.Endpoint.Token, host: "evil.example", path: "/v1/status", want: 403},
+		{name: "status", token: server.Endpoint.Token, path: "/v1/status", want: 200},
 		{name: "openapi", token: server.Endpoint.Token, path: "/openapi.json", want: 200},
 	} {
 		t.Run(test.name, func(t *testing.T) {
@@ -139,7 +139,7 @@ func TestGRPCAndGatewayAuthenticationAndExactIntegers(t *testing.T) {
 	if calls.Load() != 3 {
 		t.Fatalf("rejected calls reached engine: %d", calls.Load())
 	}
-	request, _ := http.NewRequest("POST", server.Endpoint.HTTP+"/v2/offers", bytes.NewBufferString(`{"sellAmount":"9007199254740993"}`))
+	request, _ := http.NewRequest("POST", server.Endpoint.HTTP+"/v1/offers", bytes.NewBufferString(`{"sellAmount":"9007199254740993"}`))
 	request.Header.Set("Authorization", "Bearer "+server.Endpoint.Token)
 	request.Header.Set("Content-Type", "application/json")
 	resp, err := http.DefaultClient.Do(request)

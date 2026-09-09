@@ -18,7 +18,7 @@ func TestPublishedRelaysReadOnly(t *testing.T) {
 			t.Parallel()
 			key := nostr.Generate()
 			_, err := PullAs(context.Background(), url, key,
-				nostr.Filter{Kinds: []nostr.Kind{OfferKind}, Tags: nostr.TagMap{"t": {"blakeswap-mainnet-v2"}}},
+				nostr.Filter{Kinds: []nostr.Kind{OfferKind}, Tags: nostr.TagMap{"t": {"blakeswap-mainnet-v1"}}},
 				nostr.Filter{Kinds: []nostr.Kind{1059}, Tags: nostr.TagMap{"p": {key.Public().Hex()}}})
 			if err != nil {
 				t.Fatal(err)

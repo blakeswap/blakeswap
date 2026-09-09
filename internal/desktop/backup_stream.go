@@ -119,7 +119,7 @@ func cleanupPortableStaging(root string) error {
 	return nil
 }
 func writeStreamManifest(ctx context.Context, path string, password []byte, manifest backupManifest) error {
-	inventory := streamInventory{FormatVersion: 2, CreatedAt: manifest.CreatedAt}
+	inventory := streamInventory{FormatVersion: 1, CreatedAt: manifest.CreatedAt}
 	for _, wallet := range manifest.Wallets {
 		item := streamWallet{ID: wallet.ID, Name: wallet.Name, Identity: wallet.Identity, Mnemonic: wallet.Mnemonic}
 		for _, network := range []chain.Network{chain.Regtest, chain.Testnet, chain.Mainnet} {
@@ -201,7 +201,7 @@ func readStreamManifest(ctx context.Context, root, path string, password []byte)
 		if err := decoder.Decode(ctx, &inventory); err != nil {
 			return err
 		}
-		if inventory.FormatVersion != 2 || len(inventory.Wallets) == 0 || len(inventory.Wallets) > 20 {
+		if inventory.FormatVersion != 1 || len(inventory.Wallets) == 0 || len(inventory.Wallets) > 20 {
 			return errors.New("unsupported portable inventory")
 		}
 		result.CreatedAt = inventory.CreatedAt

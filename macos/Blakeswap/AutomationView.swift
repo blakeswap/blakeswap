@@ -143,7 +143,7 @@ struct AutomationEditor: View {
     private func fraction(_ label: String, _ n: Binding<String>, _ d: Binding<String>) -> some View {
         HStack { Text(label).frame(maxWidth: .infinity, alignment: .leading); TextField("BLAKE sats", text: n); Text("/"); TextField("BTC sats", text: d) }
     }
-    private func authorization(_ review: Blakeswap_V2_AutomationReview) -> some View {
+    private func authorization(_ review: Blakeswap_V1_AutomationReview) -> some View {
         let c = review.config
         return VStack(alignment: .leading, spacing: 12) {
             Text(review.enabled ? "Enable automatic trading" : "Save policy without enabling").font(.headline)

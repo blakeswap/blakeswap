@@ -25,7 +25,7 @@ validation and its limits belong in [Testing](TESTING.md).
 | Bound maker/taker economics review and durable confirmation retries | [Daemon quotes](../internal/daemon/trade_quote.go), [native review](../macos/Blakeswap/TradeReviewView.swift), [typed real-chain acceptance](../internal/api/trade_regtest_test.go) |
 | Whole or bounded partial parent orders, exact child revision/quantity and current quantity conservation | [Protocol/state design](PARTIAL_FILLS.md), [API/native contract](PARTIAL_FILL_API.md), [integer arithmetic](../internal/protocol/fills.go), [parent allocation](../internal/daemon/fill_state.go) |
 | Durable linked history, spent deposits, reorg lineage, frozen pages and exact CSV | [Activity semantics/limits](ACTIVITY.md), [indexer](../internal/daemon/activity_index.go), [native view](../macos/Blakeswap/ActivityView.swift), [typed acceptance](../internal/api/activity_regtest_test.go) |
-| API names and request fields | [Protobuf service](../api/proto/blakeswap/v2/daemon.proto), [API reference](API.md) |
+| API names and request fields | [Protobuf service](../api/proto/blakeswap/v1/daemon.proto), [API reference](API.md) |
 | Both Mac architectures, native release tests, ad-hoc signing | [Workflow](../.github/workflows/release.yml), [build/signing script](../scripts/build-dmg.sh), [packaging limits](PACKAGING.md) |
 | Bounded per-fill fee/bounty allowances, unsupported funding acceleration, bounded history, replay/observer trust, native/file credential boundaries, stale recovery, protocol/state hard cutover, no independent audit | [Risks](RISKS.md), [economics](ECONOMICS.md), [recovery](OPERATIONS.md#backups), [partial fills](PARTIAL_FILLS.md) |
 

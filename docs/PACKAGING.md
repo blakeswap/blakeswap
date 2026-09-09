@@ -159,7 +159,7 @@ sh scripts/build-dmg.sh
 ```
 
 The first script builds/signs `bin/Blakeswap.app`. The second creates and verifies
-`bin/Blakeswap-0.2.0-arm64.dmg` (or `x86_64` on Intel), with the app and an Applications shortcut. Open the
+`bin/Blakeswap-1.0.0-arm64.dmg` (or `x86_64` on Intel), with the app and an Applications shortcut. Open the
 DMG, drag Blakeswap into Applications, eject the image, and open the installed app.
 No repository checkout or separately installed Go runtime is needed to run it.
 Native dependencies are linked into the executable. Building does require the
@@ -190,7 +190,7 @@ so rebuilding cannot overwrite the executable vnode of a running copy.
 
 ## GitHub release downloads
 
-Push a version tag such as `v0.3.0`, or publish a GitHub release for an existing
+Push a version tag such as `v1.0.0`, or publish a GitHub release for an existing
 version tag. The macOS packages workflow builds the tagged source on native
 Apple silicon (`macos-26`) and Intel (`macos-26-intel`) runners, verifies both
 executables' architectures, and runs packaging/launcher tests plus `swift test`
@@ -198,17 +198,18 @@ with the built helper. That enables native startup and onboarding tests. The
 external regtest gRPC trade skips without `BLAKESWAP_SWIFT_TEST_ROOT`; this workflow
 does not set up two-chain nodes. It uploads these assets only after both jobs pass:
 
-- `Blakeswap-0.3.0-arm64.dmg` (Apple silicon)
-- `Blakeswap-0.3.0-x86_64.dmg` (Intel)
+- `Blakeswap-1.0.0-arm64.dmg` (Apple silicon)
+- `Blakeswap-1.0.0-x86_64.dmg` (Intel)
 - A SHA-256 checksum file for each DMG
 
 If the tag has no release, the workflow creates one; otherwise it attaches assets
-to the existing release without replacing its notes. Prerelease tags such as
-`v0.3.0-rc.1` produce prereleases. Both DMG filenames and app metadata derive from
-the tag. DMG builds run only for version tags and published releases. Pull requests
+to the existing release without replacing its notes. Only `v1.0.0` is accepted
+during first-release development; other release and prerelease tags fail
+validation. Both DMG filenames and app metadata use `1.0.0`. DMG builds run only for version tags and published releases. Pull requests
 and main-branch pushes keep the Go checks without building a Mac installer.
-For local builds, `BLAKESWAP_VERSION=v0.3.0 sh scripts/build-dmg.sh` overrides the
-version (otherwise an exact version tag or `0.2.0` is used).
+For local builds, `BLAKESWAP_VERSION=v1.0.0 sh scripts/build-dmg.sh` overrides the
+version (the default and only accepted application version is `1.0.0` during
+first-release development). Git tags do not change local build versions.
 
 Hosted builds currently use ad-hoc signing. No Developer ID certificate or Apple
 notarization credentials are configured in this workflow; downloaded DMGs may

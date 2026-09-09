@@ -10,17 +10,16 @@ import (
 	"github.com/blakeswap/blakeswap/internal/storage"
 )
 
-// StateVersion is independent of portable encryption framing. Format 3 is the
-// hard cutover to child quantities; earlier development vaults are preserved
-// and rejected, never relabelled or silently reset.
-const StateVersion = 3
+// StateVersion stays at 1 throughout first-release development. Validate the
+// current schema as well as its marker; never relabel or reset incompatible data.
+const StateVersion = 1
 
 func ValidateStateVersion(s *State) error {
 	if s == nil || s.Version != StateVersion {
-		return errors.New("incompatible development wallet state: protocol 2 requires state format 3; keep this source and create a separate profile")
+		return errors.New("incompatible development wallet state: v1 requires the current wallet state schema; keep this source and create a separate profile")
 	}
 	if s.Network == "" || !s.Network.Valid() {
-		return errors.New("state format 3 requires an explicit supported network")
+		return errors.New("state format 1 requires an explicit supported network")
 	}
 	return nil
 }

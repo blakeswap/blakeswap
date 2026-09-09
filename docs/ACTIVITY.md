@@ -115,7 +115,7 @@ new activity arrives. Details show amounts, provenance, related IDs, variants an
 prior outcomes, with navigation to the retained order, swap, send or local tower
 job. Completed records remain available after the routine status view is trimmed.
 
-`ListActivity` (`activity.list`, `POST /v2/activity/query`) requires
+`ListActivity` (`activity.list`, `POST /v1/activity/query`) requires
 `expected_wallet` and `expected_network`. Optional fields are `kind`, `status`,
 `chain`, `from`, `to`, and `limit` (1–500; default 100). Continue with returned
 `snapshot` and `next_cursor` as `cursor`, preserving filters. Zero `next_cursor`
@@ -133,7 +133,7 @@ intact. Cancellation, expiration, eviction, close and startup cleanup remove own
 result files and keys. Active checkpoint size and one large legacy record remain
 separate memory costs; available disk and cancellation can still limit a query.
 
-`ExportActivity` (`activity.export`, `POST /v2/activity/export`) takes the same
+`ExportActivity` (`activity.export`, `POST /v1/activity/export`) takes the same
 query. CSV chunks share its frozen scope and include the header only on the first
 chunk. Continue until `next_cursor=0`. Native export fetches all selected rows,
 not just the loaded page, before writing the file atomically. Wallet, network, or

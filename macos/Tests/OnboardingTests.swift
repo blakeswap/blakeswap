@@ -29,17 +29,17 @@ final class OnboardingTests: XCTestCase {
             }
             throw RPCError.message("Onboarding helper did not expose its private API")
         }
-        func confirm(_ root: String, _ first: Blakeswap_V2_FirstWallet) async throws -> AppSettings {
+        func confirm(_ root: String, _ first: Blakeswap_V1_FirstWallet) async throws -> AppSettings {
             let words = first.recovery.mnemonic.split(separator: " ")
-            var request = Blakeswap_V2_ConfirmFirstWalletRequest(); request.revision = first.settings.revision
+            var request = Blakeswap_V1_ConfirmFirstWalletRequest(); request.revision = first.settings.revision
             request.words = first.backupWordPositions.map { String(words[Int($0) - 1]) }
             return try AppSettings(serializedBytes: await call(root, "onboarding.confirm", request))
         }
         let initial = try await start(root)
         XCTAssertEqual(initial.onboardingStage, "wallet")
         XCTAssertFalse(FileManager.default.fileExists(atPath: root + "/wallets"))
-        var request = Blakeswap_V2_PrepareFirstWalletRequest(); request.name = "First wallet"; request.revision = initial.revision
-        let first = try Blakeswap_V2_FirstWallet(serializedBytes: await call(root, "onboarding.prepare", request))
+        var request = Blakeswap_V1_PrepareFirstWalletRequest(); request.name = "First wallet"; request.revision = initial.revision
+        let first = try Blakeswap_V1_FirstWallet(serializedBytes: await call(root, "onboarding.prepare", request))
         XCTAssertEqual(first.settings.onboardingStage, "backup")
         XCTAssertEqual(first.recovery.mnemonic.split(separator: " ").count, 24)
         XCTAssertFalse(FileManager.default.fileExists(atPath: root + "/wallets/alice/mainnet/state.db"))
@@ -49,9 +49,9 @@ final class OnboardingTests: XCTestCase {
         processes[0].terminate(); processes[0].waitUntilExit()
         let resumed = try await start(root)
         XCTAssertEqual(resumed.onboardingStage, "backup")
-        let recovered = try Blakeswap_V2_FirstWallet(serializedBytes: await call(root, "onboarding.get", Google_Protobuf_Empty()))
+        let recovered = try Blakeswap_V1_FirstWallet(serializedBytes: await call(root, "onboarding.get", Google_Protobuf_Empty()))
         XCTAssertTrue(recovered.recovery.mnemonic == first.recovery.mnemonic, "Restart changed the saved recovery phrase")
-        var export = Blakeswap_V2_ExportFirstWalletRequest()
+        var export = Blakeswap_V1_ExportFirstWalletRequest()
         export.revision = resumed.revision; export.path = directory.appendingPathComponent("wallet.blakeswap").path
         export.password = "disposable test backup password"
         _ = try await call(root, "onboarding.export", export)
@@ -84,16 +84,16 @@ final class OnboardingTests: XCTestCase {
         let phraseSettings = try await start(phraseRoot)
         request.name = "Phrase restored"; request.revision = phraseSettings.revision
         request.mnemonic = first.recovery.mnemonic
-        let phrase = try Blakeswap_V2_FirstWallet(serializedBytes: await call(phraseRoot, "onboarding.prepare", request))
+        let phrase = try Blakeswap_V1_FirstWallet(serializedBytes: await call(phraseRoot, "onboarding.prepare", request))
         XCTAssertTrue(phrase.recovery.mnemonic == first.recovery.mnemonic, "Phrase restore changed keys")
         let phraseConfirmed = try await confirm(phraseRoot, phrase)
         XCTAssertEqual(phraseConfirmed.onboardingStage, "connect")
 
         let backupRoot = directory.appendingPathComponent("backup").path
         let backupSettings = try await start(backupRoot)
-        request = Blakeswap_V2_PrepareFirstWalletRequest(); request.name = "Backup restored"
+        request = Blakeswap_V1_PrepareFirstWalletRequest(); request.name = "Backup restored"
         request.revision = backupSettings.revision; request.backupPath = export.path; request.backupPassword = export.password
-        let backup = try Blakeswap_V2_FirstWallet(serializedBytes: await call(backupRoot, "onboarding.prepare", request))
+        let backup = try Blakeswap_V1_FirstWallet(serializedBytes: await call(backupRoot, "onboarding.prepare", request))
         XCTAssertEqual(backup.settings.onboardingStage, "connect")
         XCTAssertFalse(backup.hasRecovery)
         XCTAssertTrue(FileManager.default.fileExists(atPath: backupRoot + "/wallets/alice/mainnet/state.db"))
@@ -101,25 +101,25 @@ final class OnboardingTests: XCTestCase {
         // Post-onboarding portable export and import into an existing, unrelated
         // installation use the native typed API with unreachable local nodes.
         _ = try await start(root)
-        var portable = Blakeswap_V2_ExportPortableBackupRequest()
+        var portable = Blakeswap_V1_ExportPortableBackupRequest()
         portable.path = directory.appendingPathComponent("portable-after-setup.blakeswap").path
         portable.password = "chosen post-setup backup password"
-        let exported = try Blakeswap_V2_PortableBackupResult(serializedBytes: await call(root, "backup.export", portable))
+        let exported = try Blakeswap_V1_PortableBackupResult(serializedBytes: await call(root, "backup.export", portable))
         XCTAssertEqual(exported.wallets, 1); XCTAssertEqual(exported.networks, 3)
         let otherRoot = directory.appendingPathComponent("existing-other").path
         let otherSettings = try await start(otherRoot)
-        var otherRequest = Blakeswap_V2_PrepareFirstWalletRequest(); otherRequest.name = "Existing wallet"; otherRequest.revision = otherSettings.revision
-        let otherFirst = try Blakeswap_V2_FirstWallet(serializedBytes: await call(otherRoot, "onboarding.prepare", otherRequest))
+        var otherRequest = Blakeswap_V1_PrepareFirstWalletRequest(); otherRequest.name = "Existing wallet"; otherRequest.revision = otherSettings.revision
+        let otherFirst = try Blakeswap_V1_FirstWallet(serializedBytes: await call(otherRoot, "onboarding.prepare", otherRequest))
         var otherConnect = try await confirm(otherRoot, otherFirst)
         otherConnect.environments = connected.environments
         let otherFinished = try AppSettings(serializedBytes: await call(otherRoot, "onboarding.finish", otherConnect))
-        var inspect = Blakeswap_V2_InspectBackupRequest(); inspect.path = portable.path; inspect.password = portable.password
-        let contents = try Blakeswap_V2_BackupContents(serializedBytes: await call(otherRoot, "backup.inspect", inspect))
+        var inspect = Blakeswap_V1_InspectBackupRequest(); inspect.path = portable.path; inspect.password = portable.password
+        let contents = try Blakeswap_V1_BackupContents(serializedBytes: await call(otherRoot, "backup.inspect", inspect))
         XCTAssertEqual(contents.wallets.count, 1); XCTAssertEqual(contents.wallets[0].networks.count, 3)
-        var importing = Blakeswap_V2_ImportBackupRequest()
+        var importing = Blakeswap_V1_ImportBackupRequest()
         importing.path = portable.path; importing.password = portable.password; importing.sourceWalletID = contents.wallets[0].sourceWalletID
         importing.name = "Imported first wallet"; importing.revision = otherFinished.revision
-        let imported = try Blakeswap_V2_ImportBackupResult(serializedBytes: await call(otherRoot, "backup.import", importing))
+        let imported = try Blakeswap_V1_ImportBackupResult(serializedBytes: await call(otherRoot, "backup.import", importing))
         XCTAssertNotEqual(imported.profileID, "alice"); XCTAssertEqual(imported.settings.wallets.count, 2)
         var importedStatus: DaemonStatus?
         for _ in 0..<100 {

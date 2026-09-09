@@ -81,11 +81,11 @@ final class NativeSecurityTests: XCTestCase {
         XCTAssertEqual(endpoint.credentialMode, "native")
         let raw = try await DaemonRPC.call(root: root.path, profile: "alice", method: "settings.get")
         let settings = try AppSettings(serializedBytes: raw)
-        var prepare = Blakeswap_V2_PrepareFirstWalletRequest(); prepare.name = "Isolated native wallet"; prepare.revision = settings.revision
-        let created = try Blakeswap_V2_FirstWallet(serializedBytes: await DaemonRPC.call(root: root.path, profile: "alice", method: "onboarding.prepare", payload: prepare.jsonUTF8Data()))
+        var prepare = Blakeswap_V1_PrepareFirstWalletRequest(); prepare.name = "Isolated native wallet"; prepare.revision = settings.revision
+        let created = try Blakeswap_V1_FirstWallet(serializedBytes: await DaemonRPC.call(root: root.path, profile: "alice", method: "onboarding.prepare", payload: prepare.jsonUTF8Data()))
         XCTAssertFalse(FileManager.default.fileExists(atPath: root.appendingPathComponent("wallets/alice/vault.password").path))
         XCTAssertGreaterThanOrEqual(owner.calls, 2)
-        var request = URLRequest(url: URL(string: endpoint.http + "/v2/onboarding/recovery")!)
+        var request = URLRequest(url: URL(string: endpoint.http + "/v1/onboarding/recovery")!)
         request.httpMethod = "POST"; request.httpBody = Data("{}".utf8); request.setValue("application/json", forHTTPHeaderField: "Content-Type"); request.setValue("Bearer " + endpoint.token, forHTTPHeaderField: "Authorization")
         let (_, response) = try await URLSession.shared.data(for: request)
         XCTAssertGreaterThanOrEqual((response as! HTTPURLResponse).statusCode, 400)
@@ -126,7 +126,7 @@ final class NativeSecurityTests: XCTestCase {
         try await resumed.unlockAndStart(); try await resumed.waitUntilReady(profile: "alice")
         let nextEndpoint = try DaemonRPC.endpoint(root: root.path, profile: "alice")
         XCTAssertNotEqual(endpoint.ownerSession, nextEndpoint.ownerSession)
-        let recovery = try Blakeswap_V2_FirstWallet(serializedBytes: await DaemonRPC.call(root: root.path, profile: "alice", method: "onboarding.get"))
+        let recovery = try Blakeswap_V1_FirstWallet(serializedBytes: await DaemonRPC.call(root: root.path, profile: "alice", method: "onboarding.get"))
         XCTAssertTrue(recovery.recovery.mnemonic == created.recovery.mnemonic, "Helper restart changed wallet identity")
         XCTAssertEqual(nextOwner.calls, 2)
         let runtime = try Data(contentsOf: root.appendingPathComponent("runtime.json"))

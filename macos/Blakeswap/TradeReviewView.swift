@@ -14,7 +14,7 @@ struct TradeComposer: View {
     @Environment(\.dismiss) private var dismiss
     let context: TradeContext
     @State private var order: Order?
-    let refreshParent: ((Order) async throws -> Blakeswap_V2_MarketOrder)?
+    let refreshParent: ((Order) async throws -> Blakeswap_V1_MarketOrder)?
     @State private var refreshingParent = false
     let management: ManageOfferContext?
     private let managementSeed: TradeManagementSeed?
@@ -32,7 +32,7 @@ struct TradeComposer: View {
     @State private var feeReview: FeeReview?
     @State private var expires = Date().addingTimeInterval(86_400)
 
-    init(context: TradeContext, root: String, order: Order? = nil, management: ManageOfferContext? = nil, suggestedQuantity: Int64 = 0, expectedEventID: String = "", refreshParent: ((Order) async throws -> Blakeswap_V2_MarketOrder)? = nil) {
+    init(context: TradeContext, root: String, order: Order? = nil, management: ManageOfferContext? = nil, suggestedQuantity: Int64 = 0, expectedEventID: String = "", refreshParent: ((Order) async throws -> Blakeswap_V1_MarketOrder)? = nil) {
         self.context = context; _order = State(initialValue: order); self.management = management; _expectedEventID = State(initialValue: expectedEventID); self.refreshParent = refreshParent
         var initial = TradeFillDraft()
         if let order { initial.seed(quantity: suggestedQuantity > 0 ? suggestedQuantity : (order.fillMode == "whole" ? order.sellAmount : 0)) }
@@ -67,15 +67,15 @@ struct TradeComposer: View {
     private var replacement: ManageOfferContext? { management?.action == "replace" ? management : nil }
     private var feeKey: String { feeReviewKey(profile: context.profile, network: context.network, kind: "funding", chain: paidChain, amount: paidAmount, fee: fundingFee, automatic: automaticFee, generation: context.generation, sourceOfferID: replacement?.order.offer.id ?? "", sourceEventID: replacement?.order.eventID ?? "") }
     private var currentFee: FeeReview? { feeReview?.key == feeKey ? feeReview : nil }
-    private var towers: [Blakeswap_V2_Tower] {
+    private var towers: [Blakeswap_V1_Tower] {
         let favorites = model.settings?.environments.first(where: { $0.network == context.network })?.favoriteWatchtowers ?? []
         return (model.status?.watchtowers ?? []).filter { favorites.contains($0.npub) && $0.expires > Int64(Date().timeIntervalSince1970) }
     }
-    private var selectedTower: Blakeswap_V2_Tower? { towers.first { $0.pubkey == towerID } }
+    private var selectedTower: Blakeswap_V1_Tower? { towers.first { $0.pubkey == towerID } }
     private var validDraft: Bool {
         guard managementError == nil, !refreshingParent, currentFee != nil, !protection || selectedTower != nil else { return false }
         if let managementSeed, (try? managementSeed.validate(sell: sell, amount: sellAmount)) == nil { return false }
-        var draft = Blakeswap_V2_TradeQuoteRequest(); draft.sellAmount = order?.sellAmount ?? (Int64(sellAmount) ?? 0)
+        var draft = Blakeswap_V1_TradeQuoteRequest(); draft.sellAmount = order?.sellAmount ?? (Int64(sellAmount) ?? 0)
         guard (try? fill.apply(to: &draft, order: order)) != nil else { return false }
         if order != nil { return true }
         guard expires > Date(), expires <= Date().addingTimeInterval(7 * 86_400) else { return false }
@@ -189,7 +189,7 @@ struct TradeComposer: View {
     }
     private func reviewDraft() async {
         guard matching, validDraft, let fee = currentFee else { return }
-        var request = Blakeswap_V2_TradeQuoteRequest()
+        var request = Blakeswap_V1_TradeQuoteRequest()
         request.kind = order == nil ? "maker" : "taker"
         request.maker = order?.maker ?? ""; request.id = order?.id ?? ""
         request.sell = order?.sell ?? sell

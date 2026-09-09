@@ -36,10 +36,10 @@ struct TradeFillDraft: Equatable {
         }
         return amount
     }
-    func apply(to request: inout Blakeswap_V2_TradeQuoteRequest, order: Order?) throws {
+    func apply(to request: inout Blakeswap_V1_TradeQuoteRequest, order: Order?) throws {
         if let order {
             let q = try Self.amount(quantity, positive: true)
-            guard order.version == 2, order.revision > 0, q >= order.minFill, q <= order.maxFill, q <= order.available else {
+            guard order.version == 1, order.revision > 0, q >= order.minFill, q <= order.maxFill, q <= order.available else {
                 throw RPCError.message("Fill quantity is outside this signed revision's available bounds. Refresh and review the parent explicitly.")
             }
             _ = try roundedFillBuy(total: order.sellAmount, buy: order.buyAmount, quantity: q)
@@ -68,11 +68,11 @@ struct TradeManagementSeed {
     let sourceEventID: String
     let fill: TradeFillDraft
 
-    init(action: String, source: Blakeswap_V2_MarketOrder) throws {
+    init(action: String, source: Blakeswap_V1_MarketOrder) throws {
         let original = source.offer
         let range: ClosedRange<Int64> = 100_000...10_000_000_000
         guard action == "replace" || action == "recreate", source.own,
-              original.version == 2, original.revision > 0,
+              original.version == 1, original.revision > 0,
               !original.id.isEmpty, !original.maker.isEmpty, !source.eventID.isEmpty,
               original.sell == "btc" || original.sell == "blake",
               range.contains(original.sellAmount), range.contains(original.buyAmount),
@@ -134,7 +134,7 @@ struct TradeManagementSeed {
         }
     }
 
-    func applySource(to request: inout Blakeswap_V2_TradeQuoteRequest) throws {
+    func applySource(to request: inout Blakeswap_V1_TradeQuoteRequest) throws {
         try validate(sell: request.sell, amount: String(request.sellAmount))
         request.orderAction = action; request.sourceOfferID = sourceOfferID; request.sourceEventID = sourceEventID
     }
@@ -142,16 +142,16 @@ struct TradeManagementSeed {
 
 // Parent and example economics are different views, never summed together.
 struct TradeEconomicsPresentation {
-    let quote: Blakeswap_V2_TradeQuote
+    let quote: Blakeswap_V1_TradeQuote
     var partialParent: Bool { quote.kind == "maker" && quote.fillMode == "partial" }
-    var displayedOutcomes: [Blakeswap_V2_TradeOutcome] { partialParent ? quote.exampleFill.outcomes : quote.outcomes }
+    var displayedOutcomes: [Blakeswap_V1_TradeOutcome] { partialParent ? quote.exampleFill.outcomes : quote.outcomes }
     var fundingReserve: Int64 { partialParent ? quote.fundingReserve : quote.fees.fundingFee }
     var receivedLabel: String { partialParent ? "Price-reference amount" : "Receive principal" }
 }
 
-func validateRefreshedParent(_ previous: Order, refreshed: Blakeswap_V2_MarketOrder) throws {
+func validateRefreshedParent(_ previous: Order, refreshed: Blakeswap_V1_MarketOrder) throws {
     let next = refreshed.offer
-    guard next.version == 2, next.network == previous.network, next.maker == previous.maker,
+    guard next.version == 1, next.network == previous.network, next.maker == previous.maker,
           next.id == previous.id, next.revision >= previous.revision, !refreshed.eventID.isEmpty else {
         throw RPCError.message("Refreshed order does not match the selected parent identity.")
     }

@@ -79,7 +79,7 @@ opt-in policy authorization. Existing capacity limits still apply to retained or
 
 ## API
 
-`ListMarket` / `market.list` / `POST /v2/market/query` accepts:
+`ListMarket` / `market.list` / `POST /v1/market/query` accepts:
 
 ```json
 {"expected_wallet":"alice","expected_network":"regtest","owner":"mine","side":"buy_btc","status":"all","btc_min":"100000","btc_max":"10000000000","sort":"rate","descending":false,"offset":0,"limit":100}

@@ -41,8 +41,8 @@ func TestPartialTermsBindExactQuantityRevisionAndRoundedAmounts(t *testing.T) {
 	for name, mutate := range map[string]func(*Terms){
 		"quantity":          func(x *Terms) { x.Request.Quantity++ },
 		"revision":          func(x *Terms) { x.Request.Revision++ },
-		"request version":   func(x *Terms) { x.Request.Version = 1 },
-		"terms version":     func(x *Terms) { x.Version = 1 },
+		"request version":   func(x *Terms) { x.Request.Version = 2 },
+		"terms version":     func(x *Terms) { x.Version = 2 },
 		"parent buy":        func(x *Terms) { x.Long.Amount = x.Offer().BuyAmount },
 		"parent sell":       func(x *Terms) { x.Short.Amount = x.Offer().SellAmount },
 		"sibling hash":      func(x *Terms) { x.Request.Hash = transport.RandomID() },
@@ -67,7 +67,7 @@ func TestSignedFillOfferRejectsLegacyAndInconsistentAvailability(t *testing.T) {
 	o.Maker = maker.Public().Hex()
 	for name, mutate := range map[string]func(map[string]any){
 		"missing version":    func(m map[string]any) { delete(m, "version") },
-		"old version":        func(m map[string]any) { m["version"] = 1 },
+		"old version":        func(m map[string]any) { m["version"] = 2 },
 		"missing fill mode":  func(m map[string]any) { delete(m, "fill_mode") },
 		"missing revision":   func(m map[string]any) { delete(m, "revision") },
 		"legacy reservation": func(m map[string]any) { m["reservation"] = transport.RandomID() },
@@ -107,7 +107,7 @@ func TestTowerReceiptRequiresCurrentProtocolMarker(t *testing.T) {
 	if err := r.Validate(); err != nil {
 		t.Fatal(err)
 	}
-	for _, version := range []int{0, 1, 3} {
+	for _, version := range []int{0, 2, 3} {
 		r.Version = version
 		if r.Validate() == nil {
 			t.Fatal("incompatible receipt accepted")

@@ -4,21 +4,22 @@ This document specifies the T13 implementation. It is a design contract, not a
 record of completed tests or an independent security assessment. Implementation
 and validation results are recorded separately in `TESTING.md`.
 
-## Cutover and identities
+## First-release identities
 
-The unreleased application makes a hard cutover to protocol format 2 and vault
-state format 3. A missing or older marker is incompatible, not a default. The
+The unreleased application uses protocol format 1 and vault state format 1.
+Partial fills are part of the first release. An unsupported marker or invalid
+schema is incompatible, not a default. The
 public offer, request, immutable terms, private message, tower advertisement, job
-and receipt boundaries all identify the upgraded format. The network namespace
-is `blakeswap-<network>-v2`; chain genesis and replay-signature domains do not
-change. The typed service and HTTP API use v2. There is no version negotiation,
+and receipt boundaries all identify the current v1 format. The network namespace
+is `blakeswap-<network>-v1`; chain genesis and replay-signature domains do not
+change. The typed service and HTTP API use v1. There is no version negotiation,
 old execution branch or automatic migration of development state.
 
-Only an absent vault initializes State3. Every authenticated existing-state
-reader must reject older state before activation, including engine startup,
+Only an absent vault initializes v1 state. Every authenticated existing-state
+reader must reject incompatible state before activation, including engine startup,
 offline action/network readers, archive snapshots and complete/streamed backup
 validation. Portable encryption envelope versions remain separate from the
-embedded state version. Rejecting old state must preserve the source; a user
+embedded state version. Rejecting incompatible state must preserve the source; a user
 may explicitly create a separate development profile. The application never
 silently resets or deletes a rejected profile.
 
@@ -33,7 +34,7 @@ active ownership. First
 initialization writes a complete current-format state in a private sibling
 directory and atomically links it into an absent final path. Failed writes or
 interruption before publication leave that final path absent; interruption after
-publication leaves complete State3. A competing existing destination is never
+publication leaves complete v1 state. A competing existing destination is never
 overwritten. An arbitrary preexisting empty database is still incompatible.
 
 After T10 integration, credential acquisition authenticates and checks the

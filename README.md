@@ -1,5 +1,8 @@
 # Blakeswap
 
+Blakeswap is unreleased; all application and protocol development targets v1.
+See [repository guidance](AGENTS.md) for the first-release version policy.
+
 A native macOS client and Go daemon for asynchronous, noncustodial Bitcoin ↔ Bitcoin Blake2b atomic swaps. Signed offers and encrypted swap messages travel through Nostr relays. Optional watchtowers can execute delayed, pre-signed rescues and earn a percentage only when their rescue transaction confirms.
 
 The app supports mainnet, Testnet4, and regtest. Mainnet starts with public Electrum
@@ -28,7 +31,7 @@ The [release workflow](.github/workflows/release.yml) defines separate Apple sil
 (`arm64`) and Intel (`x86_64`) DMGs. Check [GitHub Releases](https://github.com/blakeswap/blakeswap/releases)
 for available artifacts, or build locally; the workflow alone is not evidence that
 a particular release has built or shipped.
-Open `bin/Blakeswap-0.2.0-arm64.dmg` (or the Intel equivalent), drag the app into Applications, and open it.
+Open `bin/Blakeswap-1.0.0-arm64.dmg` (or the Intel equivalent), drag the app into Applications, and open it.
 On first launch, choose a wallet name and create a new wallet or restore a BIP39
 recovery phrase or encrypted state backup. Setup checks three recovery words,
 offers a password-protected backup file, and walks through network and server

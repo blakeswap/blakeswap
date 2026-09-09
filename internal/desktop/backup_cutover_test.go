@@ -21,7 +21,7 @@ func TestBackupCutoverRejectsEmbeddedLegacyBeforeMutation(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, version := range []int{0, 1, 2, daemon.StateVersion} {
+	for _, version := range []int{0, 2, 3, daemon.StateVersion} {
 		state := &daemon.State{Version: version, Network: chain.Regtest, Mnemonic: seed}
 		manifest := backupManifest{FormatVersion: 1, CreatedAt: time.Now().Unix(), Wallets: []backupWallet{{ID: "cutover", Name: "Cutover", Mnemonic: seed, Identity: identity, Networks: map[chain.Network]*daemon.State{chain.Regtest: state}}}}
 		before, _ := json.Marshal(manifest)

@@ -65,7 +65,7 @@ final class NativeConsentTests: XCTestCase {
         owner.onBegin = { began.fulfill() }
         let (security, probe, helper, endpoint) = try nativeConsentFixture(self, owner: owner)
         defer { security.closeConnection(); helper.close() }
-        var request = Blakeswap_V2_TakeOfferRequest()
+        var request = Blakeswap_V1_TakeOfferRequest()
         request.maker = "maker"; request.id = "parent"; request.quantity = 9007199254740993
         request.parentRevision = UInt64.max; request.expectedNetwork = "regtest"; request.towerPubkey = "reviewed-provider"
         let frozen = try request.jsonUTF8Data()
@@ -76,7 +76,7 @@ final class NativeConsentTests: XCTestCase {
         let preparation = await probe.lastPreparation
         let object = try JSONSerialization.jsonObject(with: preparation) as! [String: Any]
         let normalized = try JSONSerialization.data(withJSONObject: object["params"]!)
-        let reviewed = try Blakeswap_V2_TakeOfferRequest(jsonUTF8Data: normalized)
+        let reviewed = try Blakeswap_V1_TakeOfferRequest(jsonUTF8Data: normalized)
         XCTAssertEqual(reviewed.quantity, 9007199254740993); XCTAssertEqual(reviewed.parentRevision, UInt64.max)
         XCTAssertEqual(reviewed.towerPubkey, "reviewed-provider"); XCTAssertNotEqual(reviewed, request)
     }
@@ -115,7 +115,7 @@ final class NativeConsentTests: XCTestCase {
         var settings = AppSettings(); settings.activeNetwork = "regtest"; settings.revision = 1
         var status = DaemonStatus(); status.name = "alice"; status.network = "regtest"
         XCTAssertTrue(model.acceptSnapshot(status, settings: settings, profile: "alice", generation: model.generation))
-        model.recovery = "synthetic recovery display"; model.setupWallet = Blakeswap_V2_FirstWallet()
+        model.recovery = "synthetic recovery display"; model.setupWallet = Blakeswap_V1_FirstWallet()
         let before = model.generation
         let pending = Task {
             do { _ = try await security.authorize(endpoint: endpoint, profile: "alice", method: "onboarding.get", payload: Data("{}".utf8)); XCTFail("Disconnected prompt approved") }

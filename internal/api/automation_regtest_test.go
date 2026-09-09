@@ -4,7 +4,7 @@ import (
 	"sync"
 	"testing"
 
-	pb "github.com/blakeswap/blakeswap/api/gen/blakeswap/v2"
+	pb "github.com/blakeswap/blakeswap/api/gen/blakeswap/v1"
 	"github.com/blakeswap/blakeswap/internal/chain"
 	"github.com/blakeswap/blakeswap/internal/contract"
 	"github.com/blakeswap/blakeswap/internal/transport"

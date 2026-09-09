@@ -17,7 +17,7 @@ import (
 func TestStateCutoverOwnedDeliveryProvenanceActiveAndCold(t *testing.T) {
 	for _, kind := range []string{"outbox", "quarantined_outbox"} {
 		for _, cold := range []bool{false, true} {
-			for _, version := range []int{0, 1, transport.MessageVersion} {
+			for _, version := range []int{0, 2, transport.MessageVersion} {
 				t.Run(kind+"/"+string(rune('0'+version))+map[bool]string{true: "/cold", false: "/active"}[cold], func(t *testing.T) {
 					e := &Engine{Config: Config{Network: chain.Regtest}, identity: nostr.Generate()}
 					d, err := e.prepareDelivery(nostr.Generate().Public().Hex(), "ack", transport.RandomID(), json.RawMessage(`{"id":"retained"}`))
@@ -108,7 +108,7 @@ func TestStateCutoverClosedPublicDeliveryRetainsOriginalExpiry(t *testing.T) {
 	if _, err := protocol.DecodeOffer(event, p.Offer.Expires+1); err == nil {
 		t.Fatal("retained format inspection extended negotiation expiry")
 	}
-	p.Offer.Version = 1
+	p.Offer.Version = 2
 	event, err = e.signOffer(p.Offer, event.CreatedAt)
 	if err != nil {
 		t.Fatal(err)

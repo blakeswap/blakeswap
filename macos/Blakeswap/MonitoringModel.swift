@@ -4,8 +4,8 @@ import Foundation
 import SwiftUI
 import UserNotifications
 
-typealias ActionSummary = Blakeswap_V2_ActionSummary
-typealias WalletAction = Blakeswap_V2_WalletAction
+typealias ActionSummary = Blakeswap_V1_ActionSummary
+typealias WalletAction = Blakeswap_V1_WalletAction
 
 struct AlertPreferences: Codable, Equatable {
     var transitions = true
@@ -124,7 +124,7 @@ extension WalletAction {
         }
     }
 }
-extension Blakeswap_V2_ActionDeadline {
+extension Blakeswap_V1_ActionDeadline {
     var display: String {
         let label = kind.replacingOccurrences(of: "_", with: " ").capitalized
         guard certain else { return "\(chain.uppercased()) \(label): timing unavailable · last observation \(observedAt > 0 ? Date(timeIntervalSince1970: Double(observedAt)).formatted() : "unknown")" }

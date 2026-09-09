@@ -1,13 +1,13 @@
 syntax = "proto3";
-package blakeswap.v2;
-option go_package = "github.com/blakeswap/blakeswap/api/gen/blakeswap/v2;blakeswapv2";
+package blakeswap.v1;
+option go_package = "github.com/blakeswap/blakeswap/api/gen/blakeswap/v1;blakeswapv1";
 
 import "google/api/annotations.proto";
 import "google/protobuf/empty.proto";
 import "protoc-gen-openapiv2/options/annotations.proto";
 
 option (grpc.gateway.protoc_gen_openapiv2.options.openapiv2_swagger) = {
- info: { title: "Blakeswap daemon API" version: "2.0" description: "Local wallet API. All amounts are integer satoshis. Protobuf JSON represents int64 as decimal strings. Bearer credentials are read from a private runtime file. HTTP binds only to loopback; gRPC binds to a private Unix socket. Native desktop sensitive actions additionally require a one-use exact-action grant in X-Blakeswap-Consent (gRPC x-blakeswap-consent), approved only by the owned native OS-authentication broker. Read-only calls need no grant. Explicit file mode retains operator-controlled bearer authority." }
+ info: { title: "Blakeswap daemon API" version: "1.0" description: "Local wallet API. All amounts are integer satoshis. Protobuf JSON represents int64 as decimal strings. Bearer credentials are read from a private runtime file. HTTP binds only to loopback; gRPC binds to a private Unix socket. Native desktop sensitive actions additionally require a one-use exact-action grant in X-Blakeswap-Consent (gRPC x-blakeswap-consent), approved only by the owned native OS-authentication broker. Read-only calls need no grant. Explicit file mode retains operator-controlled bearer authority." }
  schemes: HTTP
  consumes: "application/json"
  produces: "application/json"
@@ -17,51 +17,51 @@ option (grpc.gateway.protoc_gen_openapiv2.options.openapiv2_swagger) = {
 };
 
 service DaemonService {
- rpc ReportStrategy(StrategyReportRequest) returns (StrategyView) { option (google.api.http) = { post: "/v2/strategies/report" body: "*" }; }
- rpc ListStrategies(AutomationQuery) returns (StrategyList) { option (google.api.http) = { post: "/v2/strategies/query" body: "*" }; }
- rpc ReviewStrategy(StrategyEdit) returns (StrategyReview) { option (google.api.http) = { post: "/v2/strategies/review" body: "*" }; }
- rpc SaveStrategy(StrategyEdit) returns (StrategyView) { option (google.api.http) = { put: "/v2/strategies" body: "*" }; }
- rpc StopStrategy(StopStrategyRequest) returns (StrategyView) { option (google.api.http) = { post: "/v2/strategies/stop" body: "*" }; }
- rpc GetRecord(RecordQuery) returns (RecordDetail) { option (google.api.http) = { post: "/v2/history/record" body: "*" }; }
- rpc ListAutomations(AutomationQuery) returns (AutomationList) { option (google.api.http) = { post: "/v2/automations/query" body: "*" }; }
- rpc ReviewAutomation(AutomationEdit) returns (AutomationReview) { option (google.api.http) = { post: "/v2/automations/review" body: "*" }; }
- rpc SaveAutomation(AutomationEdit) returns (AutomationView) { option (google.api.http) = { put: "/v2/automations" body: "*" }; }
- rpc DisableAutomation(DisableAutomationRequest) returns (AutomationView) { option (google.api.http) = { post: "/v2/automations/disable" body: "*" }; }
+ rpc ReportStrategy(StrategyReportRequest) returns (StrategyView) { option (google.api.http) = { post: "/v1/strategies/report" body: "*" }; }
+ rpc ListStrategies(AutomationQuery) returns (StrategyList) { option (google.api.http) = { post: "/v1/strategies/query" body: "*" }; }
+ rpc ReviewStrategy(StrategyEdit) returns (StrategyReview) { option (google.api.http) = { post: "/v1/strategies/review" body: "*" }; }
+ rpc SaveStrategy(StrategyEdit) returns (StrategyView) { option (google.api.http) = { put: "/v1/strategies" body: "*" }; }
+ rpc StopStrategy(StopStrategyRequest) returns (StrategyView) { option (google.api.http) = { post: "/v1/strategies/stop" body: "*" }; }
+ rpc GetRecord(RecordQuery) returns (RecordDetail) { option (google.api.http) = { post: "/v1/history/record" body: "*" }; }
+ rpc ListAutomations(AutomationQuery) returns (AutomationList) { option (google.api.http) = { post: "/v1/automations/query" body: "*" }; }
+ rpc ReviewAutomation(AutomationEdit) returns (AutomationReview) { option (google.api.http) = { post: "/v1/automations/review" body: "*" }; }
+ rpc SaveAutomation(AutomationEdit) returns (AutomationView) { option (google.api.http) = { put: "/v1/automations" body: "*" }; }
+ rpc DisableAutomation(DisableAutomationRequest) returns (AutomationView) { option (google.api.http) = { post: "/v1/automations/disable" body: "*" }; }
 
- rpc ListFills(FillQuery) returns (FillPage) { option (google.api.http) = { post: "/v2/orders/fills/query" body: "*" }; }
- rpc ListMarket(MarketQuery) returns (MarketPage) { option (google.api.http) = { post: "/v2/market/query" body: "*" }; }
- rpc ListActivity(ActivityQuery) returns (ActivityPage) { option (google.api.http) = { post: "/v2/activity/query" body: "*" }; }
- rpc ExportActivity(ActivityQuery) returns (ActivityExport) { option (google.api.http) = { post: "/v2/activity/export" body: "*" }; }
- rpc GetActionSummary(ActionSummaryRequest) returns (ActionSummary) { option (google.api.http) = { post: "/v2/actions/summary" body: "*" }; }
- rpc GetStatus(google.protobuf.Empty) returns (Status) { option (google.api.http) = { get: "/v2/status" }; }
- rpc RefreshStatus(RefreshStatusRequest) returns (Status) { option (google.api.http) = { post: "/v2/status/refresh" body: "*" }; }
- rpc ResolveWatchtower(ResolveWatchtowerRequest) returns (google.protobuf.Empty) { option (google.api.http) = { post: "/v2/watchtowers/resolve" body: "*" }; }
- rpc SetPaused(SetPausedRequest) returns (Status) { option (google.api.http) = { put: "/v2/pause" body: "*" }; }
- rpc CreateOffer(CreateOfferRequest) returns (Offer) { option (google.api.http) = { post: "/v2/offers" body: "*" }; }
- rpc CancelOffer(CancelOfferRequest) returns (Offer) { option (google.api.http) = { delete: "/v2/offers/{id}" }; }
- rpc TakeOffer(TakeOfferRequest) returns (TakeOfferResponse) { option (google.api.http) = { post: "/v2/swaps" body: "*" }; }
- rpc Mine(MineRequest) returns (google.protobuf.Empty) { option (google.api.http) = { post: "/v2/regtest/mine" body: "*" }; }
- rpc Faucet(FaucetRequest) returns (FaucetResponse) { option (google.api.http) = { post: "/v2/regtest/faucet" body: "*" }; }
- rpc GetRecovery(google.protobuf.Empty) returns (Recovery) { option (google.api.http) = { post: "/v2/wallet/recovery" body: "*" }; }
- rpc PreflightFunds(FundsPreflightRequest) returns (FundsPreflight) { option (google.api.http) = { post: "/v2/wallet/preflight" body: "*" }; }
- rpc QuoteTrade(TradeQuoteRequest) returns (TradeQuote) { option (google.api.http) = { post: "/v2/trades/quote" body: "*" }; }
- rpc ConfirmTrade(ConfirmTradeRequest) returns (ConfirmTradeResult) { option (google.api.http) = { post: "/v2/trades/confirm" body: "*" }; }
- rpc QuoteFee(FeeQuoteRequest) returns (FeeQuote) { option (google.api.http) = { post: "/v2/fees/quote" body: "*" }; }
- rpc BumpTransaction(BumpRequest) returns (BumpResult) { option (google.api.http) = { post: "/v2/transactions/bump" body: "*" }; }
- rpc SendCoins(SendCoinsRequest) returns (WalletSend) { option (google.api.http) = { post: "/v2/wallet/send" body: "*" }; }
- rpc ExportPortableBackup(ExportPortableBackupRequest) returns (PortableBackupResult) { option (google.api.http) = { post: "/v2/wallet/portable-backup" body: "*" }; }
- rpc InspectBackup(InspectBackupRequest) returns (BackupContents) { option (google.api.http) = { post: "/v2/backups/inspect" body: "*" }; }
- rpc ImportBackup(ImportBackupRequest) returns (ImportBackupResult) { option (google.api.http) = { post: "/v2/backups/import" body: "*" }; }
- rpc BackupWallet(google.protobuf.Empty) returns (Backup) { option (google.api.http) = { post: "/v2/wallet/backup" body: "*" }; }
- rpc CreateWallet(CreateWalletRequest) returns (Settings) { option (google.api.http) = { post: "/v2/wallets" body: "*" }; }
- rpc PrepareFirstWallet(PrepareFirstWalletRequest) returns (FirstWallet) { option (google.api.http) = { post: "/v2/onboarding/wallet" body: "*" }; }
- rpc GetFirstWallet(google.protobuf.Empty) returns (FirstWallet) { option (google.api.http) = { post: "/v2/onboarding/recovery" body: "*" }; }
- rpc ConfirmFirstWallet(ConfirmFirstWalletRequest) returns (Settings) { option (google.api.http) = { post: "/v2/onboarding/confirm" body: "*" }; }
- rpc ExportFirstWallet(ExportFirstWalletRequest) returns (Backup) { option (google.api.http) = { post: "/v2/onboarding/backup" body: "*" }; }
- rpc FinishOnboarding(Settings) returns (Settings) { option (google.api.http) = { post: "/v2/onboarding/finish" body: "*" }; }
- rpc GetSettings(google.protobuf.Empty) returns (Settings) { option (google.api.http) = { get: "/v2/settings" }; }
- rpc UpdateSettings(Settings) returns (Settings) { option (google.api.http) = { put: "/v2/settings" body: "*" }; }
- rpc CheckNode(CheckNodeRequest) returns (CheckNodeResponse) { option (google.api.http) = { post: "/v2/settings/check-node" body: "*" }; }
+ rpc ListFills(FillQuery) returns (FillPage) { option (google.api.http) = { post: "/v1/orders/fills/query" body: "*" }; }
+ rpc ListMarket(MarketQuery) returns (MarketPage) { option (google.api.http) = { post: "/v1/market/query" body: "*" }; }
+ rpc ListActivity(ActivityQuery) returns (ActivityPage) { option (google.api.http) = { post: "/v1/activity/query" body: "*" }; }
+ rpc ExportActivity(ActivityQuery) returns (ActivityExport) { option (google.api.http) = { post: "/v1/activity/export" body: "*" }; }
+ rpc GetActionSummary(ActionSummaryRequest) returns (ActionSummary) { option (google.api.http) = { post: "/v1/actions/summary" body: "*" }; }
+ rpc GetStatus(google.protobuf.Empty) returns (Status) { option (google.api.http) = { get: "/v1/status" }; }
+ rpc RefreshStatus(RefreshStatusRequest) returns (Status) { option (google.api.http) = { post: "/v1/status/refresh" body: "*" }; }
+ rpc ResolveWatchtower(ResolveWatchtowerRequest) returns (google.protobuf.Empty) { option (google.api.http) = { post: "/v1/watchtowers/resolve" body: "*" }; }
+ rpc SetPaused(SetPausedRequest) returns (Status) { option (google.api.http) = { put: "/v1/pause" body: "*" }; }
+ rpc CreateOffer(CreateOfferRequest) returns (Offer) { option (google.api.http) = { post: "/v1/offers" body: "*" }; }
+ rpc CancelOffer(CancelOfferRequest) returns (Offer) { option (google.api.http) = { delete: "/v1/offers/{id}" }; }
+ rpc TakeOffer(TakeOfferRequest) returns (TakeOfferResponse) { option (google.api.http) = { post: "/v1/swaps" body: "*" }; }
+ rpc Mine(MineRequest) returns (google.protobuf.Empty) { option (google.api.http) = { post: "/v1/regtest/mine" body: "*" }; }
+ rpc Faucet(FaucetRequest) returns (FaucetResponse) { option (google.api.http) = { post: "/v1/regtest/faucet" body: "*" }; }
+ rpc GetRecovery(google.protobuf.Empty) returns (Recovery) { option (google.api.http) = { post: "/v1/wallet/recovery" body: "*" }; }
+ rpc PreflightFunds(FundsPreflightRequest) returns (FundsPreflight) { option (google.api.http) = { post: "/v1/wallet/preflight" body: "*" }; }
+ rpc QuoteTrade(TradeQuoteRequest) returns (TradeQuote) { option (google.api.http) = { post: "/v1/trades/quote" body: "*" }; }
+ rpc ConfirmTrade(ConfirmTradeRequest) returns (ConfirmTradeResult) { option (google.api.http) = { post: "/v1/trades/confirm" body: "*" }; }
+ rpc QuoteFee(FeeQuoteRequest) returns (FeeQuote) { option (google.api.http) = { post: "/v1/fees/quote" body: "*" }; }
+ rpc BumpTransaction(BumpRequest) returns (BumpResult) { option (google.api.http) = { post: "/v1/transactions/bump" body: "*" }; }
+ rpc SendCoins(SendCoinsRequest) returns (WalletSend) { option (google.api.http) = { post: "/v1/wallet/send" body: "*" }; }
+ rpc ExportPortableBackup(ExportPortableBackupRequest) returns (PortableBackupResult) { option (google.api.http) = { post: "/v1/wallet/portable-backup" body: "*" }; }
+ rpc InspectBackup(InspectBackupRequest) returns (BackupContents) { option (google.api.http) = { post: "/v1/backups/inspect" body: "*" }; }
+ rpc ImportBackup(ImportBackupRequest) returns (ImportBackupResult) { option (google.api.http) = { post: "/v1/backups/import" body: "*" }; }
+ rpc BackupWallet(google.protobuf.Empty) returns (Backup) { option (google.api.http) = { post: "/v1/wallet/backup" body: "*" }; }
+ rpc CreateWallet(CreateWalletRequest) returns (Settings) { option (google.api.http) = { post: "/v1/wallets" body: "*" }; }
+ rpc PrepareFirstWallet(PrepareFirstWalletRequest) returns (FirstWallet) { option (google.api.http) = { post: "/v1/onboarding/wallet" body: "*" }; }
+ rpc GetFirstWallet(google.protobuf.Empty) returns (FirstWallet) { option (google.api.http) = { post: "/v1/onboarding/recovery" body: "*" }; }
+ rpc ConfirmFirstWallet(ConfirmFirstWalletRequest) returns (Settings) { option (google.api.http) = { post: "/v1/onboarding/confirm" body: "*" }; }
+ rpc ExportFirstWallet(ExportFirstWalletRequest) returns (Backup) { option (google.api.http) = { post: "/v1/onboarding/backup" body: "*" }; }
+ rpc FinishOnboarding(Settings) returns (Settings) { option (google.api.http) = { post: "/v1/onboarding/finish" body: "*" }; }
+ rpc GetSettings(google.protobuf.Empty) returns (Settings) { option (google.api.http) = { get: "/v1/settings" }; }
+ rpc UpdateSettings(Settings) returns (Settings) { option (google.api.http) = { put: "/v1/settings" body: "*" }; }
+ rpc CheckNode(CheckNodeRequest) returns (CheckNodeResponse) { option (google.api.http) = { post: "/v1/settings/check-node" body: "*" }; }
 }
 message RefreshStatusRequest { string expected_network = 1; }
 message ResolveWatchtowerRequest { string pubkey = 1; string expected_network = 2; }
@@ -557,8 +557,7 @@ message StopStrategyRequest {
 
 message StrategyReportRequest { string id = 1; string expected_wallet = 2; string expected_network = 3; uint64 expected_revision = 4; }
 
-// Partial-fill contract. The complete service is v2 only; there is no
-// negotiation or v1 execution fallback.
+// Partial-fill contract. The complete service uses v1 throughout first-release development.
 message FillPreview {
  int64 quantity = 1; int64 buy_amount = 2; int64 funding_fee = 3; int64 owner_fee_cap = 4;
  repeated TradeOutcome outcomes = 5;

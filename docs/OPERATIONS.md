@@ -474,3 +474,15 @@ Portable exports include every archived record across the selected profile's net
 Portable export briefly joins wallet workers to save and capture every selected profile/network at one local boundary. On supported filesystems it takes independent encrypted file clones; otherwise it captures the active checkpoint and copies encrypted archive pages in short read transactions after workers resume. If the archive changes during that fallback, the export asks you to retry and discards its partial private staging. Once the complete snapshot is validated, later wallet changes are allowed and keep its freshness reminder stale. Validation, full history copying and chosen-password encryption run with wallet workers available. Private clones remain encrypted with source credentials until cleanup; generated staging directories are restricted and removed after cancellation or on the next exclusive startup. Free-space checks include potential clone copy-on-write growth or actual encoded staging requirements.
 
 Streaming keeps archive records out of a full lifetime in-memory clone, but a network's active checkpoint and restored core obligations still require memory. A single large record also requires memory for its decoding. Imported legacy v1 input uses its original whole-manifest reader. The snapshot staging interval and these residual active-state costs are measured in the opt-in physical resource fixture documented in TESTING; chunk size alone is not a latency or total-memory guarantee. Keep adequate free memory and disk for unusually large imported populations.
+
+### First-release development formats
+
+Application-owned markers remain v1, including wallet state and backup manifests.
+The portable encodings have distinct authenticated identities: flat JSON uses
+`BLAKESWAP-BACKUP` followed by NUL and byte 1; chunked streaming export uses
+`BLAKESWAP-STREAM` followed by NUL and byte 1. They are encoding types within v1,
+not successive releases. Current exports use streaming to bound memory.
+Earlier experimental protocol/state/stream markers are unsupported. Keep their
+source files and credentials; use a separate development profile rather than
+editing markers or silently resetting data. A v1 marker alone does not establish
+compatibility: the current schema and retained obligations must also validate.

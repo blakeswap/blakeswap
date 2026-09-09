@@ -11,7 +11,7 @@ import (
 	"strings"
 	"testing"
 
-	pb "github.com/blakeswap/blakeswap/api/gen/blakeswap/v2"
+	pb "github.com/blakeswap/blakeswap/api/gen/blakeswap/v1"
 	"github.com/blakeswap/blakeswap/internal/api"
 	"github.com/blakeswap/blakeswap/internal/daemon"
 	"google.golang.org/grpc"
@@ -72,7 +72,7 @@ func TestNativeDirectGRPCCLIAndHTTPRequireExactPrivateConsent(t *testing.T) {
 	noPasswordFile(t, filepath.Join(m.root, "wallets", "alice"))
 	post := func(grant string) (int, []byte) {
 		t.Helper()
-		r, err := http.NewRequest("POST", server.Endpoint.HTTP+"/v2/onboarding/recovery", bytes.NewReader([]byte(`{}`)))
+		r, err := http.NewRequest("POST", server.Endpoint.HTTP+"/v1/onboarding/recovery", bytes.NewReader([]byte(`{}`)))
 		if err != nil {
 			t.Fatal(err)
 		}

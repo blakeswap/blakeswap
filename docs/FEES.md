@@ -8,7 +8,7 @@ than silently donated to miners.
 
 ## Estimates and manual selection
 
-`QuoteFee` (`POST /v2/fees/quote`, CLI `fee.quote`) takes `kind` (`send` or
+`QuoteFee` (`POST /v1/fees/quote`, CLI `fee.quote`) takes `kind` (`send` or
 `funding`), `chain`, `amount`, optional `destination`, optional selected `inputs`,
 `fee`, `target`, and `expected_network`. Sends require explicit inputs. Funding
 selects unlocked confirmed candidates; the quote does not reserve or sign them.
@@ -67,7 +67,7 @@ selection. No automatic change to the tower's signed limits or bounty occurs.
 
 ## Recovery and states
 
-`BumpTransaction` (`POST /v2/transactions/bump`, CLI `transaction.bump`) takes an
+`BumpTransaction` (`POST /v1/transactions/bump`, CLI `transaction.bump`) takes an
 activity `id`, `kind`, higher total `fee`, `expected_txid`, and `expected_network`.
 Use the current status transaction ID; a stale ID cannot authorize a new variant.
 
