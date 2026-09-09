@@ -1,4 +1,4 @@
-"""Pure, explicit protocol-2 requests for the isolated whole-trade demos."""
+"""Pure, explicit v1 requests for the isolated whole-trade demos."""
 
 
 def integer(value, maximum):
