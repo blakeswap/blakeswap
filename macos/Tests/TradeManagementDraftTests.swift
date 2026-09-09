@@ -2,10 +2,10 @@ import XCTest
 @testable import Blakeswap
 
 final class TradeManagementDraftTests: XCTestCase {
-    private func source(mode: String = "partial", available: Int64 = 500_000) -> Blakeswap_V2_MarketOrder {
-        var row = Blakeswap_V2_MarketOrder()
+    private func source(mode: String = "partial", available: Int64 = 500_000) -> Blakeswap_V1_MarketOrder {
+        var row = Blakeswap_V1_MarketOrder()
         row.own = true; row.eventID = "signed-revision-eight"
-        row.offer.version = 2; row.offer.revision = 8; row.offer.network = "regtest"
+        row.offer.version = 1; row.offer.revision = 8; row.offer.network = "regtest"
         row.offer.id = "parent"; row.offer.maker = "maker"; row.offer.sell = "blake"
         row.offer.sellAmount = 900_000; row.offer.buyAmount = 1_170_001
         row.offer.fillMode = mode; row.offer.minFill = mode == "whole" ? 900_000 : 400_000
@@ -67,7 +67,7 @@ final class TradeManagementDraftTests: XCTestCase {
             case "dust": row.quantities.available = 99_999; row.quantities.reserved = 800_001
             case "foreign": row.own = false
             case "event": row.eventID = ""
-            case "version": row.offer.version = 1
+            case "version": row.offer.version = 2
             default: row.offer.minFill = 700_000
             }
             XCTAssertThrowsError(try TradeManagementSeed(action: "replace", source: row), kind)
@@ -80,7 +80,7 @@ final class TradeManagementDraftTests: XCTestCase {
             XCTAssertThrowsError(try seed.validate(sell: "blake", amount: amount))
         }
         XCTAssertThrowsError(try seed.validate(sell: "btc", amount: "500000"))
-        var request = Blakeswap_V2_TradeQuoteRequest()
+        var request = Blakeswap_V1_TradeQuoteRequest()
         request.kind = "maker"; request.sell = seed.sell; request.sellAmount = seed.sellAmount
         request.buyAmount = 700_001 // Explicit new price is allowed.
         var fill = seed.fill

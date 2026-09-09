@@ -10,7 +10,7 @@ struct OnboardingView: View {
     @State private var name = "My wallet"
     @State private var mnemonic = ""
     @State private var backupPath = ""
-    @State private var backupContents: Blakeswap_V2_BackupContents?
+    @State private var backupContents: Blakeswap_V1_BackupContents?
     @State private var sourceWallet = ""
     @State private var password = ""
     @State private var exportPassword = ""
@@ -126,7 +126,7 @@ struct OnboardingView: View {
                     Button("Back") { mode = nil; mnemonic = ""; password = ""; model.notice = nil }.disabled(model.busy)
                     Spacer()
                     Button(mode == "create" ? "Create wallet" : "Restore wallet") {
-                        var request = Blakeswap_V2_PrepareFirstWalletRequest()
+                        var request = Blakeswap_V1_PrepareFirstWalletRequest()
                         request.name = name.trimmingCharacters(in: .whitespacesAndNewlines)
                         request.revision = model.settings?.revision ?? 0
                         if mode == "restore" { request.mnemonic = mnemonic.trimmingCharacters(in: .whitespacesAndNewlines) }
@@ -165,7 +165,7 @@ struct OnboardingView: View {
                             Button("Save encrypted backup") {
                                 let panel = NSSavePanel(); panel.nameFieldStringValue = "Blakeswap-wallet.blakeswap"
                                 guard panel.runModal() == .OK, let url = panel.url else { return }
-                                var request = Blakeswap_V2_ExportFirstWalletRequest(); request.path = url.path; request.password = exportPassword; request.revision = model.settings?.revision ?? 0
+                                var request = Blakeswap_V1_ExportFirstWalletRequest(); request.path = url.path; request.password = exportPassword; request.revision = model.settings?.revision ?? 0
                                 Task { if await model.setupAction("onboarding.export", request: request) { exportPassword = "" } }
                             }.disabled(model.busy || exportPassword.count < 16)
                         }.padding(.top, 12)
@@ -186,7 +186,7 @@ struct OnboardingView: View {
                         Button("Show phrase again") { showingWords = true; answers = ["", "", ""] }.disabled(model.busy)
                         Spacer()
                         Button("Confirm backup") {
-                            var request = Blakeswap_V2_ConfirmFirstWalletRequest(); request.revision = model.settings?.revision ?? 0; request.words = answers
+                            var request = Blakeswap_V1_ConfirmFirstWalletRequest(); request.revision = model.settings?.revision ?? 0; request.words = answers
                             Task { _ = await model.setupAction("onboarding.confirm", request: request) }
                         }.buttonStyle(MintButton()).disabled(model.busy || answers.contains { $0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }).accessibilityIdentifier("setup-confirm-backup")
                     }

@@ -11,7 +11,4 @@ protoc -I api/proto -I api/third_party \
  --swift_out=macos/Blakeswap/Generated \
  --grpc-swift-2_out=macos/Blakeswap/Generated \
  --grpc-swift-2_opt=Server=false \
- api/proto/blakeswap/v2/daemon.proto
-
-# Keep a single generated service after the hard API cutover.
-rm -f macos/Blakeswap/Generated/blakeswap/v1/daemon.pb.swift macos/Blakeswap/Generated/blakeswap/v1/daemon.grpc.swift
+ api/proto/blakeswap/v1/daemon.proto

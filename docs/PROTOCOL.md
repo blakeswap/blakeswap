@@ -4,7 +4,7 @@
 
 An offer is a signed parent order with a fixed sell/buy ratio. It explicitly permits either one whole fill or partial fills within signed minimum and maximum quantities. Each accepted fill becomes its own on-chain atomic swap. There are no market orders, AMMs, Lightning channels, trusted escrow, or account balances held by a matching service.
 
-The unreleased application uses protocol format 2, public API v2 and vault state format 3. Missing and legacy formats are rejected; there is no version negotiation, mixed-client execution or automatic development-state migration. Existing files and credentials are preserved on refusal. Use a separate development profile when a fresh state is required. Wallet derivation, chain replay domains, the private app/helper protocol and portable encryption envelopes have separate identities and do not change with this public cutover. See the [partial-fill state design](PARTIAL_FILLS.md) and [API contract](PARTIAL_FILL_API.md).
+Blakeswap is unreleased. Its protocol, API, wallet state and backup formats remain v1 while developing the first release; partial fills are part of v1. Update the current schema in place without version negotiation or development-state migrations. Validate required fields and invariants, preserve incompatible files and credentials, and use a separate development profile when necessary. See [repository guidance](../AGENTS.md), the [partial-fill state design](PARTIAL_FILLS.md), and [API contract](PARTIAL_FILL_API.md).
 
 **Maker/taker are market roles.** In this protocol the **taker always chooses the preimage and funds first**, regardless of which asset they sell. The taker funds the long-timeout HTLC; the maker funds the short-timeout HTLC. The protocol works in either BTC/BLAKE direction.
 
@@ -42,7 +42,7 @@ The product and division use exact wide integer arithmetic. Each fill preserves 
 
 ## Authenticated terms
 
-The request contains format 2, a random child swap ID, the complete exact signed open-offer event, its revision, requested quantity `q`, taker Nostr identity, `H`, and two distinct taker per-swap compressed public keys. The maker verifies the request, its current signed availability revision, real funding inputs and privately stored protection and monetary limits. It durably reserves that slice, assigns disjoint whole inputs, derives its keys, and saves immutable accepted terms and their outgoing message before acceptance can leave the wallet. Racing takes cannot overdraw the parent; a stale revision requires a new review.
+The request contains format 1, a random child swap ID, the complete exact signed open-offer event, its revision, requested quantity `q`, taker Nostr identity, `H`, and two distinct taker per-swap compressed public keys. The maker verifies the request, its current signed availability revision, real funding inputs and privately stored protection and monetary limits. It durably reserves that slice, assigns disjoint whole inputs, derives its keys, and saves immutable accepted terms and their outgoing message before acceptance can leave the wallet. Racing takes cannot overdraw the parent; a stale revision requires a new review.
 
 Terms include the full request, both contracts before funding, both maker keys, both application chain domains, both refund locktimes, the long-chain reveal cutoff/tower takeover locktime, without either party’s tower identity, fee, payout scripts, quote, or protection flag. JSON structs are serialized deterministically by Go and SHA256 hashed to bind subsequent messages. There are no floating-point amounts or prices: all amounts and basis points are integers. An implementation in another language must reproduce the current serialization exactly; this format provides no encoding negotiation.
 
@@ -160,7 +160,7 @@ Refund rescue jobs similarly spend the party's own HTLC after the refund thresho
 
 ## Messaging and crash recovery
 
-Public offers use addressable kind `38481` in the `blakeswap-<network>-v2`
+Public offers use addressable kind `38481` in the `blakeswap-<network>-v1`
 namespace. Their signed schema contains format, network, ID, maker, amounts,
 asset, expiry, status, explicit fill mode/bounds, revision and available quantity.
 It contains no single-child reservation or private fee/bounty/protection fields.

@@ -17,7 +17,7 @@ import (
 
 const Confirmations = 2
 const FundingFee int64 = 2000
-const Version = 2
+const Version = 1
 
 var RescueFees = []int64{2000, 6000, 20000}
 
@@ -47,7 +47,7 @@ type Offer struct {
 
 func (o Offer) Validate(now int64) error {
 	if o.Version != Version || o.Network == "" || !o.Network.Valid() || !Hex32(o.ID) || !Hex32(o.Maker) || !o.Sell.Valid() || o.SellAmount < MinPrincipal || o.BuyAmount < MinPrincipal || o.SellAmount > MaxPrincipal || o.BuyAmount > MaxPrincipal {
-		return errors.New("invalid protocol-2 order identity or principal bounds")
+		return errors.New("invalid v1 order identity or principal bounds")
 	}
 	m, max, err := o.FillPolicy.Interval(o.SellAmount, o.BuyAmount)
 	if err != nil {

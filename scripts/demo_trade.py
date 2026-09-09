@@ -34,8 +34,8 @@ def whole_take(created, observed):
             raise ValueError("Delivered parent differs from the created whole order")
     if created["network"] != "regtest" or observed["fill_mode"] != "whole" or observed.get("status") != "open":
         raise ValueError("Expected an open whole regtest parent")
-    if integer(created.get("version"), 2**31-1) != 2 or integer(observed.get("version"), 2**31-1) != 2:
-        raise ValueError("Expected protocol 2; preserve incompatible development data")
+    if integer(created.get("version"), 2**31-1) != 1 or integer(observed.get("version"), 2**31-1) != 1:
+        raise ValueError("Expected protocol 1; preserve incompatible development data")
     for key in ("sell_amount", "buy_amount", "min_fill", "max_fill"):
         if integer(created.get(key), 2**63-1) != integer(observed.get(key), 2**63-1):
             raise ValueError("Delivered parent changed its immutable whole terms")

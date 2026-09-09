@@ -21,7 +21,7 @@ import (
 )
 
 func TestStateCutoverRefusesLegacyAtEveryArchiveRecoveryBoundary(t *testing.T) {
-	for _, version := range []int{0, 1, 2, 4} {
+	for _, version := range []int{0, 2, 3, 4} {
 		t.Run(strconv.Itoa(version), func(t *testing.T) {
 			s := State{Version: version, Network: chain.Regtest, Mnemonic: "retained incompatible fixture"}
 			before, _ := json.Marshal(s)
@@ -54,7 +54,7 @@ func TestStateCutoverRefusesLegacyAtEveryArchiveRecoveryBoundary(t *testing.T) {
 }
 
 func TestStateCutoverPreservesExistingVersionZeroAndLegacyVaults(t *testing.T) {
-	for _, version := range []int{0, 1, 2} {
+	for _, version := range []int{0, 2, 3} {
 		t.Run(strconv.Itoa(version), func(t *testing.T) {
 			root := t.TempDir()
 			password := []byte("disposable-cutover-test-credential")
@@ -104,7 +104,7 @@ func TestStateCutoverPreservesExistingVersionZeroAndLegacyVaults(t *testing.T) {
 	}
 }
 
-func TestStateCutoverFirstCompactionKeepsStateThree(t *testing.T) {
+func TestStateCutoverFirstCompactionKeepsStateOne(t *testing.T) {
 	e := &Engine{s: State{Version: StateVersion, Network: chain.Regtest}}
 	record := storage.ArchiveRecord{Kind: "seen", ID: "retained", Data: json.RawMessage(`"digest"`)}
 	if err := e.archiveDelta(record, true); err != nil || e.s.Version != StateVersion {
@@ -140,12 +140,12 @@ func TestStateCutoverOnlyAbsentFileInitializesNewState(t *testing.T) {
 	defer v.Close()
 	var s State
 	if _, err := v.Load(&s); err != nil || s.Version != StateVersion || s.Mnemonic == "" {
-		t.Fatalf("new vault did not initialize State3: version=%d err=%v", s.Version, err)
+		t.Fatalf("new vault did not initialize v1 state: version=%d err=%v", s.Version, err)
 	}
 }
 
 func TestStateCutoverOuterMarkerCannotUpgradeLegacyChild(t *testing.T) {
-	for _, version := range []int{0, 1} {
+	for _, version := range []int{0, 2} {
 		child := &Swap{ID: "legacy-child", Role: "maker", Request: protocol.Request{Version: version}, Terms: &protocol.Terms{Version: version}}
 		s := State{Version: StateVersion, Network: chain.Regtest, Swaps: map[string]*Swap{child.ID: child}}
 		before, _ := json.Marshal(s)
@@ -159,7 +159,7 @@ func TestStateCutoverOuterMarkerCannotUpgradeLegacyChild(t *testing.T) {
 			func() error { _, _, err := s.VaultSnapshot(); return err },
 		} {
 			if err := check(); err == nil {
-				t.Fatalf("boundary%d interpreted a legacy child under State3", i)
+				t.Fatalf("boundary%d interpreted a legacy child under v1 state", i)
 			}
 			after, _ := json.Marshal(s)
 			if !bytes.Equal(before, after) {
@@ -175,7 +175,7 @@ func TestStateCutoverOuterMarkerCannotUpgradeLegacyChild(t *testing.T) {
 }
 
 func TestStateCutoverWriterRejectsChangedSourceBeforeAnyWrite(t *testing.T) {
-	for _, version := range []int{-1, 0, 1, 2, StateVersion} {
+	for _, version := range []int{-1, 0, 2, 3, StateVersion} {
 		t.Run(strconv.Itoa(version), func(t *testing.T) {
 			root := t.TempDir()
 			path, replacement := filepath.Join(root, "state.db"), filepath.Join(root, "replacement.db")
@@ -267,7 +267,7 @@ func TestStateCutoverColdProtocolCheckedBeforeAnyPromotion(t *testing.T) {
 			fill := source.s.FillRecords[child.ID]
 			parent := source.s.ParentOrders[fill.ParentID]
 			if mode == "legacy core" {
-				child.Request.Version = 1
+				child.Request.Version = 2
 			}
 			record := func(kind, id string, value any) storage.ArchiveRecord {
 				raw, err := json.Marshal(value)
@@ -358,7 +358,7 @@ func TestStateCutoverChecksPersistedColdProtocolPages(t *testing.T) {
 					t.Fatal(err)
 				}
 				if legacy && i == 69 {
-					child.Request.Version = 1
+					child.Request.Version = 2
 				}
 				raw, _ := json.Marshal(child)
 				record := storage.ArchiveRecord{Kind: "swaps", ID: child.ID, Data: raw}
@@ -411,7 +411,7 @@ func TestStateCutoverChecksPersistedColdProtocolPages(t *testing.T) {
 }
 
 func TestStateCutoverValidatesActualQuarantinedOfferCategory(t *testing.T) {
-	for _, version := range []int{1, protocol.Version} {
+	for _, version := range []int{2, protocol.Version} {
 		t.Run(strconv.Itoa(version), func(t *testing.T) {
 			path := filepath.Join(t.TempDir(), "state.db")
 			password := []byte("disposable-quarantine-format-credential")

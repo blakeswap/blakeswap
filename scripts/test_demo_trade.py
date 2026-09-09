@@ -22,7 +22,7 @@ def load(name, file):
 class DemoTradeTests(unittest.TestCase):
     def parent(self):
         return dict(whole_offer(), id="parent", maker="maker", network="regtest",
-                    version=2, revision=1, status="open", available=1_000_000)
+                    version=1, revision=1, status="open", available=1_000_000)
 
     def test_explicit_private_caps_and_exact_delivered_revision(self):
         plain = whole_offer()

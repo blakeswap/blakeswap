@@ -8,7 +8,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	pb "github.com/blakeswap/blakeswap/api/gen/blakeswap/v2"
+	pb "github.com/blakeswap/blakeswap/api/gen/blakeswap/v1"
 	"github.com/blakeswap/blakeswap/internal/chain"
 	"github.com/blakeswap/blakeswap/internal/daemon"
 	"github.com/blakeswap/blakeswap/internal/storage"
@@ -77,7 +77,7 @@ func TestPortableStreamRejectsMissingDuplicateAndMisboundNetworksBeforeInstall(t
 			path := filepath.Join(t.TempDir(), "bad.backup")
 			password := []byte("a separately chosen streaming password")
 			err := storage.WritePortableStream(context.Background(), path, password, func(w io.Writer) error {
-				inventory := streamInventory{FormatVersion: 2, CreatedAt: manifest.CreatedAt, Wallets: []streamWallet{{ID: wallet.ID, Name: wallet.Name, Identity: wallet.Identity, Mnemonic: wallet.Mnemonic, Networks: []chain.Network{chain.Regtest, chain.Testnet}}}}
+				inventory := streamInventory{FormatVersion: 1, CreatedAt: manifest.CreatedAt, Wallets: []streamWallet{{ID: wallet.ID, Name: wallet.Name, Identity: wallet.Identity, Mnemonic: wallet.Mnemonic, Networks: []chain.Network{chain.Regtest, chain.Testnet}}}}
 				if kind == "duplicate" {
 					inventory.Wallets[0].Networks[1] = chain.Regtest
 				}

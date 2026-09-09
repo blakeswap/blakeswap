@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	pb "github.com/blakeswap/blakeswap/api/gen/blakeswap/v2"
+	pb "github.com/blakeswap/blakeswap/api/gen/blakeswap/v1"
 	"github.com/blakeswap/blakeswap/internal/authorization"
 	"github.com/blakeswap/blakeswap/internal/daemon"
 	"google.golang.org/protobuf/encoding/protojson"
@@ -17,7 +17,7 @@ import (
 
 // Exercise private prepare normalization and the real public service mapper
 // with the same one-use authority. No signing or external fixture is involved.
-func TestPartialFillV2ConsentBindsEveryNewInput(t *testing.T) {
+func TestPartialFillV1ConsentBindsEveryNewInput(t *testing.T) {
 	maker := &pb.CreateOfferRequest{Sell: "btc", SellAmount: 9007199254740993, BuyAmount: 1000001, FillMode: "partial", MinFill: 400000, MaxFill: 600000, FeeBudgets: map[string]int64{"btc": 9007199254740993, "blake": 20000}, BountyBudgets: map[string]int64{"btc": 0, "blake": 0}, FundingFee: 6500, TowerPubkey: "reviewed-provider", ExpectedNetwork: "regtest"}
 	taker := &pb.TakeOfferRequest{Maker: "maker", Id: "parent", Quantity: 400000, ParentRevision: math.MaxUint64, FundingFee: 6500, OwnerFeeCap: 20000, TowerPubkey: "reviewed-provider", ExpectedNetwork: "regtest"}
 	confirm := &pb.ConfirmTradeRequest{RequestId: "saved-request", Token: "reviewed-token", Revision: "reviewed-digest", ExpectedWallet: "alice", ExpectedNetwork: "regtest"}
@@ -128,7 +128,7 @@ func TestPartialFillV2ConsentBindsEveryNewInput(t *testing.T) {
 		})
 	}
 }
-func TestPartialFillV2ConsentRejectsLossyAndUnknownInputs(t *testing.T) {
+func TestPartialFillV1ConsentRejectsLossyAndUnknownInputs(t *testing.T) {
 	for _, tc := range []struct{ method, raw string }{
 		{"swap.take", `{"quantity":1.5}`}, {"swap.take", `{"parent_revision":"18446744073709551616"}`}, {"swap.take", `{"parent_revision":"-1"}`},
 		{"offer.create", `{"fee_budgets":{"btc":"9223372036854775808"}}`}, {"offer.create", `{"bounty_budgets":{"btc":0.5}}`}, {"trade.confirm", `{"skip_consent":true}`},

@@ -5,8 +5,8 @@ struct FillHistoryView: View {
     @EnvironmentObject private var app: AppModel
     @Environment(\.dismiss) private var dismiss
     @StateObject private var history: FillHistoryModel
-    let order: Blakeswap_V2_MarketOrder?
-    init(context: ParentFillContext, order: Blakeswap_V2_MarketOrder? = nil, call: @escaping FillHistoryCall) {
+    let order: Blakeswap_V1_MarketOrder?
+    init(context: ParentFillContext, order: Blakeswap_V1_MarketOrder? = nil, call: @escaping FillHistoryCall) {
         self.order = order
         _history = StateObject(wrappedValue: FillHistoryModel(context: context, call: call))
     }

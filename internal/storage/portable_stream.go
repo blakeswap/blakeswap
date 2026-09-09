@@ -15,7 +15,7 @@ import (
 	"path/filepath"
 )
 
-var portableStreamMagic = []byte("BLAKESWAP-BACKUP\x00\x02")
+var portableStreamMagic = []byte("BLAKESWAP-STREAM\x00\x01")
 
 const portableChunkSize = 1 << 20
 

@@ -10,9 +10,9 @@ final class DaemonRPCTests: XCTestCase {
          "fee_budgets": ["btc": 50_000, "blake": 50_000], "bounty_budgets": ["btc": 0, "blake": 0]]
     }
     private func wholeTake(created: Order, delivered: Order) throws -> [String: Any] {
-        guard !created.id.isEmpty, !created.maker.isEmpty, created.version == 2, created.network == "regtest", created.fillMode == "whole",
+        guard !created.id.isEmpty, !created.maker.isEmpty, created.version == 1, created.network == "regtest", created.fillMode == "whole",
               created.minFill == created.sellAmount, created.maxFill == created.sellAmount, delivered.id == created.id, delivered.maker == created.maker,
-              delivered.version == 2, delivered.network == "regtest", delivered.status == "open", delivered.fillMode == "whole",
+              delivered.version == 1, delivered.network == "regtest", delivered.status == "open", delivered.fillMode == "whole",
               delivered.sell == created.sell, delivered.buy == created.buy, delivered.sellAmount == created.sellAmount,
               delivered.buyAmount == created.buyAmount, delivered.minFill == created.sellAmount, delivered.maxFill == created.sellAmount,
               delivered.available == created.sellAmount, delivered.sellAmount > 0, delivered.revision > 0 else {
@@ -22,21 +22,21 @@ final class DaemonRPCTests: XCTestCase {
                 "parent_revision": delivered.revision, "funding_fee": 2000]
     }
     func testExternalWholeFixtureUsesExplicitBoundsCapsAndDeliveredRevision() throws {
-        let input = try Blakeswap_V2_CreateOfferRequest(jsonUTF8Data: JSONSerialization.data(withJSONObject: wholeOffer()))
+        let input = try Blakeswap_V1_CreateOfferRequest(jsonUTF8Data: JSONSerialization.data(withJSONObject: wholeOffer()))
         XCTAssertEqual(input.fillMode, "whole"); XCTAssertEqual(input.minFill, input.sellAmount); XCTAssertEqual(input.maxFill, input.sellAmount)
         XCTAssertEqual(input.fundingFee, 2000); XCTAssertEqual(input.feeBudgets, ["btc":50_000,"blake":50_000]); XCTAssertEqual(input.bountyBudgets, ["btc":0,"blake":0])
-        var created = Order(); created.id = "parent"; created.maker = "maker"; created.network = "regtest"; created.version = 2
+        var created = Order(); created.id = "parent"; created.maker = "maker"; created.network = "regtest"; created.version = 1
         created.sell = "btc"; created.sellAmount = 1_000_000; created.buyAmount = 2_000_000
         created.minFill = 1_000_000; created.maxFill = 1_000_000; created.available = 1_000_000; created.fillMode = "whole"; created.status = "open"; created.revision = 1
         var delivered = created; delivered.revision = UInt64.max
-        let take = try Blakeswap_V2_TakeOfferRequest(jsonUTF8Data: JSONSerialization.data(withJSONObject: wholeTake(created: created, delivered: delivered)))
+        let take = try Blakeswap_V1_TakeOfferRequest(jsonUTF8Data: JSONSerialization.data(withJSONObject: wholeTake(created: created, delivered: delivered)))
         XCTAssertEqual(take.quantity, 1_000_000); XCTAssertEqual(take.parentRevision, UInt64.max); XCTAssertEqual(take.fundingFee, 2000)
         for fault in ["maker", "quantity", "revision", "version"] {
             var changed = delivered
             if fault == "maker" { changed.maker = "foreign" }
             if fault == "quantity" { changed.available -= 1 }
             if fault == "revision" { changed.revision = 0 }
-            if fault == "version" { changed.version = 1 }
+            if fault == "version" { changed.version = 2 }
             XCTAssertThrowsError(try wholeTake(created: created, delivered: changed))
         }
     }
@@ -129,7 +129,7 @@ final class DaemonRPCTests: XCTestCase {
             }
         }
         _ = try await call("alice", "regtest.mine", ["blocks": 2])
-        let offer = try Blakeswap_V2_Offer(serializedBytes: await call("alice", "offer.create", wholeOffer()))
+        let offer = try Blakeswap_V1_Offer(serializedBytes: await call("alice", "offer.create", wholeOffer()))
         var delivered = false
         var deliveredParent: Order?
         for _ in 0..<80 {
@@ -138,7 +138,7 @@ final class DaemonRPCTests: XCTestCase {
         }
         XCTAssertTrue(delivered, "Offer not delivered through the external local relay")
         guard delivered else { return }
-        let taken = try Blakeswap_V2_TakeOfferResponse(serializedBytes: await call("bob", "swap.take", wholeTake(created: offer, delivered: XCTUnwrap(deliveredParent))))
+        let taken = try Blakeswap_V1_TakeOfferResponse(serializedBytes: await call("bob", "swap.take", wholeTake(created: offer, delivered: XCTUnwrap(deliveredParent))))
         var mined = Set<String>()
         for _ in 0..<160 {
             // Keep Bob selected throughout negotiation/settlement. Alice must accept,

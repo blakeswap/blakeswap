@@ -13,7 +13,7 @@ import (
 	"testing"
 	"time"
 
-	pb "github.com/blakeswap/blakeswap/api/gen/blakeswap/v2"
+	pb "github.com/blakeswap/blakeswap/api/gen/blakeswap/v1"
 	"github.com/blakeswap/blakeswap/internal/api"
 	"github.com/blakeswap/blakeswap/internal/daemon"
 )

@@ -56,7 +56,7 @@ struct StrategyView: View {
 }
 
 struct StrategyInventoryView: View {
-    let strategy: Blakeswap_V2_StrategyView
+    let strategy: Blakeswap_V1_StrategyView
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             ForEach(["btc", "blake"], id: \.self) { id in
@@ -75,7 +75,7 @@ struct StrategyInventoryView: View {
     }
 }
 struct StrategyPreviewView: View {
-    let quotes: [Blakeswap_V2_StrategyQuote]
+    let quotes: [Blakeswap_V1_StrategyQuote]
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             Text("Deterministic preview · checked again before publication").font(.subheadline.bold())
@@ -174,7 +174,7 @@ struct StrategyEditor: View {
     private func fraction(_ label: String, _ n: Binding<String>, _ d: Binding<String>) -> some View {
         HStack { Text(label).frame(maxWidth: .infinity, alignment: .leading); TextField("BLAKE sats", text: n); Text("/"); TextField("BTC sats", text: d) }
     }
-    private func authorization(_ r: Blakeswap_V2_StrategyReview) -> some View {
+    private func authorization(_ r: Blakeswap_V1_StrategyReview) -> some View {
         let c = r.config
         return VStack(alignment: .leading, spacing: 12) {
             Text(r.enabled ? "Enable both maker directions" : "Save paused authorization").font(.headline)

@@ -4,14 +4,14 @@ import (
 	"errors"
 	"testing"
 
-	pb "github.com/blakeswap/blakeswap/api/gen/blakeswap/v2"
+	pb "github.com/blakeswap/blakeswap/api/gen/blakeswap/v1"
 	"github.com/blakeswap/blakeswap/internal/protocol"
 	"google.golang.org/protobuf/proto"
 )
 
 // These whole-trade scenarios deliberately retain their original principals.
 // Refuse a changed current parent instead of silently rewriting chosen q or
-// treating a protocol-1 whole amount as a protocol-2 take authorization.
+// treating an incompatible whole amount as a current take authorization.
 func wholeReviewedParent(o *pb.Offer, maker string, quantity, buy int64) error {
 	if o == nil || o.Version != int32(protocol.Version) || o.Network != "regtest" || o.Maker != maker || !protocol.Hex32(o.Maker) || !protocol.Hex32(o.Id) || o.Revision == 0 || o.Status != "open" || o.FillMode != "whole" || o.MinFill != quantity || o.MaxFill != quantity || o.SellAmount != quantity || o.Available != quantity || o.BuyAmount != buy || (o.Sell != "btc" && o.Sell != "blake") {
 		return errors.New("current parent differs from explicit whole-trade fixture authorization")
@@ -31,7 +31,7 @@ func TestWholeReviewedFixtureRejectsChangedOrLegacyParent(t *testing.T) {
 		t.Fatal(err)
 	}
 	for name, change := range map[string]func(*pb.Offer){
-		"legacy":    func(p *pb.Offer) { p.Version = 1 },
+		"legacy":    func(p *pb.Offer) { p.Version = 2 },
 		"maker":     func(p *pb.Offer) { p.Maker = p.Id },
 		"network":   func(p *pb.Offer) { p.Network = "mainnet" },
 		"mode":      func(p *pb.Offer) { p.FillMode = "partial" },

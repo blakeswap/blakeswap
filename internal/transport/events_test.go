@@ -53,9 +53,9 @@ func TestGiftWrapAuthenticationAndPrivacy(t *testing.T) {
 	}
 }
 
-func TestGiftWrapHardCutoverRefusesLegacyEnvelopeAndNamespace(t *testing.T) {
+func TestGiftWrapRejectsUnsupportedEnvelopeAndNamespace(t *testing.T) {
 	sender, recipient := nostr.Generate(), nostr.Generate()
-	for _, version := range []int{0, 1, 3} {
+	for _, version := range []int{0, 2, 3} {
 		message := Message{Version: version, ID: RandomID(), Type: "request", SwapID: RandomID(), Body: json.RawMessage(`{}`)}
 		event, err := Wrap(sender, recipient.Public(), message)
 		if err != nil {
@@ -66,12 +66,12 @@ func TestGiftWrapHardCutoverRefusesLegacyEnvelopeAndNamespace(t *testing.T) {
 		}
 	}
 	message := Message{Version: MessageVersion, ID: RandomID(), Type: "request", SwapID: RandomID(), Body: json.RawMessage(`{}`)}
-	event, err := WrapFor("blakeswap-regtest-v1", sender, recipient.Public(), message)
+	event, err := WrapFor("blakeswap-regtest-unsupported", sender, recipient.Public(), message)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if _, _, err := Unwrap(recipient, event); err == nil {
-		t.Fatal("retired namespace accepted")
+		t.Fatal("unsupported namespace accepted")
 	}
 }
 func TestRejectMismatchedRumorAuthor(t *testing.T) {
@@ -129,14 +129,14 @@ func FuzzUnwrap(f *testing.F) {
 func TestMailboxesRejectForeignNetworkBindings(t *testing.T) {
 	sender, recipient := nostr.Generate(), nostr.Generate()
 	message := Message{Version: MessageVersion, ID: RandomID(), Type: "request", Body: json.RawMessage(`{}`)}
-	event, err := WrapFor("blakeswap-mainnet-v2", sender, recipient.Public(), message)
+	event, err := WrapFor("blakeswap-mainnet-v1", sender, recipient.Public(), message)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, _, err = UnwrapFor("blakeswap-testnet-v2", recipient, event); err == nil {
+	if _, _, err = UnwrapFor("blakeswap-testnet-v1", recipient, event); err == nil {
 		t.Fatal("foreign network message accepted")
 	}
-	if _, _, err = UnwrapFor("blakeswap-mainnet-v2", recipient, event); err != nil {
+	if _, _, err = UnwrapFor("blakeswap-mainnet-v1", recipient, event); err != nil {
 		t.Fatal(err)
 	}
 }

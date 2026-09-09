@@ -68,7 +68,7 @@ func cutoverFileDigests(t *testing.T, root string) map[string]string {
 }
 
 func TestCredentialCutoverRefusesAllProfilesBeforeJournalOrItemWrites(t *testing.T) {
-	for _, version := range []int{0, 1, 2} {
+	for _, version := range []int{0, 2, 3} {
 		t.Run(strconv.Itoa(version), func(t *testing.T) {
 			root := t.TempDir()
 			cutoverCredentialProfile(t, root, "alice", daemon.StateVersion)

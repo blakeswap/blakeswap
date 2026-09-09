@@ -5,8 +5,8 @@ import SwiftProtobuf
 @MainActor
 final class ActivityTests: XCTestCase {
     private let context = TradeContext(profile: "alice", network: "regtest", generation: 1, walletKey: "key")
-    private func row(_ id: String) -> Blakeswap_V2_ActivityRecord {
-        var value = Blakeswap_V2_ActivityRecord(); value.id = id; value.wallet = context.profile; value.network = context.network
+    private func row(_ id: String) -> Blakeswap_V1_ActivityRecord {
+        var value = Blakeswap_V1_ActivityRecord(); value.id = id; value.wallet = context.profile; value.network = context.network
         value.chain = "blake"; value.amount = 9007199254740993; value.status = "confirmed"; value.createdSource = "unknown"
         return value
     }
@@ -21,7 +21,7 @@ final class ActivityTests: XCTestCase {
         continuation = nil
         let retry = Task { await model.load(current: { self.context }) }
         while continuation == nil { await Task.yield() }
-        var page = Blakeswap_V2_ActivityPage(); page.snapshot = "snapshot"
+        var page = Blakeswap_V1_ActivityPage(); page.snapshot = "snapshot"
         continuation?.resume(returning: try page.serializedData()); await retry.value
         XCTAssertEqual(model.phase, .loaded); XCTAssertTrue(model.isEmpty); XCTAssertNil(model.error)
     }
@@ -30,10 +30,10 @@ final class ActivityTests: XCTestCase {
         let first = row("new"), second = row("old")
         let model = ActivityModel(context: context, root: "/unused") { method, data in
             XCTAssertEqual(method, "activity.list")
-            let request = try Blakeswap_V2_ActivityQuery(jsonUTF8Data: data)
+            let request = try Blakeswap_V1_ActivityQuery(jsonUTF8Data: data)
             XCTAssertEqual(request.expectedWallet, self.context.profile); XCTAssertEqual(request.expectedNetwork, self.context.network)
             XCTAssertEqual(request.chain, "blake")
-            var page = Blakeswap_V2_ActivityPage(); page.snapshot = "snapshot"; page.total = 2
+            var page = Blakeswap_V1_ActivityPage(); page.snapshot = "snapshot"; page.total = 2
             if calls == 0 { XCTAssertEqual(request.cursor, 0); XCTAssertTrue(request.snapshot.isEmpty); page.records = [first]; page.nextCursor = 1 }
             else { XCTAssertEqual(request.cursor, 1); XCTAssertEqual(request.snapshot, "snapshot"); page.records = [second] }
             calls += 1; return try page.serializedData()
@@ -61,7 +61,7 @@ final class ActivityTests: XCTestCase {
             case "generation": current = TradeContext(profile: context.profile, network: context.network, generation: 2, walletKey: context.walletKey)
             default: model.filters.chain = "btc"
             }
-            var page = Blakeswap_V2_ActivityPage(); page.snapshot = "snapshot"; page.records = [row("late")]
+            var page = Blakeswap_V1_ActivityPage(); page.snapshot = "snapshot"; page.records = [row("late")]
             continuation?.resume(returning: try page.serializedData()); await task.value
             XCTAssertTrue(model.records.isEmpty)
         }
@@ -70,13 +70,13 @@ final class ActivityTests: XCTestCase {
         var exported: [UInt32] = []
         let item = row("new")
         let model = ActivityModel(context: context, root: "/unused") { method, data in
-            let request = try Blakeswap_V2_ActivityQuery(jsonUTF8Data: data)
+            let request = try Blakeswap_V1_ActivityQuery(jsonUTF8Data: data)
             if method == "activity.list" {
-                var page = Blakeswap_V2_ActivityPage(); page.snapshot = "snapshot"; page.total = 2; page.records = [item]; page.nextCursor = 1
+                var page = Blakeswap_V1_ActivityPage(); page.snapshot = "snapshot"; page.total = 2; page.records = [item]; page.nextCursor = 1
                 return try page.serializedData()
             }
             XCTAssertEqual(request.snapshot, "snapshot"); exported.append(request.cursor)
-            var chunk = Blakeswap_V2_ActivityExport(); chunk.snapshot = "snapshot"; chunk.total = 2
+            var chunk = Blakeswap_V1_ActivityExport(); chunk.snapshot = "snapshot"; chunk.total = 2
             if request.cursor == 0 { chunk.csv = "id,amount_sats\nnew,9007199254740993\n"; chunk.nextCursor = 1 }
             else { chunk.csv = "old,100001\n" }
             return try chunk.serializedData()

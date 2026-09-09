@@ -2,9 +2,9 @@
 // versions:
 // - protoc-gen-go-grpc v1.6.2
 // - protoc             v3.21.12
-// source: blakeswap/v2/daemon.proto
+// source: blakeswap/v1/daemon.proto
 
-package blakeswapv2
+package blakeswapv1
 
 import (
 	context "context"
@@ -20,50 +20,50 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	DaemonService_ReportStrategy_FullMethodName       = "/blakeswap.v2.DaemonService/ReportStrategy"
-	DaemonService_ListStrategies_FullMethodName       = "/blakeswap.v2.DaemonService/ListStrategies"
-	DaemonService_ReviewStrategy_FullMethodName       = "/blakeswap.v2.DaemonService/ReviewStrategy"
-	DaemonService_SaveStrategy_FullMethodName         = "/blakeswap.v2.DaemonService/SaveStrategy"
-	DaemonService_StopStrategy_FullMethodName         = "/blakeswap.v2.DaemonService/StopStrategy"
-	DaemonService_GetRecord_FullMethodName            = "/blakeswap.v2.DaemonService/GetRecord"
-	DaemonService_ListAutomations_FullMethodName      = "/blakeswap.v2.DaemonService/ListAutomations"
-	DaemonService_ReviewAutomation_FullMethodName     = "/blakeswap.v2.DaemonService/ReviewAutomation"
-	DaemonService_SaveAutomation_FullMethodName       = "/blakeswap.v2.DaemonService/SaveAutomation"
-	DaemonService_DisableAutomation_FullMethodName    = "/blakeswap.v2.DaemonService/DisableAutomation"
-	DaemonService_ListFills_FullMethodName            = "/blakeswap.v2.DaemonService/ListFills"
-	DaemonService_ListMarket_FullMethodName           = "/blakeswap.v2.DaemonService/ListMarket"
-	DaemonService_ListActivity_FullMethodName         = "/blakeswap.v2.DaemonService/ListActivity"
-	DaemonService_ExportActivity_FullMethodName       = "/blakeswap.v2.DaemonService/ExportActivity"
-	DaemonService_GetActionSummary_FullMethodName     = "/blakeswap.v2.DaemonService/GetActionSummary"
-	DaemonService_GetStatus_FullMethodName            = "/blakeswap.v2.DaemonService/GetStatus"
-	DaemonService_RefreshStatus_FullMethodName        = "/blakeswap.v2.DaemonService/RefreshStatus"
-	DaemonService_ResolveWatchtower_FullMethodName    = "/blakeswap.v2.DaemonService/ResolveWatchtower"
-	DaemonService_SetPaused_FullMethodName            = "/blakeswap.v2.DaemonService/SetPaused"
-	DaemonService_CreateOffer_FullMethodName          = "/blakeswap.v2.DaemonService/CreateOffer"
-	DaemonService_CancelOffer_FullMethodName          = "/blakeswap.v2.DaemonService/CancelOffer"
-	DaemonService_TakeOffer_FullMethodName            = "/blakeswap.v2.DaemonService/TakeOffer"
-	DaemonService_Mine_FullMethodName                 = "/blakeswap.v2.DaemonService/Mine"
-	DaemonService_Faucet_FullMethodName               = "/blakeswap.v2.DaemonService/Faucet"
-	DaemonService_GetRecovery_FullMethodName          = "/blakeswap.v2.DaemonService/GetRecovery"
-	DaemonService_PreflightFunds_FullMethodName       = "/blakeswap.v2.DaemonService/PreflightFunds"
-	DaemonService_QuoteTrade_FullMethodName           = "/blakeswap.v2.DaemonService/QuoteTrade"
-	DaemonService_ConfirmTrade_FullMethodName         = "/blakeswap.v2.DaemonService/ConfirmTrade"
-	DaemonService_QuoteFee_FullMethodName             = "/blakeswap.v2.DaemonService/QuoteFee"
-	DaemonService_BumpTransaction_FullMethodName      = "/blakeswap.v2.DaemonService/BumpTransaction"
-	DaemonService_SendCoins_FullMethodName            = "/blakeswap.v2.DaemonService/SendCoins"
-	DaemonService_ExportPortableBackup_FullMethodName = "/blakeswap.v2.DaemonService/ExportPortableBackup"
-	DaemonService_InspectBackup_FullMethodName        = "/blakeswap.v2.DaemonService/InspectBackup"
-	DaemonService_ImportBackup_FullMethodName         = "/blakeswap.v2.DaemonService/ImportBackup"
-	DaemonService_BackupWallet_FullMethodName         = "/blakeswap.v2.DaemonService/BackupWallet"
-	DaemonService_CreateWallet_FullMethodName         = "/blakeswap.v2.DaemonService/CreateWallet"
-	DaemonService_PrepareFirstWallet_FullMethodName   = "/blakeswap.v2.DaemonService/PrepareFirstWallet"
-	DaemonService_GetFirstWallet_FullMethodName       = "/blakeswap.v2.DaemonService/GetFirstWallet"
-	DaemonService_ConfirmFirstWallet_FullMethodName   = "/blakeswap.v2.DaemonService/ConfirmFirstWallet"
-	DaemonService_ExportFirstWallet_FullMethodName    = "/blakeswap.v2.DaemonService/ExportFirstWallet"
-	DaemonService_FinishOnboarding_FullMethodName     = "/blakeswap.v2.DaemonService/FinishOnboarding"
-	DaemonService_GetSettings_FullMethodName          = "/blakeswap.v2.DaemonService/GetSettings"
-	DaemonService_UpdateSettings_FullMethodName       = "/blakeswap.v2.DaemonService/UpdateSettings"
-	DaemonService_CheckNode_FullMethodName            = "/blakeswap.v2.DaemonService/CheckNode"
+	DaemonService_ReportStrategy_FullMethodName       = "/blakeswap.v1.DaemonService/ReportStrategy"
+	DaemonService_ListStrategies_FullMethodName       = "/blakeswap.v1.DaemonService/ListStrategies"
+	DaemonService_ReviewStrategy_FullMethodName       = "/blakeswap.v1.DaemonService/ReviewStrategy"
+	DaemonService_SaveStrategy_FullMethodName         = "/blakeswap.v1.DaemonService/SaveStrategy"
+	DaemonService_StopStrategy_FullMethodName         = "/blakeswap.v1.DaemonService/StopStrategy"
+	DaemonService_GetRecord_FullMethodName            = "/blakeswap.v1.DaemonService/GetRecord"
+	DaemonService_ListAutomations_FullMethodName      = "/blakeswap.v1.DaemonService/ListAutomations"
+	DaemonService_ReviewAutomation_FullMethodName     = "/blakeswap.v1.DaemonService/ReviewAutomation"
+	DaemonService_SaveAutomation_FullMethodName       = "/blakeswap.v1.DaemonService/SaveAutomation"
+	DaemonService_DisableAutomation_FullMethodName    = "/blakeswap.v1.DaemonService/DisableAutomation"
+	DaemonService_ListFills_FullMethodName            = "/blakeswap.v1.DaemonService/ListFills"
+	DaemonService_ListMarket_FullMethodName           = "/blakeswap.v1.DaemonService/ListMarket"
+	DaemonService_ListActivity_FullMethodName         = "/blakeswap.v1.DaemonService/ListActivity"
+	DaemonService_ExportActivity_FullMethodName       = "/blakeswap.v1.DaemonService/ExportActivity"
+	DaemonService_GetActionSummary_FullMethodName     = "/blakeswap.v1.DaemonService/GetActionSummary"
+	DaemonService_GetStatus_FullMethodName            = "/blakeswap.v1.DaemonService/GetStatus"
+	DaemonService_RefreshStatus_FullMethodName        = "/blakeswap.v1.DaemonService/RefreshStatus"
+	DaemonService_ResolveWatchtower_FullMethodName    = "/blakeswap.v1.DaemonService/ResolveWatchtower"
+	DaemonService_SetPaused_FullMethodName            = "/blakeswap.v1.DaemonService/SetPaused"
+	DaemonService_CreateOffer_FullMethodName          = "/blakeswap.v1.DaemonService/CreateOffer"
+	DaemonService_CancelOffer_FullMethodName          = "/blakeswap.v1.DaemonService/CancelOffer"
+	DaemonService_TakeOffer_FullMethodName            = "/blakeswap.v1.DaemonService/TakeOffer"
+	DaemonService_Mine_FullMethodName                 = "/blakeswap.v1.DaemonService/Mine"
+	DaemonService_Faucet_FullMethodName               = "/blakeswap.v1.DaemonService/Faucet"
+	DaemonService_GetRecovery_FullMethodName          = "/blakeswap.v1.DaemonService/GetRecovery"
+	DaemonService_PreflightFunds_FullMethodName       = "/blakeswap.v1.DaemonService/PreflightFunds"
+	DaemonService_QuoteTrade_FullMethodName           = "/blakeswap.v1.DaemonService/QuoteTrade"
+	DaemonService_ConfirmTrade_FullMethodName         = "/blakeswap.v1.DaemonService/ConfirmTrade"
+	DaemonService_QuoteFee_FullMethodName             = "/blakeswap.v1.DaemonService/QuoteFee"
+	DaemonService_BumpTransaction_FullMethodName      = "/blakeswap.v1.DaemonService/BumpTransaction"
+	DaemonService_SendCoins_FullMethodName            = "/blakeswap.v1.DaemonService/SendCoins"
+	DaemonService_ExportPortableBackup_FullMethodName = "/blakeswap.v1.DaemonService/ExportPortableBackup"
+	DaemonService_InspectBackup_FullMethodName        = "/blakeswap.v1.DaemonService/InspectBackup"
+	DaemonService_ImportBackup_FullMethodName         = "/blakeswap.v1.DaemonService/ImportBackup"
+	DaemonService_BackupWallet_FullMethodName         = "/blakeswap.v1.DaemonService/BackupWallet"
+	DaemonService_CreateWallet_FullMethodName         = "/blakeswap.v1.DaemonService/CreateWallet"
+	DaemonService_PrepareFirstWallet_FullMethodName   = "/blakeswap.v1.DaemonService/PrepareFirstWallet"
+	DaemonService_GetFirstWallet_FullMethodName       = "/blakeswap.v1.DaemonService/GetFirstWallet"
+	DaemonService_ConfirmFirstWallet_FullMethodName   = "/blakeswap.v1.DaemonService/ConfirmFirstWallet"
+	DaemonService_ExportFirstWallet_FullMethodName    = "/blakeswap.v1.DaemonService/ExportFirstWallet"
+	DaemonService_FinishOnboarding_FullMethodName     = "/blakeswap.v1.DaemonService/FinishOnboarding"
+	DaemonService_GetSettings_FullMethodName          = "/blakeswap.v1.DaemonService/GetSettings"
+	DaemonService_UpdateSettings_FullMethodName       = "/blakeswap.v1.DaemonService/UpdateSettings"
+	DaemonService_CheckNode_FullMethodName            = "/blakeswap.v1.DaemonService/CheckNode"
 )
 
 // DaemonServiceClient is the client API for DaemonService service.
@@ -1571,7 +1571,7 @@ func _DaemonService_CheckNode_Handler(srv interface{}, ctx context.Context, dec 
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
 var DaemonService_ServiceDesc = grpc.ServiceDesc{
-	ServiceName: "blakeswap.v2.DaemonService",
+	ServiceName: "blakeswap.v1.DaemonService",
 	HandlerType: (*DaemonServiceServer)(nil),
 	Methods: []grpc.MethodDesc{
 		{
@@ -1752,5 +1752,5 @@ var DaemonService_ServiceDesc = grpc.ServiceDesc{
 		},
 	},
 	Streams:  []grpc.StreamDesc{},
-	Metadata: "blakeswap/v2/daemon.proto",
+	Metadata: "blakeswap/v1/daemon.proto",
 }

@@ -143,7 +143,7 @@ func backupRecordGroup(value map[string]any, kind string) (map[string]any, map[s
 	return group, parent, name
 }
 func backupLeaf(kind, id string, value any) ([32]byte, error) {
-	raw, err := json.Marshal([]any{"blakeswap/backup-record/v2", kind, id, value})
+	raw, err := json.Marshal([]any{"blakeswap/backup-record/v1", kind, id, value})
 	if err != nil {
 		return [32]byte{}, err
 	}

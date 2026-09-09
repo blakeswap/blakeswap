@@ -40,7 +40,7 @@ func sample(t testing.TB) Terms {
 }
 func TestTermsBindEveryContractField(t *testing.T) {
 	terms := sample(t)
-	changes := map[string]func(*Terms){"price": func(t *Terms) { t.Long.Amount++ }, "asset": func(t *Terms) { t.Short.Chain = chain.Blake }, "secret hash": func(t *Terms) { t.Long.Hash = transport.RandomID() }, "refund key": func(t *Terms) { t.Long.RefundKey = t.Long.ClaimKey }, "early bounty": func(t *Terms) { t.Takeover-- }, "late reveal": func(t *Terms) { t.RevealBefore++ }, "replay domain": func(t *Terms) { t.Domains[chain.Blake] = chain.BTC.Domain() }, "preset outpoint": func(t *Terms) { t.Short.TxID = transport.RandomID() }, "protocol version": func(t *Terms) { t.Version = 1 }}
+	changes := map[string]func(*Terms){"price": func(t *Terms) { t.Long.Amount++ }, "asset": func(t *Terms) { t.Short.Chain = chain.Blake }, "secret hash": func(t *Terms) { t.Long.Hash = transport.RandomID() }, "refund key": func(t *Terms) { t.Long.RefundKey = t.Long.ClaimKey }, "early bounty": func(t *Terms) { t.Takeover-- }, "late reveal": func(t *Terms) { t.RevealBefore++ }, "replay domain": func(t *Terms) { t.Domains[chain.Blake] = chain.BTC.Domain() }, "preset outpoint": func(t *Terms) { t.Short.TxID = transport.RandomID() }, "protocol version": func(t *Terms) { t.Version = 2 }}
 	for name, change := range changes {
 		t.Run(name, func(t *testing.T) {
 			raw, _ := json.Marshal(terms)

@@ -6,7 +6,7 @@ import SwiftProtobuf
 final class PartialFillTests: XCTestCase {
     private let wallet = TradeContext(profile: "alice", network: "regtest", generation: 1, walletKey: "key")
     private func parent() -> Order {
-        var order = Order(); order.version = 2; order.id = "parent"; order.maker = "maker"; order.network = "regtest"; order.revision = 8
+        var order = Order(); order.version = 1; order.id = "parent"; order.maker = "maker"; order.network = "regtest"; order.revision = 8
         order.fillMode = "partial"; order.minFill = 400000; order.maxFill = 600000; order.sellAmount = 900000; order.buyAmount = 1170001; order.available = 900000
         return order
     }
@@ -24,14 +24,14 @@ final class PartialFillTests: XCTestCase {
         XCTAssertThrowsError(try roundedFillBuy(total: 10, buy: 10, quantity: 11))
         var draft = TradeFillDraft(); draft.seed(quantity: 400000); draft.quantity = "456789"; draft.seed(quantity: 500000)
         XCTAssertEqual(draft.quantity, "456789")
-        var request = Blakeswap_V2_TradeQuoteRequest(); try draft.apply(to: &request, order: parent())
+        var request = Blakeswap_V1_TradeQuoteRequest(); try draft.apply(to: &request, order: parent())
         XCTAssertEqual(request.quantity, 456789); XCTAssertEqual(request.parentRevision, 8)
         draft.quantity = "1.5"; XCTAssertThrowsError(try draft.apply(to: &request, order: parent()))
         XCTAssertEqual(draft.quantity, "1.5")
         draft.quantity = "700000"; XCTAssertThrowsError(try draft.apply(to: &request, order: parent()))
     }
     func testExplicitCapsWholeBoundsAndSeparateExample() throws {
-        var draft = TradeFillDraft(), request = Blakeswap_V2_TradeQuoteRequest(); request.sellAmount = 900000
+        var draft = TradeFillDraft(), request = Blakeswap_V1_TradeQuoteRequest(); request.sellAmount = 900000
         XCTAssertThrowsError(try draft.apply(to: &request, order: nil))
         draft.btcFees = "65000"; draft.blakeFees = "40000"
         try draft.apply(to: &request, order: nil)
@@ -40,16 +40,16 @@ final class PartialFillTests: XCTestCase {
         draft.mode = "partial"; draft.minimum = "400000"; draft.maximum = "600000"
         try draft.apply(to: &request, order: nil)
         XCTAssertEqual(request.minFill, 400000); XCTAssertEqual(request.feeBudgets["blake"], 40000)
-        var quote = Blakeswap_V2_TradeQuote(); quote.kind = "maker"; quote.fillMode = "partial"; quote.fundingReserve = 13000; quote.fees.fundingFee = 6500
-        var child = Blakeswap_V2_FillPreview(); child.quantity = 400000; child.buyAmount = 520001
-        var outcome = Blakeswap_V2_TradeOutcome(); outcome.netMin = 500001; child.outcomes = [outcome]; quote.exampleFill = child
+        var quote = Blakeswap_V1_TradeQuote(); quote.kind = "maker"; quote.fillMode = "partial"; quote.fundingReserve = 13000; quote.fees.fundingFee = 6500
+        var child = Blakeswap_V1_FillPreview(); child.quantity = 400000; child.buyAmount = 520001
+        var outcome = Blakeswap_V1_TradeOutcome(); outcome.netMin = 500001; child.outcomes = [outcome]; quote.exampleFill = child
         let presentation = TradeEconomicsPresentation(quote: quote)
         XCTAssertEqual(presentation.fundingReserve, 13000); XCTAssertEqual(presentation.receivedLabel, "Price-reference amount")
         XCTAssertEqual(presentation.displayedOutcomes, child.outcomes); XCTAssertTrue(quote.outcomes.isEmpty)
     }
     func testDelayedDraftAndAlteredQuantityRepliesRefused() async throws {
-        var request = Blakeswap_V2_TradeQuoteRequest(); request.kind = "taker"; request.id = "parent"; request.maker = "maker"; request.quantity = 400000; request.parentRevision = 8
-        var reply = Blakeswap_V2_TradeQuote(); reply.kind = "taker"; reply.wallet = wallet.profile; reply.walletKey = wallet.walletKey; reply.network = wallet.network
+        var request = Blakeswap_V1_TradeQuoteRequest(); request.kind = "taker"; request.id = "parent"; request.maker = "maker"; request.quantity = 400000; request.parentRevision = 8
+        var reply = Blakeswap_V1_TradeQuote(); reply.kind = "taker"; reply.wallet = wallet.profile; reply.walletKey = wallet.walletKey; reply.network = wallet.network
         reply.quantity = 400000; reply.parentRevision = 8; reply.offerID = "parent"; reply.offerMaker = "maker"; reply.offerEventID = "event"
         var continuation: CheckedContinuation<Data, Error>?
         let review = TradeReviewModel(context: wallet, root: try root()) { _, _ in try await withCheckedThrowingContinuation { continuation = $0 } }
@@ -69,20 +69,20 @@ final class PartialFillTests: XCTestCase {
     }
     func testExplicitParentRefreshRetainsRawQuantityAndIdentity() throws {
         let previous = parent()
-        var row = Blakeswap_V2_MarketOrder(); row.offer = previous; row.offer.revision += 1; row.offer.available = 300000; row.eventID = "new-event"
+        var row = Blakeswap_V1_MarketOrder(); row.offer = previous; row.offer.revision += 1; row.offer.available = 300000; row.eventID = "new-event"
         var draft = TradeFillDraft(); draft.seed(quantity: 400000); draft.quantity = "456789"
         try validateRefreshedParent(previous, refreshed: row)
         draft.seed(quantity: row.suggestedQuantity)
         XCTAssertEqual(draft.quantity, "456789")
-        var request = Blakeswap_V2_TradeQuoteRequest()
+        var request = Blakeswap_V1_TradeQuoteRequest()
         XCTAssertThrowsError(try draft.apply(to: &request, order: row.offer))
         row.offer.maker = "foreign"; XCTAssertThrowsError(try validateRefreshedParent(previous, refreshed: row))
         row.offer = previous; row.offer.revision = 1; XCTAssertThrowsError(try validateRefreshedParent(previous, refreshed: row))
     }
     func testMakerCapsAndExampleCannotChangeInReply() async throws {
-        var request = Blakeswap_V2_TradeQuoteRequest(); request.kind = "maker"; request.fillMode = "partial"; request.minFill = 400000; request.maxFill = 600000
+        var request = Blakeswap_V1_TradeQuoteRequest(); request.kind = "maker"; request.fillMode = "partial"; request.minFill = 400000; request.maxFill = 600000
         request.feeBudgets = ["btc":65000,"blake":40000]; request.bountyBudgets = ["btc":0,"blake":0]
-        var good = Blakeswap_V2_TradeQuote(); good.kind = request.kind; good.wallet = wallet.profile; good.walletKey = wallet.walletKey; good.network = wallet.network
+        var good = Blakeswap_V1_TradeQuote(); good.kind = request.kind; good.wallet = wallet.profile; good.walletKey = wallet.walletKey; good.network = wallet.network
         good.fillMode = request.fillMode; good.minFill = request.minFill; good.maxFill = request.maxFill; good.feeBudgets = request.feeBudgets; good.bountyBudgets = request.bountyBudgets; good.exampleFill.quantity = 400000
         for change in ["fees", "bounty", "bounds", "example", "aggregate"] {
             var reply = good
@@ -91,7 +91,7 @@ final class PartialFillTests: XCTestCase {
             case "bounty": reply.bountyBudgets.removeValue(forKey: "btc")
             case "bounds": reply.maxFill = 700000
             case "example": reply.clearExampleFill()
-            default: reply.outcomes = [Blakeswap_V2_TradeOutcome()]
+            default: reply.outcomes = [Blakeswap_V1_TradeOutcome()]
             }
             let model = TradeReviewModel(context: wallet, root: try root()) { _, _ in try reply.serializedData() }
             await model.review(request, current: { self.wallet }); XCTAssertNil(model.quote); XCTAssertNotNil(model.error)
@@ -100,16 +100,16 @@ final class PartialFillTests: XCTestCase {
     func testDelayedPageCannotApplyToChangedWalletOrNewRequest() async throws {
         var current = wallet
         let changed = FillHistoryModel(context: ParentFillContext(wallet: wallet, maker: "maker", parentID: "parent")) { _, raw in
-            let request = try Blakeswap_V2_FillQuery(jsonUTF8Data: raw)
+            let request = try Blakeswap_V1_FillQuery(jsonUTF8Data: raw)
             current = TradeContext(profile: "bob", network: "regtest", generation: 2, walletKey: "other")
             return try self.page(request).serializedData()
         }
         await changed.load(current: { current }); XCTAssertTrue(changed.rows.isEmpty)
         var resume: CheckedContinuation<Data, Error>?
-        var oldRequest = Blakeswap_V2_FillQuery()
+        var oldRequest = Blakeswap_V1_FillQuery()
         var calls = 0
         let model = FillHistoryModel(context: ParentFillContext(wallet: wallet, maker: "maker", parentID: "parent")) { _, raw in
-            let request = try Blakeswap_V2_FillQuery(jsonUTF8Data: raw); calls += 1
+            let request = try Blakeswap_V1_FillQuery(jsonUTF8Data: raw); calls += 1
             if calls == 1 { oldRequest = request; return try await withCheckedThrowingContinuation { resume = $0 } }
             var result = self.page(request); result.revision = "new-frozen"; return try result.serializedData()
         }
@@ -121,24 +121,24 @@ final class PartialFillTests: XCTestCase {
         resume?.resume(returning: try stale.serializedData()); await old.value
         XCTAssertEqual(model.rows, latest); XCTAssertNil(model.error)
     }
-    private func page(_ request: Blakeswap_V2_FillQuery, total: UInt32 = 1001) -> Blakeswap_V2_FillPage {
-        var page = Blakeswap_V2_FillPage(); page.wallet = wallet.profile; page.network = wallet.network; page.parentMaker = "maker"; page.parentID = "parent"; page.revision = "frozen"; page.total = total
+    private func page(_ request: Blakeswap_V1_FillQuery, total: UInt32 = 1001) -> Blakeswap_V1_FillPage {
+        var page = Blakeswap_V1_FillPage(); page.wallet = wallet.profile; page.network = wallet.network; page.parentMaker = "maker"; page.parentID = "parent"; page.revision = "frozen"; page.total = total
         let end = min(request.offset + request.limit, page.total)
         page.records = (request.offset..<end).map { number in
-            var row = Blakeswap_V2_FillSummary(); row.id = String(format: "child-%04d", number); row.parentMaker = "maker"; row.parentID = "parent"; row.quantity = 400000; row.allocatedQuantity = 400000; row.allocationKnown = true; row.disposition = "released"; row.archived = number.isMultiple(of: 2); row.monitoringRequired = row.archived; return row
+            var row = Blakeswap_V1_FillSummary(); row.id = String(format: "child-%04d", number); row.parentMaker = "maker"; row.parentID = "parent"; row.quantity = 400000; row.allocatedQuantity = 400000; row.allocationKnown = true; row.disposition = "released"; row.archived = number.isMultiple(of: 2); row.monitoringRequired = row.archived; return row
         }
         page.more = end < page.total; page.nextOffset = page.more ? end : 0; return page
     }
     func testFillHistoryBoundedPagesAndExactDetail() async throws {
-        var requests: [Blakeswap_V2_FillQuery] = []
+        var requests: [Blakeswap_V1_FillQuery] = []
         let model = FillHistoryModel(context: ParentFillContext(wallet: wallet, maker: "maker", parentID: "parent")) { method, raw in
             if method == "record.get" {
-                let request = try Blakeswap_V2_RecordQuery(jsonUTF8Data: raw)
+                let request = try Blakeswap_V1_RecordQuery(jsonUTF8Data: raw)
                 XCTAssertEqual(request.expectedWallet, self.wallet.profile); XCTAssertEqual(request.expectedNetwork, self.wallet.network)
-                var detail = Blakeswap_V2_RecordDetail(); detail.kind = "swap"; detail.id = request.id; detail.swap.id = request.id; detail.swap.parentID = "parent"; detail.swap.parentMaker = "maker"; detail.archived = true; detail.monitoringRequired = true
+                var detail = Blakeswap_V1_RecordDetail(); detail.kind = "swap"; detail.id = request.id; detail.swap.id = request.id; detail.swap.parentID = "parent"; detail.swap.parentMaker = "maker"; detail.archived = true; detail.monitoringRequired = true
                 return try detail.serializedData()
             }
-            let request = try Blakeswap_V2_FillQuery(jsonUTF8Data: raw); requests.append(request)
+            let request = try Blakeswap_V1_FillQuery(jsonUTF8Data: raw); requests.append(request)
             XCTAssertEqual(method, "fills.list"); XCTAssertEqual(request.parentMaker, "maker"); XCTAssertEqual(request.parentID, "parent")
             return try self.page(request).serializedData()
         }
@@ -156,7 +156,7 @@ final class PartialFillTests: XCTestCase {
         for alteration in ["maker", "parent", "revision", "offset", "wallet"] {
             var calls = 0
             let model = FillHistoryModel(context: ParentFillContext(wallet: wallet, maker: "maker", parentID: "parent")) { _, raw in
-                let request = try Blakeswap_V2_FillQuery(jsonUTF8Data: raw); var result = self.page(request); calls += 1
+                let request = try Blakeswap_V1_FillQuery(jsonUTF8Data: raw); var result = self.page(request); calls += 1
                 if calls > 1 {
                     switch alteration { case "maker": result.records[0].parentMaker = "foreign"
                     case "parent": result.parentID = "foreign"
@@ -173,7 +173,7 @@ final class PartialFillTests: XCTestCase {
     func testFillHistoryTerminalPageUsesDaemonZeroOffset() async throws {
         for total: UInt32 in [0, 1, 100] {
             let model = FillHistoryModel(context: ParentFillContext(wallet: wallet, maker: "maker", parentID: "parent")) { _, raw in
-                let request = try Blakeswap_V2_FillQuery(jsonUTF8Data: raw)
+                let request = try Blakeswap_V1_FillQuery(jsonUTF8Data: raw)
                 return try self.page(request, total: total).serializedData()
             }
             await model.load(current: { wallet })
@@ -186,7 +186,7 @@ final class PartialFillTests: XCTestCase {
         for total: UInt32 in [101, 200, 201] {
             var offsets: [UInt32] = []
             let model = FillHistoryModel(context: ParentFillContext(wallet: wallet, maker: "maker", parentID: "parent")) { _, raw in
-                let request = try Blakeswap_V2_FillQuery(jsonUTF8Data: raw); offsets.append(request.offset)
+                let request = try Blakeswap_V1_FillQuery(jsonUTF8Data: raw); offsets.append(request.offset)
                 XCTAssertTrue(request.offset == 0 || request.revision == "frozen")
                 return try self.page(request, total: total).serializedData()
             }
@@ -206,7 +206,7 @@ final class PartialFillTests: XCTestCase {
             let initialFailure = alteration.hasPrefix("continuation")
             var calls = 0
             let model = FillHistoryModel(context: ParentFillContext(wallet: wallet, maker: "maker", parentID: "parent")) { _, raw in
-                let request = try Blakeswap_V2_FillQuery(jsonUTF8Data: raw); calls += 1
+                let request = try Blakeswap_V1_FillQuery(jsonUTF8Data: raw); calls += 1
                 var result = self.page(request, total: 102)
                 if initialFailure || calls > 1 {
                     switch alteration {

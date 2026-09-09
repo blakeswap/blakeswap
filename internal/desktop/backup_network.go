@@ -26,7 +26,7 @@ func (s *portableStaging) saveView(ctx context.Context, active daemon.State, sta
 		Domain  string               `json:"domain"`
 		State   daemon.State         `json:"state"`
 		Archive storage.ArchiveStats `json:"archive"`
-	}{"blakeswap/complete-snapshot/v2", active, stats}); err != nil {
+	}{"blakeswap/complete-snapshot/v1", active, stats}); err != nil {
 		return nil, mark, err
 	}
 	source, err := s.saveStream(ctx, active, stats, func(write func(storage.ArchiveRecord) error) error {
@@ -174,7 +174,7 @@ func (n *backupNetwork) validateSnapshot(ctx context.Context, mnemonic string, n
 			Domain  string               `json:"domain"`
 			State   daemon.State         `json:"state"`
 			Archive storage.ArchiveStats `json:"archive"`
-		}{"blakeswap/complete-snapshot/v2", active, stats}); err != nil {
+		}{"blakeswap/complete-snapshot/v1", active, stats}); err != nil {
 			return err
 		}
 		if err := view.VisitArchive(ctx, func(record storage.ArchiveRecord) error {

@@ -1,22 +1,22 @@
 import Foundation
 import SwiftProtobuf
 
-typealias Order = Blakeswap_V2_Offer
-typealias HTLC = Blakeswap_V2_HTLC
-typealias Swap = Blakeswap_V2_Swap
-typealias DaemonStatus = Blakeswap_V2_Status
-typealias AppSettings = Blakeswap_V2_Settings
-typealias EnvironmentSettings = Blakeswap_V2_Environment
-typealias NodeSettings = Blakeswap_V2_Node
+typealias Order = Blakeswap_V1_Offer
+typealias HTLC = Blakeswap_V1_HTLC
+typealias Swap = Blakeswap_V1_Swap
+typealias DaemonStatus = Blakeswap_V1_Status
+typealias AppSettings = Blakeswap_V1_Settings
+typealias EnvironmentSettings = Blakeswap_V1_Environment
+typealias NodeSettings = Blakeswap_V1_Node
 
-extension Blakeswap_V2_Offer: Identifiable {
+extension Blakeswap_V1_Offer: Identifiable {
     var buy: String { sell == "btc" ? "blake" : "btc" }
     func protectionLabel(viewer: String) -> String? {
         guard !viewer.isEmpty, maker == viewer else { return nil }
         return towerBps > 0 ? "Watchtower: \(percentage(towerBps)) only if used" : "No protection"
     }
 }
-extension Blakeswap_V2_Swap: Identifiable {
+extension Blakeswap_V1_Swap: Identifiable {
     var feeLabel: String {
         let payments = towerPayments.keys.sorted().compactMap { chain -> String? in
             guard let amount = towerPayments[chain], amount > 0 else { return nil }
@@ -25,8 +25,8 @@ extension Blakeswap_V2_Swap: Identifiable {
         return payments.isEmpty ? "0 sats" : payments.joined(separator: " + ")
     }
 }
-extension Blakeswap_V2_Environment: Identifiable { var id: String { network } }
-extension Blakeswap_V2_Environment {
+extension Blakeswap_V1_Environment: Identifiable { var id: String { network } }
+extension Blakeswap_V1_Environment {
     var rescueFeePercent: Double {
         get { Double(rescueFeeBasisPoints) / 100 }
         set {
@@ -64,14 +64,14 @@ enum OrderFilter: String, CaseIterable {
     }
 }
 
-extension Blakeswap_V2_Offer {
+extension Blakeswap_V1_Offer {
     var bookID: String { "\(maker):\(id)" }
 }
-extension Blakeswap_V2_Tower: Identifiable {
+extension Blakeswap_V1_Tower: Identifiable {
     var id: String { pubkey }
     var label: String { "\(name.isEmpty ? String(npub.prefix(16)) + "…" : name) · \(percentage(bps))" }
 }
-extension Blakeswap_V2_Status {
+extension Blakeswap_V1_Status {
     var offerFundingFee: Int64 { fundingFee > 0 ? fundingFee : 2_000 }
     func available(_ chain: String) -> Int64 { funds[chain]?.unlockedConfirmed ?? 0 }
     func canSell(_ chain: String) -> Bool { available(chain) >= 100_000 + offerFundingFee }

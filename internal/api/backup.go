@@ -3,7 +3,7 @@ package api
 import (
 	"context"
 
-	pb "github.com/blakeswap/blakeswap/api/gen/blakeswap/v2"
+	pb "github.com/blakeswap/blakeswap/api/gen/blakeswap/v1"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )

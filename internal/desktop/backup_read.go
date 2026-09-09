@@ -35,21 +35,11 @@ func readBackupManifest(ctx context.Context, root, source, password string) (bac
 	if readErr != nil || closeErr != nil {
 		return manifest, false, errors.New("cannot read backup file")
 	}
+	if string(prefix[:]) == "BLAKESWAP-STREAM\x00" {
+		manifest, err = readStreamManifest(ctx, root, source, []byte(password))
+		return manifest, false, err
+	}
 	if string(prefix[:]) == "BLAKESWAP-BACKUP\x00" {
-		version, versionErr := os.Open(source)
-		if versionErr != nil {
-			return manifest, false, versionErr
-		}
-		var marker [1]byte
-		_, versionErr = version.ReadAt(marker[:], int64(len(prefix)))
-		version.Close()
-		if versionErr != nil {
-			return manifest, false, versionErr
-		}
-		if marker[0] == 2 {
-			manifest, err = readStreamManifest(ctx, root, source, []byte(password))
-			return manifest, false, err
-		}
 		if err := storage.ReadPortable(ctx, source, []byte(password), &manifest); err != nil {
 			return manifest, false, err
 		}

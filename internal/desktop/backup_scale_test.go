@@ -105,8 +105,8 @@ func portableScalePhase(t *testing.T, name string, run func()) {
 	run()
 }
 
-// Explicit opt-in physical resource fixture. It exercises the actual v1 reader,
-// private v2 staging, complete encrypted export and published restore. Its large
+// Explicit opt-in physical resource fixture. It exercises the actual flat reader,
+// private stream staging, complete encrypted export and published restore. Its large
 // retained byte strings are format/continuation payloads, never broadcast chain
 // fixtures; protocol-specific growth bounds have separate tests.
 func TestPortablePhysicalLargeHistoryAndCoreContinuation(t *testing.T) {
@@ -145,7 +145,7 @@ func TestPortablePhysicalLargeHistoryAndCoreContinuation(t *testing.T) {
 		t.Fatal(err)
 	}
 	if uint64(plain) > storage.PortableLimit {
-		t.Fatal("fixture not previously accepted v1 population", plain)
+		t.Fatal("fixture not previously accepted flat population", plain)
 	}
 	t.Logf("accepted_v1_plaintext=%d activity_records=%d core_obligations=%d", plain, records, core)
 	legacyPath := filepath.Join(t.TempDir(), "accepted-v1.backup")
@@ -249,8 +249,8 @@ func TestPortablePhysicalLargeHistoryAndCoreContinuation(t *testing.T) {
 		}
 	})
 	t.Logf("source_snapshot_worker_pause=%s", snapshot.capturePause)
-	output := filepath.Join(t.TempDir(), "complete-grown-v2.backup")
-	portableScalePhase(t, "export_complete_v2", func() {
+	output := filepath.Join(t.TempDir(), "complete-grown-stream.backup")
+	portableScalePhase(t, "export_complete_stream", func() {
 		if err := writeStreamManifest(ctx, output, password, snapshot); err != nil {
 			t.Fatal(err)
 		}
@@ -262,13 +262,13 @@ func TestPortablePhysicalLargeHistoryAndCoreContinuation(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Logf("grown_v2_ciphertext=%d retained_cold_bytes=%d", info.Size(), stats.Bytes)
+	t.Logf("grown_stream_ciphertext=%d retained_cold_bytes=%d", info.Size(), stats.Bytes)
 	if records >= 95000 && info.Size() <= storage.PortableLimit {
 		t.Fatal("fixture did not exceed old envelope after core growth")
 	}
 	m2 := installedManager(t)
 	var restored portableImportResult
-	portableScalePhase(t, "inspect_stage_and_publish_v2_restore", func() {
+	portableScalePhase(t, "inspect_stage_and_publish_stream_restore", func() {
 		var err error
 		restored, err = m2.importPortable(ctx, portableImportRequest{Path: output, Password: string(password), Revision: m2.settings.Revision})
 		if err != nil {

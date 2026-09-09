@@ -3,7 +3,7 @@
   "info": {
     "title": "Blakeswap daemon API",
     "description": "Local wallet API. All amounts are integer satoshis. Protobuf JSON represents int64 as decimal strings. Bearer credentials are read from a private runtime file. HTTP binds only to loopback; gRPC binds to a private Unix socket. Native desktop sensitive actions additionally require a one-use exact-action grant in X-Blakeswap-Consent (gRPC x-blakeswap-consent), approved only by the owned native OS-authentication broker. Read-only calls need no grant. Explicit file mode retains operator-controlled bearer authority.",
-    "version": "2.0"
+    "version": "1.0"
   },
   "tags": [
     {
@@ -20,14 +20,14 @@
     "application/json"
   ],
   "paths": {
-    "/v2/actions/summary": {
+    "/v1/actions/summary": {
       "post": {
         "operationId": "DaemonService_GetActionSummary",
         "responses": {
           "200": {
             "description": "A successful response.",
             "schema": {
-              "$ref": "#/definitions/v2ActionSummary"
+              "$ref": "#/definitions/v1ActionSummary"
             }
           },
           "default": {
@@ -44,7 +44,7 @@
             "in": "body",
             "required": true,
             "schema": {
-              "$ref": "#/definitions/v2ActionSummaryRequest"
+              "$ref": "#/definitions/v1ActionSummaryRequest"
             }
           }
         ],
@@ -53,14 +53,14 @@
         ]
       }
     },
-    "/v2/activity/export": {
+    "/v1/activity/export": {
       "post": {
         "operationId": "DaemonService_ExportActivity",
         "responses": {
           "200": {
             "description": "A successful response.",
             "schema": {
-              "$ref": "#/definitions/v2ActivityExport"
+              "$ref": "#/definitions/v1ActivityExport"
             }
           },
           "default": {
@@ -76,7 +76,7 @@
             "in": "body",
             "required": true,
             "schema": {
-              "$ref": "#/definitions/v2ActivityQuery"
+              "$ref": "#/definitions/v1ActivityQuery"
             }
           }
         ],
@@ -85,14 +85,14 @@
         ]
       }
     },
-    "/v2/activity/query": {
+    "/v1/activity/query": {
       "post": {
         "operationId": "DaemonService_ListActivity",
         "responses": {
           "200": {
             "description": "A successful response.",
             "schema": {
-              "$ref": "#/definitions/v2ActivityPage"
+              "$ref": "#/definitions/v1ActivityPage"
             }
           },
           "default": {
@@ -108,7 +108,7 @@
             "in": "body",
             "required": true,
             "schema": {
-              "$ref": "#/definitions/v2ActivityQuery"
+              "$ref": "#/definitions/v1ActivityQuery"
             }
           }
         ],
@@ -117,14 +117,14 @@
         ]
       }
     },
-    "/v2/automations": {
+    "/v1/automations": {
       "put": {
         "operationId": "DaemonService_SaveAutomation",
         "responses": {
           "200": {
             "description": "A successful response.",
             "schema": {
-              "$ref": "#/definitions/v2AutomationView"
+              "$ref": "#/definitions/v1AutomationView"
             }
           },
           "default": {
@@ -141,7 +141,7 @@
             "in": "body",
             "required": true,
             "schema": {
-              "$ref": "#/definitions/v2AutomationEdit"
+              "$ref": "#/definitions/v1AutomationEdit"
             }
           }
         ],
@@ -150,14 +150,14 @@
         ]
       }
     },
-    "/v2/automations/disable": {
+    "/v1/automations/disable": {
       "post": {
         "operationId": "DaemonService_DisableAutomation",
         "responses": {
           "200": {
             "description": "A successful response.",
             "schema": {
-              "$ref": "#/definitions/v2AutomationView"
+              "$ref": "#/definitions/v1AutomationView"
             }
           },
           "default": {
@@ -173,7 +173,7 @@
             "in": "body",
             "required": true,
             "schema": {
-              "$ref": "#/definitions/v2DisableAutomationRequest"
+              "$ref": "#/definitions/v1DisableAutomationRequest"
             }
           }
         ],
@@ -182,14 +182,14 @@
         ]
       }
     },
-    "/v2/automations/query": {
+    "/v1/automations/query": {
       "post": {
         "operationId": "DaemonService_ListAutomations",
         "responses": {
           "200": {
             "description": "A successful response.",
             "schema": {
-              "$ref": "#/definitions/v2AutomationList"
+              "$ref": "#/definitions/v1AutomationList"
             }
           },
           "default": {
@@ -205,7 +205,7 @@
             "in": "body",
             "required": true,
             "schema": {
-              "$ref": "#/definitions/v2AutomationQuery"
+              "$ref": "#/definitions/v1AutomationQuery"
             }
           }
         ],
@@ -214,14 +214,14 @@
         ]
       }
     },
-    "/v2/automations/review": {
+    "/v1/automations/review": {
       "post": {
         "operationId": "DaemonService_ReviewAutomation",
         "responses": {
           "200": {
             "description": "A successful response.",
             "schema": {
-              "$ref": "#/definitions/v2AutomationReview"
+              "$ref": "#/definitions/v1AutomationReview"
             }
           },
           "default": {
@@ -238,7 +238,7 @@
             "in": "body",
             "required": true,
             "schema": {
-              "$ref": "#/definitions/v2AutomationEdit"
+              "$ref": "#/definitions/v1AutomationEdit"
             }
           }
         ],
@@ -247,14 +247,14 @@
         ]
       }
     },
-    "/v2/backups/import": {
+    "/v1/backups/import": {
       "post": {
         "operationId": "DaemonService_ImportBackup",
         "responses": {
           "200": {
             "description": "A successful response.",
             "schema": {
-              "$ref": "#/definitions/v2ImportBackupResult"
+              "$ref": "#/definitions/v1ImportBackupResult"
             }
           },
           "default": {
@@ -270,7 +270,7 @@
             "in": "body",
             "required": true,
             "schema": {
-              "$ref": "#/definitions/v2ImportBackupRequest"
+              "$ref": "#/definitions/v1ImportBackupRequest"
             }
           }
         ],
@@ -279,14 +279,14 @@
         ]
       }
     },
-    "/v2/backups/inspect": {
+    "/v1/backups/inspect": {
       "post": {
         "operationId": "DaemonService_InspectBackup",
         "responses": {
           "200": {
             "description": "A successful response.",
             "schema": {
-              "$ref": "#/definitions/v2BackupContents"
+              "$ref": "#/definitions/v1BackupContents"
             }
           },
           "default": {
@@ -302,7 +302,7 @@
             "in": "body",
             "required": true,
             "schema": {
-              "$ref": "#/definitions/v2InspectBackupRequest"
+              "$ref": "#/definitions/v1InspectBackupRequest"
             }
           }
         ],
@@ -311,14 +311,14 @@
         ]
       }
     },
-    "/v2/fees/quote": {
+    "/v1/fees/quote": {
       "post": {
         "operationId": "DaemonService_QuoteFee",
         "responses": {
           "200": {
             "description": "A successful response.",
             "schema": {
-              "$ref": "#/definitions/v2FeeQuote"
+              "$ref": "#/definitions/v1FeeQuote"
             }
           },
           "default": {
@@ -334,7 +334,7 @@
             "in": "body",
             "required": true,
             "schema": {
-              "$ref": "#/definitions/v2FeeQuoteRequest"
+              "$ref": "#/definitions/v1FeeQuoteRequest"
             }
           }
         ],
@@ -343,14 +343,14 @@
         ]
       }
     },
-    "/v2/history/record": {
+    "/v1/history/record": {
       "post": {
         "operationId": "DaemonService_GetRecord",
         "responses": {
           "200": {
             "description": "A successful response.",
             "schema": {
-              "$ref": "#/definitions/v2RecordDetail"
+              "$ref": "#/definitions/v1RecordDetail"
             }
           },
           "default": {
@@ -366,7 +366,7 @@
             "in": "body",
             "required": true,
             "schema": {
-              "$ref": "#/definitions/v2RecordQuery"
+              "$ref": "#/definitions/v1RecordQuery"
             }
           }
         ],
@@ -375,14 +375,14 @@
         ]
       }
     },
-    "/v2/market/query": {
+    "/v1/market/query": {
       "post": {
         "operationId": "DaemonService_ListMarket",
         "responses": {
           "200": {
             "description": "A successful response.",
             "schema": {
-              "$ref": "#/definitions/v2MarketPage"
+              "$ref": "#/definitions/v1MarketPage"
             }
           },
           "default": {
@@ -398,7 +398,7 @@
             "in": "body",
             "required": true,
             "schema": {
-              "$ref": "#/definitions/v2MarketQuery"
+              "$ref": "#/definitions/v1MarketQuery"
             }
           }
         ],
@@ -407,14 +407,14 @@
         ]
       }
     },
-    "/v2/offers": {
+    "/v1/offers": {
       "post": {
         "operationId": "DaemonService_CreateOffer",
         "responses": {
           "200": {
             "description": "A successful response.",
             "schema": {
-              "$ref": "#/definitions/v2Offer"
+              "$ref": "#/definitions/v1Offer"
             }
           },
           "default": {
@@ -430,7 +430,7 @@
             "in": "body",
             "required": true,
             "schema": {
-              "$ref": "#/definitions/v2CreateOfferRequest"
+              "$ref": "#/definitions/v1CreateOfferRequest"
             }
           }
         ],
@@ -439,14 +439,14 @@
         ]
       }
     },
-    "/v2/offers/{id}": {
+    "/v1/offers/{id}": {
       "delete": {
         "operationId": "DaemonService_CancelOffer",
         "responses": {
           "200": {
             "description": "A successful response.",
             "schema": {
-              "$ref": "#/definitions/v2Offer"
+              "$ref": "#/definitions/v1Offer"
             }
           },
           "default": {
@@ -487,14 +487,14 @@
         ]
       }
     },
-    "/v2/onboarding/backup": {
+    "/v1/onboarding/backup": {
       "post": {
         "operationId": "DaemonService_ExportFirstWallet",
         "responses": {
           "200": {
             "description": "A successful response.",
             "schema": {
-              "$ref": "#/definitions/v2Backup"
+              "$ref": "#/definitions/v1Backup"
             }
           },
           "default": {
@@ -510,7 +510,7 @@
             "in": "body",
             "required": true,
             "schema": {
-              "$ref": "#/definitions/v2ExportFirstWalletRequest"
+              "$ref": "#/definitions/v1ExportFirstWalletRequest"
             }
           }
         ],
@@ -519,14 +519,14 @@
         ]
       }
     },
-    "/v2/onboarding/confirm": {
+    "/v1/onboarding/confirm": {
       "post": {
         "operationId": "DaemonService_ConfirmFirstWallet",
         "responses": {
           "200": {
             "description": "A successful response.",
             "schema": {
-              "$ref": "#/definitions/v2Settings"
+              "$ref": "#/definitions/v1Settings"
             }
           },
           "default": {
@@ -542,7 +542,7 @@
             "in": "body",
             "required": true,
             "schema": {
-              "$ref": "#/definitions/v2ConfirmFirstWalletRequest"
+              "$ref": "#/definitions/v1ConfirmFirstWalletRequest"
             }
           }
         ],
@@ -551,14 +551,14 @@
         ]
       }
     },
-    "/v2/onboarding/finish": {
+    "/v1/onboarding/finish": {
       "post": {
         "operationId": "DaemonService_FinishOnboarding",
         "responses": {
           "200": {
             "description": "A successful response.",
             "schema": {
-              "$ref": "#/definitions/v2Settings"
+              "$ref": "#/definitions/v1Settings"
             }
           },
           "default": {
@@ -574,7 +574,7 @@
             "in": "body",
             "required": true,
             "schema": {
-              "$ref": "#/definitions/v2Settings"
+              "$ref": "#/definitions/v1Settings"
             }
           }
         ],
@@ -583,14 +583,14 @@
         ]
       }
     },
-    "/v2/onboarding/recovery": {
+    "/v1/onboarding/recovery": {
       "post": {
         "operationId": "DaemonService_GetFirstWallet",
         "responses": {
           "200": {
             "description": "A successful response.",
             "schema": {
-              "$ref": "#/definitions/v2FirstWallet"
+              "$ref": "#/definitions/v1FirstWallet"
             }
           },
           "default": {
@@ -616,14 +616,14 @@
         ]
       }
     },
-    "/v2/onboarding/wallet": {
+    "/v1/onboarding/wallet": {
       "post": {
         "operationId": "DaemonService_PrepareFirstWallet",
         "responses": {
           "200": {
             "description": "A successful response.",
             "schema": {
-              "$ref": "#/definitions/v2FirstWallet"
+              "$ref": "#/definitions/v1FirstWallet"
             }
           },
           "default": {
@@ -639,7 +639,7 @@
             "in": "body",
             "required": true,
             "schema": {
-              "$ref": "#/definitions/v2PrepareFirstWalletRequest"
+              "$ref": "#/definitions/v1PrepareFirstWalletRequest"
             }
           }
         ],
@@ -648,14 +648,14 @@
         ]
       }
     },
-    "/v2/orders/fills/query": {
+    "/v1/orders/fills/query": {
       "post": {
         "operationId": "DaemonService_ListFills",
         "responses": {
           "200": {
             "description": "A successful response.",
             "schema": {
-              "$ref": "#/definitions/v2FillPage"
+              "$ref": "#/definitions/v1FillPage"
             }
           },
           "default": {
@@ -671,7 +671,7 @@
             "in": "body",
             "required": true,
             "schema": {
-              "$ref": "#/definitions/v2FillQuery"
+              "$ref": "#/definitions/v1FillQuery"
             }
           }
         ],
@@ -680,14 +680,14 @@
         ]
       }
     },
-    "/v2/pause": {
+    "/v1/pause": {
       "put": {
         "operationId": "DaemonService_SetPaused",
         "responses": {
           "200": {
             "description": "A successful response.",
             "schema": {
-              "$ref": "#/definitions/blakeswapV2Status"
+              "$ref": "#/definitions/blakeswapV1Status"
             }
           },
           "default": {
@@ -703,7 +703,7 @@
             "in": "body",
             "required": true,
             "schema": {
-              "$ref": "#/definitions/v2SetPausedRequest"
+              "$ref": "#/definitions/v1SetPausedRequest"
             }
           }
         ],
@@ -712,14 +712,14 @@
         ]
       }
     },
-    "/v2/regtest/faucet": {
+    "/v1/regtest/faucet": {
       "post": {
         "operationId": "DaemonService_Faucet",
         "responses": {
           "200": {
             "description": "A successful response.",
             "schema": {
-              "$ref": "#/definitions/v2FaucetResponse"
+              "$ref": "#/definitions/v1FaucetResponse"
             }
           },
           "default": {
@@ -735,7 +735,7 @@
             "in": "body",
             "required": true,
             "schema": {
-              "$ref": "#/definitions/v2FaucetRequest"
+              "$ref": "#/definitions/v1FaucetRequest"
             }
           }
         ],
@@ -744,7 +744,7 @@
         ]
       }
     },
-    "/v2/regtest/mine": {
+    "/v1/regtest/mine": {
       "post": {
         "operationId": "DaemonService_Mine",
         "responses": {
@@ -768,7 +768,7 @@
             "in": "body",
             "required": true,
             "schema": {
-              "$ref": "#/definitions/v2MineRequest"
+              "$ref": "#/definitions/v1MineRequest"
             }
           }
         ],
@@ -777,14 +777,14 @@
         ]
       }
     },
-    "/v2/settings": {
+    "/v1/settings": {
       "get": {
         "operationId": "DaemonService_GetSettings",
         "responses": {
           "200": {
             "description": "A successful response.",
             "schema": {
-              "$ref": "#/definitions/v2Settings"
+              "$ref": "#/definitions/v1Settings"
             }
           },
           "default": {
@@ -804,7 +804,7 @@
           "200": {
             "description": "A successful response.",
             "schema": {
-              "$ref": "#/definitions/v2Settings"
+              "$ref": "#/definitions/v1Settings"
             }
           },
           "default": {
@@ -820,7 +820,7 @@
             "in": "body",
             "required": true,
             "schema": {
-              "$ref": "#/definitions/v2Settings"
+              "$ref": "#/definitions/v1Settings"
             }
           }
         ],
@@ -829,14 +829,14 @@
         ]
       }
     },
-    "/v2/settings/check-node": {
+    "/v1/settings/check-node": {
       "post": {
         "operationId": "DaemonService_CheckNode",
         "responses": {
           "200": {
             "description": "A successful response.",
             "schema": {
-              "$ref": "#/definitions/v2CheckNodeResponse"
+              "$ref": "#/definitions/v1CheckNodeResponse"
             }
           },
           "default": {
@@ -852,7 +852,7 @@
             "in": "body",
             "required": true,
             "schema": {
-              "$ref": "#/definitions/v2CheckNodeRequest"
+              "$ref": "#/definitions/v1CheckNodeRequest"
             }
           }
         ],
@@ -861,14 +861,14 @@
         ]
       }
     },
-    "/v2/status": {
+    "/v1/status": {
       "get": {
         "operationId": "DaemonService_GetStatus",
         "responses": {
           "200": {
             "description": "A successful response.",
             "schema": {
-              "$ref": "#/definitions/blakeswapV2Status"
+              "$ref": "#/definitions/blakeswapV1Status"
             }
           },
           "default": {
@@ -883,14 +883,14 @@
         ]
       }
     },
-    "/v2/status/refresh": {
+    "/v1/status/refresh": {
       "post": {
         "operationId": "DaemonService_RefreshStatus",
         "responses": {
           "200": {
             "description": "A successful response.",
             "schema": {
-              "$ref": "#/definitions/blakeswapV2Status"
+              "$ref": "#/definitions/blakeswapV1Status"
             }
           },
           "default": {
@@ -906,7 +906,7 @@
             "in": "body",
             "required": true,
             "schema": {
-              "$ref": "#/definitions/v2RefreshStatusRequest"
+              "$ref": "#/definitions/v1RefreshStatusRequest"
             }
           }
         ],
@@ -915,14 +915,14 @@
         ]
       }
     },
-    "/v2/strategies": {
+    "/v1/strategies": {
       "put": {
         "operationId": "DaemonService_SaveStrategy",
         "responses": {
           "200": {
             "description": "A successful response.",
             "schema": {
-              "$ref": "#/definitions/v2StrategyView"
+              "$ref": "#/definitions/v1StrategyView"
             }
           },
           "default": {
@@ -938,7 +938,7 @@
             "in": "body",
             "required": true,
             "schema": {
-              "$ref": "#/definitions/v2StrategyEdit"
+              "$ref": "#/definitions/v1StrategyEdit"
             }
           }
         ],
@@ -947,14 +947,14 @@
         ]
       }
     },
-    "/v2/strategies/query": {
+    "/v1/strategies/query": {
       "post": {
         "operationId": "DaemonService_ListStrategies",
         "responses": {
           "200": {
             "description": "A successful response.",
             "schema": {
-              "$ref": "#/definitions/v2StrategyList"
+              "$ref": "#/definitions/v1StrategyList"
             }
           },
           "default": {
@@ -970,7 +970,7 @@
             "in": "body",
             "required": true,
             "schema": {
-              "$ref": "#/definitions/v2AutomationQuery"
+              "$ref": "#/definitions/v1AutomationQuery"
             }
           }
         ],
@@ -979,14 +979,14 @@
         ]
       }
     },
-    "/v2/strategies/report": {
+    "/v1/strategies/report": {
       "post": {
         "operationId": "DaemonService_ReportStrategy",
         "responses": {
           "200": {
             "description": "A successful response.",
             "schema": {
-              "$ref": "#/definitions/v2StrategyView"
+              "$ref": "#/definitions/v1StrategyView"
             }
           },
           "default": {
@@ -1002,7 +1002,7 @@
             "in": "body",
             "required": true,
             "schema": {
-              "$ref": "#/definitions/v2StrategyReportRequest"
+              "$ref": "#/definitions/v1StrategyReportRequest"
             }
           }
         ],
@@ -1011,14 +1011,14 @@
         ]
       }
     },
-    "/v2/strategies/review": {
+    "/v1/strategies/review": {
       "post": {
         "operationId": "DaemonService_ReviewStrategy",
         "responses": {
           "200": {
             "description": "A successful response.",
             "schema": {
-              "$ref": "#/definitions/v2StrategyReview"
+              "$ref": "#/definitions/v1StrategyReview"
             }
           },
           "default": {
@@ -1034,7 +1034,7 @@
             "in": "body",
             "required": true,
             "schema": {
-              "$ref": "#/definitions/v2StrategyEdit"
+              "$ref": "#/definitions/v1StrategyEdit"
             }
           }
         ],
@@ -1043,14 +1043,14 @@
         ]
       }
     },
-    "/v2/strategies/stop": {
+    "/v1/strategies/stop": {
       "post": {
         "operationId": "DaemonService_StopStrategy",
         "responses": {
           "200": {
             "description": "A successful response.",
             "schema": {
-              "$ref": "#/definitions/v2StrategyView"
+              "$ref": "#/definitions/v1StrategyView"
             }
           },
           "default": {
@@ -1066,7 +1066,7 @@
             "in": "body",
             "required": true,
             "schema": {
-              "$ref": "#/definitions/v2StopStrategyRequest"
+              "$ref": "#/definitions/v1StopStrategyRequest"
             }
           }
         ],
@@ -1075,14 +1075,14 @@
         ]
       }
     },
-    "/v2/swaps": {
+    "/v1/swaps": {
       "post": {
         "operationId": "DaemonService_TakeOffer",
         "responses": {
           "200": {
             "description": "A successful response.",
             "schema": {
-              "$ref": "#/definitions/v2TakeOfferResponse"
+              "$ref": "#/definitions/v1TakeOfferResponse"
             }
           },
           "default": {
@@ -1098,7 +1098,7 @@
             "in": "body",
             "required": true,
             "schema": {
-              "$ref": "#/definitions/v2TakeOfferRequest"
+              "$ref": "#/definitions/v1TakeOfferRequest"
             }
           }
         ],
@@ -1107,14 +1107,14 @@
         ]
       }
     },
-    "/v2/trades/confirm": {
+    "/v1/trades/confirm": {
       "post": {
         "operationId": "DaemonService_ConfirmTrade",
         "responses": {
           "200": {
             "description": "A successful response.",
             "schema": {
-              "$ref": "#/definitions/v2ConfirmTradeResult"
+              "$ref": "#/definitions/v1ConfirmTradeResult"
             }
           },
           "default": {
@@ -1131,7 +1131,7 @@
             "in": "body",
             "required": true,
             "schema": {
-              "$ref": "#/definitions/v2ConfirmTradeRequest"
+              "$ref": "#/definitions/v1ConfirmTradeRequest"
             }
           }
         ],
@@ -1140,14 +1140,14 @@
         ]
       }
     },
-    "/v2/trades/quote": {
+    "/v1/trades/quote": {
       "post": {
         "operationId": "DaemonService_QuoteTrade",
         "responses": {
           "200": {
             "description": "A successful response.",
             "schema": {
-              "$ref": "#/definitions/v2TradeQuote"
+              "$ref": "#/definitions/v1TradeQuote"
             }
           },
           "default": {
@@ -1164,7 +1164,7 @@
             "in": "body",
             "required": true,
             "schema": {
-              "$ref": "#/definitions/v2TradeQuoteRequest"
+              "$ref": "#/definitions/v1TradeQuoteRequest"
             }
           }
         ],
@@ -1173,14 +1173,14 @@
         ]
       }
     },
-    "/v2/transactions/bump": {
+    "/v1/transactions/bump": {
       "post": {
         "operationId": "DaemonService_BumpTransaction",
         "responses": {
           "200": {
             "description": "A successful response.",
             "schema": {
-              "$ref": "#/definitions/v2BumpResult"
+              "$ref": "#/definitions/v1BumpResult"
             }
           },
           "default": {
@@ -1196,7 +1196,7 @@
             "in": "body",
             "required": true,
             "schema": {
-              "$ref": "#/definitions/v2BumpRequest"
+              "$ref": "#/definitions/v1BumpRequest"
             }
           }
         ],
@@ -1205,14 +1205,14 @@
         ]
       }
     },
-    "/v2/wallet/backup": {
+    "/v1/wallet/backup": {
       "post": {
         "operationId": "DaemonService_BackupWallet",
         "responses": {
           "200": {
             "description": "A successful response.",
             "schema": {
-              "$ref": "#/definitions/v2Backup"
+              "$ref": "#/definitions/v1Backup"
             }
           },
           "default": {
@@ -1238,14 +1238,14 @@
         ]
       }
     },
-    "/v2/wallet/portable-backup": {
+    "/v1/wallet/portable-backup": {
       "post": {
         "operationId": "DaemonService_ExportPortableBackup",
         "responses": {
           "200": {
             "description": "A successful response.",
             "schema": {
-              "$ref": "#/definitions/v2PortableBackupResult"
+              "$ref": "#/definitions/v1PortableBackupResult"
             }
           },
           "default": {
@@ -1261,7 +1261,7 @@
             "in": "body",
             "required": true,
             "schema": {
-              "$ref": "#/definitions/v2ExportPortableBackupRequest"
+              "$ref": "#/definitions/v1ExportPortableBackupRequest"
             }
           }
         ],
@@ -1270,14 +1270,14 @@
         ]
       }
     },
-    "/v2/wallet/preflight": {
+    "/v1/wallet/preflight": {
       "post": {
         "operationId": "DaemonService_PreflightFunds",
         "responses": {
           "200": {
             "description": "A successful response.",
             "schema": {
-              "$ref": "#/definitions/v2FundsPreflight"
+              "$ref": "#/definitions/v1FundsPreflight"
             }
           },
           "default": {
@@ -1293,7 +1293,7 @@
             "in": "body",
             "required": true,
             "schema": {
-              "$ref": "#/definitions/v2FundsPreflightRequest"
+              "$ref": "#/definitions/v1FundsPreflightRequest"
             }
           }
         ],
@@ -1302,14 +1302,14 @@
         ]
       }
     },
-    "/v2/wallet/recovery": {
+    "/v1/wallet/recovery": {
       "post": {
         "operationId": "DaemonService_GetRecovery",
         "responses": {
           "200": {
             "description": "A successful response.",
             "schema": {
-              "$ref": "#/definitions/v2Recovery"
+              "$ref": "#/definitions/v1Recovery"
             }
           },
           "default": {
@@ -1335,14 +1335,14 @@
         ]
       }
     },
-    "/v2/wallet/send": {
+    "/v1/wallet/send": {
       "post": {
         "operationId": "DaemonService_SendCoins",
         "responses": {
           "200": {
             "description": "A successful response.",
             "schema": {
-              "$ref": "#/definitions/v2WalletSend"
+              "$ref": "#/definitions/v1WalletSend"
             }
           },
           "default": {
@@ -1358,7 +1358,7 @@
             "in": "body",
             "required": true,
             "schema": {
-              "$ref": "#/definitions/v2SendCoinsRequest"
+              "$ref": "#/definitions/v1SendCoinsRequest"
             }
           }
         ],
@@ -1367,14 +1367,14 @@
         ]
       }
     },
-    "/v2/wallets": {
+    "/v1/wallets": {
       "post": {
         "operationId": "DaemonService_CreateWallet",
         "responses": {
           "200": {
             "description": "A successful response.",
             "schema": {
-              "$ref": "#/definitions/v2Settings"
+              "$ref": "#/definitions/v1Settings"
             }
           },
           "default": {
@@ -1390,7 +1390,7 @@
             "in": "body",
             "required": true,
             "schema": {
-              "$ref": "#/definitions/v2CreateWalletRequest"
+              "$ref": "#/definitions/v1CreateWalletRequest"
             }
           }
         ],
@@ -1399,7 +1399,7 @@
         ]
       }
     },
-    "/v2/watchtowers/resolve": {
+    "/v1/watchtowers/resolve": {
       "post": {
         "operationId": "DaemonService_ResolveWatchtower",
         "responses": {
@@ -1423,7 +1423,7 @@
             "in": "body",
             "required": true,
             "schema": {
-              "$ref": "#/definitions/v2ResolveWatchtowerRequest"
+              "$ref": "#/definitions/v1ResolveWatchtowerRequest"
             }
           }
         ],
@@ -1434,25 +1434,25 @@
     }
   },
   "definitions": {
-    "blakeswapV2Status": {
+    "blakeswapV1Status": {
       "type": "object",
       "properties": {
         "actions": {
-          "$ref": "#/definitions/v2WalletActions"
+          "$ref": "#/definitions/v1WalletActions"
         },
         "capacity": {
-          "$ref": "#/definitions/v2CapacityHealth"
+          "$ref": "#/definitions/v1CapacityHealth"
         },
         "backup": {
-          "$ref": "#/definitions/v2BackupFreshness"
+          "$ref": "#/definitions/v1BackupFreshness"
         },
         "recovery": {
-          "$ref": "#/definitions/v2RecoveryProgress"
+          "$ref": "#/definitions/v1RecoveryProgress"
         },
         "fee_limits": {
           "type": "object",
           "additionalProperties": {
-            "$ref": "#/definitions/v2FeeLimits"
+            "$ref": "#/definitions/v1FeeLimits"
           }
         },
         "name": {
@@ -1491,21 +1491,21 @@
           "type": "array",
           "items": {
             "type": "object",
-            "$ref": "#/definitions/v2Offer"
+            "$ref": "#/definitions/v1Offer"
           }
         },
         "swaps": {
           "type": "array",
           "items": {
             "type": "object",
-            "$ref": "#/definitions/v2Swap"
+            "$ref": "#/definitions/v1Swap"
           }
         },
         "tower_jobs": {
           "type": "array",
           "items": {
             "type": "object",
-            "$ref": "#/definitions/v2TowerJob"
+            "$ref": "#/definitions/v1TowerJob"
           }
         },
         "pending_messages": {
@@ -1516,18 +1516,18 @@
           "type": "string"
         },
         "tower": {
-          "$ref": "#/definitions/v2Tower"
+          "$ref": "#/definitions/v1Tower"
         },
         "funds": {
           "type": "object",
           "additionalProperties": {
-            "$ref": "#/definitions/v2ChainBalance"
+            "$ref": "#/definitions/v1ChainBalance"
           }
         },
         "connections": {
           "type": "object",
           "additionalProperties": {
-            "$ref": "#/definitions/v2ChainConnection"
+            "$ref": "#/definitions/v1ChainConnection"
           },
           "description": "Last observations remain visible when ready is false."
         },
@@ -1535,27 +1535,27 @@
           "type": "array",
           "items": {
             "type": "object",
-            "$ref": "#/definitions/v2WalletCoin"
+            "$ref": "#/definitions/v1WalletCoin"
           }
         },
         "sends": {
           "type": "array",
           "items": {
             "type": "object",
-            "$ref": "#/definitions/v2WalletSend"
+            "$ref": "#/definitions/v1WalletSend"
           }
         },
         "network": {
           "type": "string"
         },
         "own_watchtower": {
-          "$ref": "#/definitions/v2Tower"
+          "$ref": "#/definitions/v1Tower"
         },
         "watchtowers": {
           "type": "array",
           "items": {
             "type": "object",
-            "$ref": "#/definitions/v2Tower"
+            "$ref": "#/definitions/v1Tower"
           }
         },
         "funding_fee": {
@@ -1592,7 +1592,7 @@
       },
       "additionalProperties": {}
     },
-    "v2ActionDeadline": {
+    "v1ActionDeadline": {
       "type": "object",
       "properties": {
         "kind": {
@@ -1631,7 +1631,7 @@
         }
       }
     },
-    "v2ActionSummary": {
+    "v1ActionSummary": {
       "type": "object",
       "properties": {
         "network": {
@@ -1649,7 +1649,7 @@
           "type": "array",
           "items": {
             "type": "object",
-            "$ref": "#/definitions/v2WalletActions"
+            "$ref": "#/definitions/v1WalletActions"
           }
         },
         "complete": {
@@ -1663,7 +1663,7 @@
         }
       }
     },
-    "v2ActionSummaryRequest": {
+    "v1ActionSummaryRequest": {
       "type": "object",
       "properties": {
         "refresh": {
@@ -1672,7 +1672,7 @@
       },
       "description": "Refresh queues bounded all-wallet worker reconciliation; this read never waits on nodes."
     },
-    "v2ActivityExport": {
+    "v1ActivityExport": {
       "type": "object",
       "properties": {
         "snapshot": {
@@ -1695,7 +1695,7 @@
         }
       }
     },
-    "v2ActivityIndex": {
+    "v1ActivityIndex": {
       "type": "object",
       "properties": {
         "address": {
@@ -1721,7 +1721,7 @@
         }
       }
     },
-    "v2ActivityObservation": {
+    "v1ActivityObservation": {
       "type": "object",
       "properties": {
         "sequence": {
@@ -1765,7 +1765,7 @@
         }
       }
     },
-    "v2ActivityOutcome": {
+    "v1ActivityOutcome": {
       "type": "object",
       "properties": {
         "status": {
@@ -1805,7 +1805,7 @@
         }
       }
     },
-    "v2ActivityPage": {
+    "v1ActivityPage": {
       "type": "object",
       "properties": {
         "snapshot": {
@@ -1831,13 +1831,13 @@
           "type": "array",
           "items": {
             "type": "object",
-            "$ref": "#/definitions/v2ActivityRecord"
+            "$ref": "#/definitions/v1ActivityRecord"
           }
         },
         "index": {
           "type": "object",
           "additionalProperties": {
-            "$ref": "#/definitions/v2ActivityIndex"
+            "$ref": "#/definitions/v1ActivityIndex"
           }
         },
         "error": {
@@ -1845,7 +1845,7 @@
         }
       }
     },
-    "v2ActivityQuery": {
+    "v1ActivityQuery": {
       "type": "object",
       "properties": {
         "expected_wallet": {
@@ -1884,7 +1884,7 @@
         }
       }
     },
-    "v2ActivityRecord": {
+    "v1ActivityRecord": {
       "type": "object",
       "properties": {
         "version": {
@@ -1969,7 +1969,7 @@
           "type": "array",
           "items": {
             "type": "object",
-            "$ref": "#/definitions/v2Outpoint"
+            "$ref": "#/definitions/v1Outpoint"
           }
         },
         "txid": {
@@ -2031,26 +2031,26 @@
           "type": "array",
           "items": {
             "type": "object",
-            "$ref": "#/definitions/v2ActivityVariant"
+            "$ref": "#/definitions/v1ActivityVariant"
           }
         },
         "observations": {
           "type": "array",
           "items": {
             "type": "object",
-            "$ref": "#/definitions/v2ActivityObservation"
+            "$ref": "#/definitions/v1ActivityObservation"
           }
         },
         "history": {
           "type": "array",
           "items": {
             "type": "object",
-            "$ref": "#/definitions/v2ActivityOutcome"
+            "$ref": "#/definitions/v1ActivityOutcome"
           }
         }
       }
     },
-    "v2ActivityVariant": {
+    "v1ActivityVariant": {
       "type": "object",
       "properties": {
         "txid": {
@@ -2080,7 +2080,7 @@
         }
       }
     },
-    "v2AutomationConfig": {
+    "v1AutomationConfig": {
       "type": "object",
       "properties": {
         "id": {
@@ -2104,13 +2104,13 @@
           "format": "int64"
         },
         "rate": {
-          "$ref": "#/definitions/v2AutomationRate"
+          "$ref": "#/definitions/v1AutomationRate"
         },
         "min_rate": {
-          "$ref": "#/definitions/v2AutomationRate"
+          "$ref": "#/definitions/v1AutomationRate"
         },
         "max_rate": {
-          "$ref": "#/definitions/v2AutomationRate"
+          "$ref": "#/definitions/v1AutomationRate"
         },
         "lifetime": {
           "type": "string",
@@ -2169,11 +2169,11 @@
         }
       }
     },
-    "v2AutomationEdit": {
+    "v1AutomationEdit": {
       "type": "object",
       "properties": {
         "config": {
-          "$ref": "#/definitions/v2AutomationConfig"
+          "$ref": "#/definitions/v1AutomationConfig"
         },
         "expected_revision": {
           "type": "string",
@@ -2191,7 +2191,7 @@
       },
       "description": "Two-stage exact authorization. Saving validates the complete review digest and\nrevision; it never edits existing signed orders or subtracts committed spending."
     },
-    "v2AutomationList": {
+    "v1AutomationList": {
       "type": "object",
       "properties": {
         "wallet": {
@@ -2204,12 +2204,12 @@
           "type": "array",
           "items": {
             "type": "object",
-            "$ref": "#/definitions/v2AutomationView"
+            "$ref": "#/definitions/v1AutomationView"
           }
         }
       }
     },
-    "v2AutomationQuery": {
+    "v1AutomationQuery": {
       "type": "object",
       "properties": {
         "expected_wallet": {
@@ -2220,7 +2220,7 @@
         }
       }
     },
-    "v2AutomationRate": {
+    "v1AutomationRate": {
       "type": "object",
       "properties": {
         "numerator": {
@@ -2234,11 +2234,11 @@
       },
       "description": "Exact BLAKE satoshis per BTC satoshi; positive bounded integer ratio."
     },
-    "v2AutomationReview": {
+    "v1AutomationReview": {
       "type": "object",
       "properties": {
         "config": {
-          "$ref": "#/definitions/v2AutomationConfig"
+          "$ref": "#/definitions/v1AutomationConfig"
         },
         "expected_revision": {
           "type": "string",
@@ -2251,14 +2251,14 @@
           "type": "string"
         },
         "usage": {
-          "$ref": "#/definitions/v2AutomationUsage"
+          "$ref": "#/definitions/v1AutomationUsage"
         },
         "warning": {
           "type": "string"
         }
       }
     },
-    "v2AutomationUsage": {
+    "v1AutomationUsage": {
       "type": "object",
       "properties": {
         "reserved_volume": {
@@ -2291,11 +2291,11 @@
         }
       }
     },
-    "v2AutomationView": {
+    "v1AutomationView": {
       "type": "object",
       "properties": {
         "config": {
-          "$ref": "#/definitions/v2AutomationConfig"
+          "$ref": "#/definitions/v1AutomationConfig"
         },
         "revision": {
           "type": "string",
@@ -2325,7 +2325,7 @@
           "type": "string"
         },
         "usage": {
-          "$ref": "#/definitions/v2AutomationUsage"
+          "$ref": "#/definitions/v1AutomationUsage"
         },
         "reference_events": {
           "type": "array",
@@ -2339,7 +2339,7 @@
         }
       }
     },
-    "v2Backup": {
+    "v1Backup": {
       "type": "object",
       "properties": {
         "path": {
@@ -2347,7 +2347,7 @@
         }
       }
     },
-    "v2BackupContents": {
+    "v1BackupContents": {
       "type": "object",
       "properties": {
         "format_version": {
@@ -2365,7 +2365,7 @@
           "type": "array",
           "items": {
             "type": "object",
-            "$ref": "#/definitions/v2BackupWalletEntry"
+            "$ref": "#/definitions/v1BackupWalletEntry"
           }
         },
         "warning": {
@@ -2373,7 +2373,7 @@
         }
       }
     },
-    "v2BackupFreshness": {
+    "v1BackupFreshness": {
       "type": "object",
       "properties": {
         "last_export_at": {
@@ -2388,7 +2388,7 @@
         }
       }
     },
-    "v2BackupWalletEntry": {
+    "v1BackupWalletEntry": {
       "type": "object",
       "properties": {
         "source_wallet_id": {
@@ -2405,7 +2405,7 @@
         }
       }
     },
-    "v2BumpRequest": {
+    "v1BumpRequest": {
       "type": "object",
       "properties": {
         "id": {
@@ -2426,7 +2426,7 @@
         }
       }
     },
-    "v2BumpResult": {
+    "v1BumpResult": {
       "type": "object",
       "properties": {
         "txid": {
@@ -2444,7 +2444,7 @@
         }
       }
     },
-    "v2CapacityHealth": {
+    "v1CapacityHealth": {
       "type": "object",
       "properties": {
         "state": {
@@ -2490,7 +2490,7 @@
           "type": "array",
           "items": {
             "type": "object",
-            "$ref": "#/definitions/v2RelaySync"
+            "$ref": "#/definitions/v1RelaySync"
           }
         },
         "active_bytes": {
@@ -2510,7 +2510,7 @@
         }
       }
     },
-    "v2ChainBalance": {
+    "v1ChainBalance": {
       "type": "object",
       "properties": {
         "total_confirmed": {
@@ -2541,7 +2541,7 @@
         }
       }
     },
-    "v2ChainConnection": {
+    "v1ChainConnection": {
       "type": "object",
       "properties": {
         "ready": {
@@ -2555,11 +2555,11 @@
           "type": "string"
         },
         "sources": {
-          "$ref": "#/definitions/v2EndpointStatus"
+          "$ref": "#/definitions/v1EndpointStatus"
         }
       }
     },
-    "v2CheckNodeRequest": {
+    "v1CheckNodeRequest": {
       "type": "object",
       "properties": {
         "network": {
@@ -2569,11 +2569,11 @@
           "type": "string"
         },
         "node": {
-          "$ref": "#/definitions/v2Node"
+          "$ref": "#/definitions/v1Node"
         }
       }
     },
-    "v2CheckNodeResponse": {
+    "v1CheckNodeResponse": {
       "type": "object",
       "properties": {
         "height": {
@@ -2585,7 +2585,7 @@
         }
       }
     },
-    "v2CoinHold": {
+    "v1CoinHold": {
       "type": "object",
       "properties": {
         "kind": {
@@ -2603,7 +2603,7 @@
       },
       "description": "A coin may have multiple owners; its amount is counted once in reserved_confirmed."
     },
-    "v2ConfirmFirstWalletRequest": {
+    "v1ConfirmFirstWalletRequest": {
       "type": "object",
       "properties": {
         "revision": {
@@ -2618,7 +2618,7 @@
         }
       }
     },
-    "v2ConfirmTradeRequest": {
+    "v1ConfirmTradeRequest": {
       "type": "object",
       "properties": {
         "token": {
@@ -2639,7 +2639,7 @@
       },
       "description": "Keep this exact identity through an uncertain response. A persisted receipt\nreturns the same accepted result after restart/expiry, never a second trade."
     },
-    "v2ConfirmTradeResult": {
+    "v1ConfirmTradeResult": {
       "type": "object",
       "properties": {
         "id": {
@@ -2656,7 +2656,7 @@
         }
       }
     },
-    "v2CreateOfferRequest": {
+    "v1CreateOfferRequest": {
       "type": "object",
       "properties": {
         "fill_mode": {
@@ -2731,7 +2731,7 @@
         }
       }
     },
-    "v2CreateWalletRequest": {
+    "v1CreateWalletRequest": {
       "type": "object",
       "properties": {
         "name": {
@@ -2743,7 +2743,7 @@
         }
       }
     },
-    "v2DisableAutomationRequest": {
+    "v1DisableAutomationRequest": {
       "type": "object",
       "properties": {
         "id": {
@@ -2764,7 +2764,7 @@
         }
       }
     },
-    "v2EndpointHealth": {
+    "v1EndpointHealth": {
       "type": "object",
       "properties": {
         "url": {
@@ -2789,14 +2789,14 @@
         }
       }
     },
-    "v2EndpointStatus": {
+    "v1EndpointStatus": {
       "type": "object",
       "properties": {
         "endpoints": {
           "type": "array",
           "items": {
             "type": "object",
-            "$ref": "#/definitions/v2EndpointHealth"
+            "$ref": "#/definitions/v1EndpointHealth"
           }
         },
         "generation": {
@@ -2813,7 +2813,7 @@
         }
       }
     },
-    "v2Environment": {
+    "v1Environment": {
       "type": "object",
       "properties": {
         "explorers": {
@@ -2830,7 +2830,7 @@
         "nodes": {
           "type": "object",
           "additionalProperties": {
-            "$ref": "#/definitions/v2Node"
+            "$ref": "#/definitions/v1Node"
           },
           "description": "Exactly btc and blake."
         },
@@ -2841,7 +2841,7 @@
           }
         },
         "tower": {
-          "$ref": "#/definitions/v2Tower"
+          "$ref": "#/definitions/v1Tower"
         },
         "public_watchtower": {
           "type": "boolean",
@@ -2861,7 +2861,7 @@
         }
       }
     },
-    "v2ExportFirstWalletRequest": {
+    "v1ExportFirstWalletRequest": {
       "type": "object",
       "properties": {
         "path": {
@@ -2876,7 +2876,7 @@
         }
       }
     },
-    "v2ExportPortableBackupRequest": {
+    "v1ExportPortableBackupRequest": {
       "type": "object",
       "properties": {
         "path": {
@@ -2890,7 +2890,7 @@
         }
       }
     },
-    "v2FaucetRequest": {
+    "v1FaucetRequest": {
       "type": "object",
       "properties": {
         "chain": {
@@ -2905,7 +2905,7 @@
         }
       }
     },
-    "v2FaucetResponse": {
+    "v1FaucetResponse": {
       "type": "object",
       "properties": {
         "txid": {
@@ -2913,7 +2913,7 @@
         }
       }
     },
-    "v2FeeEstimate": {
+    "v1FeeEstimate": {
       "type": "object",
       "properties": {
         "requested_target": {
@@ -2947,7 +2947,7 @@
       },
       "description": "Rates are native chain satoshis per 1000 virtual bytes, rounded upward."
     },
-    "v2FeeLimits": {
+    "v1FeeLimits": {
       "type": "object",
       "properties": {
         "send": {
@@ -2968,14 +2968,14 @@
         }
       }
     },
-    "v2FeeQuote": {
+    "v1FeeQuote": {
       "type": "object",
       "properties": {
         "estimate": {
-          "$ref": "#/definitions/v2FeeEstimate"
+          "$ref": "#/definitions/v1FeeEstimate"
         },
         "limits": {
-          "$ref": "#/definitions/v2FeeLimits"
+          "$ref": "#/definitions/v1FeeLimits"
         },
         "fee": {
           "type": "string",
@@ -3001,7 +3001,7 @@
           "type": "array",
           "items": {
             "type": "object",
-            "$ref": "#/definitions/v2Outpoint"
+            "$ref": "#/definitions/v1Outpoint"
           }
         },
         "error": {
@@ -3009,7 +3009,7 @@
         }
       }
     },
-    "v2FeeQuoteRequest": {
+    "v1FeeQuoteRequest": {
       "type": "object",
       "properties": {
         "kind": {
@@ -3037,7 +3037,7 @@
           "type": "array",
           "items": {
             "type": "object",
-            "$ref": "#/definitions/v2Outpoint"
+            "$ref": "#/definitions/v1Outpoint"
           }
         },
         "expected_network": {
@@ -3055,7 +3055,7 @@
         }
       }
     },
-    "v2FillPage": {
+    "v1FillPage": {
       "type": "object",
       "properties": {
         "wallet": {
@@ -3074,7 +3074,7 @@
           "type": "array",
           "items": {
             "type": "object",
-            "$ref": "#/definitions/v2FillSummary"
+            "$ref": "#/definitions/v1FillSummary"
           }
         },
         "revision": {
@@ -3093,7 +3093,7 @@
         }
       }
     },
-    "v2FillPreview": {
+    "v1FillPreview": {
       "type": "object",
       "properties": {
         "quantity": {
@@ -3116,13 +3116,13 @@
           "type": "array",
           "items": {
             "type": "object",
-            "$ref": "#/definitions/v2TradeOutcome"
+            "$ref": "#/definitions/v1TradeOutcome"
           }
         }
       },
-      "description": "Partial-fill contract. The complete service is v2 only; there is no\nnegotiation or v1 execution fallback."
+      "description": "Partial-fill contract. The complete service uses v1 throughout first-release development."
     },
-    "v2FillQuery": {
+    "v1FillQuery": {
       "type": "object",
       "properties": {
         "expected_wallet": {
@@ -3150,7 +3150,7 @@
         }
       }
     },
-    "v2FillSummary": {
+    "v1FillSummary": {
       "type": "object",
       "properties": {
         "id": {
@@ -3195,14 +3195,14 @@
         }
       }
     },
-    "v2FirstWallet": {
+    "v1FirstWallet": {
       "type": "object",
       "properties": {
         "settings": {
-          "$ref": "#/definitions/v2Settings"
+          "$ref": "#/definitions/v1Settings"
         },
         "recovery": {
-          "$ref": "#/definitions/v2Recovery"
+          "$ref": "#/definitions/v1Recovery"
         },
         "backup_word_positions": {
           "type": "array",
@@ -3213,7 +3213,7 @@
         }
       }
     },
-    "v2FundsPreflight": {
+    "v1FundsPreflight": {
       "type": "object",
       "properties": {
         "network": {
@@ -3226,7 +3226,7 @@
           "type": "array",
           "items": {
             "type": "object",
-            "$ref": "#/definitions/v2Outpoint"
+            "$ref": "#/definitions/v1Outpoint"
           }
         },
         "state": {
@@ -3245,7 +3245,7 @@
         }
       }
     },
-    "v2FundsPreflightRequest": {
+    "v1FundsPreflightRequest": {
       "type": "object",
       "properties": {
         "chain": {
@@ -3263,7 +3263,7 @@
           "type": "array",
           "items": {
             "type": "object",
-            "$ref": "#/definitions/v2Outpoint"
+            "$ref": "#/definitions/v1Outpoint"
           }
         },
         "expected_network": {
@@ -3272,7 +3272,7 @@
         }
       }
     },
-    "v2HTLC": {
+    "v1HTLC": {
       "type": "object",
       "properties": {
         "chain": {
@@ -3305,7 +3305,7 @@
         }
       }
     },
-    "v2ImportBackupRequest": {
+    "v1ImportBackupRequest": {
       "type": "object",
       "properties": {
         "path": {
@@ -3326,21 +3326,21 @@
         }
       }
     },
-    "v2ImportBackupResult": {
+    "v1ImportBackupResult": {
       "type": "object",
       "properties": {
         "profile_id": {
           "type": "string"
         },
         "settings": {
-          "$ref": "#/definitions/v2Settings"
+          "$ref": "#/definitions/v1Settings"
         },
         "legacy": {
           "type": "boolean"
         }
       }
     },
-    "v2InspectBackupRequest": {
+    "v1InspectBackupRequest": {
       "type": "object",
       "properties": {
         "path": {
@@ -3351,7 +3351,7 @@
         }
       }
     },
-    "v2MarketOrder": {
+    "v1MarketOrder": {
       "type": "object",
       "properties": {
         "suggested_quantity": {
@@ -3359,10 +3359,10 @@
           "format": "int64"
         },
         "quantities": {
-          "$ref": "#/definitions/v2QuantitySummary"
+          "$ref": "#/definitions/v1QuantitySummary"
         },
         "offer": {
-          "$ref": "#/definitions/v2Offer"
+          "$ref": "#/definitions/v1Offer"
         },
         "event_id": {
           "type": "string"
@@ -3433,7 +3433,7 @@
         }
       }
     },
-    "v2MarketPage": {
+    "v1MarketPage": {
       "type": "object",
       "properties": {
         "wallet": {
@@ -3446,7 +3446,7 @@
           "type": "array",
           "items": {
             "type": "object",
-            "$ref": "#/definitions/v2MarketOrder"
+            "$ref": "#/definitions/v1MarketOrder"
           }
         },
         "revision": {
@@ -3472,7 +3472,7 @@
         }
       }
     },
-    "v2MarketQuery": {
+    "v1MarketQuery": {
       "type": "object",
       "properties": {
         "expected_wallet": {
@@ -3522,7 +3522,7 @@
         }
       }
     },
-    "v2MineRequest": {
+    "v1MineRequest": {
       "type": "object",
       "properties": {
         "chain": {
@@ -3537,14 +3537,14 @@
         }
       }
     },
-    "v2Node": {
+    "v1Node": {
       "type": "object",
       "properties": {
         "fallbacks": {
           "type": "array",
           "items": {
             "type": "object",
-            "$ref": "#/definitions/v2Node"
+            "$ref": "#/definitions/v1Node"
           },
           "description": "Ordered after this primary; at most three, without nested fallbacks."
         },
@@ -3566,7 +3566,7 @@
         }
       }
     },
-    "v2Offer": {
+    "v1Offer": {
       "type": "object",
       "properties": {
         "version": {
@@ -3624,11 +3624,11 @@
           "type": "string"
         },
         "tower": {
-          "$ref": "#/definitions/v2Tower"
+          "$ref": "#/definitions/v1Tower"
         }
       }
     },
-    "v2Outpoint": {
+    "v1Outpoint": {
       "type": "object",
       "properties": {
         "txid": {
@@ -3640,7 +3640,7 @@
         }
       }
     },
-    "v2PortableBackupResult": {
+    "v1PortableBackupResult": {
       "type": "object",
       "properties": {
         "path": {
@@ -3663,7 +3663,7 @@
         }
       }
     },
-    "v2PrepareFirstWalletRequest": {
+    "v1PrepareFirstWalletRequest": {
       "type": "object",
       "properties": {
         "name": {
@@ -3687,7 +3687,7 @@
         }
       }
     },
-    "v2QuantitySummary": {
+    "v1QuantitySummary": {
       "type": "object",
       "properties": {
         "total": {
@@ -3716,7 +3716,7 @@
         }
       }
     },
-    "v2RecordDetail": {
+    "v1RecordDetail": {
       "type": "object",
       "properties": {
         "kind": {
@@ -3735,17 +3735,17 @@
           "type": "string"
         },
         "swap": {
-          "$ref": "#/definitions/v2Swap"
+          "$ref": "#/definitions/v1Swap"
         },
         "send": {
-          "$ref": "#/definitions/v2WalletSend"
+          "$ref": "#/definitions/v1WalletSend"
         },
         "tower_job": {
-          "$ref": "#/definitions/v2TowerJob"
+          "$ref": "#/definitions/v1TowerJob"
         }
       }
     },
-    "v2RecordQuery": {
+    "v1RecordQuery": {
       "type": "object",
       "properties": {
         "kind": {
@@ -3762,7 +3762,7 @@
         }
       }
     },
-    "v2Recovery": {
+    "v1Recovery": {
       "type": "object",
       "properties": {
         "mnemonic": {
@@ -3773,7 +3773,7 @@
         }
       }
     },
-    "v2RecoveryIssue": {
+    "v1RecoveryIssue": {
       "type": "object",
       "properties": {
         "kind": {
@@ -3787,7 +3787,7 @@
         }
       }
     },
-    "v2RecoveryProgress": {
+    "v1RecoveryProgress": {
       "type": "object",
       "properties": {
         "state": {
@@ -3812,7 +3812,7 @@
           "type": "array",
           "items": {
             "type": "object",
-            "$ref": "#/definitions/v2RecoveryIssue"
+            "$ref": "#/definitions/v1RecoveryIssue"
           }
         },
         "quarantined_offers": {
@@ -3828,7 +3828,7 @@
         }
       }
     },
-    "v2RefreshStatusRequest": {
+    "v1RefreshStatusRequest": {
       "type": "object",
       "properties": {
         "expected_network": {
@@ -3836,7 +3836,7 @@
         }
       }
     },
-    "v2RelayCursor": {
+    "v1RelayCursor": {
       "type": "object",
       "properties": {
         "until": {
@@ -3859,7 +3859,7 @@
         }
       }
     },
-    "v2RelaySync": {
+    "v1RelaySync": {
       "type": "object",
       "properties": {
         "relay": {
@@ -3869,7 +3869,7 @@
           "type": "string"
         },
         "cursor": {
-          "$ref": "#/definitions/v2RelayCursor"
+          "$ref": "#/definitions/v1RelayCursor"
         },
         "observed_at": {
           "type": "string",
@@ -3883,7 +3883,7 @@
         }
       }
     },
-    "v2ResolveWatchtowerRequest": {
+    "v1ResolveWatchtowerRequest": {
       "type": "object",
       "properties": {
         "pubkey": {
@@ -3894,7 +3894,7 @@
         }
       }
     },
-    "v2SendCoinsRequest": {
+    "v1SendCoinsRequest": {
       "type": "object",
       "properties": {
         "max_fee": {
@@ -3931,7 +3931,7 @@
           "type": "array",
           "items": {
             "type": "object",
-            "$ref": "#/definitions/v2Outpoint"
+            "$ref": "#/definitions/v1Outpoint"
           }
         },
         "expected_network": {
@@ -3939,7 +3939,7 @@
         }
       }
     },
-    "v2SetPausedRequest": {
+    "v1SetPausedRequest": {
       "type": "object",
       "properties": {
         "paused": {
@@ -3950,7 +3950,7 @@
         }
       }
     },
-    "v2Settings": {
+    "v1Settings": {
       "type": "object",
       "properties": {
         "onboarding_stage": {
@@ -3961,7 +3961,7 @@
           "type": "array",
           "items": {
             "type": "object",
-            "$ref": "#/definitions/v2WalletProfile"
+            "$ref": "#/definitions/v1WalletProfile"
           },
           "description": "Stable IDs; display names may be edited. Create IDs with CreateWallet."
         },
@@ -3972,7 +3972,7 @@
           "type": "array",
           "items": {
             "type": "object",
-            "$ref": "#/definitions/v2Environment"
+            "$ref": "#/definitions/v1Environment"
           }
         },
         "revision": {
@@ -3982,7 +3982,7 @@
         }
       }
     },
-    "v2StopStrategyRequest": {
+    "v1StopStrategyRequest": {
       "type": "object",
       "properties": {
         "id": {
@@ -4003,7 +4003,7 @@
         }
       }
     },
-    "v2StrategyConfig": {
+    "v1StrategyConfig": {
       "type": "object",
       "properties": {
         "id": {
@@ -4016,19 +4016,19 @@
           "type": "string"
         },
         "btc": {
-          "$ref": "#/definitions/v2StrategySide"
+          "$ref": "#/definitions/v1StrategySide"
         },
         "blake": {
-          "$ref": "#/definitions/v2StrategySide"
+          "$ref": "#/definitions/v1StrategySide"
         },
         "rate": {
-          "$ref": "#/definitions/v2AutomationRate"
+          "$ref": "#/definitions/v1AutomationRate"
         },
         "min_rate": {
-          "$ref": "#/definitions/v2AutomationRate"
+          "$ref": "#/definitions/v1AutomationRate"
         },
         "max_rate": {
-          "$ref": "#/definitions/v2AutomationRate"
+          "$ref": "#/definitions/v1AutomationRate"
         },
         "spread_bps": {
           "type": "string",
@@ -4104,11 +4104,11 @@
         }
       }
     },
-    "v2StrategyEdit": {
+    "v1StrategyEdit": {
       "type": "object",
       "properties": {
         "config": {
-          "$ref": "#/definitions/v2StrategyConfig"
+          "$ref": "#/definitions/v1StrategyConfig"
         },
         "expected_revision": {
           "type": "string",
@@ -4125,11 +4125,11 @@
         }
       }
     },
-    "v2StrategyInventory": {
+    "v1StrategyInventory": {
       "type": "object",
       "properties": {
         "funds": {
-          "$ref": "#/definitions/v2ChainBalance"
+          "$ref": "#/definitions/v1ChainBalance"
         },
         "fresh": {
           "type": "boolean"
@@ -4172,7 +4172,7 @@
         }
       }
     },
-    "v2StrategyList": {
+    "v1StrategyList": {
       "type": "object",
       "properties": {
         "wallet": {
@@ -4185,12 +4185,12 @@
           "type": "array",
           "items": {
             "type": "object",
-            "$ref": "#/definitions/v2StrategyView"
+            "$ref": "#/definitions/v1StrategyView"
           }
         }
       }
     },
-    "v2StrategyQuote": {
+    "v1StrategyQuote": {
       "type": "object",
       "properties": {
         "sell": {
@@ -4205,7 +4205,7 @@
           "format": "int64"
         },
         "rate": {
-          "$ref": "#/definitions/v2AutomationRate"
+          "$ref": "#/definitions/v1AutomationRate"
         },
         "source_offer_id": {
           "type": "string"
@@ -4232,7 +4232,7 @@
         }
       }
     },
-    "v2StrategyReportRequest": {
+    "v1StrategyReportRequest": {
       "type": "object",
       "properties": {
         "id": {
@@ -4250,11 +4250,11 @@
         }
       }
     },
-    "v2StrategyReview": {
+    "v1StrategyReview": {
       "type": "object",
       "properties": {
         "config": {
-          "$ref": "#/definitions/v2StrategyConfig"
+          "$ref": "#/definitions/v1StrategyConfig"
         },
         "expected_revision": {
           "type": "string",
@@ -4267,14 +4267,14 @@
           "type": "string"
         },
         "preview": {
-          "$ref": "#/definitions/v2StrategyView"
+          "$ref": "#/definitions/v1StrategyView"
         },
         "warning": {
           "type": "string"
         }
       }
     },
-    "v2StrategySide": {
+    "v1StrategySide": {
       "type": "object",
       "properties": {
         "target": {
@@ -4312,11 +4312,11 @@
       },
       "description": "Explicit two-asset maker authorization. All money is native integer satoshis."
     },
-    "v2StrategyView": {
+    "v1StrategyView": {
       "type": "object",
       "properties": {
         "config": {
-          "$ref": "#/definitions/v2StrategyConfig"
+          "$ref": "#/definitions/v1StrategyConfig"
         },
         "revision": {
           "type": "string",
@@ -4351,14 +4351,14 @@
         "inventory": {
           "type": "object",
           "additionalProperties": {
-            "$ref": "#/definitions/v2StrategyInventory"
+            "$ref": "#/definitions/v1StrategyInventory"
           }
         },
         "quotes": {
           "type": "array",
           "items": {
             "type": "object",
-            "$ref": "#/definitions/v2StrategyQuote"
+            "$ref": "#/definitions/v1StrategyQuote"
           }
         },
         "active_quotes": {
@@ -4378,7 +4378,7 @@
         }
       }
     },
-    "v2Swap": {
+    "v1Swap": {
       "type": "object",
       "properties": {
         "parent_id": {
@@ -4452,10 +4452,10 @@
           "type": "string"
         },
         "long": {
-          "$ref": "#/definitions/v2HTLC"
+          "$ref": "#/definitions/v1HTLC"
         },
         "short": {
-          "$ref": "#/definitions/v2HTLC"
+          "$ref": "#/definitions/v1HTLC"
         },
         "long_spend": {
           "type": "string"
@@ -4501,7 +4501,7 @@
         }
       }
     },
-    "v2TakeOfferRequest": {
+    "v1TakeOfferRequest": {
       "type": "object",
       "properties": {
         "quantity": {
@@ -4548,7 +4548,7 @@
         }
       }
     },
-    "v2TakeOfferResponse": {
+    "v1TakeOfferResponse": {
       "type": "object",
       "properties": {
         "id": {
@@ -4556,7 +4556,7 @@
         }
       }
     },
-    "v2Tower": {
+    "v1Tower": {
       "type": "object",
       "properties": {
         "version": {
@@ -4599,7 +4599,7 @@
         }
       }
     },
-    "v2TowerJob": {
+    "v1TowerJob": {
       "type": "object",
       "properties": {
         "variants": {
@@ -4639,7 +4639,7 @@
         }
       }
     },
-    "v2TradeFeePolicy": {
+    "v1TradeFeePolicy": {
       "type": "object",
       "properties": {
         "funding_fee": {
@@ -4660,7 +4660,7 @@
         }
       }
     },
-    "v2TradeOutcome": {
+    "v1TradeOutcome": {
       "type": "object",
       "properties": {
         "kind": {
@@ -4695,7 +4695,7 @@
         }
       }
     },
-    "v2TradeQuote": {
+    "v1TradeQuote": {
       "type": "object",
       "properties": {
         "fill_mode": {
@@ -4744,7 +4744,7 @@
           }
         },
         "example_fill": {
-          "$ref": "#/definitions/v2FillPreview"
+          "$ref": "#/definitions/v1FillPreview"
         },
         "token": {
           "type": "string"
@@ -4815,14 +4815,14 @@
           "type": "string"
         },
         "fees": {
-          "$ref": "#/definitions/v2TradeFeePolicy"
+          "$ref": "#/definitions/v1TradeFeePolicy"
         },
         "funding_size": {
           "type": "string",
           "format": "int64"
         },
         "provider": {
-          "$ref": "#/definitions/v2Tower"
+          "$ref": "#/definitions/v1Tower"
         },
         "provider_revision": {
           "type": "string"
@@ -4831,17 +4831,17 @@
           "type": "string"
         },
         "timing": {
-          "$ref": "#/definitions/v2TradeTiming"
+          "$ref": "#/definitions/v1TradeTiming"
         },
         "outcomes": {
           "type": "array",
           "items": {
             "type": "object",
-            "$ref": "#/definitions/v2TradeOutcome"
+            "$ref": "#/definitions/v1TradeOutcome"
           }
         },
         "funds": {
-          "$ref": "#/definitions/v2FundsPreflight"
+          "$ref": "#/definitions/v1FundsPreflight"
         },
         "ready": {
           "type": "boolean"
@@ -4860,7 +4860,7 @@
         }
       }
     },
-    "v2TradeQuoteRequest": {
+    "v1TradeQuoteRequest": {
       "type": "object",
       "properties": {
         "fill_mode": {
@@ -4962,7 +4962,7 @@
       },
       "description": "Read-only review. Amounts describe the maker's signed offer/draft; the response\norients economics to the selected wallet. Every fee is native to its chain."
     },
-    "v2TradeTiming": {
+    "v1TradeTiming": {
       "type": "object",
       "properties": {
         "unit": {
@@ -4997,7 +4997,7 @@
         }
       }
     },
-    "v2TransactionVariant": {
+    "v1TransactionVariant": {
       "type": "object",
       "properties": {
         "txid": {
@@ -5016,7 +5016,7 @@
         }
       }
     },
-    "v2WalletAction": {
+    "v1WalletAction": {
       "type": "object",
       "properties": {
         "id": {
@@ -5047,12 +5047,12 @@
           "type": "array",
           "items": {
             "type": "object",
-            "$ref": "#/definitions/v2ActionDeadline"
+            "$ref": "#/definitions/v1ActionDeadline"
           }
         }
       }
     },
-    "v2WalletActions": {
+    "v1WalletActions": {
       "type": "object",
       "properties": {
         "source": {
@@ -5075,12 +5075,12 @@
           "type": "array",
           "items": {
             "type": "object",
-            "$ref": "#/definitions/v2WalletAction"
+            "$ref": "#/definitions/v1WalletAction"
           }
         }
       }
     },
-    "v2WalletCoin": {
+    "v1WalletCoin": {
       "type": "object",
       "properties": {
         "chain": {
@@ -5111,12 +5111,12 @@
           "type": "array",
           "items": {
             "type": "object",
-            "$ref": "#/definitions/v2CoinHold"
+            "$ref": "#/definitions/v1CoinHold"
           }
         }
       }
     },
-    "v2WalletProfile": {
+    "v1WalletProfile": {
       "type": "object",
       "properties": {
         "id": {
@@ -5127,7 +5127,7 @@
         }
       }
     },
-    "v2WalletSend": {
+    "v1WalletSend": {
       "type": "object",
       "properties": {
         "state": {
@@ -5141,7 +5141,7 @@
           "type": "array",
           "items": {
             "type": "object",
-            "$ref": "#/definitions/v2TransactionVariant"
+            "$ref": "#/definitions/v1TransactionVariant"
           }
         },
         "id": {

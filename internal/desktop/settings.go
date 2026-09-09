@@ -13,7 +13,7 @@ import (
 	"unicode/utf8"
 
 	"fiatjaf.com/nostr/nip19"
-	pb "github.com/blakeswap/blakeswap/api/gen/blakeswap/v2"
+	pb "github.com/blakeswap/blakeswap/api/gen/blakeswap/v1"
 	"github.com/blakeswap/blakeswap/internal/chain"
 	"github.com/blakeswap/blakeswap/internal/protocol"
 	"google.golang.org/protobuf/encoding/protojson"

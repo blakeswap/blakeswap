@@ -153,7 +153,7 @@ struct ContentView: View {
                             let context = model.tradeContext
                             do {
                                 let raw = try await DaemonRPC.call(root: model.root, profile: context.profile, method: "record.get", params: ["kind": parts[0], "id": parts[1], "expected_wallet": context.profile, "expected_network": context.network])
-                                let detail = try Blakeswap_V2_RecordDetail(serializedBytes: raw)
+                                let detail = try Blakeswap_V1_RecordDetail(serializedBytes: raw)
                                 guard context.matches(model.tradeContext), target == model.activityDestination else { return }
                                 retainedRecord = RetainedRecordPresentation(detail: detail, context: context)
                             } catch { if context.matches(model.tradeContext) { model.notice = "Record detail unavailable: \(error.localizedDescription)" } }

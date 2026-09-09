@@ -1,8 +1,8 @@
 # Partial-fill API and native implementation contract
 
 This is the shared T13 implementation interface. The complete typed service is
-`blakeswap.v2.DaemonService` and every HTTP route uses `/v2/`; there is no v1
-registration, compatibility handler or default legacy wire execution. Go,
+`blakeswap.v1.DaemonService` and every HTTP route uses `/v1/`; there is no parallel API
+registration or version negotiation. Go,
 gateway, OpenAPI and Swift bindings are generated through
 `scripts/generate-api.sh` and `scripts/generate-swift.sh`. These mappings alone
 do not establish that the daemon's partial-fill state machine is complete.
@@ -110,7 +110,7 @@ backup/recovery/version-preflight changes in `internal/desktop`, actual-node
 matrices, and protocol/operations/testing design. This lane implements all new
 DTO production, admission, exact quote snapshots, `fills.list` and conservation.
 
-The API/native lane owns the complete v2 schema/package move, generated Go and
+The API/native lane owns the complete v1 schema, generated Go and
 Swift/OpenAPI, `internal/api` mapping/service/tests, generator scripts, native
 market/trade/parent-child views and models, and native consent/retry tests. It may
 make mechanical generated-package import/path edits in desktop/test consumers;

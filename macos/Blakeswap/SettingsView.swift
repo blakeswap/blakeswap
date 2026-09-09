@@ -73,9 +73,9 @@ struct SettingsView: View {
             draft.environments[index].relays[position] = value
         })
     }
-    private var watchtowers: [Blakeswap_V2_Tower] { model.status?.network == editing ? model.status?.watchtowers ?? [] : [] }
+    private var watchtowers: [Blakeswap_V1_Tower] { model.status?.network == editing ? model.status?.watchtowers ?? [] : [] }
     private var favorites: [String] { environment.favoriteWatchtowers }
-    private func toggleFavorite(_ tower: Blakeswap_V2_Tower) {
+    private func toggleFavorite(_ tower: Blakeswap_V1_Tower) {
         if favorites.contains(tower.npub) { draft.environments[index].favoriteWatchtowers.removeAll { $0 == tower.npub } }
         else { draft.environments[index].favoriteWatchtowers.append(tower.npub) }
     }
