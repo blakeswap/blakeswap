@@ -47,7 +47,7 @@ class DemoTradeTests(unittest.TestCase):
     def test_missing_foreign_changed_and_lossy_parent_refused(self):
         original = self.parent()
         for key, value in [("maker", "foreign"), ("id", "foreign"), ("network", "mainnet"),
-                           ("version", 1), ("fill_mode", "partial"), ("available", 999999),
+                           ("version", 2), ("fill_mode", "partial"), ("available", 999999),
                            ("sell_amount", 1000001), ("buy_amount", 2000001), ("min_fill", 1),
                            ("revision", 0), ("revision", 2**64), ("revision", 1.5), ("revision", True)]:
             observed = dict(original, **{key: value})
@@ -58,7 +58,7 @@ class DemoTradeTests(unittest.TestCase):
             with self.subTest(missing=key), self.assertRaises((ValueError, KeyError)):
                 whole_take(original, observed)
         with self.assertRaises(ValueError):
-            whole_take(dict(original, version=1), original)
+            whole_take(dict(original, version=2), original)
         self.assertFalse(matching_parent(original, dict(original, maker="foreign")))
 
     def test_both_real_demo_functions_forward_current_whole_snapshot(self):
