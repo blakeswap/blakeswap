@@ -547,7 +547,7 @@ func (e *Electrum) unspentScript(ctx context.Context, script []byte) ([]UTXO, er
 		} else if coin.Height != 0 && coin.Height != -1 {
 			return nil, errors.New("invalid UTXO height")
 		}
-		if isCoinbase(tx) && t.Confirmations < 100 {
+		if isCoinbase(tx) && t.Confirmations < e.Network.coinbaseMaturity(e.ID) {
 			continue
 		}
 		result = append(result, UTXO{coin.TxID, coin.Vout, Coins(coin.Value), hex.EncodeToString(script), t.Confirmations})

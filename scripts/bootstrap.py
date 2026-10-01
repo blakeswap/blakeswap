@@ -6,7 +6,7 @@ ROOT = pathlib.Path(__file__).resolve().parents[1]
 CACHE = ROOT / ".cache" / "nodes"
 RELEASES = {
     "btc": ("29.1", "https://bitcoincore.org/bin/bitcoin-core-29.1/"),
-    "blake": ("29.4.1.knots20260508", "https://bitcoinknots.org/files/29.x/29.4.1.knots20260508/"),
+    "blake": ("29.4.2.knots20260508", "https://bitcoinknots.org/files/29.x/29.4.2.knots20260508/"),
 }
 
 def fetch(url, path):
@@ -24,7 +24,7 @@ def main():
         if args.chain and args.chain != name: continue
         dest = CACHE / name
         dest.mkdir(parents=True, exist_ok=True)
-        sums = dest / "SHA256SUMS"
+        sums = dest / f"SHA256SUMS-{version}"
         fetch(base + "SHA256SUMS", sums)
         filename = f"bitcoin-{version}-{target}.tar.gz"
         expected = next(line.split()[0] for line in sums.read_text().splitlines() if line.split()[-1].lstrip("*") == filename)
