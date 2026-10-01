@@ -956,3 +956,20 @@ The unchanged peer-sequence regressions in `fill_reorg_test.go` independently
 execute the Bitcoin witness script before checking ordinary/restored accounting
 and live rescue. Actual-node partial-fill and funding-ancestry matrices remain
 separate from these deterministic controls.
+
+## Long coinbase maturity compatibility
+
+The local bootstrap pins Knots 29.4.2.knots20260508. `TestCoinbaseMempoolMaturity`
+covers the public-network mempool thresholds and the unchanged BTC/regtest rules.
+`TestRPCRequiresLongCoinbaseDeployment` covers mainnet and Testnet4 immediately
+before/at enforcement and release, rejects missing or altered deployment data,
+and accepts the replacement `difficulty_blake2b` RPC field without `difficulty`.
+`make test-local-nodes` includes upgrade from a stale checksum manifest.
+`TestRealLongCoinbaseMaturity` starts its own temporary Knots node with
+`-testcoinbasematuritylong=1:2:251`, checks rejection at 100 and 249 confirmations,
+acceptance at 250, continued policy after consensus release, and confirms a signed
+HTLC claim. It never changes the shared fixture’s maturity schedule. The ordinary
+regtest default does not enable the temporary long-maturity consensus override;
+real contract/swap suites against this binary validate signing and settlement
+compatibility, not mainnet consensus enforcement. See
+[the operational rules and upstream references](OPERATIONS.md#blake2b-september-2026-soft-fork).

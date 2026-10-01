@@ -177,6 +177,9 @@ func (r *RPC) Check(ctx context.Context) error {
 		if e := json.Unmarshal(dep["blake2b"], &fork); e != nil {
 			return e
 		}
+		if err := checkLongCoinbaseDeployment(r.Network, info.Blocks, dep["deployments"]); err != nil {
+			return err
+		}
 		if r.Network == Mainnet {
 			var hash string
 			if err := r.Call(ctx, "getblockhash", &hash, r.Network.ForkHeight()); err != nil {

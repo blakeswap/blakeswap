@@ -33,3 +33,37 @@ class LocalNodeTests(unittest.TestCase):
             result = subprocess.run(['make', '-n', target], cwd=root, capture_output=True, text=True, check=True)
             self.assertIn(f"scripts/local.py nodes {chain + ' ' if chain else ''}--register", result.stdout)
             self.assertIn('scripts/bootstrap.py' + (' ' + chain if chain else ''), result.stdout)
+
+    def test_bootstrap_uses_release_specific_checksum_manifest(self):
+        import hashlib
+        import io
+        import tarfile
+        bootstrap_spec = importlib.util.spec_from_file_location('bootstrap_nodes', pathlib.Path(__file__).with_name('bootstrap.py'))
+        bootstrap = importlib.util.module_from_spec(bootstrap_spec)
+        bootstrap_spec.loader.exec_module(bootstrap)
+        self.assertEqual(module.NODES['blake'][0], bootstrap.RELEASES['blake'][0])
+        version = bootstrap.RELEASES['blake'][0]
+        with tempfile.TemporaryDirectory() as directory:
+            cache = pathlib.Path(directory)
+            dest = cache / 'blake'
+            dest.mkdir()
+            stale = dest / 'SHA256SUMS'
+            stale.write_text('old release manifest\n')
+            archive = io.BytesIO()
+            with tarfile.open(fileobj=archive, mode='w:gz') as tar:
+                entry = tarfile.TarInfo(f'bitcoin-{version}/bin/bitcoind')
+                entry.size = 4
+                tar.addfile(entry, io.BytesIO(b'node'))
+            payload = archive.getvalue()
+            digest = hashlib.sha256(payload).hexdigest()
+            filename = f'bitcoin-{version}-x86_64-linux-gnu.tar.gz'
+            def fetch(url, path):
+                if url.endswith('SHA256SUMS'):
+                    path.write_text(f'{digest}  {filename}\n')
+                else:
+                    path.write_bytes(payload)
+            with patch.object(bootstrap, 'CACHE', cache), patch.object(bootstrap, 'fetch', side_effect=fetch), patch.object(bootstrap.platform, 'system', return_value='Linux'), patch.object(bootstrap.platform, 'machine', return_value='x86_64'), patch('sys.argv', ['bootstrap.py', 'blake']):
+                bootstrap.main()
+            self.assertEqual(stale.read_text(), 'old release manifest\n')
+            self.assertTrue((dest / f'SHA256SUMS-{version}').exists())
+            self.assertEqual((dest / f'bitcoin-{version}/bin/bitcoind').read_bytes(), b'node')

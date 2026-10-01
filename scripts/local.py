@@ -3,7 +3,7 @@
 import argparse, base64, json, os, pathlib, subprocess, sys, tempfile, time, urllib.request
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
-NODES = {"btc": ("29.1", int(os.environ.get("BLAKESWAP_BTC_RPC_PORT", "19443"))), "blake": ("29.4.1.knots20260508", int(os.environ.get("BLAKESWAP_BLAKE_RPC_PORT", "29443")))}
+NODES = {"btc": ("29.1", int(os.environ.get("BLAKESWAP_BTC_RPC_PORT", "19443"))), "blake": ("29.4.2.knots20260508", int(os.environ.get("BLAKESWAP_BLAKE_RPC_PORT", "29443")))}
 
 def rpc(chain, method, *params, wallet=False):
     _, port = NODES[chain]

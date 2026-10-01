@@ -486,3 +486,37 @@ Earlier experimental protocol/state/stream markers are unsupported. Keep their
 source files and credentials; use a separate development profile rather than
 editing markers or silently resetting data. A v1 marker alone does not establish
 compatibility: the current schema and retained obligations must also validate.
+
+## Blake2b September 2026 soft fork
+
+Use Bitcoin Knots **29.4.2.knots20260508** or a compatible newer node for
+Blake2b. Public RPC connection checks require its `long_coinbase_maturity`
+deployment and the published mainnet/Testnet4 parameters. After upgrading, let
+node chainstate revalidation finish; a pruned node may require a resync. Electrum
+users must choose an operator whose backing node enforces the update: header and
+inclusion verification alone cannot establish transaction-level consensus rules.
+
+The release's mempool policy requires **6,480 confirmations on mainnet** and
+**6,705 on Testnet4** for *all* coinbase inputs. BlakeSwap's Electrum coin selection
+uses these thresholds, including rewards mined before the enforcement window and
+after its release height. These are block counts, not guaranteed wall-clock days.
+Ordinary received transactions, HTLC claims/refunds and unified signatures are
+unchanged. BTC and the default regtest fixture retain 100-confirmation coinbase
+maturity. Full-node watch wallets apply the node's own maturity policy.
+
+The temporary consensus window is narrower than mempool policy: mainnet covers
+coinbases from height 973440 while spending blocks are in [973440, 979920);
+Testnet4 covers coinbases from 151406 while spending blocks are in
+[151550, 158111). Do not revert the wallet filter at the end of those windows:
+the released node still applies its longer mempool policy. Future announced
+changes are not yet implemented rules and require a separate compatibility audit.
+
+`make regtest-nodes` downloads the pinned updated binary. Stop an existing local
+Blake2b node with `make regtest-stop` before restarting it; downloading alone does
+not replace a running process. Existing datadirs and wallets are preserved.
+Checksum manifests are cached per release so an older cached manifest cannot
+prevent the upgrade.
+
+Sources: [upstream release](https://github.com/bitcoinknots/bitcoin/releases/tag/v29.4.2.knots20260508),
+[released validation rules](https://github.com/bitcoinknots/bitcoin/blob/v29.4.2.knots20260508/src/validation.cpp),
+[network parameters](https://github.com/bitcoinknots/bitcoin/blob/v29.4.2.knots20260508/src/kernel/chainparams.cpp).
