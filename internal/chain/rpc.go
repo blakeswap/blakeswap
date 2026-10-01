@@ -167,7 +167,7 @@ func (r *RPC) Check(ctx context.Context) error {
 	if r.ID == Blake {
 		expected = 328
 		var dep map[string]json.RawMessage
-		if e := r.Call(ctx, "getdeploymentinfo", &dep); e != nil {
+		if e := r.Call(ctx, "getdeploymentinfo", &dep, info.BestBlockHash); e != nil {
 			return e
 		}
 		var fork struct {
