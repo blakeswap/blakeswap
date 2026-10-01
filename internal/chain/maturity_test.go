@@ -30,7 +30,7 @@ func TestRPCRequiresLongCoinbaseDeployment(t *testing.T) {
 			start, enforce, release = 151406, 151550, 158111
 		}
 		for _, tip := range []int{start - 2, enforce - 2, enforce - 1, enforce, release - 2, release - 1, release} {
-			for _, fault := range []string{"none", "missing", "wrong maturity", "wrong start", "wrong height", "wrong end", "wrong type", "wrong active", "missing active"} {
+			for _, fault := range []string{"none", "moving tip", "missing", "wrong maturity", "wrong start", "wrong height", "wrong end", "wrong type", "wrong active", "missing active"} {
 				t.Run(fmt.Sprintf("%s/%d/%s", n, tip, fault), func(t *testing.T) {
 					d := map[string]any{"type": "flagday", "height": enforce, "height_end": release - 1, "coinbase_start_height": start, "maturity": n.coinbaseMaturity(Blake), "active": tip >= enforce-1 && tip < release-1}
 					switch fault {
@@ -61,6 +61,11 @@ func TestRPCRequiresLongCoinbaseDeployment(t *testing.T) {
 						case "getblockheader":
 							return strings.Repeat("00", 164), nil
 						case "getdeploymentinfo":
+							// A concurrently advanced/reorged tip can have the opposite
+							// activation state; an explicit hash preserves the snapshot.
+							if fault == "moving tip" && (len(params) != 1 || string(params[0]) != `"tip"`) {
+								d["active"] = !d["active"].(bool)
+							}
 							deployments := map[string]any{}
 							if fault != "missing" {
 								deployments["long_coinbase_maturity"] = d
@@ -73,7 +78,7 @@ func TestRPCRequiresLongCoinbaseDeployment(t *testing.T) {
 					})
 					rpc.ID, rpc.Network = Blake, n
 					err := rpc.Check(context.Background())
-					if (err == nil) != (fault == "none") {
+					if (err == nil) != (fault == "none" || fault == "moving tip") {
 						t.Fatalf("Check = %v", err)
 					}
 					if err != nil && !strings.Contains(err.Error(), "long_coinbase_maturity") {
