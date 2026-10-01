@@ -45,7 +45,9 @@ func TestRealFundingPublicationSurvivesCrash(t *testing.T) {
 				id := h.command("taker", "swap.take", map[string]any{"maker": offer.Maker, "id": offer.ID, "quantity": offer.SellAmount, "parent_revision": offer.Revision}).(map[string]string)["id"]
 				h.tick("taker", "maker")
 				if role == "maker" {
-					h.tick("taker")
+					partialWaitMailbox(h, "long funding before maker crash", func() bool {
+						return h.swap("taker", id).LongSent
+					}, func() { h.tick("taker") })
 					h.minePending()
 				}
 				e := h.engines[role]
@@ -87,7 +89,14 @@ func TestRealFundingPublicationSurvivesCrash(t *testing.T) {
 							t.Fatalf("unexpected crash: %v", r)
 						}
 					}()
-					_ = e.Tick(h.ctx)
+					// Acceptance/funding notifications arrive asynchronously. Keep
+					// the crash hook installed while the normal bounded mailbox
+					// wait advances to the actual publication attempt.
+					partialWaitMailbox(h, "funding broadcast crash", func() bool { return crashed }, func() {
+						if err := e.Tick(h.ctx); err != nil {
+							t.Fatal(err)
+						}
+					})
 				}()
 				if !crashed {
 					t.Fatal("funding broadcast was not reached")
